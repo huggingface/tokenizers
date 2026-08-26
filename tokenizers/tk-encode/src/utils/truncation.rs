@@ -117,11 +117,12 @@ pub fn pipeline_truncate_pair(
                         if swap {
                             mem::swap(&mut n1, &mut n2);
                         }
-                        s1.truncate(n1);
-                        s2.truncate(n2);
+                        truncate_tokens(&mut s1, n1, truncation.direction);
+                        truncate_tokens(&mut s2, n2, truncation.direction);
                         Ok((s1, Some(s2)))
                     } else {
-                        s1.truncate(s1.len() - num_removed);
+                        let len = s1.len();
+                        truncate_tokens(&mut s1, len - num_removed, truncation.direction);
                         Ok((s1, maybe_s2))
                     }
                 }
@@ -136,7 +137,11 @@ pub fn pipeline_truncate_pair(
                         };
                     let sequence_length = sequence_to_truncate.len();
                     if sequence_length > num_removed {
-                        sequence_to_truncate.truncate(sequence_length - num_removed);
+                        truncate_tokens(
+                            &mut sequence_to_truncate,
+                            sequence_length - num_removed,
+                            truncation.direction,
+                        );
                     } else {
                         return Err(Box::new(TruncationError::SequenceTooShort));
                     }
@@ -154,6 +159,15 @@ pub fn pipeline_truncate_pair(
     } else {
         // None config = no truncation
         Ok((s1, maybe_s2))
+    }
+}
+
+/// Truncates tokens to `keep` tokens.
+fn truncate_tokens(tokens: &mut Vec<PipelineToken>, keep: usize, direction: TruncationDirection) {
+    if direction == TruncationDirection::Left {
+        tokens.drain(..tokens.len().saturating_sub(keep));
+    } else {
+        tokens.truncate(keep);
     }
 }
 
@@ -330,5 +344,73 @@ mod tests {
         truncate_and_assert(empty(), short(), &params, 0, 0);
         truncate_and_assert(medium(), medium(), &params, 0, 0);
         truncate_and_assert(long(), long(), &params, 0, 0);
+    }
+
+    const BOTH_DIRECTIONS: [TruncationDirection; 2] =
+        [TruncationDirection::Left, TruncationDirection::Right];
+
+    fn truncated(
+        mut tokens: Vec<PipelineToken>,
+        keep: usize,
+        direction: TruncationDirection,
+    ) -> Vec<PipelineToken> {
+        truncate_tokens(&mut tokens, keep, direction);
+        tokens
+    }
+
+    #[test]
+    fn right_truncation_keeps_the_head() {
+        assert_eq!(
+            truncated(long(), 3, TruncationDirection::Right),
+            make_tokens(7..10)
+        );
+    }
+
+    #[test]
+    fn left_truncation_keeps_the_tail() {
+        assert_eq!(
+            truncated(long(), 3, TruncationDirection::Left),
+            make_tokens(12..15)
+        );
+    }
+
+    #[test]
+    fn truncating_to_the_sequence_length_leaves_it_untouched() {
+        for direction in BOTH_DIRECTIONS {
+            assert_eq!(truncated(long(), 8, direction), long());
+        }
+    }
+
+    // The pair strategy can ask to keep more tokens than a sequence holds, which is why the left
+    // branch saturates: `num_special_tokens` 10 against a 2 and 5 token pair with `max_length` 9
+    // computes 7 tokens to keep out of the 5 the second sequence has.
+    #[test]
+    fn keeping_more_tokens_than_there_are_leaves_the_sequence_untouched() {
+        for direction in BOTH_DIRECTIONS {
+            assert_eq!(truncated(medium(), 9, direction), medium());
+            assert_eq!(truncated(empty(), 9, direction), empty());
+        }
+    }
+
+    #[test]
+    fn truncating_to_zero_empties_the_sequence() {
+        for direction in BOTH_DIRECTIONS {
+            assert!(truncated(long(), 0, direction).is_empty());
+        }
+    }
+
+    // Draining the head keeps the buffer the tokens are already in. Collecting the tail into a new
+    // `Vec` would pay an allocation and a copy instead, which is the whole reason the left branch
+    // is written as a drain.
+    #[test]
+    fn left_truncation_reuses_the_allocation() {
+        let mut tokens = long();
+        let capacity = tokens.capacity();
+        let address = tokens.as_ptr();
+
+        truncate_tokens(&mut tokens, 3, TruncationDirection::Left);
+
+        assert_eq!(tokens.capacity(), capacity);
+        assert_eq!(tokens.as_ptr(), address);
     }
 }
