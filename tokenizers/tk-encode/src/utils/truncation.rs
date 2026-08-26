@@ -73,16 +73,19 @@ pub fn pipeline_truncate_pair(
     num_special_tokens: usize,
 ) -> Result<(Vec<PipelineToken>, Option<Vec<PipelineToken>>)> {
     let seq_len = s1.len() + maybe_s2.as_ref().map_or(0, Vec::len);
-    let total_len = num_special_tokens + seq_len;
 
     if let Some(truncation) = truncation {
-        if truncation.max_length == 0 {
-            // XXX: determine whether we should return an empty Encoding or just the specials here
-            // TODO: better wording for the warn log
-            warn!("Truncation `max_length` was set to 0: returning an empty sequence");
+        let truncate_to_length = truncation.max_length.saturating_sub(num_special_tokens);
+
+        if truncate_to_length == 0 {
+            // XXX: maybe we should error out when instantiating the PipelineTokenizer to avoid this
+            warn!(
+                "Truncation max_length is too short to include the tokens: `max_length` is {}, the post-processor adds {num_special_tokens} special tokens. Returning an empty sequence",
+                truncation.max_length
+            );
             Ok((Vec::new(), maybe_s2.and(Some(Vec::new()))))
-        } else if total_len > truncation.max_length {
-            let num_removed = total_len - truncation.max_length;
+        } else if seq_len > truncate_to_length {
+            let num_removed = seq_len - truncate_to_length;
 
             match truncation.strategy {
                 TruncationStrategy::LongestFirst => {
@@ -99,18 +102,18 @@ pub fn pipeline_truncate_pair(
                             mem::swap(&mut n1, &mut n2);
                         }
 
-                        if n1 > truncation.max_length {
+                        if n1 > truncate_to_length {
                             // This needs to be a special case
                             // to avoid max_length - n1 < 0
                             // since n1 and n2 are unsigned
                             n2 = n1;
                         } else {
-                            n2 = cmp::max(n1, truncation.max_length - n1);
+                            n2 = cmp::max(n1, truncate_to_length - n1);
                         }
 
-                        if n1 + n2 > truncation.max_length {
-                            n1 = truncation.max_length / 2;
-                            n2 = n1 + truncation.max_length % 2;
+                        if n1 + n2 > truncate_to_length {
+                            n1 = truncate_to_length / 2;
+                            n2 = n1 + truncate_to_length % 2;
                         }
 
                         // Swap lengths if we swapped previously
@@ -412,5 +415,87 @@ mod tests {
 
         assert_eq!(tokens.capacity(), capacity);
         assert_eq!(tokens.as_ptr(), address);
+    }
+
+    fn assert_truncated(
+        s1: Vec<PipelineToken>,
+        s2: Option<Vec<PipelineToken>>,
+        truncation: TruncationParams,
+        num_special_tokens: usize,
+        expected1: &[u32],
+        expected2: Option<&[u32]>,
+    ) {
+        let (t1, t2) =
+            pipeline_truncate_pair(s1, s2, &Some(truncation), num_special_tokens).unwrap();
+
+        assert_eq!(t1, make_tokens(expected1.iter().copied()));
+        assert_eq!(t2, expected2.map(|ids| make_tokens(ids.iter().copied())));
+    }
+
+    fn left(max_length: usize, strategy: TruncationStrategy) -> TruncationParams {
+        TruncationParams {
+            max_length,
+            strategy,
+            direction: TruncationDirection::Left,
+            ..TruncationParams::default()
+        }
+    }
+
+    // Every other test here runs the default `Right` direction, so nothing pins that each strategy
+    // passes the configured direction on to `truncate_tokens`. Expected ids come from released
+    // tokenizers 0.23.1 `truncate_encodings`, which is where the direction semantics come from.
+    #[test]
+    fn the_left_direction_reaches_every_strategy() {
+        assert_truncated(
+            long(),
+            Some(long()),
+            left(7, TruncationStrategy::LongestFirst),
+            0,
+            &[12, 13, 14],
+            Some(&[11, 12, 13, 14]),
+        );
+        assert_truncated(
+            long(),
+            None,
+            left(3, TruncationStrategy::LongestFirst),
+            0,
+            &[12, 13, 14],
+            None,
+        );
+        assert_truncated(
+            long(),
+            Some(short()),
+            left(7, TruncationStrategy::OnlyFirst),
+            0,
+            &[10, 11, 12, 13, 14],
+            Some(&[1, 2]),
+        );
+        assert_truncated(
+            short(),
+            Some(long()),
+            left(7, TruncationStrategy::OnlySecond),
+            0,
+            &[1, 2],
+            Some(&[10, 11, 12, 13, 14]),
+        );
+    }
+
+    // Released tokenizers 0.23.1 subtracts the specials from `max_length` before balancing a pair,
+    // so 4 and 4 tokens with 3 specials and `max_length` 8 come back as 2 and 3. Expected ids are
+    // its output.
+    #[test]
+    fn specials_count_against_max_length_for_a_pair() {
+        assert_truncated(
+            medium(),
+            Some(medium()),
+            TruncationParams {
+                max_length: 8,
+                strategy: TruncationStrategy::LongestFirst,
+                ..TruncationParams::default()
+            },
+            3,
+            &[3, 4],
+            Some(&[3, 4, 5]),
+        );
     }
 }
