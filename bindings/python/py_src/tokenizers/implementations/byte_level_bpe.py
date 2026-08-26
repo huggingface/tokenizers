@@ -36,7 +36,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
                 )
             )
         else:
-            tokenizer = Tokenizer(BPE())
+            tokenizer = Tokenizer(BPE(dropout=dropout))
 
         # Check for Unicode normalization first (before everything else)
         normalizers = []
