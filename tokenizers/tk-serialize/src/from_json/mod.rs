@@ -205,6 +205,8 @@ fn build<M>(
         read_decoder(doc.field("decoder"))?,
         read_role_to_token(doc.field("role_to_token"))?,
         read_padding(doc.field("padding"))?,
+        // TODO: parse truncation params from config file
+        None,
     ))
 }
 

@@ -18,7 +18,7 @@ pub use crate::decoders::{Decoder, DecoderRuntime};
 pub use crate::utils::iter::LinesWithEnding;
 pub use crate::utils::padding::{PaddingDirection, PaddingParams, PaddingStrategy, pad_encodings};
 pub use crate::utils::truncation::{
-    TruncationDirection, TruncationParams, TruncationStrategy, truncate_encodings,
+    TruncationDirection, TruncationParams, TruncationStrategy, pipeline_truncate_pair,
 };
 pub use encoding::*;
 

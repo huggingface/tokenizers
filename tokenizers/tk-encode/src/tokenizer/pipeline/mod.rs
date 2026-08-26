@@ -9,8 +9,9 @@ use crate::models::unigram::{Unigram, UnigramScratch};
 use crate::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
+use crate::utils::truncation::pipeline_truncate_pair;
 use crate::{
-    DecoderRuntime, PaddingParams,
+    DecoderRuntime, PaddingParams, TruncationParams,
     models::bpe::{BpeScratch, PipelineBPE},
     pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
@@ -210,6 +211,9 @@ struct TokenizerInner {
     role_to_token: BTreeMap<String, String>,
     /// Padding configuration, can be overridden at runtime with [`EncodeHandle::wait_with_padding`].
     padding: Option<PaddingParams>,
+    /// Truncation configuration, can be overridden at runtime with [`TODO`].
+    truncation: Option<TruncationParams>,
+    /// Pool of scratch buffers. Scratch buffers hold intermediate state (cache, intermediate buffers, etc) required by the tokenization algorithms.
     scratch_pool: ScratchPool,
 }
 
@@ -242,6 +246,7 @@ impl PipelineTokenizer {
         decoder: Option<DecoderRuntime>,
         role_to_token: BTreeMap<String, String>,
         padding: Option<PaddingParams>,
+        truncation: Option<TruncationParams>,
     ) -> Self {
         let added_id_min = added_vocabulary
             .get_added_tokens_decoder()
@@ -260,6 +265,7 @@ impl PipelineTokenizer {
                 added_id_min,
                 role_to_token,
                 padding,
+                truncation,
                 scratch_pool: ScratchPool::new(),
             }),
         }
@@ -619,17 +625,16 @@ impl PipelineTokenizer {
         s2: Option<Vec<PipelineToken>>,
         add_special_tokens: bool,
     ) -> Result<Encoding> {
-        let pp = &self.inner.post_processor;
-        let template = if s2.is_some() { &pp.pair } else { &pp.single };
+        let post_processor = &self.inner.post_processor;
+        let template = if s2.is_some() {
+            &post_processor.pair
+        } else {
+            &post_processor.single
+        };
 
-        // Fast path: when nothing has to be woven around the sequence, the sequence already *is*
-        // the encoding, and the loop below is a second full pass over every token plus a second
-        // allocation to hold it. That pass is invisible on sparse text and the dominant added cost
-        // on token-dense text, which is where it showed up: the regression against
-        // `poc/target-encode-clean` tracked tokens-per-byte, not bytes.
-        //
-        // Taken only when the template would reproduce `s1` exactly: one sequence, it is `A`, no
-        // type ids to interleave, and any `Specials` slices are being skipped anyway.
+        // When there is a a single sequence to encode (no pair), no specials, no type_ids to add,
+        // and the sequence is added once exactly in the template, there is no work to do.
+        // We exit early and return the sequence's encodings as is (fast path)
         if s2.is_none() && !template.has_type_ids {
             let mut sequences = 0usize;
             let reproduces_s1 = template.slices.iter().all(|slice| match slice {
@@ -646,11 +651,14 @@ impl PipelineTokenizer {
         }
 
         let seq_len = s1.len() + s2.as_ref().map_or(0, Vec::len);
-        let cap = template.n_special + seq_len;
+        let total_len = template.n_special + seq_len;
 
-        let (mut a, mut b) = (Some(s1), s2);
-        let mut ids = Vec::with_capacity(cap);
-        let mut type_ids = template.has_type_ids.then(|| Vec::with_capacity(cap));
+        let (a, mut b) =
+            pipeline_truncate_pair(s1, s2, &self.inner.truncation, template.n_special)?;
+        let mut a = Some(a);
+
+        let mut ids = Vec::with_capacity(total_len);
+        let mut type_ids = template.has_type_ids.then(|| Vec::with_capacity(total_len));
 
         for slice in &template.slices {
             match slice {
@@ -659,8 +667,8 @@ impl PipelineTokenizer {
                         continue;
                     }
                     ids.extend_from_slice(tokens);
-                    if let Some(tids) = type_ids.as_mut() {
-                        tids.resize(tids.len() + tokens.len(), *type_id);
+                    if let Some(type_ids) = type_ids.as_mut() {
+                        type_ids.resize(type_ids.len() + tokens.len(), *type_id);
                     }
                 }
                 Slice::Sequence { seq, type_id } => {
@@ -669,8 +677,8 @@ impl PipelineTokenizer {
                         Seq::B => b.take(),
                     }
                     .ok_or("[BUG] valid template should guarantee each referenced sequence is provided exactly once")?;
-                    if let Some(tids) = type_ids.as_mut() {
-                        tids.resize(tids.len() + tokens.len(), *type_id);
+                    if let Some(type_ids) = type_ids.as_mut() {
+                        type_ids.resize(type_ids.len() + tokens.len(), *type_id);
                     }
                     ids.extend(tokens);
                 }
@@ -1282,6 +1290,7 @@ mod tests {
             None,
             Default::default(),
             None,
+            None,
         )
     }
 
@@ -1295,6 +1304,7 @@ mod tests {
             None,
             Default::default(),
             Some(padding),
+            None,
         )
     }
 }
