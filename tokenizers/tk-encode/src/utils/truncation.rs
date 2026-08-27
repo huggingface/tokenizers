@@ -1,4 +1,5 @@
-use crate::tokenizer::{Encoding, Result};
+use crate::pipeline::PipelineToken;
+use crate::tokenizer::Result;
 use std::cmp;
 use std::mem;
 
@@ -20,8 +21,6 @@ impl std::convert::AsRef<str> for TruncationDirection {
 
 #[derive(Debug, Clone)]
 pub struct TruncationParams {
-    /// `#[serde(default)]` because a `truncation` block written before this field existed has to
-    /// keep loading; `test_deserialize_defaults` is the test that says so.
     pub direction: TruncationDirection,
     pub max_length: usize,
     pub strategy: TruncationStrategy,
@@ -67,251 +66,436 @@ impl std::convert::AsRef<str> for TruncationStrategy {
     }
 }
 
-pub fn truncate_encodings(
-    mut encoding: Encoding,
-    mut pair_encoding: Option<Encoding>,
-    params: &TruncationParams,
-) -> Result<(Encoding, Option<Encoding>)> {
-    if params.max_length == 0 {
-        encoding.truncate(0, params.stride, params.direction);
-        if let Some(other_encoding) = pair_encoding.as_mut() {
-            other_encoding.truncate(0, params.stride, params.direction);
-        }
-        return Ok((encoding, pair_encoding));
-    }
+pub fn truncate_pair(
+    mut s1: Vec<PipelineToken>,
+    maybe_s2: Option<Vec<PipelineToken>>,
+    truncation: &Option<TruncationParams>,
+    num_added_special_tokens: usize,
+) -> Result<(Vec<PipelineToken>, Option<Vec<PipelineToken>>)> {
+    let seq_len = s1.len() + maybe_s2.as_ref().map_or(0, Vec::len);
 
-    let total_length = encoding.get_ids().len()
-        + pair_encoding
-            .as_ref()
-            .map(|e| e.get_ids().len())
-            .unwrap_or(0);
-    let to_remove = if total_length > params.max_length {
-        total_length - params.max_length
+    if let Some(truncation) = truncation {
+        let truncate_to_length = truncation
+            .max_length
+            .saturating_sub(num_added_special_tokens);
+
+        if truncate_to_length == 0 {
+            // XXX: maybe we should error out when instantiating the PipelineTokenizer to avoid this
+            warn!(
+                "Truncation max_length is too short to include the tokens: `max_length` is {}, the post-processor adds {num_added_special_tokens} special tokens. Returning an empty sequence",
+                truncation.max_length
+            );
+            Ok((Vec::new(), maybe_s2.and(Some(Vec::new()))))
+        } else if seq_len > truncate_to_length {
+            let num_removed = seq_len - truncate_to_length;
+
+            match truncation.strategy {
+                TruncationStrategy::LongestFirst => {
+                    if let Some(mut s2) = maybe_s2 {
+                        // XXX: this algorithm is ported from the legacy truncation code, verbatim
+                        // Could probably be rewritten to be simpler / clearer
+                        let mut n1 = s1.len();
+                        let mut n2 = s2.len();
+                        let mut swap = false;
+
+                        // Ensure n1 is the length of the shortest input
+                        if n1 > n2 {
+                            swap = true;
+                            mem::swap(&mut n1, &mut n2);
+                        }
+
+                        if n1 > truncate_to_length {
+                            // This needs to be a special case
+                            // to avoid max_length - n1 < 0
+                            // since n1 and n2 are unsigned
+                            n2 = n1;
+                        } else {
+                            n2 = cmp::max(n1, truncate_to_length - n1);
+                        }
+
+                        if n1 + n2 > truncate_to_length {
+                            n1 = truncate_to_length / 2;
+                            n2 = n1 + truncate_to_length % 2;
+                        }
+
+                        // Swap lengths if we swapped previously
+                        if swap {
+                            mem::swap(&mut n1, &mut n2);
+                        }
+                        truncate_tokens(&mut s1, n1, truncation.direction);
+                        truncate_tokens(&mut s2, n2, truncation.direction);
+                        Ok((s1, Some(s2)))
+                    } else {
+                        let len = s1.len();
+                        truncate_tokens(&mut s1, len - num_removed, truncation.direction);
+                        Ok((s1, maybe_s2))
+                    }
+                }
+                TruncationStrategy::OnlyFirst | TruncationStrategy::OnlySecond => {
+                    let (mut sequence_to_truncate, other) =
+                        if truncation.strategy == TruncationStrategy::OnlyFirst {
+                            (s1, maybe_s2)
+                        } else if maybe_s2.is_some() {
+                            (maybe_s2.unwrap(), Some(s1))
+                        } else {
+                            return Err(Box::new(TruncationError::SecondSequenceNotProvided));
+                        };
+                    let sequence_length = sequence_to_truncate.len();
+                    if sequence_length > num_removed {
+                        truncate_tokens(
+                            &mut sequence_to_truncate,
+                            sequence_length - num_removed,
+                            truncation.direction,
+                        );
+                    } else {
+                        return Err(Box::new(TruncationError::SequenceTooShort));
+                    }
+                    if truncation.strategy == TruncationStrategy::OnlyFirst {
+                        Ok((sequence_to_truncate, other))
+                    } else {
+                        Ok((other.unwrap(), Some(sequence_to_truncate)))
+                    }
+                }
+            }
+        } else {
+            // No need to truncate
+            Ok((s1, maybe_s2))
+        }
     } else {
-        return Ok((encoding, pair_encoding));
-    };
-
-    match params.strategy {
-        TruncationStrategy::LongestFirst => {
-            if let Some(other_encoding) = pair_encoding.as_mut() {
-                // Assuming n1 <= n2, there are 3 cases
-                // Case 1:
-                //   No truncation needs to be performed.
-                //   This scenario is handled before the match.
-                // Case 2:
-                //   Only the longer input needs to be truncated.
-                //   n1 = n1
-                //   n2 = max_length - n1
-                // Case 3:
-                //   Both inputs must be truncated.
-                //   n1 = max_length / 2
-                //   n2 = n1 + max_length % 2
-
-                let mut n1 = encoding.get_ids().len();
-                let mut n2 = other_encoding.get_ids().len();
-                let mut swap = false;
-
-                // Ensure n1 is the length of the shortest input
-                if n1 > n2 {
-                    swap = true;
-                    mem::swap(&mut n1, &mut n2);
-                }
-
-                if n1 > params.max_length {
-                    // This needs to be a special case
-                    // to avoid max_length - n1 < 0
-                    // since n1 and n2 are unsigned
-                    n2 = n1;
-                } else {
-                    n2 = cmp::max(n1, params.max_length - n1);
-                }
-
-                if n1 + n2 > params.max_length {
-                    n1 = params.max_length / 2;
-                    n2 = n1 + params.max_length % 2;
-                }
-
-                // Swap lengths if we swapped previously
-                if swap {
-                    mem::swap(&mut n1, &mut n2);
-                }
-                encoding.truncate(n1, params.stride, params.direction);
-                other_encoding.truncate(n2, params.stride, params.direction);
-            } else {
-                encoding.truncate(total_length - to_remove, params.stride, params.direction);
-            }
-        }
-        TruncationStrategy::OnlyFirst | TruncationStrategy::OnlySecond => {
-            let target = if params.strategy == TruncationStrategy::OnlyFirst {
-                Ok(&mut encoding)
-            } else if let Some(encoding) = pair_encoding.as_mut() {
-                Ok(encoding)
-            } else {
-                Err(Box::new(TruncationError::SecondSequenceNotProvided))
-            }?;
-
-            let target_len = target.get_ids().len();
-            if target_len > to_remove {
-                target.truncate(target_len - to_remove, params.stride, params.direction);
-            } else {
-                return Err(Box::new(TruncationError::SequenceTooShort));
-            }
-        }
+        // None config = no truncation
+        Ok((s1, maybe_s2))
     }
-    Ok((encoding, pair_encoding))
+}
+
+/// Truncates tokens to `keep` tokens.
+fn truncate_tokens(tokens: &mut Vec<PipelineToken>, keep: usize, direction: TruncationDirection) {
+    if direction == TruncationDirection::Left {
+        tokens.drain(..tokens.len().saturating_sub(keep));
+    } else {
+        tokens.truncate(keep);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tokenizer::Encoding;
-    use ahash::AHashMap;
 
-    fn get_empty() -> Encoding {
-        Encoding::new(
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            AHashMap::new(),
-        )
+    fn make_tokens(ids: impl IntoIterator<Item = u32>) -> Vec<PipelineToken> {
+        ids.into_iter().map(PipelineToken::from).collect()
     }
 
-    fn get_short() -> Encoding {
-        Encoding::new(
-            vec![1, 2],
-            vec![0, 0],
-            vec![String::from("a"), String::from("b")],
-            vec![Some(0), Some(1)],
-            vec![(0, 1), (1, 2)],
-            vec![0, 0],
-            vec![1, 1],
-            vec![],
-            AHashMap::new(),
-        )
+    fn empty() -> Vec<PipelineToken> {
+        Vec::new()
     }
 
-    fn get_medium() -> Encoding {
-        Encoding::new(
-            vec![3, 4, 5, 6],
-            vec![0, 0, 0, 0],
-            vec![
-                String::from("d"),
-                String::from("e"),
-                String::from("f"),
-                String::from("g"),
-            ],
-            vec![Some(0), Some(1), Some(2), Some(3)],
-            vec![(0, 1), (1, 2), (2, 3), (3, 4)],
-            vec![0, 0, 0, 0],
-            vec![1, 1, 1, 1],
-            vec![],
-            AHashMap::new(),
-        )
+    fn short() -> Vec<PipelineToken> {
+        make_tokens(1..3)
     }
 
-    fn get_long() -> Encoding {
-        Encoding::new(
-            vec![7, 8, 9, 10, 11, 12, 13, 14],
-            vec![0, 0, 0, 0, 0, 0, 0, 0],
-            vec![
-                String::from("h"),
-                String::from("i"),
-                String::from("j"),
-                String::from("k"),
-                String::from("l"),
-                String::from("m"),
-                String::from("n"),
-                String::from("o"),
-            ],
-            vec![
-                Some(0),
-                Some(1),
-                Some(2),
-                Some(3),
-                Some(4),
-                Some(5),
-                Some(6),
-                Some(7),
-            ],
-            vec![
-                (0, 1),
-                (1, 2),
-                (2, 3),
-                (3, 4),
-                (4, 5),
-                (5, 6),
-                (6, 7),
-                (6, 8),
-            ],
-            vec![0, 0, 0, 0, 0, 0, 0, 0],
-            vec![1, 1, 1, 1, 1, 1, 1, 1],
-            vec![],
-            AHashMap::new(),
-        )
+    fn medium() -> Vec<PipelineToken> {
+        make_tokens(3..7)
+    }
+
+    fn long() -> Vec<PipelineToken> {
+        make_tokens(7..15)
+    }
+
+    fn params(max_length: usize, strategy: TruncationStrategy) -> Option<TruncationParams> {
+        Some(TruncationParams {
+            max_length,
+            strategy,
+            ..TruncationParams::default()
+        })
     }
 
     fn truncate_and_assert(
-        encoding1: Encoding,
-        encoding2: Encoding,
-        params: &TruncationParams,
+        s1: Vec<PipelineToken>,
+        s2: Vec<PipelineToken>,
+        truncation: &Option<TruncationParams>,
         n1: usize,
         n2: usize,
     ) {
-        match truncate_encodings(encoding1, Some(encoding2), params) {
-            Ok((e1, Some(e2))) => {
-                assert!(e1.get_ids().len() == n1);
-                assert!(e2.get_ids().len() == n2);
-            }
-            _ => panic!(),
-        };
+        let (t1, t2) = truncate_pair(s1, Some(s2), truncation, 0).unwrap();
+        assert_eq!(t1.len(), n1);
+        assert_eq!(t2.expect("the pair is kept").len(), n2);
     }
 
     #[test]
-    fn truncate_encodings_longest_first() {
-        let params = TruncationParams {
-            max_length: 7,
-            strategy: TruncationStrategy::LongestFirst,
-            stride: 0,
-            direction: TruncationDirection::Right,
-        };
+    fn longest_first_balances_a_pair_against_max_length() {
+        let params = params(7, TruncationStrategy::LongestFirst);
 
-        truncate_and_assert(get_empty(), get_empty(), &params, 0, 0);
-        truncate_and_assert(get_empty(), get_short(), &params, 0, 2);
-        truncate_and_assert(get_empty(), get_medium(), &params, 0, 4);
-        truncate_and_assert(get_empty(), get_long(), &params, 0, 7);
+        truncate_and_assert(empty(), empty(), &params, 0, 0);
+        truncate_and_assert(empty(), short(), &params, 0, 2);
+        truncate_and_assert(empty(), medium(), &params, 0, 4);
+        truncate_and_assert(empty(), long(), &params, 0, 7);
 
-        truncate_and_assert(get_short(), get_empty(), &params, 2, 0);
-        truncate_and_assert(get_short(), get_short(), &params, 2, 2);
-        truncate_and_assert(get_short(), get_medium(), &params, 2, 4);
-        truncate_and_assert(get_short(), get_long(), &params, 2, 5);
+        truncate_and_assert(short(), empty(), &params, 2, 0);
+        truncate_and_assert(short(), short(), &params, 2, 2);
+        truncate_and_assert(short(), medium(), &params, 2, 4);
+        truncate_and_assert(short(), long(), &params, 2, 5);
 
-        truncate_and_assert(get_medium(), get_empty(), &params, 4, 0);
-        truncate_and_assert(get_medium(), get_short(), &params, 4, 2);
-        truncate_and_assert(get_medium(), get_medium(), &params, 3, 4);
-        truncate_and_assert(get_medium(), get_long(), &params, 3, 4);
+        truncate_and_assert(medium(), empty(), &params, 4, 0);
+        truncate_and_assert(medium(), short(), &params, 4, 2);
+        truncate_and_assert(medium(), medium(), &params, 3, 4);
+        truncate_and_assert(medium(), long(), &params, 3, 4);
 
-        truncate_and_assert(get_long(), get_empty(), &params, 7, 0);
-        truncate_and_assert(get_long(), get_short(), &params, 5, 2);
-        truncate_and_assert(get_long(), get_medium(), &params, 4, 3);
-        truncate_and_assert(get_long(), get_long(), &params, 3, 4);
+        truncate_and_assert(long(), empty(), &params, 7, 0);
+        truncate_and_assert(long(), short(), &params, 5, 2);
+        truncate_and_assert(long(), medium(), &params, 4, 3);
+        truncate_and_assert(long(), long(), &params, 3, 4);
     }
 
     #[test]
-    fn truncate_encodings_empty() {
-        let params = TruncationParams {
-            max_length: 0,
-            strategy: TruncationStrategy::LongestFirst,
-            stride: 0,
-            direction: TruncationDirection::Right,
-        };
+    fn no_truncation_params_keeps_both_sequences_whole() {
+        truncate_and_assert(long(), long(), &None, 8, 8);
+    }
 
-        truncate_and_assert(get_empty(), get_short(), &params, 0, 0);
-        truncate_and_assert(get_medium(), get_medium(), &params, 0, 0);
-        truncate_and_assert(get_long(), get_long(), &params, 0, 0);
+    #[test]
+    fn longest_first_drops_the_tail_of_a_lone_sequence() {
+        let (t1, t2) = truncate_pair(
+            long(),
+            None,
+            &params(3, TruncationStrategy::LongestFirst),
+            0,
+        )
+        .unwrap();
+
+        assert_eq!(t1, make_tokens(7..10));
+        assert!(t2.is_none());
+    }
+
+    // The specials the post-processor will add are not in either sequence yet, so the caller passes
+    // their count and truncation has to make room for them.
+    #[test]
+    fn special_tokens_count_against_max_length() {
+        let params = params(8, TruncationStrategy::LongestFirst);
+
+        let (untouched, _) = truncate_pair(long(), None, &params, 0).unwrap();
+        assert_eq!(untouched, long());
+
+        let (shortened, _) = truncate_pair(long(), None, &params, 2).unwrap();
+        assert_eq!(shortened, make_tokens(7..13));
+    }
+
+    #[test]
+    fn only_first_truncates_the_first_sequence() {
+        let (t1, t2) = truncate_pair(
+            long(),
+            Some(short()),
+            &params(7, TruncationStrategy::OnlyFirst),
+            0,
+        )
+        .unwrap();
+
+        assert_eq!(t1, make_tokens(7..12));
+        assert_eq!(t2, Some(short()));
+    }
+
+    #[test]
+    fn only_second_truncates_the_second_sequence() {
+        let (t1, t2) = truncate_pair(
+            short(),
+            Some(long()),
+            &params(7, TruncationStrategy::OnlySecond),
+            0,
+        )
+        .unwrap();
+
+        assert_eq!(t1, short());
+        assert_eq!(t2, Some(make_tokens(7..12)));
+    }
+
+    // `OnlySecond` names the sequence to cut, so there is nothing to cut without a pair. Silently
+    // falling back to the first sequence would truncate what the caller asked us to keep.
+    #[test]
+    fn only_second_refuses_a_missing_pair() {
+        let err = truncate_pair(long(), None, &params(7, TruncationStrategy::OnlySecond), 0)
+            .err()
+            .unwrap();
+
+        assert!(matches!(
+            err.downcast_ref::<TruncationError>(),
+            Some(TruncationError::SecondSequenceNotProvided)
+        ));
+    }
+
+    // `OnlyFirst` forbids touching the pair, so a first sequence that is already shorter than what
+    // has to go cannot reach `max_length` at all.
+    #[test]
+    fn only_first_refuses_a_sequence_too_short_to_truncate() {
+        let err = truncate_pair(
+            short(),
+            Some(long()),
+            &params(1, TruncationStrategy::OnlyFirst),
+            0,
+        )
+        .err()
+        .unwrap();
+
+        assert!(matches!(
+            err.downcast_ref::<TruncationError>(),
+            Some(TruncationError::SequenceTooShort)
+        ));
+    }
+
+    // `max_length` 0 empties both sequences, but the pair still has to come back as `Some`: the
+    // post-processor's pair template references the second sequence, and it cannot place the
+    // specials around a sequence that is not there.
+    #[test]
+    fn max_length_zero_empties_both_sequences() {
+        let params = params(0, TruncationStrategy::LongestFirst);
+
+        truncate_and_assert(empty(), short(), &params, 0, 0);
+        truncate_and_assert(medium(), medium(), &params, 0, 0);
+        truncate_and_assert(long(), long(), &params, 0, 0);
+    }
+
+    const BOTH_DIRECTIONS: [TruncationDirection; 2] =
+        [TruncationDirection::Left, TruncationDirection::Right];
+
+    fn truncated(
+        mut tokens: Vec<PipelineToken>,
+        keep: usize,
+        direction: TruncationDirection,
+    ) -> Vec<PipelineToken> {
+        truncate_tokens(&mut tokens, keep, direction);
+        tokens
+    }
+
+    #[test]
+    fn right_truncation_keeps_the_head() {
+        assert_eq!(
+            truncated(long(), 3, TruncationDirection::Right),
+            make_tokens(7..10)
+        );
+    }
+
+    #[test]
+    fn left_truncation_keeps_the_tail() {
+        assert_eq!(
+            truncated(long(), 3, TruncationDirection::Left),
+            make_tokens(12..15)
+        );
+    }
+
+    #[test]
+    fn truncating_to_the_sequence_length_leaves_it_untouched() {
+        for direction in BOTH_DIRECTIONS {
+            assert_eq!(truncated(long(), 8, direction), long());
+        }
+    }
+
+    // The pair strategy can ask to keep more tokens than a sequence holds, which is why the left
+    // branch saturates: `num_special_tokens` 10 against a 2 and 5 token pair with `max_length` 9
+    // computes 7 tokens to keep out of the 5 the second sequence has.
+    #[test]
+    fn keeping_more_tokens_than_there_are_leaves_the_sequence_untouched() {
+        for direction in BOTH_DIRECTIONS {
+            assert_eq!(truncated(medium(), 9, direction), medium());
+            assert_eq!(truncated(empty(), 9, direction), empty());
+        }
+    }
+
+    #[test]
+    fn truncating_to_zero_empties_the_sequence() {
+        for direction in BOTH_DIRECTIONS {
+            assert!(truncated(long(), 0, direction).is_empty());
+        }
+    }
+
+    // Draining the head keeps the buffer the tokens are already in. Collecting the tail into a new
+    // `Vec` would pay an allocation and a copy instead, which is the whole reason the left branch
+    // is written as a drain.
+    #[test]
+    fn left_truncation_reuses_the_allocation() {
+        let mut tokens = long();
+        let capacity = tokens.capacity();
+        let address = tokens.as_ptr();
+
+        truncate_tokens(&mut tokens, 3, TruncationDirection::Left);
+
+        assert_eq!(tokens.capacity(), capacity);
+        assert_eq!(tokens.as_ptr(), address);
+    }
+
+    fn assert_truncated(
+        s1: Vec<PipelineToken>,
+        s2: Option<Vec<PipelineToken>>,
+        truncation: TruncationParams,
+        num_special_tokens: usize,
+        expected1: &[u32],
+        expected2: Option<&[u32]>,
+    ) {
+        let (t1, t2) = truncate_pair(s1, s2, &Some(truncation), num_special_tokens).unwrap();
+
+        assert_eq!(t1, make_tokens(expected1.iter().copied()));
+        assert_eq!(t2, expected2.map(|ids| make_tokens(ids.iter().copied())));
+    }
+
+    fn left(max_length: usize, strategy: TruncationStrategy) -> TruncationParams {
+        TruncationParams {
+            max_length,
+            strategy,
+            direction: TruncationDirection::Left,
+            ..TruncationParams::default()
+        }
+    }
+
+    // Every other test here runs the default `Right` direction, so nothing pins that each strategy
+    // passes the configured direction on to `truncate_tokens`. Expected ids come from released
+    // tokenizers 0.23.1 `truncate_encodings`, which is where the direction semantics come from.
+    #[test]
+    fn the_left_direction_reaches_every_strategy() {
+        assert_truncated(
+            long(),
+            Some(long()),
+            left(7, TruncationStrategy::LongestFirst),
+            0,
+            &[12, 13, 14],
+            Some(&[11, 12, 13, 14]),
+        );
+        assert_truncated(
+            long(),
+            None,
+            left(3, TruncationStrategy::LongestFirst),
+            0,
+            &[12, 13, 14],
+            None,
+        );
+        assert_truncated(
+            long(),
+            Some(short()),
+            left(7, TruncationStrategy::OnlyFirst),
+            0,
+            &[10, 11, 12, 13, 14],
+            Some(&[1, 2]),
+        );
+        assert_truncated(
+            short(),
+            Some(long()),
+            left(7, TruncationStrategy::OnlySecond),
+            0,
+            &[1, 2],
+            Some(&[10, 11, 12, 13, 14]),
+        );
+    }
+
+    // Released tokenizers 0.23.1 subtracts the specials from `max_length` before balancing a pair,
+    // so 4 and 4 tokens with 3 specials and `max_length` 8 come back as 2 and 3. Expected ids are
+    // its output.
+    #[test]
+    fn specials_count_against_max_length_for_a_pair() {
+        assert_truncated(
+            medium(),
+            Some(medium()),
+            TruncationParams {
+                max_length: 8,
+                strategy: TruncationStrategy::LongestFirst,
+                ..TruncationParams::default()
+            },
+            3,
+            &[3, 4],
+            Some(&[3, 4, 5]),
+        );
     }
 }

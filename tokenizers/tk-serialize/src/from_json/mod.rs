@@ -31,6 +31,7 @@ mod normalizers;
 mod padding;
 mod post_processors;
 mod pre_tokenizers;
+mod truncation;
 
 #[cfg(test)]
 mod tests;
@@ -48,6 +49,7 @@ use self::normalizers::read_normalizers;
 use self::padding::read_padding;
 use self::post_processors::read_post_processor;
 use self::pre_tokenizers::read_pre_tokenizer;
+use crate::from_json::truncation::read_truncation;
 use crate::json::Json;
 use std::collections::BTreeMap;
 use tk_encode::models::bpe::{BpeConfig, PipelineBPE};
@@ -205,6 +207,7 @@ fn build<M>(
         read_decoder(doc.field("decoder"))?,
         read_role_to_token(doc.field("role_to_token"))?,
         read_padding(doc.field("padding"))?,
+        read_truncation(doc.field("truncation"))?,
     ))
 }
 

@@ -9,8 +9,9 @@ use crate::models::unigram::{Unigram, UnigramScratch};
 use crate::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
+use crate::utils::truncation::truncate_pair;
 use crate::{
-    DecoderRuntime, PaddingParams,
+    DecoderRuntime, PaddingParams, TruncationParams,
     models::bpe::{BpeScratch, PipelineBPE},
     pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
@@ -210,6 +211,9 @@ struct TokenizerInner {
     role_to_token: BTreeMap<String, String>,
     /// Padding configuration, can be overridden at runtime with [`EncodeHandle::wait_with_padding`].
     padding: Option<PaddingParams>,
+    /// Truncation configuration, can be overridden at runtime with [`TODO`].
+    truncation: Option<TruncationParams>,
+    /// Pool of scratch buffers. Scratch buffers hold intermediate state (cache, intermediate buffers, etc) required by the tokenization algorithms.
     scratch_pool: ScratchPool,
 }
 
@@ -242,6 +246,7 @@ impl PipelineTokenizer {
         decoder: Option<DecoderRuntime>,
         role_to_token: BTreeMap<String, String>,
         padding: Option<PaddingParams>,
+        truncation: Option<TruncationParams>,
     ) -> Self {
         let added_id_min = added_vocabulary
             .get_added_tokens_decoder()
@@ -260,6 +265,7 @@ impl PipelineTokenizer {
                 added_id_min,
                 role_to_token,
                 padding,
+                truncation,
                 scratch_pool: ScratchPool::new(),
             }),
         }
@@ -554,6 +560,10 @@ impl PipelineTokenizer {
         self.inner.padding.as_ref()
     }
 
+    pub fn get_truncation(&self) -> Option<&TruncationParams> {
+        self.inner.truncation.as_ref()
+    }
+
     /// Encode `input` into token ids.
     ///
     /// Special tokens are matched in two passes:
@@ -619,65 +629,26 @@ impl PipelineTokenizer {
         s2: Option<Vec<PipelineToken>>,
         add_special_tokens: bool,
     ) -> Result<Encoding> {
-        let pp = &self.inner.post_processor;
-        let template = if s2.is_some() { &pp.pair } else { &pp.single };
+        let post_processor = &self.inner.post_processor;
+        let template = if s2.is_some() {
+            &post_processor.pair
+        } else {
+            &post_processor.single
+        };
 
-        // Fast path: when nothing has to be woven around the sequence, the sequence already *is*
-        // the encoding, and the loop below is a second full pass over every token plus a second
-        // allocation to hold it. That pass is invisible on sparse text and the dominant added cost
-        // on token-dense text, which is where it showed up: the regression against
-        // `poc/target-encode-clean` tracked tokens-per-byte, not bytes.
-        //
-        // Taken only when the template would reproduce `s1` exactly: one sequence, it is `A`, no
-        // type ids to interleave, and any `Specials` slices are being skipped anyway.
-        if s2.is_none() && !template.has_type_ids {
-            let mut sequences = 0usize;
-            let reproduces_s1 = template.slices.iter().all(|slice| match slice {
-                Slice::Specials { .. } => !add_special_tokens,
-                Slice::Sequence { seq: Seq::A, .. } => {
-                    sequences += 1;
-                    true
-                }
-                Slice::Sequence { seq: Seq::B, .. } => false,
-            });
-            if reproduces_s1 && sequences == 1 {
-                return Ok(Encoding::new(s1, None));
-            }
+        let num_added_specials = if add_special_tokens {
+            template.n_special
+        } else {
+            0
+        };
+        let (sequence_a, maybe_sequence_b) =
+            truncate_pair(s1, s2, &self.inner.truncation, num_added_specials)?;
+
+        if maybe_sequence_b.is_none() && template.single_sequence_is_noop(add_special_tokens) {
+            return Ok(Encoding::new(sequence_a, None));
         }
 
-        let seq_len = s1.len() + s2.as_ref().map_or(0, Vec::len);
-        let cap = template.n_special + seq_len;
-
-        let (mut a, mut b) = (Some(s1), s2);
-        let mut ids = Vec::with_capacity(cap);
-        let mut type_ids = template.has_type_ids.then(|| Vec::with_capacity(cap));
-
-        for slice in &template.slices {
-            match slice {
-                Slice::Specials { tokens, type_id } => {
-                    if !add_special_tokens {
-                        continue;
-                    }
-                    ids.extend_from_slice(tokens);
-                    if let Some(tids) = type_ids.as_mut() {
-                        tids.resize(tids.len() + tokens.len(), *type_id);
-                    }
-                }
-                Slice::Sequence { seq, type_id } => {
-                    let tokens = match seq {
-                        Seq::A => a.take(),
-                        Seq::B => b.take(),
-                    }
-                    .ok_or("[BUG] valid template should guarantee each referenced sequence is provided exactly once")?;
-                    if let Some(tids) = type_ids.as_mut() {
-                        tids.resize(tids.len() + tokens.len(), *type_id);
-                    }
-                    ids.extend(tokens);
-                }
-            }
-        }
-
-        Ok(Encoding::new(ids, type_ids))
+        template.apply(&sequence_a, maybe_sequence_b.as_deref(), add_special_tokens)
     }
 
     /// Encode one sequence, appending its ids to `output`.
@@ -791,20 +762,13 @@ impl PipelineTokenizer {
         out: &mut Vec<PipelineToken>,
     ) -> Result<()> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
-        let template = &self.inner.post_processor.single;
-        let mut sequences = 0usize;
-        // The same question `post_process` asks: would the template just reproduce the sequence?
-        let reproduces_sequence = !template.has_type_ids
-            && template.slices.iter().all(|slice| match slice {
-                Slice::Specials { .. } => !add_special_tokens,
-                Slice::Sequence { seq: Seq::A, .. } => {
-                    sequences += 1;
-                    true
-                }
-                Slice::Sequence { seq: Seq::B, .. } => false,
-            })
-            && sequences == 1;
-        if reproduces_sequence {
+        if self.inner.truncation.is_none()
+            && self
+                .inner
+                .post_processor
+                .single
+                .single_sequence_is_noop(add_special_tokens)
+        {
             return self.encode_sequence_into(input, &mut scratch, out);
         }
         let encoding = self.encode_one(
@@ -1119,6 +1083,8 @@ impl ModelScratch for PipelineModelScratch {}
 mod tests {
     use super::*;
     use crate::PaddingStrategy;
+    use crate::tokenizer::{TruncationDirection, TruncationStrategy};
+    use crate::utils::truncation::TruncationError;
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
     impl PipelinePatternMatcher for FixedMatcher {
@@ -1242,6 +1208,303 @@ mod tests {
         assert_eq!(encodings[1].len(), 1);
     }
 
+    #[test]
+    fn truncation_makes_room_for_the_specials_the_template_adds() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(5, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline.post_process(tokens(1..=8), None, true).unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 1, 2, 3, SEP]);
+    }
+
+    // Released 0.23.1 subtracts the specials from `max_length` only when it is about to add them
+    // (`add_special_tokens && n_added_tokens > 0`, tokenizer/mod.rs:1243), so a caller that asks
+    // for no specials gets a full `max_length` of sequence tokens.
+    #[test]
+    fn specials_that_are_not_added_do_not_count_against_max_length() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(5, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline.post_process(tokens(1..=8), None, false).unwrap();
+
+        assert_eq!(ids(&encoding), [1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn a_sequence_that_fits_with_its_specials_is_untouched() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(5, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline.post_process(tokens(1..=3), None, true).unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 1, 2, 3, SEP]);
+    }
+
+    #[test]
+    fn no_truncation_config_leaves_a_long_sequence_whole() {
+        let pipeline = pipeline_with(bert_post_processor(), None);
+
+        let encoding = pipeline.post_process(tokens(1..=8), None, true).unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 1, 2, 3, 4, 5, 6, 7, 8, SEP]);
+    }
+
+    #[test]
+    fn left_truncation_keeps_the_tail_between_the_specials() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            Some(TruncationParams {
+                max_length: 5,
+                direction: TruncationDirection::Left,
+                ..TruncationParams::default()
+            }),
+        );
+
+        let encoding = pipeline.post_process(tokens(1..=8), None, true).unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 6, 7, 8, SEP]);
+    }
+
+    #[test]
+    fn a_pair_template_counts_every_special_it_adds() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(8, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=4), Some(tokens(11..=14)), true)
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 1, 2, SEP, 11, 12, 13, SEP]);
+        assert_eq!(encoding.type_ids().unwrap(), [0, 0, 0, 0, 1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn only_second_cuts_the_pair_and_leaves_the_first_sequence_whole() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(8, TruncationStrategy::OnlySecond),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=4), Some(tokens(11..=14)), true)
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 1, 2, 3, 4, SEP, 11, SEP]);
+        assert_eq!(encoding.type_ids().unwrap(), [0, 0, 0, 0, 0, 0, 1, 1]);
+    }
+
+    // `OnlySecond` names the sequence to cut, so a lone sequence has nothing to cut. The error has
+    // to come back out of `post_process` rather than the first sequence being cut instead.
+    #[test]
+    fn only_second_without_a_pair_fails_the_post_processing() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(5, TruncationStrategy::OnlySecond),
+        );
+
+        let err = pipeline
+            .post_process(tokens(1..=8), None, true)
+            .err()
+            .unwrap();
+
+        assert!(matches!(
+            err.downcast_ref::<TruncationError>(),
+            Some(TruncationError::SecondSequenceNotProvided)
+        ));
+    }
+
+    // `max_length` 1 cannot hold `[CLS] [SEP]`. The sequence goes and the specials stay, so the
+    // encoding comes back longer than `max_length`. There is no upstream behaviour to match:
+    // released 0.23.1 computes `max_length - n_added_tokens` unguarded (tokenizer/mod.rs:1245).
+    #[test]
+    fn a_max_length_shorter_than_the_specials_leaves_only_the_specials() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(1, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline.post_process(tokens(1..=8), None, true).unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, SEP]);
+    }
+
+    // Same case for a pair: the pair template places sequence B, so an emptied B still has to be
+    // there for the template to lay out.
+    #[test]
+    fn a_max_length_shorter_than_the_specials_still_lays_out_the_pair_template() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(1, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=4), Some(tokens(11..=14)), true)
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, SEP, SEP]);
+        assert_eq!(encoding.type_ids().unwrap(), [0, 0, 1]);
+    }
+
+    // A template that adds nothing takes the fast path, which hands the sequence buffer straight
+    // back. It has to be the truncated buffer.
+    #[test]
+    fn truncation_applies_to_a_template_that_adds_nothing() {
+        let pipeline = pipeline_with(
+            PipelinePostProcessor::default(),
+            truncation(3, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline.post_process(tokens(1..=8), None, true).unwrap();
+
+        assert_eq!(ids(&encoding), [1, 2, 3]);
+    }
+
+    // A single template that retags its sequence carries type ids, which rules out the fast path.
+    // This is truncation reaching the template with no specials in the way.
+    #[test]
+    fn a_retagging_template_truncates_and_keeps_its_type_ids() {
+        let pipeline = pipeline_with(
+            PipelinePostProcessor::new(
+                Template::new(vec![Slice::Sequence {
+                    seq: Seq::A,
+                    type_id: 1,
+                }]),
+                Template::new(vec![
+                    Slice::Sequence {
+                        seq: Seq::A,
+                        type_id: 0,
+                    },
+                    Slice::Sequence {
+                        seq: Seq::B,
+                        type_id: 1,
+                    },
+                ]),
+            ),
+            truncation(3, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline.post_process(tokens(1..=8), None, true).unwrap();
+
+        assert_eq!(ids(&encoding), [1, 2, 3]);
+        assert_eq!(encoding.type_ids().unwrap(), [1, 1, 1]);
+    }
+
+    // The fast path returns the sequence buffer itself. A copy would be a silent regression that
+    // no assertion on the ids can catch.
+    #[test]
+    fn the_fast_path_hands_back_the_sequence_buffer() {
+        let pipeline = pipeline_with(PipelinePostProcessor::default(), None);
+        let sequence = tokens(1..=8);
+        let address = sequence.as_ptr();
+
+        let encoding = pipeline.post_process(sequence, None, true).unwrap();
+
+        assert_eq!(encoding.ids().as_ptr(), address);
+    }
+
+    // `encode_into` has a shortcut of its own for a template that adds nothing, and it skips
+    // `post_process`, which is where truncation happens. Whatever route it takes, it has to agree
+    // with `encode`.
+    #[test]
+    fn encode_into_truncates_when_the_template_adds_nothing() {
+        let pipeline = pipeline_with(
+            PipelinePostProcessor::default(),
+            truncation(2, TruncationStrategy::LongestFirst),
+        );
+        let mut out = Vec::new();
+
+        pipeline
+            .encode_into("hhello hhello", true, &mut out)
+            .unwrap();
+
+        let encoded = pipeline.encode(vec!["hhello hhello"], true).wait().unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out, encoded[0].ids());
+    }
+
+    const CLS: u32 = 101;
+    const SEP: u32 = 102;
+
+    fn tokens(sequence_ids: impl IntoIterator<Item = u32>) -> Vec<PipelineToken> {
+        sequence_ids.into_iter().map(PipelineToken::from).collect()
+    }
+
+    fn ids(encoding: &Encoding) -> Vec<u32> {
+        encoding.ids().iter().copied().map(u32::from).collect()
+    }
+
+    fn specials(special_ids: &[u32], type_id: u8) -> Slice {
+        Slice::Specials {
+            tokens: special_ids
+                .iter()
+                .copied()
+                .map(PipelineToken::from)
+                .collect(),
+            type_id,
+        }
+    }
+
+    /// `[CLS] $A [SEP]` and `[CLS] $A [SEP] $B:1 [SEP]:1`, the arrangement BERT's config declares.
+    fn bert_post_processor() -> PipelinePostProcessor {
+        PipelinePostProcessor::new(
+            Template::new(vec![
+                specials(&[CLS], 0),
+                Slice::Sequence {
+                    seq: Seq::A,
+                    type_id: 0,
+                },
+                specials(&[SEP], 0),
+            ]),
+            Template::new(vec![
+                specials(&[CLS], 0),
+                Slice::Sequence {
+                    seq: Seq::A,
+                    type_id: 0,
+                },
+                specials(&[SEP], 0),
+                Slice::Sequence {
+                    seq: Seq::B,
+                    type_id: 1,
+                },
+                specials(&[SEP], 1),
+            ]),
+        )
+    }
+
+    fn truncation(max_length: usize, strategy: TruncationStrategy) -> Option<TruncationParams> {
+        Some(TruncationParams {
+            max_length,
+            strategy,
+            ..TruncationParams::default()
+        })
+    }
+
+    fn pipeline_with(
+        post_processor: PipelinePostProcessor,
+        truncation: Option<TruncationParams>,
+    ) -> PipelineTokenizer {
+        PipelineTokenizer::from_parts(
+            BucketAddedVocabulary::new(),
+            Vec::new(),
+            PipelinePreTokenizer::None,
+            PipelineModel::BPE(hello_bpe()),
+            post_processor,
+            None,
+            Default::default(),
+            None,
+            truncation,
+        )
+    }
+
     fn hello_bpe() -> PipelineBPE {
         use crate::models::bpe::{BpeConfig, Merges, Vocab};
 
@@ -1282,6 +1545,7 @@ mod tests {
             None,
             Default::default(),
             None,
+            None,
         )
     }
 
@@ -1295,6 +1559,7 @@ mod tests {
             None,
             Default::default(),
             Some(padding),
+            None,
         )
     }
 }
