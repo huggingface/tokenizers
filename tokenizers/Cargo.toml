@@ -110,7 +110,11 @@ default = ["progressbar", "onig", "esaxx_fast"]
 esaxx_fast = ["esaxx-rs/cpp"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
-unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
+# Just the wasm32 plumbing, with no opinion about the regex engine. Splitting
+# this out lets a wasm build pick any pure-Rust backend rather than being tied
+# to fancy-regex; `unstable_wasm` keeps its existing meaning.
+wasm = ["getrandom/wasm_js"]
+unstable_wasm = ["fancy-regex", "wasm"]
 # Oniguruma remade in pure Rust: same engine semantics as `onig`, no C in the
 # build, works on wasm32, and measured faster than libonig.
 rusty-expressions = ["dep:rusty_expressions"]
