@@ -73,6 +73,9 @@ harness = false
 [dependencies]
 rand = "0.9"
 onig = { version = "6.5.1", default-features = false, optional = true }
+# `default-features = false`: rusty_expressions installs a #[global_allocator]
+# under its default feature, and a library must never impose one on consumers.
+rusty_expressions = { version = "0.1", default-features = false, optional = true }
 regex = "1.10"
 regex-syntax = "0.8"
 rayon = "1.10"
@@ -108,6 +111,9 @@ esaxx_fast = ["esaxx-rs/cpp"]
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex", "getrandom/wasm_js"]
+# Oniguruma remade in pure Rust: same engine semantics as `onig`, no C in the
+# build, works on wasm32, and measured faster than libonig.
+rusty-expressions = ["dep:rusty_expressions"]
 rustls-tls = ["hf-hub?/rustls-tls"]
 parity-aware-bpe = []
 

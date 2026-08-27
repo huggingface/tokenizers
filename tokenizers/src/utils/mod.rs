@@ -2,17 +2,38 @@ pub(crate) mod cache;
 #[cfg(feature = "http")]
 pub(crate) mod from_pretrained;
 
-#[cfg(all(feature = "fancy-regex", not(feature = "onig")))]
+#[cfg(all(
+    feature = "fancy-regex",
+    not(feature = "onig"),
+    not(feature = "rusty-expressions")
+))]
 mod fancy;
-#[cfg(all(feature = "fancy-regex", not(feature = "onig")))]
+#[cfg(all(
+    feature = "fancy-regex",
+    not(feature = "onig"),
+    not(feature = "rusty-expressions")
+))]
 pub use fancy::SysRegex;
-#[cfg(feature = "onig")]
+// `rusty_expressions` is Oniguruma reimplemented in pure Rust, so it gives the
+// same engine semantics as `onig` with no C in the build. It wins over both
+// when enabled.
+#[cfg(feature = "rusty-expressions")]
+mod rusty;
+#[cfg(feature = "rusty-expressions")]
+pub use crate::utils::rusty::SysRegex;
+#[cfg(all(feature = "onig", not(feature = "rusty-expressions")))]
 mod onig;
-#[cfg(feature = "onig")]
+#[cfg(all(feature = "onig", not(feature = "rusty-expressions")))]
 pub use crate::utils::onig::SysRegex;
 
-#[cfg(not(any(feature = "onig", feature = "fancy-regex")))]
-compile_error!("One of the `onig`, or `fancy-regex` features must be enabled");
+#[cfg(not(any(
+    feature = "onig",
+    feature = "fancy-regex",
+    feature = "rusty-expressions"
+)))]
+compile_error!(
+    "One of the `onig`, `fancy-regex`, or `rusty-expressions` features must be enabled"
+);
 
 pub mod iter;
 pub mod padding;
