@@ -4,6 +4,7 @@
 
 use std::convert::TryFrom;
 
+use crate::pipeline::Encoding;
 use crate::processors::template::{Piece, Sequence, Tokens};
 use crate::tokenizer::Result;
 
@@ -95,6 +96,63 @@ impl Template {
 
     pub fn slices(&self) -> &[Slice] {
         &self.slices
+    }
+
+    pub fn single_sequence_is_noop(&self, add_special_tokens: bool) -> bool {
+        if self.has_type_ids {
+            return false;
+        }
+        let mut count_sequences = 0usize;
+        let only_sequence_a = self.slices.iter().all(|slice| match slice {
+            Slice::Specials { .. } => !add_special_tokens,
+            Slice::Sequence { seq: Seq::A, .. } => {
+                count_sequences += 1;
+                true
+            }
+            Slice::Sequence { seq: Seq::B, .. } => false,
+        });
+        only_sequence_a && count_sequences == 1
+    }
+
+    pub fn apply(
+        &self,
+        sequence_a: &[PipelineToken],
+        maybe_sequence_b: Option<&[PipelineToken]>,
+        add_special_tokens: bool,
+    ) -> Result<Encoding> {
+        let seq_len = sequence_a.len() + maybe_sequence_b.map_or(0, |tokens| tokens.len());
+        let total_len = self.n_special + seq_len;
+
+        let mut ids = Vec::with_capacity(total_len);
+        let mut type_ids = self.has_type_ids.then(|| Vec::with_capacity(total_len));
+
+        for slice in &self.slices {
+            match slice {
+                Slice::Specials { tokens, type_id } => {
+                    if !add_special_tokens {
+                        continue;
+                    }
+                    ids.extend_from_slice(tokens);
+                    if let Some(type_ids) = type_ids.as_mut() {
+                        type_ids.resize(type_ids.len() + tokens.len(), *type_id);
+                    }
+                }
+                Slice::Sequence { seq, type_id } => {
+                    let tokens = match seq {
+                        Seq::A => sequence_a,
+                        Seq::B => maybe_sequence_b.ok_or(
+                            "[BUG] only a pair template references sequence B, and a pair always provides it",
+                        )?,
+                    };
+                    if let Some(type_ids) = type_ids.as_mut() {
+                        type_ids.resize(type_ids.len() + tokens.len(), *type_id);
+                    }
+                    ids.extend_from_slice(tokens);
+                }
+            }
+        }
+
+        Ok(Encoding::new(ids, type_ids))
     }
 }
 

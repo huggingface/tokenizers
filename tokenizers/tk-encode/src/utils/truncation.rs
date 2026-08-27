@@ -66,7 +66,7 @@ impl std::convert::AsRef<str> for TruncationStrategy {
     }
 }
 
-pub fn pipeline_truncate_pair(
+pub fn truncate_pair(
     mut s1: Vec<PipelineToken>,
     maybe_s2: Option<Vec<PipelineToken>>,
     truncation: &Option<TruncationParams>,
@@ -213,7 +213,7 @@ mod tests {
         n1: usize,
         n2: usize,
     ) {
-        let (t1, t2) = pipeline_truncate_pair(s1, Some(s2), truncation, 0).unwrap();
+        let (t1, t2) = truncate_pair(s1, Some(s2), truncation, 0).unwrap();
         assert_eq!(t1.len(), n1);
         assert_eq!(t2.expect("the pair is kept").len(), n2);
     }
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn longest_first_drops_the_tail_of_a_lone_sequence() {
-        let (t1, t2) = pipeline_truncate_pair(
+        let (t1, t2) = truncate_pair(
             long(),
             None,
             &params(3, TruncationStrategy::LongestFirst),
@@ -268,16 +268,16 @@ mod tests {
     fn special_tokens_count_against_max_length() {
         let params = params(8, TruncationStrategy::LongestFirst);
 
-        let (untouched, _) = pipeline_truncate_pair(long(), None, &params, 0).unwrap();
+        let (untouched, _) = truncate_pair(long(), None, &params, 0).unwrap();
         assert_eq!(untouched, long());
 
-        let (shortened, _) = pipeline_truncate_pair(long(), None, &params, 2).unwrap();
+        let (shortened, _) = truncate_pair(long(), None, &params, 2).unwrap();
         assert_eq!(shortened, make_tokens(7..13));
     }
 
     #[test]
     fn only_first_truncates_the_first_sequence() {
-        let (t1, t2) = pipeline_truncate_pair(
+        let (t1, t2) = truncate_pair(
             long(),
             Some(short()),
             &params(7, TruncationStrategy::OnlyFirst),
@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn only_second_truncates_the_second_sequence() {
-        let (t1, t2) = pipeline_truncate_pair(
+        let (t1, t2) = truncate_pair(
             short(),
             Some(long()),
             &params(7, TruncationStrategy::OnlySecond),
@@ -307,10 +307,9 @@ mod tests {
     // falling back to the first sequence would truncate what the caller asked us to keep.
     #[test]
     fn only_second_refuses_a_missing_pair() {
-        let err =
-            pipeline_truncate_pair(long(), None, &params(7, TruncationStrategy::OnlySecond), 0)
-                .err()
-                .unwrap();
+        let err = truncate_pair(long(), None, &params(7, TruncationStrategy::OnlySecond), 0)
+            .err()
+            .unwrap();
 
         assert!(matches!(
             err.downcast_ref::<TruncationError>(),
@@ -322,7 +321,7 @@ mod tests {
     // has to go cannot reach `max_length` at all.
     #[test]
     fn only_first_refuses_a_sequence_too_short_to_truncate() {
-        let err = pipeline_truncate_pair(
+        let err = truncate_pair(
             short(),
             Some(long()),
             &params(1, TruncationStrategy::OnlyFirst),
@@ -425,8 +424,7 @@ mod tests {
         expected1: &[u32],
         expected2: Option<&[u32]>,
     ) {
-        let (t1, t2) =
-            pipeline_truncate_pair(s1, s2, &Some(truncation), num_special_tokens).unwrap();
+        let (t1, t2) = truncate_pair(s1, s2, &Some(truncation), num_special_tokens).unwrap();
 
         assert_eq!(t1, make_tokens(expected1.iter().copied()));
         assert_eq!(t2, expected2.map(|ids| make_tokens(ids.iter().copied())));

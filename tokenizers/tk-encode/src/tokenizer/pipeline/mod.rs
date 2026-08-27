@@ -9,7 +9,7 @@ use crate::models::unigram::{Unigram, UnigramScratch};
 use crate::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
-use crate::utils::truncation::pipeline_truncate_pair;
+use crate::utils::truncation::truncate_pair;
 use crate::{
     DecoderRuntime, PaddingParams, TruncationParams,
     models::bpe::{BpeScratch, PipelineBPE},
@@ -632,60 +632,14 @@ impl PipelineTokenizer {
             &post_processor.single
         };
 
-        // When there is a a single sequence to encode (no pair), no specials, no type_ids to add,
-        // and the sequence is added once exactly in the template, there is no work to do.
-        // We exit early and return the sequence's encodings as is (fast path)
-        if s2.is_none() && !template.has_type_ids {
-            let mut sequences = 0usize;
-            let reproduces_s1 = template.slices.iter().all(|slice| match slice {
-                Slice::Specials { .. } => !add_special_tokens,
-                Slice::Sequence { seq: Seq::A, .. } => {
-                    sequences += 1;
-                    true
-                }
-                Slice::Sequence { seq: Seq::B, .. } => false,
-            });
-            if reproduces_s1 && sequences == 1 {
-                return Ok(Encoding::new(s1, None));
-            }
+        let (sequence_a, maybe_sequence_b) =
+            truncate_pair(s1, s2, &self.inner.truncation, template.n_special)?;
+
+        if maybe_sequence_b.is_none() && template.single_sequence_is_noop(add_special_tokens) {
+            return Ok(Encoding::new(sequence_a, None));
         }
 
-        let seq_len = s1.len() + s2.as_ref().map_or(0, Vec::len);
-        let total_len = template.n_special + seq_len;
-
-        let (a, mut b) =
-            pipeline_truncate_pair(s1, s2, &self.inner.truncation, template.n_special)?;
-        let mut a = Some(a);
-
-        let mut ids = Vec::with_capacity(total_len);
-        let mut type_ids = template.has_type_ids.then(|| Vec::with_capacity(total_len));
-
-        for slice in &template.slices {
-            match slice {
-                Slice::Specials { tokens, type_id } => {
-                    if !add_special_tokens {
-                        continue;
-                    }
-                    ids.extend_from_slice(tokens);
-                    if let Some(type_ids) = type_ids.as_mut() {
-                        type_ids.resize(type_ids.len() + tokens.len(), *type_id);
-                    }
-                }
-                Slice::Sequence { seq, type_id } => {
-                    let tokens = match seq {
-                        Seq::A => a.take(),
-                        Seq::B => b.take(),
-                    }
-                    .ok_or("[BUG] valid template should guarantee each referenced sequence is provided exactly once")?;
-                    if let Some(type_ids) = type_ids.as_mut() {
-                        type_ids.resize(type_ids.len() + tokens.len(), *type_id);
-                    }
-                    ids.extend(tokens);
-                }
-            }
-        }
-
-        Ok(Encoding::new(ids, type_ids))
+        template.apply(&sequence_a, maybe_sequence_b.as_deref(), add_special_tokens)
     }
 
     /// Encode one sequence, appending its ids to `output`.
