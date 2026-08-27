@@ -560,6 +560,10 @@ impl PipelineTokenizer {
         self.inner.padding.as_ref()
     }
 
+    pub fn get_truncation(&self) -> Option<&TruncationParams> {
+        self.inner.truncation.as_ref()
+    }
+
     /// Encode `input` into token ids.
     ///
     /// Special tokens are matched in two passes:

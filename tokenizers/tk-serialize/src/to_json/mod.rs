@@ -13,10 +13,13 @@ mod normalizers;
 mod padding;
 mod post_processors;
 mod pre_tokenizers;
+mod truncation;
 mod writer;
 
 #[cfg(all(test, feature = "deserialize"))]
 mod tests;
+
+use crate::to_json::truncation::write_truncation;
 
 use self::added_tokens::write_added_tokens;
 use self::decoders::write_decoder;
@@ -40,6 +43,9 @@ pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
     out.field_null("truncation");
     out.key("padding");
     write_padding(&mut out, tokenizer.get_padding());
+    out.key("truncation");
+    write_truncation(&mut out, tokenizer.get_truncation());
+
     // Which token plays which role, so this file can stand in for a `tokenizer_config.json`.
     out.key("role_to_token");
     let roles = tokenizer.get_role_to_token();
