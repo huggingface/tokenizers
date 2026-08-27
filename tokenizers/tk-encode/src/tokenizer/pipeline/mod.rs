@@ -632,8 +632,13 @@ impl PipelineTokenizer {
             &post_processor.single
         };
 
+        let num_added_specials = if add_special_tokens {
+            template.n_special
+        } else {
+            0
+        };
         let (sequence_a, maybe_sequence_b) =
-            truncate_pair(s1, s2, &self.inner.truncation, template.n_special)?;
+            truncate_pair(s1, s2, &self.inner.truncation, num_added_specials)?;
 
         if maybe_sequence_b.is_none() && template.single_sequence_is_noop(add_special_tokens) {
             return Ok(Encoding::new(sequence_a, None));

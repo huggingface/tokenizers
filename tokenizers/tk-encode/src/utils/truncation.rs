@@ -70,17 +70,17 @@ pub fn truncate_pair(
     mut s1: Vec<PipelineToken>,
     maybe_s2: Option<Vec<PipelineToken>>,
     truncation: &Option<TruncationParams>,
-    num_special_tokens: usize,
+    num_added_special_tokens: usize,
 ) -> Result<(Vec<PipelineToken>, Option<Vec<PipelineToken>>)> {
     let seq_len = s1.len() + maybe_s2.as_ref().map_or(0, Vec::len);
 
     if let Some(truncation) = truncation {
-        let truncate_to_length = truncation.max_length.saturating_sub(num_special_tokens);
+        let truncate_to_length = truncation.max_length.saturating_sub(num_added_special_tokens);
 
         if truncate_to_length == 0 {
             // XXX: maybe we should error out when instantiating the PipelineTokenizer to avoid this
             warn!(
-                "Truncation max_length is too short to include the tokens: `max_length` is {}, the post-processor adds {num_special_tokens} special tokens. Returning an empty sequence",
+                "Truncation max_length is too short to include the tokens: `max_length` is {}, the post-processor adds {num_added_special_tokens} special tokens. Returning an empty sequence",
                 truncation.max_length
             );
             Ok((Vec::new(), maybe_s2.and(Some(Vec::new()))))
