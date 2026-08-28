@@ -41,8 +41,10 @@ pub use crate::utils::onig::SysRegex;
 /// enforced: assert on it if your build cares.
 ///
 /// ```
-/// // Pin the engine your tokenizer outputs were produced with.
-/// assert_eq!(tokenizers::utils::REGEX_BACKEND, "rusty_expressions");
+/// // Pin the engine your tokenizer outputs were produced with, in a build
+/// // that selects it -- this doctest runs under whatever features are on.
+/// let backend = tokenizers::utils::REGEX_BACKEND;
+/// assert!(matches!(backend, "rusty_expressions" | "onig" | "fancy-regex"));
 /// ```
 pub const REGEX_BACKEND: &str = if cfg!(feature = "rusty-expressions") {
     "rusty_expressions"
