@@ -117,6 +117,13 @@ wasm = ["getrandom/wasm_js"]
 unstable_wasm = ["fancy-regex", "wasm"]
 # Oniguruma remade in pure Rust: same engine semantics as `onig`, no C in the
 # build, works on wasm32, and measured faster than libonig.
+#
+# TAKES PRECEDENCE over `onig` and `fancy-regex`. Cargo features are additive,
+# so any crate in the graph enabling this switches the engine for the whole
+# build -- including for someone who explicitly asked for `onig`. Leaving
+# `onig` on as well still compiles and links libonig, and then never calls it.
+# `utils::REGEX_BACKEND` reports which engine a build actually got, and
+# `utils::REGEX_BACKEND_OVERRODE_ONIG` reports this exact situation.
 rusty-expressions = ["dep:rusty_expressions"]
 rustls-tls = ["hf-hub?/rustls-tls"]
 parity-aware-bpe = []

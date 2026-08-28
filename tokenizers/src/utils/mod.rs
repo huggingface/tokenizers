@@ -26,6 +26,40 @@ mod onig;
 #[cfg(all(feature = "onig", not(feature = "rusty-expressions")))]
 pub use crate::utils::onig::SysRegex;
 
+/// Which regex engine this build actually compiled in.
+///
+/// The backend features are resolved by precedence, and Cargo features are
+/// additive: anything anywhere in the dependency graph can switch
+/// `rusty-expressions` on, and it then wins over `onig` and `fancy-regex` for
+/// every crate in that graph. That is a silent change of engine for someone
+/// who asked for a different one, and the regex engine decides how text is
+/// split -- so it is worth being able to ask.
+///
+/// A `compile_error!` would be the loud alternative, but it would also break
+/// any build where a transitive dependency turned the feature on, which is a
+/// legal thing for a dependency to do. So the answer is reported rather than
+/// enforced: assert on it if your build cares.
+///
+/// ```
+/// // Pin the engine your tokenizer outputs were produced with.
+/// assert_eq!(tokenizers::utils::REGEX_BACKEND, "rusty_expressions");
+/// ```
+pub const REGEX_BACKEND: &str = if cfg!(feature = "rusty-expressions") {
+    "rusty_expressions"
+} else if cfg!(feature = "onig") {
+    "onig"
+} else {
+    "fancy-regex"
+};
+
+/// True when `onig` was requested but another backend took precedence.
+///
+/// In this state libonig is still compiled and linked -- the C toolchain cost
+/// is paid -- and then never called. Worth asserting against in CI if you
+/// meant to have dropped one or the other.
+pub const REGEX_BACKEND_OVERRODE_ONIG: bool =
+    cfg!(feature = "onig") && cfg!(feature = "rusty-expressions");
+
 #[cfg(not(any(
     feature = "onig",
     feature = "fancy-regex",
@@ -244,3 +278,28 @@ macro_rules! impl_serde_type{
 
 // Re-export macro_rules_attribute
 pub use macro_rules_attribute::macro_rules_attribute;
+
+#[cfg(test)]
+mod backend_tests {
+    /// The reported backend must be the one actually compiled in.
+    ///
+    /// Cheap insurance that `REGEX_BACKEND` cannot drift away from the `cfg`
+    /// chain above it and start reporting an engine this build does not have.
+    #[test]
+    fn reported_backend_matches_the_compiled_one() {
+        let re = super::SysRegex::new("a+").expect("compiles");
+        assert!(re.find_iter("baaad").next().is_some());
+        let expected = if cfg!(feature = "rusty-expressions") {
+            "rusty_expressions"
+        } else if cfg!(feature = "onig") {
+            "onig"
+        } else {
+            "fancy-regex"
+        };
+        assert_eq!(super::REGEX_BACKEND, expected);
+        assert_eq!(
+            super::REGEX_BACKEND_OVERRODE_ONIG,
+            cfg!(feature = "onig") && cfg!(feature = "rusty-expressions")
+        );
+    }
+}
