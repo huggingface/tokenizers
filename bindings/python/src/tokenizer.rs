@@ -1263,7 +1263,7 @@ impl PyTokenizer {
         let fut = py.detach(|| async move {
             rt.spawn_blocking(move || {
                 tokenizer
-                    .encode(input, add_special_tokens)
+                    .encode_char_offsets(input, add_special_tokens)
                     .map(PyEncoding::from)
             })
             .await

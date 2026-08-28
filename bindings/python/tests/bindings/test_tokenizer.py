@@ -6,8 +6,8 @@ import numpy as np
 import asyncio
 from tokenizers import AddedToken, Encoding, Tokenizer, decoders
 from tokenizers.implementations import BertWordPieceTokenizer
-from tokenizers.models import BPE, Model, Unigram
-from tokenizers.pre_tokenizers import ByteLevel, Metaspace
+from tokenizers.models import BPE, Model, Unigram, WordLevel
+from tokenizers.pre_tokenizers import ByteLevel, Metaspace, Whitespace
 from tokenizers.processors import RobertaProcessing, TemplateProcessing
 from tokenizers.normalizers import Strip, Lowercase, Sequence
 from tokenizers.normalizers import ByteLevel as NormalizerByteLevel
@@ -98,6 +98,17 @@ class TestTokenizer:
         assert tokenizer.post_processor is None
         assert tokenizer.decoder is None
         assert isinstance(pickle.loads(pickle.dumps(Tokenizer(BPE()))), Tokenizer)
+
+    @pytest.mark.asyncio
+    async def test_async_encode_char_offsets(self):
+        tokenizer = Tokenizer(WordLevel({"é": 0, "a": 1, "[UNK]": 2}, unk_token="[UNK]"))
+        tokenizer.pre_tokenizer = Whitespace()
+
+        sync_encoding = tokenizer.encode("é a", add_special_tokens=False)
+        async_encoding = await tokenizer.async_encode("é a", add_special_tokens=False)
+
+        assert sync_encoding.offsets == [(0, 1), (2, 3)]
+        assert async_encoding.offsets == sync_encoding.offsets
 
     def test_add_tokens(self):
         tokenizer = Tokenizer(BPE())
