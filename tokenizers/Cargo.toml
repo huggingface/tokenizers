@@ -75,7 +75,7 @@ rand = "0.9"
 onig = { version = "6.5.1", default-features = false, optional = true }
 # `default-features = false`: rusty_expressions installs a #[global_allocator]
 # under its default feature, and a library must never impose one on consumers.
-rusty_expressions = { version = "0.1", default-features = false, optional = true }
+rusty_expressions = { version = "0.2", default-features = false, optional = true }
 regex = "1.10"
 regex-syntax = "0.8"
 rayon = "1.10"
