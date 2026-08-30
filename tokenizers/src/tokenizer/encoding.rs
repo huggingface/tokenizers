@@ -135,12 +135,13 @@ impl Encoding {
     }
 
     pub fn get_sequence_ids(&self) -> Vec<Option<usize>> {
+        if self.sequence_ranges.is_empty() {
+            return vec![Some(0); self.len()];
+        }
+
         let mut sequences = vec![None; self.len()];
-        for seq_id in 0..self.n_sequences() {
-            if let Some(range) = self.sequence_range(seq_id) {
-                let seq_len = range.len();
-                sequences.splice(range, std::iter::repeat_n(Some(seq_id), seq_len));
-            }
+        for (seq_id, range) in &self.sequence_ranges {
+            sequences[range.clone()].fill(Some(*seq_id));
         }
         sequences
     }
@@ -626,6 +627,17 @@ mod tests {
         assert_eq!(encoding.word_to_chars(0, 1), None);
         assert_eq!(encoding.char_to_token(0, 1), None);
         assert_eq!(encoding.char_to_word(0, 1), None);
+    }
+
+    #[test]
+    fn sequence_ids_support_non_dense_ids() {
+        let mut encoding = Encoding {
+            ids: vec![1, 2],
+            ..Default::default()
+        };
+        encoding.set_sequence_id(5);
+
+        assert_eq!(encoding.get_sequence_ids(), vec![Some(5), Some(5)]);
     }
 
     #[test]

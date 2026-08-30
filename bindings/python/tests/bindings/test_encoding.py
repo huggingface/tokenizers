@@ -1,8 +1,21 @@
 import pytest
 
-from tokenizers import BertWordPieceTokenizer
+from tokenizers import BertWordPieceTokenizer, Tokenizer
+from tokenizers.models import WordLevel
+from tokenizers.pre_tokenizers import Whitespace
 
 from ..utils import bert_files, data_dir
+
+
+def test_sequence_ids_support_non_dense_ids():
+    tokenizer = Tokenizer(WordLevel({"[UNK]": 0, "a": 1, "b": 2}, unk_token="[UNK]"))
+    tokenizer.pre_tokenizer = Whitespace()
+    encoding = tokenizer.encode("a b")
+    encoding.set_sequence_id(5)
+
+    assert encoding.token_to_sequence(0) == 5
+    assert encoding.word_to_tokens(0, 5) == (0, 1)
+    assert encoding.sequence_ids == [5, 5]
 
 
 @pytest.mark.network
