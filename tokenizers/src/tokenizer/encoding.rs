@@ -119,6 +119,7 @@ impl Encoding {
 
     /// Set the given sequence id for the whole range of tokens contained in this Encoding
     pub fn set_sequence_id(&mut self, sequence_id: usize) {
+        self.sequence_ranges.clear();
         self.sequence_ranges.insert(sequence_id, 0..self.len());
     }
 
@@ -630,14 +631,19 @@ mod tests {
     }
 
     #[test]
-    fn sequence_ids_support_non_dense_ids() {
+    fn set_sequence_id_replaces_previous_id() {
         let mut encoding = Encoding {
             ids: vec![1, 2],
             ..Default::default()
         };
         encoding.set_sequence_id(5);
+        encoding.set_sequence_id(6);
 
-        assert_eq!(encoding.get_sequence_ids(), vec![Some(5), Some(5)]);
+        assert_eq!(encoding.n_sequences(), 1);
+        assert_eq!(encoding.sequence_range(5), None);
+        assert_eq!(encoding.sequence_range(6), Some(0..2));
+        assert_eq!(encoding.token_to_sequence(0), Some(6));
+        assert_eq!(encoding.get_sequence_ids(), vec![Some(6), Some(6)]);
     }
 
     #[test]
