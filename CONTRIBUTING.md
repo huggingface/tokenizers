@@ -184,8 +184,8 @@ rather than the in-tree `Tokenizer` object model, which this rc doesn't ship
 
 Those checks link the released crate, so they live behind the `bench-baseline`
 feature and a plain `cargo test` skips them. One test per model (`gpt2`,
-`bert_base_uncased`, `t5_base`, `albert_base_v1`); `make oracle` fetches each
-model's fixture, then runs them all:
+`bert_base_uncased`, `t5_base`, `albert_base_v1`, `llama_3_2_1b`); `make oracle`
+fetches each model's fixture, then runs them all:
 
 ```bash
 cd tokenizers

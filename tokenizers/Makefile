@@ -15,7 +15,10 @@ HF ?= hf
 # already have. Together those two facts silently pinned one developer's digests to a stale
 # `llama-2.json` and produced four spurious drifts on any fresh checkout. Bump this deliberately,
 # and re-record the digests in the same commit.
-HF_REVISION ?= e20ac5914f5ada06874e4f9d45e49b31a049904e
+#
+# Bumped for fixtures/models/llama-3.2-1b.json (hf-internal-testing/tokenizers-test-data#10):
+# meta-llama/Llama-3.2-1B is gated, so its tokenizer.json is mirrored there instead of fetched live.
+HF_REVISION ?= 54d012f11a4911b797aa6ef2dffc0fb67cbc7619
 
 $(DATA_DIR)/% :
 	$(dir_guard)
@@ -26,9 +29,9 @@ SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2.json $(DATA_DIR)
 # SHARED_RESOURCES, plus the Japanese corpus decode uses and the config encode profiles.
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/deepseek-v4.json
 TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json
-# tk-convert/tests/oracle.rs's four MODELS, named directly rather than built from
+# tk-convert/tests/oracle.rs's five models, named directly rather than built from
 # SHARED_RESOURCES: `make oracle` should fetch only what oracle.rs reads.
-ORACLE_RESOURCES = $(DATA_DIR)/gpt2.json $(DATA_DIR)/bert-base-uncased.json $(DATA_DIR)/t5-base.json $(DATA_DIR)/albert-base-v1-tokenizer.json
+ORACLE_RESOURCES = $(DATA_DIR)/gpt2.json $(DATA_DIR)/bert-base-uncased.json $(DATA_DIR)/t5-base.json $(DATA_DIR)/albert-base-v1-tokenizer.json $(DATA_DIR)/fixtures/models/llama-3.2-1b.json
 
 # Every file the tests and benches read: corpora, vocabs, tokenizer configs.
 .PHONY : data

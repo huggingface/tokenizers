@@ -6,7 +6,9 @@
 //! grades its own homework.
 //!
 //! One test per model, covering the three shapes the conversion has to handle: byte-level BPE
-//! (gpt2), WordPiece (bert-base-uncased), and SentencePiece Unigram (t5-base, albert-base-v1).
+//! (gpt2, llama-3.2-1b), WordPiece (bert-base-uncased), and SentencePiece Unigram (t5-base,
+//! albert-base-v1). `meta-llama/Llama-3.2-1B` is gated, so its fixture is a mirrored copy
+//! (hf-internal-testing/tokenizers-test-data#10) rather than the Hub repo itself.
 //!
 //! Decode is fed the release's *own* ids, so it is judged on decode alone even where encode
 //! legitimately diverges.
@@ -103,4 +105,12 @@ fn t5_base() {
 #[test]
 fn albert_base_v1() {
     assert_matches_released("albert-base-v1", "albert-base-v1-tokenizer.json");
+}
+
+#[test]
+fn llama_3_2_1b() {
+    assert_matches_released(
+        "meta-llama/Llama-3.2-1B",
+        "fixtures/models/llama-3.2-1b.json",
+    );
 }

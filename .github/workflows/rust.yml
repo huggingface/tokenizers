@@ -85,7 +85,7 @@ jobs:
         shell: bash
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision e20ac5914f5ada06874e4f9d45e49b31a049904e --local-dir data
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision 54d012f11a4911b797aa6ef2dffc0fb67cbc7619 --local-dir data
 
       # Windows runs lib + doc tests only. bash so the step fails on the first
       # failing command. The default pwsh only propagates the last command's
@@ -274,7 +274,7 @@ jobs:
         shell: bash
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision e20ac5914f5ada06874e4f9d45e49b31a049904e --local-dir data
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision 54d012f11a4911b797aa6ef2dffc0fb67cbc7619 --local-dir data
 
       - name: Install cargo-hack
         uses: taiki-e/install-action@cargo-hack
