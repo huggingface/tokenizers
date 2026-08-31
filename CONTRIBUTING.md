@@ -177,20 +177,25 @@ samply record python my_script.py
 
 ### PipelineTokenizer oracle tests
 
-`PipelineTokenizer` (in `tk-encode`) is an experimental reimplementation of the
-encode/decode pipeline. It is checked for parity against the latest *released*
-`tokenizers` crate — same token ids on encode, same decoded string — rather than
-the in-tree `Tokenizer`, which is being retired.
+`PipelineTokenizer` (in `tk-encode`) is checked for parity against the latest
+*released* `tokenizers` crate: same token ids on encode, same decoded string,
+rather than the in-tree `Tokenizer` object model, which this rc doesn't ship
+(see `REQUIRED_FOR_V1.md`).
 
 Those checks link the released crate, so they live behind the `bench-baseline`
-feature and a plain `cargo test` skips them. Fetch the corpora and model
-tokenizers, then run with the feature:
+feature and a plain `cargo test` skips them. One test per model (`gpt2`,
+`bert_base_uncased`, `t5_base`, `albert_base_v1`); `make oracle` fetches each
+model's fixture, then runs them all:
 
 ```bash
 cd tokenizers
-make fixtures   # needs HF_TOKEN
+make oracle   # needs HF_TOKEN
+```
 
-cargo test -p tk-convert --features bench-baseline --test oracle
+Run one model directly once its fixture is there:
+
+```bash
+cargo test -p tk-convert --features bench-baseline --test oracle gpt2
 ```
 
 CI runs it in the **rust** workflow (`.github/workflows/rust.yml`).
