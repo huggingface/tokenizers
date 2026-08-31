@@ -1,26 +1,28 @@
 //! The pipeline must encode and decode exactly like the latest *released* `tokenizers`.
 //!
-//! Each model is fetched from the Hub, converted by this crate, and read back by the canonical
-//! reader -- the pairing tk-convert exists to make work. The release is the oracle, so nothing in
-//! this tree grades its own homework. `hf-hub` caches, so only the first run is online.
+//! Each model's `tokenizer.json` is a fixture pinned in `hf-internal-testing/tokenizers-test-data`
+//! (`make oracle` fetches them), converted by this crate, and read back by the canonical reader --
+//! the pairing tk-convert exists to make work. The release is the oracle, so nothing in this tree
+//! grades its own homework.
 //!
 //! Decode is fed the release's *own* ids, so it is judged on decode alone even where encode
 //! legitimately diverges.
 //!
-//!   cargo test -p tk-convert --features bench-baseline --test oracle
+//!   make oracle
 
 #![cfg(feature = "bench-baseline")]
 
 use tokenizers_release::Tokenizer as Released;
 
-/// Byte-level BPE, WordPiece, and SentencePiece Unigram -- the three shapes the conversion has to
-/// handle.
-const MODELS: &[&str] = &[
-    "gpt2",
-    "bert-base-uncased",
-    "t5-base",
-    "albert-base-v1",
-    "meta-llama/Llama-3.2-1B",
+const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data");
+
+/// (Hub repo, its `tokenizer.json` fixture) pairs, covering the three shapes the conversion has
+/// to handle: byte-level BPE, WordPiece, and SentencePiece Unigram.
+const MODELS: &[(&str, &str)] = &[
+    ("gpt2", "gpt2.json"),
+    ("bert-base-uncased", "bert-base-uncased.json"),
+    ("t5-base", "t5-base.json"),
+    ("albert-base-v1", "albert-base-v1-tokenizer.json"),
 ];
 
 /// One line per script the old fixture corpora covered, plus the two modalities that stress the
@@ -44,16 +46,8 @@ const TEXTS: &[&str] = &[
 #[test]
 fn matches_the_released_crate() {
     let mut diverged = Vec::new();
-    for &repo in MODELS {
-        let path = match hf_hub::api::sync::Api::new()
-            .and_then(|api| api.model(repo.to_string()).get("tokenizer.json"))
-        {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("skip {repo}: cannot fetch tokenizer.json ({e})");
-                continue;
-            }
-        };
+    for &(repo, file) in MODELS {
+        let path = format!("{DATA}/{file}");
         let canonical = tk_convert::canonicalize_file(&path)
             .unwrap_or_else(|e| panic!("{repo}: this pass refuses it: {e}"));
         // A refusal here is the regression this oracle exists to catch, so it fails, not skips.

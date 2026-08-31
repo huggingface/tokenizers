@@ -7,6 +7,8 @@ SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2-merges.txt $(DAT
 # SHARED_RESOURCES, plus the Japanese corpus decode uses and the config encode profiles.
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/deepseek-v4.json
 TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json $(DATA_DIR)/fixtures/modalities/agentic-traces.txt
+# tk-convert/tests/oracle.rs's models: gpt2 and albert-base-v1 are already in SHARED_RESOURCES.
+ORACLE_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/bert-base-uncased.json $(DATA_DIR)/t5-base.json
 
 # One language per encode regime (script structure × vocab coverage), not one per
 # script: eng is the vocab-native anchor, rus the 2-byte European alphabet, arb the
@@ -43,6 +45,12 @@ lint :
 test : $(TESTS_RESOURCES)
 	cargo test --workspace
 
+# Checks the pipeline against the latest released `tokenizers` crate, on fixtures pinned to
+# HF_REVISION rather than each model's live `main` (see the pin note on HF_REVISION below).
+.PHONY : oracle
+oracle : $(ORACLE_RESOURCES)
+	cargo test -p tk-convert --features bench-baseline --test oracle
+
 .PHONY : doc
 doc :
 	cargo doc --workspace
@@ -55,7 +63,7 @@ publish :
 MODEL_FEATURES = bpe,unigram,wordpiece,wordlevel,normalizers
 
 .PHONY : all-checks
-all-checks : lint test doc feature-matrix
+all-checks : lint test doc feature-matrix oracle
 
 # Compile, lint and test tk-encode under each meaningful feature combination.
 #
