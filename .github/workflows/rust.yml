@@ -30,6 +30,12 @@ jobs:
         with:
           workspaces: tokenizers
           shared-key: rust-build
+          # Skip caching ~/.cargo/bin — earlier runs left a stale
+          # rustup-init binary masquerading as `cargo`, breaking the
+          # build step on macOS. The cargo toolchain is reinstalled by
+          # dtolnay/rust-toolchain each run anyway, so caching it adds
+          # risk without speedup.
+          cache-bin: false
 
       - name: Build
         run: cargo build --workspace --all-targets --verbose
@@ -52,20 +58,23 @@ jobs:
       - name: Run tests
         if: matrix.os != 'windows-latest'
         shell: bash
-        run: make test
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make test HF="uvx --from huggingface_hub hf"
 
-      # The only gate that checks the slim reader against an *independent* implementation: both
-      # oracles encode/decode through `tk_serialize::from_json` and compare against the released
-      # `tokenizers` crate. They sit behind `bench-baseline` because that pulls the released crate in
-      # as a dependency, which means `cargo test --workspace` skips them -- so they need their own
-      # step or the guarantee is not actually being checked. 16 tests.
-      - name: Run the release-crate id oracles
+      # The only gate that checks the slim reader against an *independent* implementation: one test
+      # per model encodes/decodes through `tk_serialize::from_json` and compares against the
+      # released `tokenizers` crate. It sits behind `bench-baseline` because that pulls the released
+      # crate in as a dependency, which means `cargo test --workspace` skips it -- so it needs its
+      # own step or the guarantee is not actually being checked. `make oracle` fetches its fixtures
+      # first; the raw `cargo test` this used to run skipped that and only worked because those
+      # fixtures came from a live Hub fetch at the time.
+      - name: Run the release-crate oracle
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          cargo test -p tk-convert --features bench-baseline --test oracle
+        run: make oracle HF="uvx --from huggingface_hub hf"
 
       # Windows skips the integration tests and the full fixture set, but the
       # tk-encode lib tests load these two tokenizer files and fail without
@@ -76,7 +85,7 @@ jobs:
         shell: bash
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision e20ac5914f5ada06874e4f9d45e49b31a049904e --local-dir data
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision 54d012f11a4911b797aa6ef2dffc0fb67cbc7619 --local-dir data
 
       # Windows runs lib + doc tests only. bash so the step fails on the first
       # failing command. The default pwsh only propagates the last command's
@@ -85,8 +94,8 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          cargo test --workspace --verbose --lib
-          cargo test --workspace --verbose --doc
+          cargo test --workspace --verbose --lib --no-fail-fast
+          cargo test --workspace --verbose --doc --no-fail-fast
 
   # Matrixed so platform-specific cfg gates and target-specific lints get coverage.
   clippy:
@@ -111,64 +120,11 @@ jobs:
         uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
           workspaces: tokenizers
-          # Skip caching ~/.cargo/bin — earlier runs left a stale
-          # rustup-init binary masquerading as `cargo`, breaking the
-          # build step on macOS. The cargo toolchain is reinstalled by
-          # dtolnay/rust-toolchain each run anyway, so caching it adds
-          # risk without speedup.
-          cache-bin: false
-
-      - name: Install cargo-readme for Ubuntu
-        if: matrix.os == 'ubuntu-latest'
-        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
-        with:
-          tool: cargo-readme
-
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
-        with:
-          tool: cargo-audit
-
-      - name: Build
-        run: cargo build --all-targets --verbose --manifest-path ./tokenizers/Cargo.toml
-
-      # RustFmt is OS-invariant — gate to the canonical OS.
-      # Clippy and Audit run on every matrix cell so platform-specific
-      # cfg gates and target-specific lints get coverage.
-      - name: Lint with RustFmt
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo fmt --manifest-path ./tokenizers/Cargo.toml -- --check
-
-      - name: Lint Benchmarks with RustFmt
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo fmt --manifest-path ./tokenizers/Cargo.toml -- ./tokenizers/benches/bpe_benchmark.rs --check
+          shared-key: rust-build
 
       - name: Lint with Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      # Test fixtures are immutable — cache them so CI doesn't re-download
-      # from the Hub (and get rate-limited) on every run.
-      - name: Cache HF test data
-        if: matrix.os != 'windows-latest'
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
-        with:
-          path: tokenizers/data
-          key: hf-test-data-${{ hashFiles('tokenizers/Makefile') }}
-          restore-keys: hf-test-data-
-
-      # Provides `uvx`, used to run the huggingface_hub CLI that downloads
-      # test fixtures (see the Makefile) without a separate install step.
-      - name: Install uv
-        if: matrix.os != 'windows-latest'
-        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
-
-      - name: Run Tests
-        if: matrix.os != 'windows-latest'
-        shell: bash
-        working-directory: ./tokenizers
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: make test HF="uvx --from huggingface_hub hf"
   format:
     name: Format
     runs-on: ubuntu-latest
@@ -318,7 +274,7 @@ jobs:
         shell: bash
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision e20ac5914f5ada06874e4f9d45e49b31a049904e --local-dir data
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision 54d012f11a4911b797aa6ef2dffc0fb67cbc7619 --local-dir data
 
       - name: Install cargo-hack
         uses: taiki-e/install-action@cargo-hack
