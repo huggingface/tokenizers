@@ -94,8 +94,8 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          cargo test --workspace --verbose --lib
-          cargo test --workspace --verbose --doc
+          cargo test --workspace --verbose --lib --no-fail-fast
+          cargo test --workspace --verbose --doc --no-fail-fast
 
   # Matrixed so platform-specific cfg gates and target-specific lints get coverage.
   clippy:
