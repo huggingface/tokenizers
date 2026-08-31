@@ -58,7 +58,7 @@ lint :
 
 .PHONY : test
 test : $(TESTS_RESOURCES)
-	cargo test --workspace
+	cargo test --workspace --no-fail-fast
 
 # Checks the pipeline against the latest released `tokenizers` crate, on fixtures pinned to
 # HF_REVISION rather than each model's live `main` (see the pin note on HF_REVISION above).
