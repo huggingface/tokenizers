@@ -269,7 +269,10 @@ fn canonicalize_component(node: &mut Value) -> Result<(), ConvertError> {
 /// - `add_prefix_space: false` is checked against the *defaulted* scheme, so it is an error unless
 ///   `prepend_scheme: "never"` is spelled beside it;
 /// - `str_rep` is thrown away.
-fn canonicalize_metaspace(obj: &mut Map<String, Value>) -> Result<(), ConvertError> {
+///
+/// Returns the `prepend_scheme` it settled on, so the pre-tokenizer case does not have to read it
+/// back out and re-check it.
+fn canonicalize_metaspace(obj: &mut Map<String, Value>) -> Result<String, ConvertError> {
     // Filter null, not plain `get`: an explicit null means "not spelled", as `get_some` does.
     let declared = obj
         .get("prepend_scheme")
@@ -305,13 +308,13 @@ fn canonicalize_metaspace(obj: &mut Map<String, Value>) -> Result<(), ConvertErr
         }
     }
 
-    obj.insert("prepend_scheme".to_string(), Value::String(scheme));
+    obj.insert("prepend_scheme".to_string(), Value::String(scheme.clone()));
     obj.remove("add_prefix_space");
     obj.remove("str_rep");
     // Only the pre-tokenizer form had `split`, and that form is lowered away. What is left is a
     // decoder, which the canonical writer spells as `{type, replacement, prepend_scheme}`.
     obj.remove("split");
-    Ok(())
+    Ok(scheme)
 }
 
 /// `serde_json` has no public name for a `Value`'s variant.
@@ -373,25 +376,19 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
     // Reuse the field normalisation written for the decoder case, so the `add_prefix_space` quirk
     // is applied in exactly one place.
     let mut metaspace = metaspace;
-    canonicalize_metaspace(&mut metaspace)?;
+    let prepend = canonicalize_metaspace(&mut metaspace)?;
 
     let replacement = metaspace
         .get("replacement")
         .and_then(Value::as_str)
         .ok_or(ConvertError::MetaspaceNoReplacement)?
         .to_string();
-    let prepend = match metaspace.get("prepend_scheme").and_then(Value::as_str) {
-        Some("always") => true,
-        Some("never") => false,
-        // No canonical spelling: the pipeline applies a normalizer per segment and cannot know it
-        // is the first. See the `TODO(v1)` in tk-serialize's `from_json::pre_tokenizers`.
-        Some("first") => return Err(ConvertError::MetaspacePrependSchemeFirst),
-        other => {
-            return Err(ConvertError::UnknownPrependScheme {
-                scheme: other.unwrap_or_default().to_string(),
-            });
-        }
-    };
+    // No canonical spelling yet. `MetaspaceNormalizer` can now prepend on the first chunk only,
+    // but the parallel encoder re-slices every chunk from offset zero, so each one would look
+    // like the first one and get a delimiter.
+    if prepend == "first" {
+        return Err(ConvertError::MetaspacePrependSchemeFirst);
+    }
 
     append_normalizer(
         root,
@@ -399,7 +396,7 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
             "MetaspaceNormalizer",
             &[
                 ("replacement", Value::String(replacement.clone())),
-                ("prepend", Value::Bool(prepend)),
+                ("prepend", Value::String(prepend)),
                 ("drop_whitespace", Value::Bool(drop_whitespace)),
             ],
         ),

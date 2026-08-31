@@ -15,7 +15,7 @@ impl Prepend {
 }
 
 impl pipeline::Normalizer for Prepend {
-    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, _is_first_chunk: bool) -> Result<Cow<'a, str>> {
         if input.is_empty() || self.prepend.is_empty() {
             return Ok(Cow::Borrowed(input));
         }
@@ -38,7 +38,7 @@ mod tests {
         let n = Prepend::new("\u{2581}".to_string());
         for (input, expected) in [("Hello", "▁Hello"), ("world", "▁world"), ("", "")] {
             assert_eq!(
-                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
+                &*pipeline::Normalizer::normalize(&n, input, true).unwrap(),
                 expected,
                 "input={input:?}"
             );

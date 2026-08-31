@@ -655,8 +655,12 @@ impl PipelineTokenizer {
                 Segment::SpecialToken(token) => {
                     output.push(PipelineToken::from(token));
                 }
-                Segment::Text { text: chunk, .. } => {
-                    let normalized = normalize_all(&self.inner.normalizers, chunk)?;
+                Segment::Text {
+                    text: chunk,
+                    input_offset,
+                } => {
+                    let normalized =
+                        normalize_all(&self.inner.normalizers, chunk, input_offset == 0)?;
 
                     // Extract special tokens from the normalized input
                     for segment in
