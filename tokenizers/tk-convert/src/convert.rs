@@ -49,13 +49,13 @@ pub enum ConvertError {
     #[error("a `Metaspace` `replacement` must be exactly one character, got {got:?}")]
     MetaspaceBadReplacement { got: String },
 
-    #[error(
-        "a `Metaspace` pre-tokenizer with `prepend_scheme: first` has no canonical spelling yet"
-    )]
-    MetaspacePrependSchemeFirst,
-
     #[error("a `Metaspace` pre-tokenizer with `split: false` has no canonical spelling")]
     MetaspaceNoSplit,
+
+    #[error(
+        "a `Sequence[WhitespaceSplit, Metaspace]` with `prepend_scheme: {scheme}` is not supported"
+    )]
+    MetaspaceDropWhitespaceScheme { scheme: String },
 
     #[error("a `ByteLevel` pre-tokenizer with `add_prefix_space: true` is not supported")]
     ByteLevelAddPrefixSpace,
@@ -378,17 +378,15 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
     let mut metaspace = metaspace;
     let prepend = canonicalize_metaspace(&mut metaspace)?;
 
+    if drop_whitespace && prepend != "always" {
+        return Err(ConvertError::MetaspaceDropWhitespaceScheme { scheme: prepend });
+    }
+
     let replacement = metaspace
         .get("replacement")
         .and_then(Value::as_str)
         .ok_or(ConvertError::MetaspaceNoReplacement)?
         .to_string();
-    // No canonical spelling yet. `MetaspaceNormalizer` can now prepend on the first chunk only,
-    // but the parallel encoder re-slices every chunk from offset zero, so each one would look
-    // like the first one and get a delimiter.
-    if prepend == "first" {
-        return Err(ConvertError::MetaspacePrependSchemeFirst);
-    }
 
     append_normalizer(
         root,

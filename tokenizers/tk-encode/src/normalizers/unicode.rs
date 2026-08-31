@@ -10,7 +10,7 @@ use unicode_normalization::{
 #[derive(Default, Copy, Clone, Debug)]
 pub struct NFD;
 impl pipeline::Normalizer for NFD {
-    fn normalize<'a>(&self, input: &'a str, _is_first_chunk: bool) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, _is_sequence_start: bool) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfd_quick(input.chars()) {
             Ok(input.into())
         } else {
@@ -22,7 +22,7 @@ impl pipeline::Normalizer for NFD {
 #[derive(Default, Copy, Clone, Debug)]
 pub struct NFKD;
 impl pipeline::Normalizer for NFKD {
-    fn normalize<'a>(&self, input: &'a str, _is_first_chunk: bool) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, _is_sequence_start: bool) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfkd_quick(input.chars()) {
             Ok(input.into())
         } else {
@@ -34,7 +34,7 @@ impl pipeline::Normalizer for NFKD {
 #[derive(Default, Copy, Clone, Debug)]
 pub struct NFC;
 impl pipeline::Normalizer for NFC {
-    fn normalize<'a>(&self, input: &'a str, _is_first_chunk: bool) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, _is_sequence_start: bool) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfc_quick(input.chars()) {
             Ok(input.into())
         } else {
@@ -46,7 +46,7 @@ impl pipeline::Normalizer for NFC {
 #[derive(Default, Copy, Clone, Debug)]
 pub struct NFKC;
 impl pipeline::Normalizer for NFKC {
-    fn normalize<'a>(&self, input: &'a str, _is_first_chunk: bool) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, _is_sequence_start: bool) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfkc_quick(input.chars()) {
             Ok(input.into())
         } else {
@@ -90,7 +90,7 @@ fn nmt_to_space(c: char) -> char {
 pub struct Nmt;
 
 impl pipeline::Normalizer for Nmt {
-    fn normalize<'a>(&self, input: &'a str, _is_first_chunk: bool) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, _is_sequence_start: bool) -> Result<Cow<'a, str>> {
         if input
             .chars()
             .any(|c| nmt_removes(c) || nmt_to_space(c) != c)

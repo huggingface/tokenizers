@@ -158,8 +158,11 @@ impl EncodeBatch {
                         Seq::B => s2,
                     },
                 };
-                self.tokenizer
-                    .encode_sequence_with(&input[chunk.range.clone()], scratch)
+                self.tokenizer.encode_sequence_with(
+                    &input[chunk.range.clone()],
+                    chunk.range.start == 0,
+                    scratch,
+                )
             }))
             .unwrap_or_else(|_| Err("encode worker panicked".into()));
             // SAFETY: no two threads can share the same chunk because each chunk is owned by

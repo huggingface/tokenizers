@@ -201,6 +201,19 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
                            "behavior": "MergedWithNext", "invert": false})
     );
 
+    // All three schemes carry through by name. `first` is the pre-Tekken Mistral spelling, and it
+    // survives because the normalizer is told whether its text opens the sequence.
+    for scheme in ["always", "first", "never"] {
+        let v = done(
+            BPE,
+            &format!(
+                r#", "pre_tokenizer": {{"type": "Metaspace", "replacement": "▁",
+                     "prepend_scheme": "{scheme}"}}"#
+            ),
+        );
+        assert_eq!(v["normalizer"]["prepend"], scheme);
+    }
+
     // The t5/albert pair: the `WhitespaceSplit` was never a component, it was `drop_whitespace`.
     let v = done(
         BPE,
@@ -209,6 +222,24 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
     );
     assert_eq!(v["normalizer"]["drop_whitespace"], true);
     assert_eq!(v["pre_tokenizer"]["type"], "Split");
+
+    // That pair only works under `always`. With the whitespace gone the delimiter is the only cut
+    // left, so under `first` or `never` the words run together into one span where the released
+    // crate keeps one per word. Refused rather than converted into different ids.
+    for scheme in ["first", "never"] {
+        let e = err(
+            BPE,
+            &format!(
+                r#", "pre_tokenizer": {{"type": "Sequence", "pretokenizers": [
+                     {{"type": "WhitespaceSplit"}},
+                     {{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "{scheme}"}}]}}"#
+            ),
+        );
+        assert!(
+            e.contains(&format!("with `prepend_scheme: {scheme}` is not supported")),
+            "{scheme}: {e}"
+        );
+    }
 
     // The delimiter half lands *after* a declared normalizer -- the order the old reader applied,
     // and the one the added-token matcher depends on.

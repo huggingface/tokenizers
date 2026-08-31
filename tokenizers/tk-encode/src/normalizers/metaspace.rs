@@ -67,7 +67,7 @@ impl MetaspaceNormalizer {
 }
 
 impl pipeline::Normalizer for MetaspaceNormalizer {
-    fn normalize<'a>(&self, input: &'a str, is_first_chunk: bool) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, is_sequence_start: bool) -> Result<Cow<'a, str>> {
         // Return empty input as is
         if input.is_empty() {
             return Ok(Cow::Borrowed(input));
@@ -75,24 +75,28 @@ impl pipeline::Normalizer for MetaspaceNormalizer {
         // The delimiter is 3 bytes where a space is 1, so the rewrite grows by 2 bytes per space, hence we allocate a bit more space
         let mut rewritten = String::with_capacity(input.len() + input.len() / 2);
         if self.drop_whitespace {
+            let mut opens_the_sequence =
+                is_sequence_start && !input.starts_with(char::is_whitespace);
             for word in input.split_whitespace() {
-                if !word.starts_with(self.delimiter) {
-                    match self.prepend {
-                        PrependBehavior::Always => rewritten.push(self.delimiter),
-                        PrependBehavior::First if is_first_chunk => rewritten.push(self.delimiter),
-                        _ => {}
-                    }
+                let prepend = match self.prepend {
+                    PrependBehavior::Always => true,
+                    PrependBehavior::First => opens_the_sequence,
+                    PrependBehavior::Never => false,
+                };
+                if prepend && !word.starts_with(self.delimiter) {
+                    rewritten.push(self.delimiter);
                 }
+                opens_the_sequence = false;
                 rewritten.push_str(word);
             }
         } else {
-            // Prepend the delimiter if self.prepend is true
-            if !input.starts_with(' ') && !input.starts_with(self.delimiter) {
-                match self.prepend {
-                    PrependBehavior::Always => rewritten.push(self.delimiter),
-                    PrependBehavior::First if is_first_chunk => rewritten.push(self.delimiter),
-                    _ => {}
-                }
+            let prepend = match self.prepend {
+                PrependBehavior::Always => true,
+                PrependBehavior::First => is_sequence_start,
+                PrependBehavior::Never => false,
+            };
+            if prepend && !input.starts_with(' ') && !input.starts_with(self.delimiter) {
+                rewritten.push(self.delimiter);
             }
             // Only spaces become delimiters; tabs and newlines are left alone
             let mut rest = input;
@@ -104,5 +108,51 @@ impl pipeline::Normalizer for MetaspaceNormalizer {
             rewritten.push_str(rest);
         }
         Ok(Cow::Owned(rewritten))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tokenizer::pipeline::Normalizer as _;
+
+    /// `(prepend, drop_whitespace, is_sequence_start, input, output)`.
+    ///
+    /// Every expectation is where the released `tokenizers` 0.23.1 puts the delimiter, read off a
+    /// `Metaspace` pre-tokenizer (and a `Sequence[WhitespaceSplit, Metaspace]` for the
+    /// `drop_whitespace` rows) and written out as the one string this normalizer produces.
+    #[rustfmt::skip]
+    const CASES: &[(PrependBehavior, bool, bool, &str, &str)] = &[
+        (PrependBehavior::Always, false, true,  "aa bb cc",   "▁aa▁bb▁cc"),
+        (PrependBehavior::Always, false, true,  " aa bb",     "▁aa▁bb"),
+        (PrependBehavior::Always, false, true,  "aa\tbb  cc", "▁aa\tbb▁▁cc"),
+        (PrependBehavior::Never,  false, true,  "aa bb cc",   "aa▁bb▁cc"),
+        (PrependBehavior::Never,  false, true,  " aa bb",     "▁aa▁bb"),
+        // `First` at the start of the sequence is `Always` for the first word and `Never` after it.
+        (PrependBehavior::First,  false, true,  "aa bb cc",   "▁aa▁bb▁cc"),
+        (PrependBehavior::First,  false, false, "aa bb cc",   "aa▁bb▁cc"),
+        (PrependBehavior::First,  false, true,  " aa bb",     "▁aa▁bb"),
+
+        (PrependBehavior::Always, true,  true,  "aa bb cc",   "▁aa▁bb▁cc"),
+        (PrependBehavior::Always, true,  true,  "aa\tbb  cc", "▁aa▁bb▁cc"),
+        (PrependBehavior::Never,  true,  true,  "aa bb cc",   "aabbcc"),
+        // Only the word that opens the sequence, and a sequence opening with whitespace has none:
+        // `WhitespaceSplit` removes it, which moves the first word off byte zero.
+        (PrependBehavior::First,  true,  true,  "aa bb cc",   "▁aabbcc"),
+        (PrependBehavior::First,  true,  false, "aa bb cc",   "aabbcc"),
+        (PrependBehavior::First,  true,  true,  " aa bb",     "aabb"),
+    ];
+
+    #[test]
+    fn the_delimiter_lands_where_the_released_crate_puts_it() {
+        for (prepend, drop_whitespace, is_sequence_start, input, expected) in CASES {
+            let normalizer = MetaspaceNormalizer::new('▁', *prepend, *drop_whitespace);
+            assert_eq!(
+                normalizer.normalize(input, *is_sequence_start).unwrap(),
+                *expected,
+                "{prepend:?} drop_whitespace={drop_whitespace} \
+                 is_sequence_start={is_sequence_start} {input:?}"
+            );
+        }
     }
 }
