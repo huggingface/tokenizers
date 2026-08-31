@@ -17,7 +17,7 @@ pub(crate) fn lowercases_to_self(c: char) -> bool {
 }
 
 impl pipeline::Normalizer for Lowercase {
-    fn normalize<'a>(&self, input: &'a str, _is_first_chunk: bool) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, _is_sequence_start: bool) -> Result<Cow<'a, str>> {
         if input.chars().all(lowercases_to_self) {
             Ok(input.into())
         } else {

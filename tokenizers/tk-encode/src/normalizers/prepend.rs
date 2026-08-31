@@ -15,7 +15,7 @@ impl Prepend {
 }
 
 impl pipeline::Normalizer for Prepend {
-    fn normalize<'a>(&self, input: &'a str, _is_first_chunk: bool) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, _is_sequence_start: bool) -> Result<Cow<'a, str>> {
         if input.is_empty() || self.prepend.is_empty() {
             return Ok(Cow::Borrowed(input));
         }

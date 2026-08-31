@@ -23,7 +23,7 @@ impl Strip {
 }
 
 impl pipeline::Normalizer for Strip {
-    fn normalize<'a>(&self, input: &'a str, _is_first_chunk: bool) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, _is_sequence_start: bool) -> Result<Cow<'a, str>> {
         let s = if self.strip_left {
             input.trim_start()
         } else {
@@ -43,7 +43,7 @@ pub struct StripAccents;
 
 #[cfg(feature = "normalizers")]
 impl pipeline::Normalizer for StripAccents {
-    fn normalize<'a>(&self, input: &'a str, _is_first_chunk: bool) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, _is_sequence_start: bool) -> Result<Cow<'a, str>> {
         if input.chars().any(is_combining_mark) {
             Ok(Cow::Owned(
                 input.chars().filter(|&c| !is_combining_mark(c)).collect(),
