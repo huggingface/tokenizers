@@ -49,8 +49,8 @@ pub enum ConvertError {
     #[error("a `Metaspace` `replacement` must be exactly one character, got {got:?}")]
     MetaspaceBadReplacement { got: String },
 
-    #[error("a `Metaspace` pre-tokenizer with `split: false` has no canonical spelling")]
-    MetaspaceNoSplit,
+    #[error("a `Sequence[WhitespaceSplit, Metaspace]` with `split: false` is not supported")]
+    MetaspaceDropWhitespaceNoSplit,
 
     #[error(
         "a `Sequence[WhitespaceSplit, Metaspace]` with `prepend_scheme: {scheme}` is not supported"
@@ -270,8 +270,7 @@ fn canonicalize_component(node: &mut Value) -> Result<(), ConvertError> {
 ///   `prepend_scheme: "never"` is spelled beside it;
 /// - `str_rep` is thrown away.
 ///
-/// Returns the `prepend_scheme` it settled on, so the pre-tokenizer case does not have to read it
-/// back out and re-check it.
+/// Returns the `prepend_scheme` it settled on.
 fn canonicalize_metaspace(obj: &mut Map<String, Value>) -> Result<String, ConvertError> {
     // Filter null, not plain `get`: an explicit null means "not spelled", as `get_some` does.
     let declared = obj
@@ -335,6 +334,9 @@ fn kind_of(value: &Value) -> &'static str {
 /// `Split` on the delimiter here (which cuts it). `Sequence[WhitespaceSplit, Metaspace]` -- the
 /// shape t5 and albert ship -- is the same thing with `drop_whitespace`, and the whole `Sequence`
 /// collapses to the lone `Split`.
+///
+/// `split: false` leaves this slot empty. The reader reads a null `pre_tokenizer` as one span
+/// covering the whole text, which is what not cutting means.
 fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), ConvertError> {
     let Some(pretok) = root.get("pre_tokenizer") else {
         return Ok(());
@@ -364,15 +366,11 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
         _ => return Ok(()),
     };
 
-    // `split` defaulted to true, and is read before the shared normalisation drops it.
-    // `split: false` wrote delimiters but never cut, so there is no `Split` to hand back.
-    if !metaspace
+    // Read before `canonicalize_metaspace` drops the field.
+    let split = metaspace
         .get("split")
         .and_then(Value::as_bool)
-        .unwrap_or(true)
-    {
-        return Err(ConvertError::MetaspaceNoSplit);
-    }
+        .unwrap_or(true);
     // Reuse the field normalisation written for the decoder case, so the `add_prefix_space` quirk
     // is applied in exactly one place.
     let mut metaspace = metaspace;
@@ -380,6 +378,11 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
 
     if drop_whitespace && prepend != "always" {
         return Err(ConvertError::MetaspaceDropWhitespaceScheme { scheme: prepend });
+    }
+    // Upstream still cuts on whitespace, giving one span per word. We would give one span for
+    // the whole text.
+    if drop_whitespace && !split {
+        return Err(ConvertError::MetaspaceDropWhitespaceNoSplit);
     }
 
     let replacement = metaspace
@@ -399,8 +402,8 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
             ],
         ),
     );
-    root.insert(
-        "pre_tokenizer".to_string(),
+    // No cut means an empty pre-tokenizer slot.
+    let cut = if split {
         tagged(
             "Split",
             &[
@@ -408,8 +411,11 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
                 ("behavior", Value::String("MergedWithNext".to_string())),
                 ("invert", Value::Bool(false)),
             ],
-        ),
-    );
+        )
+    } else {
+        Value::Null
+    };
+    root.insert("pre_tokenizer".to_string(), cut);
     Ok(())
 }
 

@@ -645,10 +645,8 @@ impl PipelineTokenizer {
     /// Takes the buffer rather than returning one, so a caller that already owns somewhere to put
     /// the ids -- [`Self::encode_into`] -- pays neither an allocation nor a copy for them.
     ///
-    /// `is_sequence_start` is false when `input` is a slice of a longer sequence rather than the
-    /// whole of it, which is how the parallel encoder calls this. A normalizer that only acts once
-    /// per sequence -- a `Metaspace` with `PrependBehavior::First` -- needs to be told, because
-    /// nothing in `input` says where it was cut from.
+    /// `is_sequence_start` is false when `input` is a slice of a longer sequence, which is how the
+    /// parallel encoder calls this. `PrependBehavior::First` needs it.
     fn encode_sequence_into(
         &self,
         input: &str,

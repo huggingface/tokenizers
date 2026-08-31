@@ -116,11 +116,8 @@ mod tests {
     use super::*;
     use crate::tokenizer::pipeline::Normalizer as _;
 
-    /// `(prepend, drop_whitespace, is_sequence_start, input, output)`.
-    ///
-    /// Every expectation is where the released `tokenizers` 0.23.1 puts the delimiter, read off a
-    /// `Metaspace` pre-tokenizer (and a `Sequence[WhitespaceSplit, Metaspace]` for the
-    /// `drop_whitespace` rows) and written out as the one string this normalizer produces.
+    /// `(prepend, drop_whitespace, is_sequence_start, input, output)`, every expectation read off
+    /// released `tokenizers` 0.23.1.
     #[rustfmt::skip]
     const CASES: &[(PrependBehavior, bool, bool, &str, &str)] = &[
         (PrependBehavior::Always, false, true,  "aa bb cc",   "▁aa▁bb▁cc"),
@@ -128,7 +125,6 @@ mod tests {
         (PrependBehavior::Always, false, true,  "aa\tbb  cc", "▁aa\tbb▁▁cc"),
         (PrependBehavior::Never,  false, true,  "aa bb cc",   "aa▁bb▁cc"),
         (PrependBehavior::Never,  false, true,  " aa bb",     "▁aa▁bb"),
-        // `First` at the start of the sequence is `Always` for the first word and `Never` after it.
         (PrependBehavior::First,  false, true,  "aa bb cc",   "▁aa▁bb▁cc"),
         (PrependBehavior::First,  false, false, "aa bb cc",   "aa▁bb▁cc"),
         (PrependBehavior::First,  false, true,  " aa bb",     "▁aa▁bb"),
@@ -136,8 +132,8 @@ mod tests {
         (PrependBehavior::Always, true,  true,  "aa bb cc",   "▁aa▁bb▁cc"),
         (PrependBehavior::Always, true,  true,  "aa\tbb  cc", "▁aa▁bb▁cc"),
         (PrependBehavior::Never,  true,  true,  "aa bb cc",   "aabbcc"),
-        // Only the word that opens the sequence, and a sequence opening with whitespace has none:
-        // `WhitespaceSplit` removes it, which moves the first word off byte zero.
+        // A sequence opening with whitespace gets none: `WhitespaceSplit` removes it, moving the
+        // first word off byte zero.
         (PrependBehavior::First,  true,  true,  "aa bb cc",   "▁aabbcc"),
         (PrependBehavior::First,  true,  false, "aa bb cc",   "aabbcc"),
         (PrependBehavior::First,  true,  true,  " aa bb",     "aabb"),

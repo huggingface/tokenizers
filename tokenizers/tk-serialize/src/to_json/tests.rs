@@ -193,6 +193,8 @@ const IDEMPOTENT: &[(&str, &str)] = &[
     ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "never", "drop_whitespace": false}"#),
     // `drop_whitespace` is one flag, never the legacy `Sequence[WhitespaceSplit, Metaspace]`.
     ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "always", "drop_whitespace": true}"#),
+    // A `Metaspace` with `split: false` leaves the slot empty, so `null` has to round-trip.
+    ("pre_tokenizer",  r#"null"#),
     ("pre_tokenizer",  r#"{"type": "Digits", "individual_digits": true}"#),
     ("pre_tokenizer",  r#"{"type": "Whitespace"}"#),
     ("pre_tokenizer",  r#"{"type": "WhitespaceSplit"}"#),
