@@ -7,7 +7,7 @@ use crate::json::Json;
 #[cfg(feature = "normalizers")]
 use base64::Engine as _;
 use tk_encode::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
-use tk_encode::normalizers::metaspace::MetaspaceNormalizer;
+use tk_encode::normalizers::metaspace::{MetaspaceNormalizer, PrependBehavior};
 use tk_encode::normalizers::prepend::Prepend;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
 use tk_encode::normalizers::strip::Strip;
@@ -31,6 +31,15 @@ pub(super) fn read_normalizers(cfg: Option<&Json<'_>>) -> Result<Vec<PipelineNor
     Ok(out)
 }
 
+fn read_metaspace_prepend_behavior(cfg: &Json<'_>, owner: &str) -> Result<PrependBehavior> {
+    match cfg.need(owner, "prepend", Json::as_str)? {
+        "always" => Ok(PrependBehavior::Always),
+        "first" => Ok(PrependBehavior::First),
+        "never" => Ok(PrependBehavior::Never),
+        other => Err(format!("unknown metaspace prepend {other:?}").into()),
+    }
+}
+
 fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<()> {
     let kind = cfg
         .type_tag()
@@ -48,7 +57,7 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
         }
         "MetaspaceNormalizer" => out.push(PipelineNormalizer::Metaspace(MetaspaceNormalizer::new(
             super::pre_tokenizers::read_char(cfg, "replacement")?,
-            cfg.need(&owner, "prepend", Json::as_bool)?,
+            read_metaspace_prepend_behavior(cfg, &owner)?,
             cfg.need(&owner, "drop_whitespace", Json::as_bool)?,
         ))),
         "Replace" => out.push(PipelineNormalizer::Replace(read_replace(cfg)?)),

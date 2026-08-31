@@ -23,7 +23,7 @@ impl Strip {
 }
 
 impl pipeline::Normalizer for Strip {
-    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, _is_first_chunk: bool) -> Result<Cow<'a, str>> {
         let s = if self.strip_left {
             input.trim_start()
         } else {
@@ -43,7 +43,7 @@ pub struct StripAccents;
 
 #[cfg(feature = "normalizers")]
 impl pipeline::Normalizer for StripAccents {
-    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, _is_first_chunk: bool) -> Result<Cow<'a, str>> {
         if input.chars().any(is_combining_mark) {
             Ok(Cow::Owned(
                 input.chars().filter(|&c| !is_combining_mark(c)).collect(),
@@ -72,7 +72,7 @@ mod tests {
             ("     hello", "     hello"),
         ] {
             assert_eq!(
-                &*pipeline::Normalizer::normalize(&n, input).unwrap(),
+                &*pipeline::Normalizer::normalize(&n, input, true).unwrap(),
                 expected,
                 "input={input:?}"
             );
@@ -121,7 +121,7 @@ mod tests {
             let n = Strip::new(strip_left, strip_right);
             for &(input, expected) in pairs {
                 assert_eq!(
-                    &*pipeline::Normalizer::normalize(&n, input).unwrap(),
+                    &*pipeline::Normalizer::normalize(&n, input, true).unwrap(),
                     expected,
                     "strip=({strip_left}, {strip_right}) input={input:?}"
                 );

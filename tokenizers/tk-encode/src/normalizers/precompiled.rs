@@ -49,13 +49,13 @@ impl PrecompiledNormalizer {
 }
 
 impl pipeline::Normalizer for PrecompiledNormalizer {
-    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        pipeline::Normalizer::normalize(&self.parsed, input)
+    fn normalize<'a>(&self, input: &'a str, is_first_chunk: bool) -> Result<Cow<'a, str>> {
+        pipeline::Normalizer::normalize(&self.parsed, input, is_first_chunk)
     }
 }
 
 impl pipeline::Normalizer for Precompiled {
-    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, _is_first_chunk: bool) -> Result<Cow<'a, str>> {
         let mut transformed: Option<String> = None;
         for (g_idx, grapheme) in input.grapheme_indices(true) {
             if grapheme.len() < 6

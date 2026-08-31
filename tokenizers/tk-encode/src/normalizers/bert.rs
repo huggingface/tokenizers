@@ -128,7 +128,7 @@ impl BertNormalizer {
 }
 
 impl pipeline::Normalizer for BertNormalizer {
-    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, _is_first_chunk: bool) -> Result<Cow<'a, str>> {
         let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
 
         if self.is_noop(input, strip_accents) {
@@ -221,7 +221,7 @@ mod tests {
                             lowercase,
                         );
                         for input in INPUTS {
-                            let out = pipeline::Normalizer::normalize(&n, input).unwrap();
+                            let out = pipeline::Normalizer::normalize(&n, input, true).unwrap();
                             feed(format!("{n:?}").as_bytes());
                             feed(&[0x01]);
                             feed(out.as_bytes());

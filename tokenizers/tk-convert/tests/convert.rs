@@ -193,7 +193,7 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
     assert_eq!(
         v["normalizer"],
         serde_json::json!({"type": "MetaspaceNormalizer", "replacement": "▁",
-                           "prepend": true, "drop_whitespace": false})
+                           "prepend": "always", "drop_whitespace": false})
     );
     assert_eq!(
         v["pre_tokenizer"],
