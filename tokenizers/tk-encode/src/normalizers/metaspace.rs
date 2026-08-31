@@ -17,6 +17,13 @@ use std::borrow::Cow;
 
 use crate::tokenizer::{Result, pipeline};
 
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum PrependBehavior {
+    Always,
+    First,
+    Never,
+}
+
 /// Writes the delimiter where words start (after a space)
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetaspaceNormalizer {
@@ -24,7 +31,7 @@ pub struct MetaspaceNormalizer {
     /// another character.
     delimiter: char,
     /// Write the delimiter at the start of every word, not only the words that followed a space.
-    prepend: bool,
+    prepend: PrependBehavior,
     /// Throw whitespace away instead of turning it into a delimiter: tabs, newlines and repeated
     /// spaces leave no trace, and each word keeps only the one delimiter `prepend` writes. This is
     /// the [`WhitespaceSplit`] that t5 and albert run in front of their `Metaspace`.
@@ -32,7 +39,7 @@ pub struct MetaspaceNormalizer {
 }
 
 impl MetaspaceNormalizer {
-    pub fn new(delimiter: char, prepend: bool, drop_whitespace: bool) -> Self {
+    pub fn new(delimiter: char, prepend: PrependBehavior, drop_whitespace: bool) -> Self {
         Self {
             delimiter,
             prepend,
@@ -48,7 +55,7 @@ impl MetaspaceNormalizer {
     }
 
     /// Whether the delimiter goes at the start of every word rather than only after a space.
-    pub fn prepend(&self) -> bool {
+    pub fn prepend(&self) -> PrependBehavior {
         self.prepend
     }
 
@@ -60,7 +67,7 @@ impl MetaspaceNormalizer {
 }
 
 impl pipeline::Normalizer for MetaspaceNormalizer {
-    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, is_first_chunk: bool) -> Result<Cow<'a, str>> {
         // Return empty input as is
         if input.is_empty() {
             return Ok(Cow::Borrowed(input));
@@ -69,16 +76,23 @@ impl pipeline::Normalizer for MetaspaceNormalizer {
         let mut rewritten = String::with_capacity(input.len() + input.len() / 2);
         if self.drop_whitespace {
             for word in input.split_whitespace() {
-                // The text may already hold delimiters of its own — never write a second one.
-                if self.prepend && !word.starts_with(self.delimiter) {
-                    rewritten.push(self.delimiter);
+                if !word.starts_with(self.delimiter) {
+                    match self.prepend {
+                        PrependBehavior::Always => rewritten.push(self.delimiter),
+                        PrependBehavior::First if is_first_chunk => rewritten.push(self.delimiter),
+                        _ => {}
+                    }
                 }
                 rewritten.push_str(word);
             }
         } else {
             // Prepend the delimiter if self.prepend is true
-            if self.prepend && !input.starts_with(' ') && !input.starts_with(self.delimiter) {
-                rewritten.push(self.delimiter);
+            if !input.starts_with(' ') && !input.starts_with(self.delimiter) {
+                match self.prepend {
+                    PrependBehavior::Always => rewritten.push(self.delimiter),
+                    PrependBehavior::First if is_first_chunk => rewritten.push(self.delimiter),
+                    _ => {}
+                }
             }
             // Only spaces become delimiters; tabs and newlines are left alone
             let mut rest = input;
