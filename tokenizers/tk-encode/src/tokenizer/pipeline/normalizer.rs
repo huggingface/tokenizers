@@ -17,7 +17,7 @@ use crate::normalizers::{
 use crate::tokenizer::Result;
 
 pub trait Normalizer {
-    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
+    fn normalize<'a>(&self, input: &'a str, is_sequence_start: bool) -> Result<Cow<'a, str>>;
 }
 
 /// One normalization step of a [`PipelineTokenizer`].
@@ -60,14 +60,18 @@ pub struct NormalizerChain<'a>(pub &'a [PipelineNormalizer]);
 /// The next normalizer may hand back a borrow of that locally owned [`String`], and that borrow cannot outlive the `String`.
 ///
 /// Text no normalizer touches is never copied: it stays a borrow of `input` throughout.
-pub fn normalize_all<'a, N: Normalizer>(normalizers: &[N], input: &'a str) -> Result<Cow<'a, str>> {
+pub fn normalize_all<'a, N: Normalizer>(
+    normalizers: &[N],
+    input: &'a str,
+    is_sequence_start: bool,
+) -> Result<Cow<'a, str>> {
     let mut cow: Cow<'a, str> = Cow::Borrowed(input);
     for normalizer in normalizers {
         cow = match cow {
             // Still `input` itself, which outlives us: pass it straight on.
-            Cow::Borrowed(s) => normalizer.normalize(s)?,
+            Cow::Borrowed(s) => normalizer.normalize(s, is_sequence_start)?,
             Cow::Owned(s) => {
-                let out = match normalizer.normalize(&s)? {
+                let out = match normalizer.normalize(&s, is_sequence_start)? {
                     // Rewritten again: keep the new `String`, drop ours.
                     Cow::Owned(o) => Some(o),
                     // Handed `s` back untouched: keep the `String` we already own.
@@ -83,36 +87,36 @@ pub fn normalize_all<'a, N: Normalizer>(normalizers: &[N], input: &'a str) -> Re
 }
 
 impl Normalizer for NormalizerChain<'_> {
-    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
-        normalize_all(self.0, input)
+    fn normalize<'a>(&self, input: &'a str, is_sequence_start: bool) -> Result<Cow<'a, str>> {
+        normalize_all(self.0, input, is_sequence_start)
     }
 }
 
 impl Normalizer for PipelineNormalizer {
-    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str, is_sequence_start: bool) -> Result<Cow<'a, str>> {
         match self {
-            Self::Metaspace(normalizer) => normalizer.normalize(input),
-            Self::Replace(normalizer) => normalizer.normalize(input),
-            Self::Prepend(normalizer) => normalizer.normalize(input),
-            Self::Strip(normalizer) => normalizer.normalize(input),
-            Self::Lowercase(normalizer) => normalizer.normalize(input),
-            Self::ByteLevel(normalizer) => normalizer.normalize(input),
+            Self::Metaspace(normalizer) => normalizer.normalize(input, is_sequence_start),
+            Self::Replace(normalizer) => normalizer.normalize(input, is_sequence_start),
+            Self::Prepend(normalizer) => normalizer.normalize(input, is_sequence_start),
+            Self::Strip(normalizer) => normalizer.normalize(input, is_sequence_start),
+            Self::Lowercase(normalizer) => normalizer.normalize(input, is_sequence_start),
+            Self::ByteLevel(normalizer) => normalizer.normalize(input, is_sequence_start),
             #[cfg(feature = "normalizers")]
-            Self::Bert(normalizer) => normalizer.normalize(input),
+            Self::Bert(normalizer) => normalizer.normalize(input, is_sequence_start),
             #[cfg(feature = "normalizers")]
-            Self::StripAccents(normalizer) => normalizer.normalize(input),
+            Self::StripAccents(normalizer) => normalizer.normalize(input, is_sequence_start),
             #[cfg(feature = "normalizers")]
-            Self::NFC(normalizer) => normalizer.normalize(input),
+            Self::NFC(normalizer) => normalizer.normalize(input, is_sequence_start),
             #[cfg(feature = "normalizers")]
-            Self::NFD(normalizer) => normalizer.normalize(input),
+            Self::NFD(normalizer) => normalizer.normalize(input, is_sequence_start),
             #[cfg(feature = "normalizers")]
-            Self::NFKC(normalizer) => normalizer.normalize(input),
+            Self::NFKC(normalizer) => normalizer.normalize(input, is_sequence_start),
             #[cfg(feature = "normalizers")]
-            Self::NFKD(normalizer) => normalizer.normalize(input),
+            Self::NFKD(normalizer) => normalizer.normalize(input, is_sequence_start),
             #[cfg(feature = "normalizers")]
-            Self::Nmt(normalizer) => normalizer.normalize(input),
+            Self::Nmt(normalizer) => normalizer.normalize(input, is_sequence_start),
             #[cfg(feature = "normalizers")]
-            Self::Precompiled(normalizer) => normalizer.normalize(input),
+            Self::Precompiled(normalizer) => normalizer.normalize(input, is_sequence_start),
         }
     }
 }

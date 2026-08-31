@@ -322,7 +322,7 @@ impl AddedVocabulary {
             let flags = AddedTokenFlags::from(&token);
             let is_norm = flags.normalized;
             let norm_form: String = match normalizer {
-                Some(n) => n.normalize(&token.content)?.into_owned(),
+                Some(n) => n.normalize(&token.content, false)?.into_owned(),
                 None => token.content.clone(),
             };
             let form = if is_norm {

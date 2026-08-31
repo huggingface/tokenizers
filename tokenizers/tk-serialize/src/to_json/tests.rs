@@ -188,9 +188,13 @@ const IDEMPOTENT: &[(&str, &str)] = &[
     ("normalizer",     r#"{"type": "Lowercase"}"#),
     ("normalizer",     r#"{"type": "Prepend", "prepend": "_"}"#),
     ("normalizer",     r#"{"type": "Replace", "pattern": {"String": " "}, "content": "_"}"#),
-    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": true, "drop_whitespace": false}"#),
+    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "always", "drop_whitespace": false}"#),
+    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "first", "drop_whitespace": false}"#),
+    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "never", "drop_whitespace": false}"#),
     // `drop_whitespace` is one flag, never the legacy `Sequence[WhitespaceSplit, Metaspace]`.
-    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": true, "drop_whitespace": true}"#),
+    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "always", "drop_whitespace": true}"#),
+    // A `Metaspace` with `split: false` leaves the slot empty, so `null` has to round-trip.
+    ("pre_tokenizer",  r#"null"#),
     ("pre_tokenizer",  r#"{"type": "Digits", "individual_digits": true}"#),
     ("pre_tokenizer",  r#"{"type": "Whitespace"}"#),
     ("pre_tokenizer",  r#"{"type": "WhitespaceSplit"}"#),
@@ -276,7 +280,7 @@ fn the_canonical_shape_is_tagged_versioned_and_null_where_absent() {
         (
             "normalizer",
             r#"{"type": "MetaspaceNormalizer", "replacement": "▁",
-            "prepend": true, "drop_whitespace": false}"#,
+            "prepend": "always", "drop_whitespace": false}"#,
         ),
         ("pre_tokenizer", r#"{"type": "Whitespace"}"#),
         ("decoder", r#"{"type": "Fuse"}"#),

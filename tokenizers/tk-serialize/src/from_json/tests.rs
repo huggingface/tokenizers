@@ -113,6 +113,8 @@ const REFUSED: &[(&str, &str, &str)] = &[
         "merges": ["a b"]}"#, "[left, right] pair"),
     ("normalizer", r#"{"type": "Strip", "strip_left": true}"#, "strip_right"),
     ("normalizer", r#"{"type": "Invented"}"#, "`Invented` normalizer"),
+    ("normalizer", r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "sometimes",
+        "drop_whitespace": false}"#, "unknown metaspace prepend \"sometimes\""),
     ("pre_tokenizer", r#"{"type": "ByteLevel", "use_regex": true}"#, "`ByteLevel` pre-tokenizer"),
     ("pre_tokenizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "always"}"#,
         "`Metaspace` pre-tokenizer"),

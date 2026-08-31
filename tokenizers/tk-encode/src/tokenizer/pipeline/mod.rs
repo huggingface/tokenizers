@@ -561,12 +561,13 @@ impl PipelineTokenizer {
     ) -> Result<Encoding> {
         match input {
             Input::Single(seq) => {
-                let toks = self.encode_sequence_with(&seq, scratch)?;
+                let toks = self.encode_sequence_with(&seq, true, scratch)?;
                 Ok(self.post_process(toks, None, add_special_tokens)?)
             }
+            // Each side of a pair is a sequence of its own, so both start one.
             Input::Pair(s1, s2) => {
-                let a = self.encode_sequence_with(&s1, scratch)?;
-                let b = self.encode_sequence_with(&s2, scratch)?;
+                let a = self.encode_sequence_with(&s1, true, scratch)?;
+                let b = self.encode_sequence_with(&s2, true, scratch)?;
                 Ok(self.post_process(a, Some(b), add_special_tokens)?)
             }
         }
@@ -643,9 +644,13 @@ impl PipelineTokenizer {
     ///
     /// Takes the buffer rather than returning one, so a caller that already owns somewhere to put
     /// the ids -- [`Self::encode_into`] -- pays neither an allocation nor a copy for them.
+    ///
+    /// `is_sequence_start` is false when `input` is a slice of a longer sequence, which is how the
+    /// parallel encoder calls this. `PrependBehavior::First` needs it.
     fn encode_sequence_into(
         &self,
         input: &str,
+        is_sequence_start: bool,
         scratch: &mut EncodeScratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
@@ -655,8 +660,15 @@ impl PipelineTokenizer {
                 Segment::SpecialToken(token) => {
                     output.push(PipelineToken::from(token));
                 }
-                Segment::Text { text: chunk, .. } => {
-                    let normalized = normalize_all(&self.inner.normalizers, chunk)?;
+                Segment::Text {
+                    text: chunk,
+                    input_offset,
+                } => {
+                    let normalized = normalize_all(
+                        &self.inner.normalizers,
+                        chunk,
+                        is_sequence_start && input_offset == 0,
+                    )?;
 
                     // Extract special tokens from the normalized input
                     for segment in
@@ -728,10 +740,11 @@ impl PipelineTokenizer {
     fn encode_sequence_with(
         &self,
         input: &str,
+        is_sequence_start: bool,
         scratch: &mut EncodeScratch,
     ) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::with_capacity(input.len() / 4);
-        self.encode_sequence_into(input, scratch, &mut output)?;
+        self.encode_sequence_into(input, is_sequence_start, scratch, &mut output)?;
         Ok(output)
     }
 
@@ -764,7 +777,7 @@ impl PipelineTokenizer {
             })
             && sequences == 1;
         if reproduces_sequence {
-            return self.encode_sequence_into(input, &mut scratch, out);
+            return self.encode_sequence_into(input, true, &mut scratch, out);
         }
         let encoding = self.encode_one(
             Input::Single(input.to_owned()),
