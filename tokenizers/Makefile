@@ -91,13 +91,33 @@ slim-size :
 # The host triple has to be named explicitly: `-Z build-std` only applies to an explicit --target,
 # and without one cargo reuses the precompiled libstd and the flags silently do nothing.
 HOST_TRIPLE := $(shell rustc -vV | awk '/^host:/ {print $$2}')
-SLIMEST_FLAGS = -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort \
-                --target $(HOST_TRIPLE)
+# Overridable, because the failure this guards against is a *stale* `nightly`, and re-pointing the
+# default alias is not always the caller's call: `make slimest NIGHTLY=nightly-2026-04-28`.
+NIGHTLY ?= nightly
+SLIMEST_FLAGS = -Z build-std=std,panic_abort --target $(HOST_TRIPLE)
+
+# `panic_immediate_abort` used to be a `-Z build-std-features` value. It is now a real panic
+# strategy and the old spelling is a hard error:
+#   error: panic_immediate_abort is now a real panic strategy! Enable it with `panic =
+#   "immediate-abort"` in Cargo.toml, or with the compiler flags `-Zunstable-options
+#   -Cpanic=immediate-abort`. In both cases, you still need to build core, e.g. with `-Zbuild-std`
+# So it has to reach rustc as a codegen flag, and `-C panic` only accepts the new value under
+# `-Zunstable-options`.
+#
+# Deliberately RUSTFLAGS and not `panic = "immediate-abort"` in `[profile.slimest]`: a profile value
+# that stable cargo cannot parse would break *every* cargo command in the workspace (`make build`,
+# `make test`, `cargo metadata`, CI on stable), not just this target. The cost of keeping it here is
+# that it replaces any RUSTFLAGS already in the environment for this one recipe.
+SLIMEST_RUSTFLAGS = -Zunstable-options -Cpanic=immediate-abort
 
 .PHONY : slimest
 # The smallest build there is: `minsize` plus a `std` rebuilt without panic, unwinding or backtrace
 # symbolisation. Needs nightly and the rust-src component:
 #   rustup toolchain install nightly && rustup component add rust-src --toolchain nightly
+#
+# `rustup update nightly` if this fails on the panic strategy (see SLIMEST_RUSTFLAGS): a nightly
+# older than the rename only accepts the removed `-Z build-std-features` spelling. Verified on
+# 1.97.0-nightly (2026-04-27); 1.89.0-nightly (2025-06-22) is too old.
 #
 # Same feature set as `slim-size` on purpose, so the two numbers differ by the profile alone.
 # Leaving `bpe` off here made the rungs look like they measured different programs, which is how a
@@ -107,7 +127,7 @@ SLIMEST_FLAGS = -Z build-std=std,panic_abort -Z build-std-features=panic_immedia
 # crate metadata hash changing symbol names, not code. Worth 24 bytes to stop the ladder inviting
 # that misreading.
 slimest :
-	cargo +nightly build --profile slimest $(SLIMEST_FLAGS) \
+	RUSTFLAGS="$(SLIMEST_RUSTFLAGS)" cargo +$(NIGHTLY) build --profile slimest $(SLIMEST_FLAGS) \
 	  -p tk-serialize --example binsize_pipeline --no-default-features --features bpe,deserialize
 
 .PHONY : slimest-size
