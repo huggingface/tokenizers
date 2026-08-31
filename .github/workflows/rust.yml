@@ -62,18 +62,19 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make test HF="uvx --from huggingface_hub hf"
 
-      # The only gate that checks the slim reader against an *independent* implementation: both
-      # oracles encode/decode through `tk_serialize::from_json` and compare against the released
-      # `tokenizers` crate. They sit behind `bench-baseline` because that pulls the released crate in
-      # as a dependency, which means `cargo test --workspace` skips them -- so they need their own
-      # step or the guarantee is not actually being checked. 16 tests.
-      - name: Run the release-crate id oracles
+      # The only gate that checks the slim reader against an *independent* implementation: one test
+      # per model encodes/decodes through `tk_serialize::from_json` and compares against the
+      # released `tokenizers` crate. It sits behind `bench-baseline` because that pulls the released
+      # crate in as a dependency, which means `cargo test --workspace` skips it -- so it needs its
+      # own step or the guarantee is not actually being checked. `make oracle` fetches its fixtures
+      # first; the raw `cargo test` this used to run skipped that and only worked because those
+      # fixtures came from a live Hub fetch at the time.
+      - name: Run the release-crate oracle
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          cargo test -p tk-convert --features bench-baseline --test oracle
+        run: make oracle HF="uvx --from huggingface_hub hf"
 
       # Windows skips the integration tests and the full fixture set, but the
       # tk-encode lib tests load these two tokenizer files and fail without
@@ -84,7 +85,7 @@ jobs:
         shell: bash
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision e20ac5914f5ada06874e4f9d45e49b31a049904e --local-dir data
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision 54d012f11a4911b797aa6ef2dffc0fb67cbc7619 --local-dir data
 
       # Windows runs lib + doc tests only. bash so the step fails on the first
       # failing command. The default pwsh only propagates the last command's
@@ -273,7 +274,7 @@ jobs:
         shell: bash
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision e20ac5914f5ada06874e4f9d45e49b31a049904e --local-dir data
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision 54d012f11a4911b797aa6ef2dffc0fb67cbc7619 --local-dir data
 
       - name: Install cargo-hack
         uses: taiki-e/install-action@cargo-hack
