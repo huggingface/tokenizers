@@ -62,18 +62,19 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make test HF="uvx --from huggingface_hub hf"
 
-      # The only gate that checks the slim reader against an *independent* implementation: both
-      # oracles encode/decode through `tk_serialize::from_json` and compare against the released
-      # `tokenizers` crate. They sit behind `bench-baseline` because that pulls the released crate in
-      # as a dependency, which means `cargo test --workspace` skips them -- so they need their own
-      # step or the guarantee is not actually being checked. 16 tests.
-      - name: Run the release-crate id oracles
+      # The only gate that checks the slim reader against an *independent* implementation: one test
+      # per model encodes/decodes through `tk_serialize::from_json` and compares against the
+      # released `tokenizers` crate. It sits behind `bench-baseline` because that pulls the released
+      # crate in as a dependency, which means `cargo test --workspace` skips it -- so it needs its
+      # own step or the guarantee is not actually being checked. `make oracle` fetches its fixtures
+      # first; the raw `cargo test` this used to run skipped that and only worked because those
+      # fixtures came from a live Hub fetch at the time.
+      - name: Run the release-crate oracle
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          cargo test -p tk-convert --features bench-baseline --test oracle
+        run: make oracle HF="uvx --from huggingface_hub hf"
 
       # Windows skips the integration tests and the full fixture set, but the
       # tk-encode lib tests load these two tokenizer files and fail without
