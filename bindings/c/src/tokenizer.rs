@@ -30,7 +30,10 @@ pub unsafe extern "C" fn tk_tokenizer_from_file(
     out: *mut TkHandle<TkTokenizer>,
 ) -> TkHandle<TkError> {
     let body = move || -> tk_encode::Result<TkTokenizer> {
-        // SAFETY: caller's obligation, documented above.
+        if path.is_null() {
+            return Err("path must not be NULL".into());
+        }
+        // SAFETY: just checked non-NULL; rest of the caller's obligation is documented above.
         let path = unsafe { convert_c_str(path) }?;
         let canonical = tk_convert::canonicalize_file(path)?;
         let tokenizer = tk_serialize::from_json(&canonical)?;
@@ -69,9 +72,15 @@ pub unsafe extern "C" fn tk_tokenizer_encode(
     out: *mut TkHandle<TkEncoding>,
 ) -> TkHandle<TkError> {
     let inner = move || -> tk_encode::Result<TkEncoding> {
-        // SAFETY: caller's obligation, documented above.
+        if tk_tokenizer.is_null() {
+            return Err("tk_tokenizer must not be NULL".into());
+        }
+        if input.is_null() {
+            return Err("input must not be NULL".into());
+        }
+        // SAFETY: just checked non-NULL; rest of the caller's obligation is documented above.
         let input = unsafe { convert_c_buf(input, input_len) }?;
-        // SAFETY: caller's obligation, documented above.
+        // SAFETY: just checked non-NULL; rest of the caller's obligation is documented above.
         let tokenizer = unsafe { tk_tokenizer.as_ref() };
         let mut encodings = tokenizer.0.encode(input, add_special_tokens).wait()?;
         // `Inputs::Single` always yields exactly one result.
@@ -106,9 +115,14 @@ pub unsafe extern "C" fn tk_encoding_ids(
     tk_encoding: TkHandle<TkEncoding>,
     out: *mut TkSlice<u32>,
 ) -> TkHandle<TkError> {
-    // SAFETY: caller's obligation, documented above.
-    let tk_encoding = unsafe { tk_encoding.as_ref() };
-    let inner = move || &tk_encoding.ids[..];
+    let inner = move || -> Result<&[u32], &'static str> {
+        if tk_encoding.is_null() {
+            return Err("tk_encoding must not be NULL");
+        }
+        // SAFETY: just checked non-NULL; rest of the caller's obligation is documented above.
+        let tk_encoding = unsafe { tk_encoding.as_ref() };
+        Ok(&tk_encoding.ids[..])
+    };
     // SAFETY: caller's obligation, documented above.
     unsafe { wrap_in_tk_slice(out, inner) }
 }
@@ -124,9 +138,14 @@ pub unsafe extern "C" fn tk_encoding_type_ids(
     tk_encoding: TkHandle<TkEncoding>,
     out: *mut TkSlice<u8>,
 ) -> TkHandle<TkError> {
-    // SAFETY: caller's obligation, documented above.
-    let tk_encoding = unsafe { tk_encoding.as_ref() };
-    let inner = move || tk_encoding.type_ids.as_deref().unwrap_or(&[]);
+    let inner = move || -> Result<&[u8], &'static str> {
+        if tk_encoding.is_null() {
+            return Err("tk_encoding must not be NULL");
+        }
+        // SAFETY: just checked non-NULL; rest of the caller's obligation is documented above.
+        let tk_encoding = unsafe { tk_encoding.as_ref() };
+        Ok(tk_encoding.type_ids.as_deref().unwrap_or(&[]))
+    };
     // SAFETY: caller's obligation, documented above.
     unsafe { wrap_in_tk_slice(out, inner) }
 }

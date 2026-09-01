@@ -27,15 +27,15 @@ impl<T> TkHandle<T> {
         TkHandle(std::ptr::null_mut())
     }
 
-    fn is_null(&self) -> bool {
+    pub(crate) fn is_null(&self) -> bool {
         self.0.is_null()
     }
 
-    /// Borrows the value the handle points at.
+    /// Borrows the value the handle points at, for as long as the caller asserts it stays valid.
     ///
     /// # Safety
-    /// The handle must be non-NULL and point to a valid, not-yet-freed `T`.
-    pub(crate) unsafe fn as_ref(&self) -> &T {
+    /// The handle must be non-NULL and point to a `T` that stays live and unmutated for `'a`.
+    pub(crate) unsafe fn as_ref<'a>(self) -> &'a T {
         // SAFETY: caller's obligation, documented above.
         unsafe { &*self.0 }
     }
@@ -53,11 +53,15 @@ pub(crate) fn new_tk_handle<T: RustOwned>(value: T) -> TkHandle<T> {
 /// `handle` must point to a [`TkHandle<T>`] that is either NULL or a live
 /// (not-yet-freed) instance of `T`.
 pub(crate) unsafe fn free_tk_handle<T: RustOwned>(handle: *mut TkHandle<T>) {
+    if handle.is_null() {
+        return;
+    }
     // SAFETY: caller's obligation, documented above.
     let handle = unsafe { &mut *handle };
     if handle.is_null() {
         return;
     }
+
     // SAFETY: just checked non-NULL; liveness is the caller's obligation, documented above.
     drop(unsafe { Box::from_raw(handle.0) });
     *handle = TkHandle::null();
@@ -66,16 +70,21 @@ pub(crate) unsafe fn free_tk_handle<T: RustOwned>(handle: *mut TkHandle<T>) {
 /// A wrapper for FFI functions that output a [`TkHandle`].
 ///
 /// Takes care of:
+/// - reporting a [`TkError`] instead of writing anything, if `out` is NULL
 /// - initializing the out pointer to NULL
 /// - catching panic unwinds so they don't reach C code
 /// - converting the output of `inner` to a [`TkHandle`] when successful
 ///
 /// # Safety
-/// `out` must point to valid, writable memory for a [`TkHandle<T>`]. It can be uninitialized.
+/// `out` must be NULL, or point to valid, writable memory for a [`TkHandle<T>`]. It can be
+/// uninitialized.
 pub(crate) unsafe fn wrap_in_tk_handle<T: RustOwned, E: std::fmt::Display>(
     out: *mut TkHandle<T>,
     inner: impl FnOnce() -> Result<T, E>,
 ) -> TkHandle<TkError> {
+    if out.is_null() {
+        return TkError::into_handle("out pointer must not be NULL");
+    }
     // SAFETY: caller's obligation, documented above.
     unsafe { std::ptr::write(out, TkHandle::null()) };
     catch_panic(move || -> Result<(), E> {
@@ -122,6 +131,7 @@ pub(crate) unsafe fn write_tk_slice<T>(out: *mut TkSlice<T>, value: &[T]) {
 /// A wrapper for FFI functions that output a [`TkSlice`].
 ///
 /// Takes care of:
+/// - reporting a [`TkError`] instead of writing anything, if `out` is NULL
 /// - initializing the out pointer to an empty slice
 /// - catching panic unwinds so they don't reach C code
 /// - writing `inner`'s slice to the out pointer, when it succeeds
@@ -130,15 +140,19 @@ pub(crate) unsafe fn write_tk_slice<T>(out: *mut TkSlice<T>, value: &[T]) {
 /// [`TkSlice`] can't tell "absent" from "empty" apart, and nothing needs it to.
 ///
 /// # Safety
-/// `out` must point to valid, writable memory for a [`TkSlice<T>`]. It can be uninitialized.
-pub(crate) unsafe fn wrap_in_tk_slice<'a, T: 'a>(
+/// `out` must be NULL, or point to valid, writable memory for a [`TkSlice<T>`]. It can be
+/// uninitialized.
+pub(crate) unsafe fn wrap_in_tk_slice<'a, T: 'a, E: std::fmt::Display>(
     out: *mut TkSlice<T>,
-    inner: impl FnOnce() -> &'a [T],
+    inner: impl FnOnce() -> Result<&'a [T], E>,
 ) -> TkHandle<TkError> {
+    if out.is_null() {
+        return TkError::into_handle("out pointer must not be NULL");
+    }
     // SAFETY: caller's obligation, documented above.
     unsafe { std::ptr::write(out, TkSlice::null()) };
-    catch_panic(move || -> Result<(), std::convert::Infallible> {
-        let slice = inner();
+    catch_panic(move || -> Result<(), E> {
+        let slice = inner()?;
         // SAFETY: caller's obligation, documented above.
         unsafe { write_tk_slice(out, slice) };
         Ok(())
@@ -170,4 +184,126 @@ pub(crate) unsafe fn convert_c_buf<'a>(
     // SAFETY: caller's obligation, documented above.
     let bytes = unsafe { std::slice::from_raw_parts(buf as *const u8, len) };
     std::str::from_utf8(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    struct Dummy;
+    impl RustOwned for Dummy {}
+
+    #[test]
+    fn convert_c_str_accepts_valid_utf8() {
+        let bytes = b"hello\0";
+        let result = unsafe { convert_c_str(bytes.as_ptr() as *const c_char) };
+        assert_eq!(result.unwrap(), "hello");
+    }
+
+    #[test]
+    fn convert_c_str_rejects_invalid_utf8() {
+        let bytes = b"\xff\xfe\0";
+        let result = unsafe { convert_c_str(bytes.as_ptr() as *const c_char) };
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn convert_c_buf_accepts_embedded_nul_bytes() {
+        // Unlike convert_c_str, convert_c_buf takes an explicit length and tolerates NULs
+        // embedded in the middle of the buffer.
+        let bytes = b"a\0b";
+        let result = unsafe { convert_c_buf(bytes.as_ptr() as *const c_char, bytes.len()) };
+        assert_eq!(result.unwrap(), "a\0b");
+    }
+
+    #[test]
+    fn convert_c_buf_rejects_invalid_utf8() {
+        let bytes: [u8; 2] = [0xff, 0xfe];
+        let result = unsafe { convert_c_buf(bytes.as_ptr() as *const c_char, bytes.len()) };
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn free_tk_handle_outer_null_is_a_no_op() {
+        // Doesn't crash -- that's the whole test.
+        unsafe { free_tk_handle::<Dummy>(std::ptr::null_mut()) };
+    }
+
+    #[test]
+    fn free_tk_handle_frees_and_nulls_the_slot() {
+        let mut handle = new_tk_handle(Dummy);
+        assert!(!handle.is_null());
+        unsafe { free_tk_handle(&mut handle) };
+        assert!(handle.is_null());
+    }
+
+    #[test]
+    fn free_tk_handle_is_a_no_op_the_second_time_on_the_same_slot() {
+        let mut handle = new_tk_handle(Dummy);
+        unsafe { free_tk_handle(&mut handle) };
+        unsafe { free_tk_handle(&mut handle) }; // must not double-free
+        assert!(handle.is_null());
+    }
+
+    #[test]
+    fn wrap_in_tk_handle_out_null_reports_an_error_without_calling_inner() {
+        let called = Cell::new(false);
+        let result = unsafe {
+            wrap_in_tk_handle::<Dummy, &str>(std::ptr::null_mut(), || {
+                called.set(true);
+                Ok(Dummy)
+            })
+        };
+        assert!(!result.is_null());
+        assert!(!called.get(), "inner must not run when out is NULL");
+    }
+
+    #[test]
+    fn wrap_in_tk_handle_resets_out_to_null_even_when_inner_fails() {
+        let mut out = TkHandle::<Dummy>(std::ptr::dangling_mut()); // poison: some non-null value
+        let result =
+            unsafe { wrap_in_tk_handle(&mut out, || -> Result<Dummy, &str> { Err("nope") }) };
+        assert!(!result.is_null());
+        assert!(out.is_null());
+    }
+
+    #[test]
+    fn wrap_in_tk_slice_out_null_reports_an_error_without_calling_inner() {
+        let called = Cell::new(false);
+        let result = unsafe {
+            wrap_in_tk_slice::<u32, &str>(std::ptr::null_mut(), || {
+                called.set(true);
+                Ok(&[][..])
+            })
+        };
+        assert!(!result.is_null());
+        assert!(!called.get(), "inner must not run when out is NULL");
+    }
+
+    #[test]
+    fn wrap_in_tk_slice_resets_out_to_empty_even_when_inner_fails() {
+        let mut out = TkSlice::<u32> {
+            ptr: std::ptr::dangling(),
+            len: 99,
+        }; // poison
+        let result =
+            unsafe { wrap_in_tk_slice(&mut out, || -> Result<&[u32], &str> { Err("nope") }) };
+        assert!(!result.is_null());
+        assert!(out.ptr.is_null());
+        assert_eq!(out.len, 0);
+    }
+
+    #[test]
+    fn wrap_in_tk_slice_writes_the_slice_on_success() {
+        let data = [1u32, 2, 3];
+        let mut out = TkSlice::<u32>::null();
+        let result =
+            unsafe { wrap_in_tk_slice(&mut out, || -> Result<&[u32], &str> { Ok(&data[..]) }) };
+        assert!(result.is_null());
+        assert_eq!(
+            unsafe { std::slice::from_raw_parts(out.ptr, out.len) },
+            &data
+        );
+    }
 }

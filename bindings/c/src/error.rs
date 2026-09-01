@@ -9,21 +9,24 @@ pub struct TkError {
 impl RustOwned for TkError {}
 
 impl TkError {
-    fn into_handle(msg: impl std::fmt::Display) -> TkHandle<TkError> {
+    pub(crate) fn into_handle(msg: impl std::fmt::Display) -> TkHandle<TkError> {
         let message = CString::new(msg.to_string())
             .unwrap_or_else(|_| CString::new("error message contained a NUL byte").unwrap());
         new_tk_handle(TkError { message })
     }
 }
 
-/// Returns a pointer to `err`'s message. The pointer is owned by `err` and only valid until `err` is
-/// freed with `tk_error_free`.
+/// Returns a pointer to `err`'s message, or NULL if `err` is NULL. The pointer is owned by `err`
+/// and only valid until `err` is freed with `tk_error_free`.
 ///
 /// # Safety
-/// `err` must be a live pointer returned by a fallible FFI fn, not yet freed with
+/// `err` must be NULL, or a live pointer returned by a fallible FFI fn and not yet freed with
 /// `tk_error_free`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tk_error_message(err: *const TkError) -> *const c_char {
+    if err.is_null() {
+        return std::ptr::null();
+    }
     unsafe { &*err }.message.as_ptr()
 }
 
@@ -55,5 +58,51 @@ pub(crate) fn catch_panic<E: std::fmt::Display>(
         Ok(Ok(())) => TkHandle::null(),
         Ok(Err(err)) => TkError::into_handle(err),
         Err(payload) => TkError::into_handle(panic_message(payload)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn message_of(handle: TkHandle<TkError>) -> String {
+        assert!(!handle.is_null());
+        let err = unsafe { handle.as_ref() };
+        err.message.to_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn ok_body_returns_a_null_handle() {
+        let handle = catch_panic(|| -> Result<(), &str> { Ok(()) });
+        assert!(handle.is_null());
+    }
+
+    #[test]
+    fn err_body_carries_its_display_message() {
+        let handle = catch_panic(|| -> Result<(), &str> { Err("bad input") });
+        assert_eq!(message_of(handle), "bad input");
+    }
+
+    #[test]
+    fn a_str_panic_payload_is_preserved() {
+        // `panic!("literal")` with no format args panics with a `&'static str` payload.
+        let handle = catch_panic(|| -> Result<(), &str> { panic!("kaboom") });
+        assert_eq!(message_of(handle), "kaboom");
+    }
+
+    #[test]
+    fn a_string_panic_payload_is_preserved() {
+        // Any format args route the panic payload through `format!`, producing a `String`
+        // instead of a `&str`.
+        let handle = catch_panic(|| -> Result<(), &str> { panic!("{}", "kaboom") });
+        assert_eq!(message_of(handle), "kaboom");
+    }
+
+    #[test]
+    fn an_unrecognized_panic_payload_falls_back_to_a_generic_message() {
+        let handle = catch_panic(|| -> Result<(), &str> {
+            panic::panic_any(42_i32);
+        });
+        assert_eq!(message_of(handle), "unknown panic");
     }
 }
