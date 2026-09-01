@@ -1,0 +1,14 @@
+Checks: >
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  bugprone-*,
+  cert-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-isolate-declaration,
+  -bugprone-easily-swappable-parameters
+WarningsAsErrors: ''
+FormatStyle: file

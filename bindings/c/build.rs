@@ -1,3 +1,7 @@
+//! Generates `include/tokenizers/tokenizers.h` from this crate's `#[unsafe(no_mangle)]` exports with cbindgen.
+//! Before generating, we check that every exported fn is guarded against panics unwinding into C, which is undefined behavior;
+//! see `check_every_exported_fn_catches_panic`.
+
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -5,7 +9,7 @@ use std::path::{Path, PathBuf};
 fn main() {
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
 
-    check_every_exported_fn_is_guarded(&Path::new(&crate_dir).join("src"));
+    check_every_exported_fn_catches_panic(&Path::new(&crate_dir).join("src"));
 
     cbindgen::Builder::new()
         .with_crate(&crate_dir)
@@ -15,22 +19,16 @@ fn main() {
         .write_to_file(Path::new(&crate_dir).join("include/tokenizers/tokenizers.h"));
 }
 
-/// Exported fns that don't need to route through `catch_panic`, with why:
-/// - `tk_error_message`, `tk_error_free` (`src/panic.rs`): they're the error-reporting path
-///   itself, so there's nowhere left to report a panic in here to; their bodies can't
-///   realistically panic either.
-const FFI_EXEMPT: &[&str] = &["tk_error_message", "tk_error_free"];
+// Allowlist of exported functions that don't require to catch panic unwinding
+const PANIC_CATCH_EXEMPT: &[&str] = &[
+    "tk_error_message",
+    "tk_error_free",
+    "tk_tokenizer_free",
+    "tk_encoding_free",
+];
 
-/// Nothing stops writing a `#[unsafe(no_mangle)] pub extern "C" fn` that isn't declared to
-/// return `TkHandle<TkError>` -- and every such fn is expected to call `catch_panic`
-/// (`src/panic.rs`) as its body's tail expression, which only type-checks if the fn returns
-/// exactly that. This parses every `.rs` file under `src/` the same way cbindgen does
-/// (statically, via `syn`) and fails the build if any `no_mangle` fn's return type doesn't
-/// match, unless the fn is named in `FFI_EXEMPT` above with a comment explaining why. Walking
-/// the whole `src/` tree rather than just `lib.rs` matters now that the panic-handling code has
-/// its own module: nothing else would notice a new file added later without also being wired
-/// into this check.
-fn check_every_exported_fn_is_guarded(src_dir: &Path) {
+/// Checks every exported functions properly handle panics and returns a *mut TkHandle<TkError>
+fn check_every_exported_fn_catches_panic(src_dir: &Path) {
     let unguarded: Vec<String> = rust_files(src_dir)
         .iter()
         .flat_map(|path| unguarded_fns_in(path))
@@ -40,10 +38,10 @@ fn check_every_exported_fn_is_guarded(src_dir: &Path) {
         panic!(
             "{} exported fn(s) (#[unsafe(no_mangle)]) aren't declared `-> TkHandle<TkError>`:\n\
              {}\n\n\
-             A panic in one of these would unwind straight into C, which is undefined \
-             behavior. Every fn reachable from C must be declared `-> TkHandle<TkError>` and \
-             call `catch_panic` (`src/panic.rs`) as its body's tail expression, or be added to \
-             FFI_EXEMPT in build.rs with a comment explaining why it doesn't need one.",
+             A panic in one of these would unwind into C code, which is undefined behavior.\
+             Every fn reachable from C must be declared `-> TkHandle<TkError>` and call `catch_panic` (`src/panic.rs`) \
+             as its body's tail expression, or be added to PANIC_CATCH_EXEMPT in build.rs with a comment explaining why \
+             it doesn't need one.",
             unguarded.len(),
             unguarded
                 .iter()
@@ -67,7 +65,7 @@ fn unguarded_fns_in(path: &Path) -> Vec<String> {
             _ => None,
         })
         .filter(|f| f.attrs.iter().any(is_no_mangle))
-        .filter(|f| !FFI_EXEMPT.contains(&f.sig.ident.to_string().as_str()))
+        .filter(|f| !PANIC_CATCH_EXEMPT.contains(&f.sig.ident.to_string().as_str()))
         .filter(|f| !is_guarded(f))
         .map(|f| format!("{} ({})", f.sig.ident, path.display()))
         .collect()
@@ -102,11 +100,7 @@ fn is_no_mangle(attr: &syn::Attribute) -> bool {
             .is_ok_and(|inner| inner.is_ident("no_mangle"))
 }
 
-/// Does `f` return `TkHandle<TkError>` (however `TkError` itself is spelled: `TkError`,
-/// `panic::TkError`, `crate::panic::TkError`, ...)? Matched structurally rather than by exact
-/// path, since the fn's own `use` imports determine which spelling is in scope. Can't tell a
-/// `TkHandle<TkError>` from any other `TkHandle<T>` by type alone (aliases aren't resolved
-/// here), so this only checks the syntax.
+/// Checks whether `f` returns `TkHandle<TkError>` and catches panic unwinding
 fn is_guarded(f: &syn::ItemFn) -> bool {
     let syn::ReturnType::Type(_, ty) = &f.sig.output else {
         return false;

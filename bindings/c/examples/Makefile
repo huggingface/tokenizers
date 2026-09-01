@@ -1,5 +1,7 @@
 CC ?= cc
 CFLAGS ?= -std=c11 -Wall -Wextra
+CLANG_FORMAT ?= clang-format
+CLANG_TIDY ?= clang-tidy
 INCLUDE_DIR := ../include
 LIB_DIR := ../target/release
 FIXTURE := ../../../tokenizers/data/gpt2.json
@@ -13,7 +15,16 @@ encode: encode.c
 run: encode
 	./encode $(FIXTURE) "Hello, world!"
 
+format:
+	$(CLANG_FORMAT) -i encode.c
+
+format-check:
+	$(CLANG_FORMAT) --dry-run --Werror encode.c
+
+lint:
+	$(CLANG_TIDY) encode.c -- $(CFLAGS) -I$(INCLUDE_DIR)
+
 clean:
 	rm -f encode
 
-.PHONY: run clean
+.PHONY: run clean format format-check lint
