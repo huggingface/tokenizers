@@ -130,7 +130,7 @@ they are the only mandatory component of a Tokenizer.
 
 <Tip>
 
-Encode/decode is greedy WordPiece with the `##` continuing-subword prefix.
+Tokenization uses greedy WordPiece with the configured continuing-subword prefix (`##` by default).
 `WordPieceTrainer`, `Tokenizer.train`, and `train_from_iterator` (and transformers' `train_new_from_iterator` on a WordPiece fast tokenizer) build the vocabulary with BPE, because a faithful WordPiece trainer is not implemented. The resulting vocab will not match Google WordPiece on the same corpus. This is expected.
 
 </Tip>
