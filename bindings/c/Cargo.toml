@@ -1,0 +1,38 @@
+[package]
+name = "tokenizers-c"
+version = "1.0.0-rc0"
+authors = ["Simon Brandeis <bison.misandre@proton.me>"]
+edition = "2024"
+
+[lib]
+name = "tokenizers_c"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+tk-encode = { path = "../../tokenizers/tk-encode", default-features = false, features = [
+	"parallelism",
+	"normalizers",
+	"bpe",
+	"unigram",
+	"wordpiece",
+	"wordlevel",
+	"unicode-scripts",
+] }
+# Default features stay on: `deserialize` is the reader, which is the entire reason this is here.
+# The component list mirrors `tk-encode`'s, because the reader has one match arm per component and
+# a component compiled out of one but not the other would fail at load rather than at build.
+tk-serialize = { path = "../../tokenizers/tk-serialize", features = [
+	"parallelism",
+	"normalizers",
+	"bpe",
+	"unigram",
+	"wordpiece",
+	"wordlevel",
+	"unicode-scripts",
+] }
+tk-convert = { path = "../../tokenizers/tk-convert", default-features = false }
+
+
+[build-dependencies]
+cbindgen = "0.29"
+syn = { version = "2", features = ["full", "extra-traits"] }
