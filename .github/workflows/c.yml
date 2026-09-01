@@ -1,0 +1,105 @@
+name: C
+
+on:
+  push:
+    branches:
+      - main
+      - feat/train_encode_split
+    paths-ignore:
+      - bindings/node/**
+      - bindings/python/**
+  pull_request:
+    paths-ignore:
+      - bindings/node/**
+      - bindings/python/**
+
+jobs:
+  build_and_test:
+    name: Build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: bindings/c
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
+        with:
+          workspaces: bindings/c
+          shared-key: c-bindings-${{ matrix.os }}
+
+      # cargo fmt/clippy check source text, not platform behavior, so one OS is enough.
+      - name: Lint with RustFmt
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo fmt --check
+
+      - name: Lint with Clippy
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo clippy --all-targets -- -D warnings
+
+      # Unit tests for the Rust side of the FFI boundary (error formatting, handle lifecycle).
+      # Doctests are skipped by cargo automatically: this crate is cdylib/staticlib only, no rlib.
+      - name: Run cargo tests
+        run: cargo test
+
+      # Also regenerates include/tokenizers/tokenizers.h via build.rs, and fails the build if any
+      # #[unsafe(no_mangle)] fn isn't guarded against panics unwinding into C (see build.rs).
+      - name: Build the cdylib
+        run: cargo build --release --verbose
+
+      # tokenizers.h is checked in so consumers can vendor it without running cbindgen
+      # themselves. build.rs regenerates it on every build, so a diff here means lib.rs
+      # changed without the header being regenerated and committed alongside it. Generation
+      # doesn't depend on the host OS, so one platform is enough to catch drift.
+      - name: Check the generated header is up to date
+        if: matrix.os == 'ubuntu-latest'
+        run: git diff --exit-code -- include/tokenizers/tokenizers.h
+
+      - name: Install clang-format and clang-tidy
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy
+
+      - name: Check example formatting
+        if: matrix.os == 'ubuntu-latest'
+        run: make -C examples format-check
+
+      - name: Lint example with clang-tidy
+        if: matrix.os == 'ubuntu-latest'
+        run: make -C examples lint
+
+      # Test fixtures are immutable — cache them so CI doesn't re-download
+      # from the Hub (and get rate-limited) on every run.
+      - name: Cache HF test data
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: tokenizers/data
+          key: hf-test-data-c-${{ hashFiles('tokenizers/Makefile') }}
+          restore-keys: hf-test-data-c-
+
+      # Provides `uvx`, used to run the huggingface_hub CLI that downloads the
+      # test fixture without a separate install step.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      # Only fixture the example needs (see examples/Makefile's FIXTURE variable).
+      - name: Download the gpt2 fixture
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json --repo-type dataset --revision e20ac5914f5ada06874e4f9d45e49b31a049904e --local-dir ../../tokenizers/data
+
+      # examples/Makefile's `test` target builds and runs encode.c and null_safety.c against
+      # the freshly built cdylib, plain and under ASan/UBSan -- the only thing in this crate
+      # that exercises the FFI ABI end to end rather than just the Rust side of it. ASan/UBSan
+      # still catch use-after-free/double-free/OOB reads made through the dylib even though
+      # only the example is compiled with the sanitizers, since both share the same process
+      # and the same libc allocator symbols.
+      - name: Run the example test suite
+        run: make -C examples test
