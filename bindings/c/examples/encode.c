@@ -8,7 +8,7 @@ static void handle_error(TkHandle_TkError err)
 {
     if (err != NULL)
     {
-        fprintf(stderr, "tokenizers-c error: %s\n", tk_error_message(err));
+        (void)fprintf(stderr, "tokenizers-c error: %s\n", tk_error_message(err));
         tk_error_free(&err);
         exit(1);
     }
@@ -18,7 +18,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        fprintf(stderr, "usage: %s <tokenizer.json> [text]\n", argv[0]);
+        (void)fprintf(stderr, "usage: %s <tokenizer.json> [text]\n", argv[0]);
         return 1;
     }
     const char *tokenizer_path = argv[1];
