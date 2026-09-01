@@ -57,11 +57,11 @@ extern "C" {
 #endif // __cplusplus
 
 /**
- * Returns a pointer to `err`'s message. The pointer is owned by `err` and only valid until `err` is
- * freed with `tk_error_free`.
+ * Returns a pointer to `err`'s message, or NULL if `err` is NULL. The pointer is owned by `err`
+ * and only valid until `err` is freed with `tk_error_free`.
  *
  * # Safety
- * `err` must be a live pointer returned by a fallible FFI fn, not yet freed with
+ * `err` must be NULL, or a live pointer returned by a fallible FFI fn and not yet freed with
  * `tk_error_free`.
  */
 const char *tk_error_message(const struct TkError *err);
