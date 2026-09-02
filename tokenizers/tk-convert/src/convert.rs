@@ -43,6 +43,12 @@ pub enum ConvertError {
     #[error("unknown metaspace prepend_scheme {scheme:?}")]
     UnknownPrependScheme { scheme: String },
 
+    #[error("a `Sequence` post-processor with more than one weaving member is not supported")]
+    PostProcessorSequenceAmbiguous,
+
+    #[error("a `Sequence` post-processor with no members is not supported")]
+    PostProcessorSequenceEmpty,
+
     #[error("a `Metaspace` has no `replacement`")]
     MetaspaceNoReplacement,
 
@@ -543,6 +549,53 @@ fn lower_template_processing(root: &mut Map<String, Value>) -> Result<(), Conver
     lower_template_node(pp)
 }
 
+/// Whether a `Sequence` member weaves nothing, so dropping it changes no ids.
+///
+/// Anything that is not a `TemplateProcessing` is one: a `ByteLevel` post-processor only re-tags
+/// offsets, which the pipeline does not keep. A `TemplateProcessing` is one when its pieces are
+/// the default arrangement, `$A` and `$A $B` with type ids 0 then 1.
+fn weaves_nothing(member: &Value) -> bool {
+    if member.get("type").and_then(Value::as_str) != Some("TemplateProcessing") {
+        return true;
+    }
+    let default_seq = |piece: &Value, id: &str, type_id: u64| {
+        piece.get("seq").and_then(Value::as_str) == Some(id)
+            && piece.get("type_id").map_or(0, |t| t.as_u64().unwrap_or(1)) == type_id
+    };
+    let is = |key, expected: &[(&str, u64)]| {
+        member.get(key).and_then(Value::as_array).is_some_and(|pieces| {
+            pieces.len() == expected.len()
+                && pieces
+                    .iter()
+                    .zip(expected)
+                    .all(|(piece, &(id, type_id))| default_seq(piece, id, type_id))
+        })
+    };
+    is("single", &[("A", 0)]) && is("pair", &[("A", 0), ("B", 1)])
+}
+
+/// Replace a `Sequence` post-processor with the one member that actually weaves something.
+///
+/// The canonical form has no wrapper -- the writer cannot even spell one -- so the reader should
+/// never have to collapse this at load time. llama-3's is a `ByteLevel` in front of a
+/// `TemplateProcessing`; the `ByteLevel` goes. With nothing that weaves, the first member stands,
+/// which is what leaves a `ByteLevel`-only `Sequence` meaning the default frame.
+fn collapse_sequence(node: &mut Value) -> Result<(), ConvertError> {
+    let members = node
+        .get_mut("processors")
+        .and_then(Value::as_array_mut)
+        .ok_or(ConvertError::PostProcessorSequenceEmpty)?;
+    let mut weaving = members.iter().enumerate().filter(|(_, m)| !weaves_nothing(m));
+    let chosen = match (weaving.next(), weaving.next()) {
+        (Some(_), Some(_)) => return Err(ConvertError::PostProcessorSequenceAmbiguous),
+        (Some((i, _)), None) => i,
+        (None, _) if members.is_empty() => return Err(ConvertError::PostProcessorSequenceEmpty),
+        (None, _) => 0,
+    };
+    *node = members.swap_remove(chosen);
+    Ok(())
+}
+
 /// A `TemplateProcessing` can sit inside a `Sequence` post-processor -- llama-3 puts one behind a
 /// `ByteLevel` -- so the whole subtree is walked rather than just the slot.
 fn lower_template_node(node: &mut Value) -> Result<(), ConvertError> {
@@ -558,7 +611,8 @@ fn lower_template_node(node: &mut Value) -> Result<(), ConvertError> {
     if pp.get("type").and_then(Value::as_str) == Some("Sequence")
         && let Some(children) = pp.get_mut("processors")
     {
-        return lower_template_node(children);
+        lower_template_node(children)?;
+        return collapse_sequence(node);
     }
     if pp.get("type").and_then(Value::as_str) != Some("TemplateProcessing") {
         return Ok(());

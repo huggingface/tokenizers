@@ -298,6 +298,51 @@ fn a_template_states_its_ids_instead_of_naming_them() {
     assert!(pp.get("special_tokens").is_none());
 }
 
+/// The canonical form has no `Sequence` post-processor -- the writer cannot spell one -- so the
+/// upgrade drops the wrapper rather than leaving the reader to collapse it at load time.
+#[test]
+fn a_sequence_post_processor_collapses_to_its_weaving_member() {
+    // llama-3's shape: a `ByteLevel` in front of a `TemplateProcessing`.
+    let v = done(
+        BPE,
+        r#", "post_processor": {"type": "Sequence", "processors": [
+             {"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": true, "use_regex": true},
+             {"type": "TemplateProcessing",
+              "single": [{"SpecialToken": {"id": "<s>", "type_id": 0}},
+                         {"Sequence": {"id": "A", "type_id": 0}}],
+              "pair": [],
+              "special_tokens": {"<s>": {"id": "<s>", "ids": [1], "tokens": ["<s>"]}}}]}"#,
+    );
+    let pp = &v["post_processor"];
+    assert_eq!(pp["type"], "TemplateProcessing");
+    assert_eq!(
+        pp["single"],
+        serde_json::json!([{"ids": [1], "type_id": 0}, {"seq": "A", "type_id": 0}])
+    );
+
+    // Nothing weaves, so the first member stands and still means the default frame.
+    let v = done(
+        BPE,
+        r#", "post_processor": {"type": "Sequence", "processors": [
+             {"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": true, "use_regex": true}]}"#,
+    );
+    assert_eq!(v["post_processor"]["type"], "ByteLevel");
+
+    // Two members that both weave: there is no one canonical answer.
+    let msg = err(
+        BPE,
+        r#", "post_processor": {"type": "Sequence", "processors": [
+             {"type": "TemplateProcessing", "single": [{"seq": "A"}], "pair": [],
+              "special_tokens": {}},
+             {"type": "TemplateProcessing",
+              "single": [{"SpecialToken": {"id": "<s>", "type_id": 0}},
+                         {"Sequence": {"id": "A", "type_id": 0}}],
+              "pair": [],
+              "special_tokens": {"<s>": {"id": "<s>", "ids": [1], "tokens": ["<s>"]}}}]}"#,
+    );
+    assert!(msg.contains("more than one weaving member"), "{msg}");
+}
+
 #[test]
 fn data_objects_are_not_mistaken_for_components() {
     // No `replacement`, so if the component walk reached this it would be
