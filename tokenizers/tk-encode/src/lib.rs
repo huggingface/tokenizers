@@ -117,7 +117,6 @@ extern crate log;
 #[macro_use]
 pub mod utils;
 pub mod decoders;
-pub mod models;
 pub mod normalizers;
 pub mod pre_tokenizers;
 pub mod processors;
