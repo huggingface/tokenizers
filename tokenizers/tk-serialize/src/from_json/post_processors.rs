@@ -99,9 +99,9 @@ fn read_template(cfg: &Json<'_>) -> Result<PipelinePostProcessor> {
                     _ => &mut suffix,
                 };
                 for id in ids {
-                    let id = id
-                        .as_u32()
-                        .ok_or_else(|| -> tk_encode::Error { "a template piece has a bad id".into() })?;
+                    let id = id.as_u32().ok_or_else(|| -> tk_encode::Error {
+                        "a template piece has a bad id".into()
+                    })?;
                     dst.push((PipelineToken::from(id), type_id));
                 }
             } else {
@@ -114,7 +114,9 @@ fn read_template(cfg: &Json<'_>) -> Result<PipelinePostProcessor> {
             return Err("not supported: template does not reference sequence A".into());
         }
         if (key == "pair") != t.b_type_id.is_some() {
-            return Err(format!("not supported: `{key}` template references the wrong sequences").into());
+            return Err(
+                format!("not supported: `{key}` template references the wrong sequences").into(),
+            );
         }
         (t.prefix, t.infix, t.suffix) = (prefix.into(), infix.into(), suffix.into());
         Ok(t)

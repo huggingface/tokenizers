@@ -563,13 +563,16 @@ fn weaves_nothing(member: &Value) -> bool {
             && piece.get("type_id").map_or(0, |t| t.as_u64().unwrap_or(1)) == type_id
     };
     let is = |key, expected: &[(&str, u64)]| {
-        member.get(key).and_then(Value::as_array).is_some_and(|pieces| {
-            pieces.len() == expected.len()
-                && pieces
-                    .iter()
-                    .zip(expected)
-                    .all(|(piece, &(id, type_id))| default_seq(piece, id, type_id))
-        })
+        member
+            .get(key)
+            .and_then(Value::as_array)
+            .is_some_and(|pieces| {
+                pieces.len() == expected.len()
+                    && pieces
+                        .iter()
+                        .zip(expected)
+                        .all(|(piece, &(id, type_id))| default_seq(piece, id, type_id))
+            })
     };
     is("single", &[("A", 0)]) && is("pair", &[("A", 0), ("B", 1)])
 }
@@ -585,7 +588,10 @@ fn collapse_sequence(node: &mut Value) -> Result<(), ConvertError> {
         .get_mut("processors")
         .and_then(Value::as_array_mut)
         .ok_or(ConvertError::PostProcessorSequenceEmpty)?;
-    let mut weaving = members.iter().enumerate().filter(|(_, m)| !weaves_nothing(m));
+    let mut weaving = members
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| !weaves_nothing(m));
     let chosen = match (weaving.next(), weaving.next()) {
         (Some(_), Some(_)) => return Err(ConvertError::PostProcessorSequenceAmbiguous),
         (Some((i, _)), None) => i,

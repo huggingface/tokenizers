@@ -744,8 +744,8 @@ impl PipelineTokenizer {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         let template = &self.inner.post_processor.single;
         // Would the template just reproduce the sequence? Nothing to weave, nothing to tag.
-        let reproduces_sequence = !template.has_type_ids()
-            && (!add_special_tokens || template.n_special() == 0);
+        let reproduces_sequence =
+            !template.has_type_ids() && (!add_special_tokens || template.n_special() == 0);
         if reproduces_sequence {
             return self.encode_sequence_into(input, &mut scratch, out);
         }

@@ -113,7 +113,6 @@ impl Template {
         }
         ids
     }
-
 }
 
 #[cfg(test)]

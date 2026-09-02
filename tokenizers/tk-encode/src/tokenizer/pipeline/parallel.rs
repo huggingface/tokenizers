@@ -20,7 +20,6 @@ enum Seq {
     B,
 }
 
-
 use super::Result;
 
 /// Threshold below which [`Inputs`] are encoded serially on the caller thread
