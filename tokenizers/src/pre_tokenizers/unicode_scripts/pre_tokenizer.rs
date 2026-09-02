@@ -51,7 +51,9 @@ impl PreTokenizer for UnicodeScripts {
                         && last_script != Some(Script::Any)
                         && last_script != script
                     {
-                        Some(offset)
+                        // A leading run of `Script::Any` emits no boundary of its own,
+                        // so anchor the first split at 0 instead of skipping past it.
+                        Some(if last_script.is_none() { 0 } else { offset })
                     } else {
                         None
                     };
@@ -63,6 +65,10 @@ impl PreTokenizer for UnicodeScripts {
                     result
                 })
                 .collect();
+            if ranges.is_empty() {
+                // Every char was `Script::Any`, so no boundary was emitted at all.
+                ranges.push(0);
+            }
             ranges.push(normalized.get().len());
             Ok(ranges
                 .windows(2)
@@ -125,6 +131,33 @@ mod tests {
                 .map(|(s, o, _)| (s, o))
                 .collect::<Vec<_>>(),
             vec![("Apples are ", (0, 11)), ("りんご 林檎", (11, 27))]
+        );
+    }
+
+    #[test]
+    fn leading_spaces_are_kept() {
+        let pretok = UnicodeScripts {};
+        for input in [" Yes", "  hello", " どこ", " ", "   "] {
+            let mut pretokenized = PreTokenizedString::from(input);
+            pretok.pre_tokenize(&mut pretokenized).unwrap();
+            let splits: Vec<_> = pretokenized
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect();
+            let rebuilt: String = splits.iter().map(|(s, _)| *s).collect();
+            assert_eq!(rebuilt, input, "{input:?} produced {splits:?}");
+        }
+
+        let mut pretokenized = PreTokenizedString::from(" Yes");
+        pretok.pre_tokenize(&mut pretokenized).unwrap();
+        assert_eq!(
+            pretokenized
+                .get_splits(OffsetReferential::Original, OffsetType::Byte)
+                .into_iter()
+                .map(|(s, o, _)| (s, o))
+                .collect::<Vec<_>>(),
+            vec![(" Yes", (0, 4))]
         );
     }
 
