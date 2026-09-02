@@ -10,6 +10,9 @@
 //! albert-base-v1). `meta-llama/Llama-3.2-1B` is gated, so its fixture is a mirrored copy
 //! (hf-internal-testing/tokenizers-test-data#10) rather than the Hub repo itself.
 //!
+//! all-MiniLM-L6-v2 and all-mpnet-base-v2 are WordPiece again, but their configs ship `truncation`
+//! and `padding` settings, so they are where the padded attention mask and type ids are compared.
+//!
 //! Decode is fed the release's *own* ids, so it is judged on decode alone even where encode
 //! legitimately diverges.
 //!
@@ -121,5 +124,21 @@ fn llama_3_2_1b() {
     assert_matches_released(
         "meta-llama/Llama-3.2-1B",
         "fixtures/models/llama-3.2-1b.json",
+    );
+}
+
+#[test]
+fn all_minilm_l6_v2() {
+    assert_matches_released(
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "fixtures/models/all-minilm-l6-v2.json",
+    );
+}
+
+#[test]
+fn all_mpnet_base_v2() {
+    assert_matches_released(
+        "sentence-transformers/all-mpnet-base-v2",
+        "fixtures/models/all-mpnet-base-v2.json",
     );
 }
