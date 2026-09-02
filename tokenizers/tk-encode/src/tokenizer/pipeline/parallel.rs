@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::parallelism::pool;
 use crate::pipeline::scratch_pool::{EncodeScratch, ScratchGuard};
 use crate::pipeline::{
-    EncodeHandle, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer, Segment, Seq,
-    SpecialSegmentIterator,
+    BatchEncoding, EncodeHandle, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer,
+    Segment, Seq, SpecialSegmentIterator,
 };
 
 use super::Result;
@@ -441,4 +441,71 @@ pub(crate) fn encode(
         });
     }
     EncodeHandle::streaming(StreamingIter::new(batch))
+}
+
+/// [`PipelineTokenizer::encode_batch_flat`] across the pool, or `None` when there is no pool to
+/// spread it over and the caller should stay serial.
+///
+/// Each chunk of documents is encoded into an arena of its own, with a scratch of its own, so the
+/// workers share nothing but the immutable tokenizer -- no chunk table, no task cursor, no
+/// completion queue, and no `Encoding` per document. Those exist in the general path to hand back
+/// a `Vec<Encoding>`, and they are most of the cost when the documents are short.
+pub(crate) fn encode_flat(
+    tok: &PipelineTokenizer,
+    inputs: &[&str],
+    add_special_tokens: bool,
+) -> Result<Option<BatchEncoding>> {
+    use rayon::prelude::*;
+
+    let Some(pool) = pool() else {
+        return Ok(None);
+    };
+    let threads = pool.current_num_threads();
+    if threads < 2 {
+        return Ok(None);
+    }
+
+    // Enough documents per chunk to be worth a task, and enough chunks to keep every thread fed.
+    let total: usize = inputs.iter().map(|s| s.len()).sum();
+    let mean_len = (total / inputs.len()).max(1);
+    let chunk = (PARALLEL_MIN_BYTES / mean_len)
+        .min(inputs.len().div_ceil(threads * 4))
+        .max(1);
+
+    // Encode in parallel, each chunk into its own arena, then lay the arenas end to end. The join
+    // is serial and it is a `memcpy`; handing it back to the pool is possible but was not worth
+    // the machinery at the sizes measured.
+    let parts: Vec<(Vec<PipelineToken>, Vec<u32>)> = pool
+        .install(|| {
+            inputs
+                .par_chunks(chunk)
+                .map(|docs| {
+                    let bytes: usize = docs.iter().map(|s| s.len()).sum();
+                    let mut arena = Vec::with_capacity(bytes / 4 + docs.len());
+                    let mut lens = Vec::with_capacity(docs.len());
+                    let mut scratch = tok.get_scratch();
+                    for doc in docs {
+                        let start = arena.len();
+                        tok.encode_into_with(doc, add_special_tokens, &mut scratch, &mut arena)?;
+                        lens.push((arena.len() - start) as u32);
+                    }
+                    Ok((arena, lens))
+                })
+                .collect::<Vec<Result<_>>>()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut ids = Vec::with_capacity(parts.iter().map(|(a, _)| a.len()).sum());
+    let mut offsets = Vec::with_capacity(inputs.len() + 1);
+    for (arena, lens) in &parts {
+        let mut at = ids.len() as u32;
+        for len in lens {
+            offsets.push(at);
+            at += len;
+        }
+        ids.extend_from_slice(arena);
+    }
+    offsets.push(ids.len() as u32);
+    Ok(Some(BatchEncoding::from_parts(ids, offsets)))
 }

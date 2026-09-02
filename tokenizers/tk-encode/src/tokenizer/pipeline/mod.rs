@@ -449,6 +449,52 @@ impl Encoding {
         self.type_ids.as_deref()
     }
 }
+/// A whole batch's ids in one run, `offsets[i]..offsets[i + 1]` per document.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatchEncoding {
+    ids: Vec<PipelineToken>,
+    /// Row starts, `len() + 1` entries.
+    offsets: Vec<u32>,
+}
+
+impl BatchEncoding {
+    /// How many documents.
+    pub fn len(&self) -> usize {
+        self.offsets.len().saturating_sub(1)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Every document's ids, concatenated.
+    pub fn ids(&self) -> &[PipelineToken] {
+        &self.ids
+    }
+
+    /// Row starts into [`Self::ids`].
+    pub fn offsets(&self) -> &[u32] {
+        &self.offsets
+    }
+
+    #[cfg(feature = "parallelism")]
+    pub(crate) fn from_parts(ids: Vec<PipelineToken>, offsets: Vec<u32>) -> Self {
+        debug_assert_eq!(
+            offsets.last().copied().unwrap_or(0) as usize,
+            ids.len(),
+            "the last offset must be the id count"
+        );
+        Self { ids, offsets }
+    }
+
+    /// Document `i`'s ids.
+    pub fn row(&self, i: usize) -> Option<&[PipelineToken]> {
+        let start = *self.offsets.get(i)? as usize;
+        let end = *self.offsets.get(i + 1)? as usize;
+        self.ids.get(start..end)
+    }
+}
+
 /// Iterator yields results in completion order
 pub struct HandleIter {
     handle: EncodeHandle,
@@ -750,29 +796,118 @@ impl PipelineTokenizer {
         out: &mut Vec<PipelineToken>,
     ) -> Result<()> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
-        let template = &self.inner.post_processor.single;
-        let mut sequences = 0usize;
-        // The same question `post_process` asks: would the template just reproduce the sequence?
-        let reproduces_sequence = !template.has_type_ids
-            && template.slices.iter().all(|slice| match slice {
-                Slice::Specials { .. } => !add_special_tokens,
-                Slice::Sequence { seq: Seq::A, .. } => {
-                    sequences += 1;
-                    true
-                }
-                Slice::Sequence { seq: Seq::B, .. } => false,
-            })
-            && sequences == 1;
-        if reproduces_sequence {
-            return self.encode_sequence_into(input, &mut scratch, out);
+        self.encode_into_with(input, add_special_tokens, &mut scratch, out)
+    }
+
+    /// [`Self::encode_into`] with the caller's scratch, so a loop over many documents checks one
+    /// out of the pool rather than one per document.
+    pub(crate) fn encode_into_with(
+        &self,
+        input: &str,
+        add_special_tokens: bool,
+        scratch: &mut EncodeScratch,
+        out: &mut Vec<PipelineToken>,
+    ) -> Result<()> {
+        match self.flat_template(add_special_tokens) {
+            Some((prefix, suffix)) => {
+                out.extend_from_slice(prefix);
+                self.encode_sequence_into(input, scratch, out)?;
+                out.extend_from_slice(suffix);
+                Ok(())
+            }
+            None => {
+                let encoding =
+                    self.encode_one(Input::Single(input.to_owned()), add_special_tokens, scratch)?;
+                out.extend_from_slice(encoding.ids());
+                Ok(())
+            }
         }
-        let encoding = self.encode_one(
-            Input::Single(input.to_owned()),
-            add_special_tokens,
-            &mut scratch,
-        )?;
-        out.extend_from_slice(encoding.ids());
-        Ok(())
+    }
+
+    /// The specials the single-sequence template puts before and after `A`, when that is all it
+    /// does -- so a caller can append a document's ids straight into its own buffer.
+    ///
+    /// `None` means the template weaves something a flat layout cannot express (type ids, or a
+    /// `B`), and the caller has to assemble a whole `Encoding`.
+    ///
+    /// This is the question `post_process` asks, answered once. `encode_into` used to ask a
+    /// narrower version of it -- whether the template *reproduces* the sequence -- so a template
+    /// that merely wraps it in specials (BERT, RoBERTa, DeepSeek with `add_special_tokens`) took
+    /// the assemble-an-`Encoding`-and-copy path when extending by two slices would have done.
+    fn flat_template(
+        &self,
+        add_special_tokens: bool,
+    ) -> Option<(&[PipelineToken], &[PipelineToken])> {
+        let template = &self.inner.post_processor.single;
+        if template.has_type_ids {
+            return None;
+        }
+        // Exactly one `A`, with nothing but specials around it.
+        let at = template
+            .slices
+            .iter()
+            .position(|s| matches!(s, Slice::Sequence { seq: Seq::A, .. }))?;
+        if !template
+            .slices
+            .iter()
+            .enumerate()
+            .all(|(i, s)| i == at || matches!(s, Slice::Specials { .. }))
+        {
+            return None;
+        }
+        if !add_special_tokens {
+            return Some((&[], &[]));
+        }
+        // One slice per side at most, so both can be borrowed rather than collected. A template
+        // that splits its specials across several slices is rejected instead of stitched: it is
+        // not a shape any real config produces, and the general path already handles it.
+        // A `fn`, not a closure: elision on a closure gives the argument and the return
+        // independent lifetimes, and this has to return a slice borrowed from the argument.
+        fn side(slices: &[Slice]) -> Option<&[PipelineToken]> {
+            match slices {
+                [] => Some(&[]),
+                [Slice::Specials { tokens, .. }] => Some(tokens),
+                _ => None,
+            }
+        }
+        Some((
+            side(&template.slices[..at])?,
+            side(&template.slices[at + 1..])?,
+        ))
+    }
+
+    /// Encode a batch into one contiguous id buffer with row offsets.
+    ///
+    /// The general [`Self::encode`] hands back a `Vec<Encoding>`, one per document, and the
+    /// machinery to do that -- a chunk table, a task list, a completion queue, an `Encoding` per
+    /// input -- is most of the work when the documents are short. This returns the ids as one run
+    /// with `offsets[i]..offsets[i + 1]` per document, which is the shape a tensor wants anyway,
+    /// and lets each worker fill an arena of its own.
+    ///
+    /// Falls back to `encode_one` per document for a template a flat layout cannot express; see
+    /// [`Self::flat_template`].
+    pub fn encode_batch_flat(
+        &self,
+        inputs: &[&str],
+        add_special_tokens: bool,
+    ) -> Result<BatchEncoding> {
+        #[cfg(feature = "parallelism")]
+        if inputs.len() > 1
+            && inputs.iter().map(|s| s.len()).sum::<usize>() >= parallel::PARALLEL_MIN_BYTES
+            && let Some(batch) = parallel::encode_flat(self, inputs, add_special_tokens)?
+        {
+            return Ok(batch);
+        }
+
+        let mut ids = Vec::with_capacity(inputs.iter().map(|s| s.len()).sum::<usize>() / 4);
+        let mut offsets = Vec::with_capacity(inputs.len() + 1);
+        let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
+        for input in inputs {
+            offsets.push(ids.len() as u32);
+            self.encode_into_with(input, add_special_tokens, &mut scratch, &mut ids)?;
+        }
+        offsets.push(ids.len() as u32);
+        Ok(BatchEncoding { ids, offsets })
     }
 
     /// Decode token ids back to a `String`.
