@@ -22,6 +22,7 @@ mod unrolled_regex;
 pub use unrolled_regex::{DEEPSEEK_PATTERNS, Grammar, GrammarPattern, is_deepseek, recognize};
 
 pub mod byte_level;
+pub mod iter;
 pub mod padding;
 #[cfg(feature = "parallelism")]
 pub mod parallelism;
