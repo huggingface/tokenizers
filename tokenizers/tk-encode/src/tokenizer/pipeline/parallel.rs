@@ -359,16 +359,7 @@ impl PipelineTokenizer {
             }
             outputs.push(seq_outputs);
         }
-        // Scheduling wants the big chunks taken first, so one cannot be picked last and become the
-        // straggler the whole batch waits on. It does *not* need a total order: the tasks below are
-        // already byte-balanced, each grown until it holds `PARALLEL_MIN_BYTES`, so how the ones
-        // below that threshold are arranged among themselves cannot change a task's size.
-        //
-        // Sorting every chunk to get that was O(n log n) of 40-byte moves on the calling thread,
-        // before any worker starts -- and n is the batch size when each sequence is one chunk, so a
-        // batch of short documents sorted tens of thousands of structs to answer a question that
-        // only needs two classes. Partitioning the chunks that are a task by themselves to the
-        // front is O(n) and keeps the property that matters.
+         // make sure larger chunks are first in the batch to avoid having a straggler at the end
         let mut boundary = 0;
         for i in 0..chunks.len() {
             if chunks[i].range.len() >= PARALLEL_MIN_BYTES {
