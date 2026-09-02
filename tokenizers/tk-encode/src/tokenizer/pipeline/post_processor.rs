@@ -40,9 +40,7 @@ impl Template {
         self.prefix.len() + self.infix.len() + self.suffix.len()
     }
 
-    /// Whether anything carries a non-zero `type_id`, i.e. whether the encoding needs a `type_ids`
-    /// buffer at all. Derived, so it cannot fall out of sync; a handful of specials is nothing
-    /// next to an encode.
+    /// whether the encoding needs a `type_ids` buffer at all
     pub fn has_type_ids(&self) -> bool {
         self.a_type_id != 0
             || self.b_type_id.is_some_and(|id| id != 0)
@@ -51,9 +49,6 @@ impl Template {
                 .any(|run| run.iter().any(|&(_, id)| id != 0))
     }
 
-    /// Weave the specials around the encoded sequences.
-    ///
-    /// `SPECIALS` is a const parameter so `add_special_tokens` is a constant in here, not a branch.
     pub(super) fn post_process<const SPECIALS: bool>(
         &self,
         s1: Vec<PipelineToken>,
