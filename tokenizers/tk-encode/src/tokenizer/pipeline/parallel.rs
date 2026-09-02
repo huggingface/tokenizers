@@ -406,14 +406,6 @@ pub(crate) fn encode(
     if inputs.size_bytes() < PARALLEL_MIN_BYTES {
         return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
     }
-    // One sequence under `2 * PARALLEL_MIN_BYTES` is emitted by `plan_sequence` as a single chunk,
-    // which becomes a single task, which fails the `tasks.len() < 2` check below -- but only after
-    // `plan_work` has allocated `chunks`, `outputs`, `side_a_len`, `chunk_count` and `tasks`, and
-    // thrown all five away. Every `encode` of a lone document between `PARALLEL_MIN_BYTES` and
-    // twice it paid for that. Decide it before paying.
-    //
-    // `Input::Single` only: a pair is two `plan_sequence` calls, so it can reach two tasks and has
-    // to go through planning to find out.
     if let Inputs::Single(Input::Single(seq)) = &inputs
         && seq.len() < 2 * PARALLEL_MIN_BYTES
     {
