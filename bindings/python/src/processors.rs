@@ -1,25 +1,29 @@
-use std::convert::TryInto;
-use std::sync::Arc;
-use std::sync::RwLock;
+//! Post-processors, expressed over the pipeline's canonical [`Template`] IR.
+//!
+//! The engine keeps one shape -- `prefix? $A infix? ($B suffix?)?` -- for both the single and the
+//! pair case, and remembers only token *ids*. Two consequences show through to Python:
+//!
+//! - `BertProcessing`, `RobertaProcessing` and `ByteLevel` are constructors, not identities. They
+//!   build the template their name implies, and a processor read back out of a tokenizer comes
+//!   back as `TemplateProcessing` -- which is also the only `type` the writer emits.
+//! - `single` and `pair` read back as the canonical piece list, not the string they were written
+//!   as. Resolving a name to an id is one-way; the table is not kept.
+
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 use crate::encoding::PyEncoding;
-use crate::error::ToPyResult;
-use pyo3::IntoPyObjectExt;
 use pyo3::exceptions;
-use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use serde::Deserializer;
-use serde::Serializer;
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize};
-use tk::processors::PostProcessorWrapper;
-use tk::processors::bert::BertProcessing;
-use tk::processors::byte_level::ByteLevel;
-use tk::processors::roberta::RobertaProcessing;
-use tk::processors::template::{SpecialToken, Template};
-use tk::{Encoding, PostProcessor};
+use tk::pipeline::{PipelinePostProcessor, PipelineToken, Template};
 use tokenizers as tk;
+
+fn poisoned() -> PyErr {
+    exceptions::PyException::new_err(
+        "RwLock synchronisation primitive is poisoned, cannot access PostProcessor",
+    )
+}
 
 /// Base class for all post-processors
 ///
@@ -32,94 +36,52 @@ use tokenizers as tk;
     subclass,
     from_py_object
 )]
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(transparent)]
+#[derive(Clone)]
 pub struct PyPostProcessor {
-    processor: PyPostProcessorTypeWrapper,
+    processor: Arc<RwLock<PipelinePostProcessor>>,
 }
 
-impl<I> From<I> for PyPostProcessor
-where
-    I: Into<PostProcessorWrapper>,
-{
-    fn from(processor: I) -> Self {
+impl From<PipelinePostProcessor> for PyPostProcessor {
+    fn from(processor: PipelinePostProcessor) -> Self {
         PyPostProcessor {
-            processor: processor.into().into(),
+            processor: Arc::new(RwLock::new(processor)),
         }
     }
 }
 
 impl PyPostProcessor {
-    pub(crate) fn new(processor: PyPostProcessorTypeWrapper) -> Self {
+    pub(crate) fn new(processor: Arc<RwLock<PipelinePostProcessor>>) -> Self {
         PyPostProcessor { processor }
     }
 
+    /// Every canonical post-processor is a template, so this is the only subtype there is to
+    /// hand back. It stays a method because the tokenizer reaches for it generically.
     pub(crate) fn get_as_subtype(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let base = self.clone();
-        Ok(
-            match &self.processor {
-                PyPostProcessorTypeWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?.into_any(),
-                PyPostProcessorTypeWrapper::Single(inner) => {
-
-            match &*inner.read().map_err(|_| {
-                PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor")
-            })? {
-                PostProcessorWrapper::ByteLevel(_) => Py::new(py, (PyByteLevel {}, base))?
-                    .into_any(),
-                PostProcessorWrapper::Bert(_) => Py::new(py, (PyBertProcessing {}, base))?
-                    .into_any(),
-                PostProcessorWrapper::Roberta(_) => Py::new(py, (PyRobertaProcessing {}, base))?
-                    .into_any(),
-                PostProcessorWrapper::Template(_) => Py::new(py, (PyTemplateProcessing {}, base))?
-                    .into_any(),
-                PostProcessorWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
-                    .into_any(),
-            }
-                }
-            }
-        )
-    }
-}
-
-impl PostProcessor for PyPostProcessor {
-    // TODO: update signature to `tk::Result<usize>`
-    fn added_tokens(&self, is_pair: bool) -> usize {
-        self.processor.added_tokens(is_pair)
+        Ok(Py::new(py, (PyTemplateProcessing {}, base))?.into_any())
     }
 
-    fn process_encodings(
-        &self,
-        encodings: Vec<Encoding>,
-        add_special_tokens: bool,
-    ) -> tk::Result<Vec<Encoding>> {
-        self.processor
-            .process_encodings(encodings, add_special_tokens)
+    fn read(&self) -> PyResult<std::sync::RwLockReadGuard<'_, PipelinePostProcessor>> {
+        self.processor.read().map_err(|_| poisoned())
     }
 }
 
 #[pymethods]
 impl PyPostProcessor {
     fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let data = serde_json::to_string(&self.processor).map_err(|e| {
-            exceptions::PyException::new_err(format!(
-                "Error while attempting to pickle PostProcessor: {e}"
-            ))
-        })?;
-        Ok(PyBytes::new(py, data.as_bytes()).into())
+        let json = to_json(&*self.read()?).to_string();
+        Ok(PyBytes::new(py, json.as_bytes()).into())
     }
 
     fn __setstate__(&mut self, py: Python, state: Py<PyAny>) -> PyResult<()> {
-        match state.extract::<&[u8]>(py) {
-            Ok(s) => {
-                self.processor = serde_json::from_slice(s).map_err(|e| {
-                    exceptions::PyException::new_err(format!(
-                        "Error while attempting to unpickle PostProcessor: {e}"
-                    ))
-                })?;
-                Ok(())
-            }
-            Err(e) => Err(e.into()),
-        }
+        let bytes = state.extract::<&[u8]>(py)?;
+        let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| {
+            exceptions::PyException::new_err(format!(
+                "Error while attempting to unpickle PostProcessor: {e}"
+            ))
+        })?;
+        self.processor = Arc::new(RwLock::new(from_json(&value)?));
+        Ok(())
     }
 
     /// Return the number of special tokens that would be added for single/pair sentences.
@@ -132,7 +94,13 @@ impl PyPostProcessor {
     ///     :obj:`int`: The number of tokens to add
     #[pyo3(text_signature = "(self, is_pair)")]
     fn num_special_tokens_to_add(&self, is_pair: bool) -> PyResult<usize> {
-        Ok(self.processor.added_tokens(is_pair))
+        let processor = self.read()?;
+        let template = if is_pair {
+            &processor.pair
+        } else {
+            &processor.single
+        };
+        Ok(template.n_special())
     }
 
     /// Post-process the given encodings, generating the final one
@@ -159,150 +127,307 @@ impl PyPostProcessor {
         pair: Option<&PyEncoding>,
         add_special_tokens: bool,
     ) -> PyResult<PyEncoding> {
-        let final_encoding = ToPyResult(self.processor.process(
-            encoding.encoding.clone(),
-            pair.map(|e| e.encoding.clone()),
-            add_special_tokens,
-        ))
-        .into_py()?;
-        Ok(final_encoding.into())
+        let processor = self.read()?;
+        let template = if pair.is_some() {
+            &processor.pair
+        } else {
+            &processor.single
+        };
+        let s1 = encoding.encoding.ids().to_vec();
+        let s2 = pair.map(|e| e.encoding.ids().to_vec());
+        let out = if add_special_tokens {
+            template.post_process::<true>(s1, s2)
+        } else {
+            template.post_process::<false>(s1, s2)
+        };
+        Ok(out.into())
     }
 
     fn __repr__(&self) -> PyResult<String> {
-        crate::utils::serde_pyo3::repr(self)
-            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
+        Ok(format!("TemplateProcessing({})", to_json(&*self.read()?)))
     }
 
     fn __str__(&self) -> PyResult<String> {
-        crate::utils::serde_pyo3::to_string(self)
-            .map_err(|e| exceptions::PyException::new_err(e.to_string()))
+        Ok(to_json(&*self.read()?).to_string())
     }
 }
 
-macro_rules! getter {
-    ($self: ident, $variant: ident, $($name: tt)+) => {{
-        let super_ = $self.as_ref();
-        if let PyPostProcessorTypeWrapper::Single(ref single) = super_.processor {
-            if let PostProcessorWrapper::$variant(ref post) = *single.read().expect(
-                "RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"
-            ) {
-                post.$($name)+
+// ---------------------------------------------------------------------------
+// The canonical JSON shape, which is what pickling and `str()` round-trip through.
+// It mirrors `tk_serialize`'s reader and writer; those are crate-private there.
+// ---------------------------------------------------------------------------
+
+fn to_json(processor: &PipelinePostProcessor) -> serde_json::Value {
+    serde_json::json!({
+        "type": "TemplateProcessing",
+        "single": pieces_to_json(&processor.single),
+        "pair": pieces_to_json(&processor.pair),
+    })
+}
+
+/// One template as an array of pieces: `{"seq": "A"}` for a sequence, `{"ids": [...]}` for a run
+/// of special tokens, and `type_id` only when it is not the `0` a piece defaults to.
+fn pieces_to_json(template: &Template) -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    push_specials(&mut out, &template.prefix);
+    out.push(seq_piece("A", template.a_type_id));
+    push_specials(&mut out, &template.infix);
+    if let Some(type_id) = template.b_type_id {
+        out.push(seq_piece("B", type_id));
+    }
+    push_specials(&mut out, &template.suffix);
+    out
+}
+
+fn seq_piece(seq: &str, type_id: u8) -> serde_json::Value {
+    let mut piece = serde_json::Map::new();
+    piece.insert("seq".into(), seq.into());
+    if type_id != 0 {
+        piece.insert("type_id".into(), type_id.into());
+    }
+    piece.into()
+}
+
+/// Consecutive specials sharing a `type_id` go back out as the one `{"ids": [...]}` piece they
+/// most likely came in as.
+fn push_specials(out: &mut Vec<serde_json::Value>, specials: &[(PipelineToken, u8)]) {
+    let mut rest = specials;
+    while let Some(&(_, type_id)) = rest.first() {
+        let n = rest.iter().take_while(|&&(_, id)| id == type_id).count();
+        let ids: Vec<u32> = rest[..n].iter().map(|&(token, _)| token.id()).collect();
+        let mut piece = serde_json::Map::new();
+        piece.insert("ids".into(), ids.into());
+        if type_id != 0 {
+            piece.insert("type_id".into(), type_id.into());
+        }
+        out.push(piece.into());
+        rest = &rest[n..];
+    }
+}
+
+fn from_json(value: &serde_json::Value) -> PyResult<PipelinePostProcessor> {
+    let template_for = |key: &str| -> PyResult<Template> {
+        let array = value
+            .get(key)
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| {
+                exceptions::PyValueError::new_err(format!("TemplateProcessing is missing `{key}`"))
+            })?;
+        let mut pieces = Vec::with_capacity(array.len());
+        for piece in array {
+            let type_id = piece
+                .get("type_id")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0) as u8;
+            if let Some(seq) = piece.get("seq").and_then(serde_json::Value::as_str) {
+                pieces.push(Piece::Seq {
+                    b: seq == "B",
+                    type_id,
+                });
+            } else if let Some(ids) = piece.get("ids").and_then(serde_json::Value::as_array) {
+                let ids = ids
+                    .iter()
+                    .map(|id| {
+                        id.as_u64().map(|id| id as u32).ok_or_else(|| {
+                            exceptions::PyValueError::new_err("a template piece has a bad id")
+                        })
+                    })
+                    .collect::<PyResult<Vec<u32>>>()?;
+                pieces.push(Piece::Ids { ids, type_id });
             } else {
-                unreachable!()
+                return Err(exceptions::PyValueError::new_err(
+                    "a template piece has neither `seq` nor `ids`",
+                ));
             }
+        }
+        build_template(&pieces, key == "pair")
+    };
+
+    Ok(PipelinePostProcessor {
+        single: template_for("single")?,
+        pair: template_for("pair")?,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Parsing the Python-facing template spelling into the canonical shape.
+// ---------------------------------------------------------------------------
+
+/// One parsed piece: a reference to an input sequence, or a run of special-token ids.
+enum Piece {
+    Seq { b: bool, type_id: u8 },
+    Ids { ids: Vec<u32>, type_id: u8 },
+}
+
+/// `<identifier>(:<type_id>)?`, where the identifier is `$A`/`$B`/`$<type_id>` for a sequence and
+/// a special token's name otherwise.
+fn parse_piece(token: &str, specials: &HashMap<String, Vec<u32>>) -> PyResult<Piece> {
+    let (identifier, type_id) = match token.rsplit_once(':') {
+        Some((identifier, id)) => {
+            let id = id.parse::<u8>().map_err(|_| {
+                exceptions::PyValueError::new_err(format!("bad type_id in template piece {token:?}"))
+            })?;
+            (identifier, Some(id))
+        }
+        None => (token, None),
+    };
+
+    if let Some(rest) = identifier.strip_prefix('$') {
+        // `$A`/`$B` name the sequence; `$0`/`$1` name a type id on sequence A; bare `$` is A.
+        return match rest {
+            "" | "A" | "a" => Ok(Piece::Seq {
+                b: false,
+                type_id: type_id.unwrap_or(0),
+            }),
+            "B" | "b" => Ok(Piece::Seq {
+                b: true,
+                type_id: type_id.unwrap_or(0),
+            }),
+            digits => {
+                let parsed = digits.parse::<u8>().map_err(|_| {
+                    exceptions::PyValueError::new_err(format!(
+                        "unknown template sequence {identifier:?}"
+                    ))
+                })?;
+                Ok(Piece::Seq {
+                    b: false,
+                    type_id: type_id.unwrap_or(parsed),
+                })
+            }
+        };
+    }
+
+    let ids = specials.get(identifier).ok_or_else(|| {
+        exceptions::PyValueError::new_err(format!(
+            "the template uses the special token {identifier:?}, which is not in `special_tokens`"
+        ))
+    })?;
+    Ok(Piece::Ids {
+        ids: ids.clone(),
+        type_id: type_id.unwrap_or(0),
+    })
+}
+
+/// Place the pieces into the one shape the engine holds: specials land before A, between A and B,
+/// or after the last sequence -- the only three places a piece can be.
+fn build_template(pieces: &[Piece], is_pair: bool) -> PyResult<Template> {
+    let mut template = Template::default();
+    let (mut prefix, mut infix, mut suffix) = (Vec::new(), Vec::new(), Vec::new());
+    let mut seen_a = false;
+
+    for piece in pieces {
+        match piece {
+            Piece::Seq { b: false, type_id } if !seen_a => {
+                seen_a = true;
+                template.a_type_id = *type_id;
+            }
+            Piece::Seq { b: true, type_id } if seen_a && template.b_type_id.is_none() => {
+                template.b_type_id = Some(*type_id);
+            }
+            Piece::Seq { b, .. } => {
+                let seq = if *b { "B" } else { "A" };
+                return Err(exceptions::PyValueError::new_err(format!(
+                    "not supported: template references sequence {seq} out of order or more than once"
+                )));
+            }
+            Piece::Ids { ids, type_id } => {
+                let dst = match (seen_a, template.b_type_id.is_some(), is_pair) {
+                    (false, ..) => &mut prefix,
+                    (true, false, true) => &mut infix,
+                    _ => &mut suffix,
+                };
+                dst.extend(ids.iter().map(|&id| (PipelineToken::from(id), *type_id)));
+            }
+        }
+    }
+
+    if !seen_a {
+        return Err(exceptions::PyValueError::new_err(
+            "not supported: template does not reference sequence A",
+        ));
+    }
+    if is_pair != template.b_type_id.is_some() {
+        let key = if is_pair { "pair" } else { "single" };
+        return Err(exceptions::PyValueError::new_err(format!(
+            "not supported: `{key}` template references the wrong sequences"
+        )));
+    }
+    (template.prefix, template.infix, template.suffix) =
+        (prefix.into(), infix.into(), suffix.into());
+    Ok(template)
+}
+
+/// A template as Python spells it: a whitespace-delimited string, or a list of pieces.
+struct PyTemplateSpec(Vec<String>);
+
+impl<'a, 'py> FromPyObject<'a, 'py> for PyTemplateSpec {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
+        if let Ok(s) = ob.extract::<String>() {
+            Ok(Self(s.split_whitespace().map(String::from).collect()))
+        } else if let Ok(v) = ob.extract::<Vec<String>>() {
+            Ok(Self(v))
         } else {
-            unreachable!()
-        }
-    }};
-}
-
-macro_rules! setter {
-    ($self: ident, $variant: ident, $name: ident, $value: expr) => {{
-        let super_ = $self.as_ref();
-        if let PyPostProcessorTypeWrapper::Single(ref single) = super_.processor {
-        if let PostProcessorWrapper::$variant(ref mut post) = *single.write().expect(
-            "RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor",
-        ) {
-            post.$name = $value;
-        }
-        }
-    }};
-    ($self: ident, $variant: ident, @$name: ident, $value: expr) => {{
-        let super_ = $self.as_ref();
-        if let PyPostProcessorTypeWrapper::Single(ref single) = super_.processor {
-        if let PostProcessorWrapper::$variant(ref mut post) = *single.write().expect(
-            "RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor",
-        ) {
-            post.$name($value);
-        }
-        }
-    };};
-}
-
-#[derive(Clone)]
-pub(crate) enum PyPostProcessorTypeWrapper {
-    Sequence(Vec<Arc<RwLock<PostProcessorWrapper>>>),
-    Single(Arc<RwLock<PostProcessorWrapper>>),
-}
-
-impl PostProcessor for PyPostProcessorTypeWrapper {
-    fn added_tokens(&self, is_pair: bool) -> usize {
-        match self {
-            PyPostProcessorTypeWrapper::Single(inner) => inner
-                .read()
-                .expect("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor")
-                .added_tokens(is_pair),
-            PyPostProcessorTypeWrapper::Sequence(inner) => inner.iter().map(|p| {
-                p.read()
-                    .expect("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor")
-                    .added_tokens(is_pair)
-            }).sum::<usize>(),
+            Err(exceptions::PyTypeError::new_err(
+                "Expected Union[str, List[str]]",
+            ))
         }
     }
+}
 
-    fn process_encodings(
-        &self,
-        mut encodings: Vec<Encoding>,
-        add_special_tokens: bool,
-    ) -> tk::Result<Vec<Encoding>> {
-        match self {
-            PyPostProcessorTypeWrapper::Single(inner) => inner
-                .read()
-                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
-                .process_encodings(encodings, add_special_tokens),
-            PyPostProcessorTypeWrapper::Sequence(inner) => {
-                for processor in inner.iter() {
-                    encodings = processor
-                        .read()
-                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPreTokenizer"))?
-                        .process_encodings(encodings, add_special_tokens)?;
+/// The `special_tokens` table: a name, and the ids it stands for.
+struct PySpecialTokens(HashMap<String, Vec<u32>>);
+
+impl<'a, 'py> FromPyObject<'a, 'py> for PySpecialTokens {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
+        let mut table = HashMap::new();
+        for item in ob.try_iter()? {
+            let item = item?;
+            if let Ok((name, id)) = item.extract::<(String, u32)>() {
+                table.insert(name, vec![id]);
+            } else if let Ok((id, name)) = item.extract::<(u32, String)>() {
+                table.insert(name, vec![id]);
+            } else if let Ok(dict) = item.cast::<PyDict>() {
+                let name = dict
+                    .get_item("id")?
+                    .ok_or_else(|| exceptions::PyValueError::new_err("`id` must be specified"))?
+                    .extract::<String>()?;
+                let ids = dict
+                    .get_item("ids")?
+                    .ok_or_else(|| exceptions::PyValueError::new_err("`ids` must be specified"))?
+                    .extract::<Vec<u32>>()?;
+                // `tokens` is accepted for compatibility; only the ids reach the engine.
+                if let Some(tokens) = dict.get_item("tokens")? {
+                    let tokens = tokens.extract::<Vec<String>>()?;
+                    if tokens.len() != ids.len() {
+                        return Err(exceptions::PyValueError::new_err(
+                            "`ids` and `tokens` must have the same length",
+                        ));
+                    }
                 }
-        Ok(encodings)
-            },
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for PyPostProcessorTypeWrapper {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wrapper = PostProcessorWrapper::deserialize(deserializer)?;
-        Ok(wrapper.into())
-    }
-}
-
-impl Serialize for PyPostProcessorTypeWrapper {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            PyPostProcessorTypeWrapper::Sequence(seq) => {
-                let mut ser = serializer.serialize_struct("Sequence", 2)?;
-                ser.serialize_field("type", "Sequence")?;
-                ser.serialize_field("processors", seq)?;
-                ser.end()
+                table.insert(name, ids);
+            } else {
+                return Err(exceptions::PyTypeError::new_err(
+                    "Expected Union[Tuple[str, int], Tuple[int, str], dict]",
+                ));
             }
-            PyPostProcessorTypeWrapper::Single(inner) => inner.serialize(serializer),
         }
+        Ok(Self(table))
     }
 }
 
-impl<I> From<I> for PyPostProcessorTypeWrapper
-where
-    I: Into<PostProcessorWrapper>,
-{
-    fn from(processor: I) -> Self {
-        let processor = processor.into();
-        match processor {
-            PostProcessorWrapper::Sequence(seq) => PyPostProcessorTypeWrapper::Sequence(
-                seq.into_iter().map(|p| Arc::new(RwLock::new(p))).collect(),
-            ),
-            _ => PyPostProcessorTypeWrapper::Single(Arc::new(RwLock::new(processor.clone()))),
-        }
-    }
+// ---------------------------------------------------------------------------
+// The constructors.
+// ---------------------------------------------------------------------------
+
+/// A run of ids at one type id, as the engine holds it.
+fn run(ids: &[u32], type_id: u8) -> Box<[(PipelineToken, u8)]> {
+    ids.iter()
+        .map(|&id| (PipelineToken::from(id), type_id))
+        .collect()
 }
 
 /// This post-processor takes care of adding the special tokens needed by
@@ -310,6 +435,10 @@ where
 ///
 ///     - a SEP token
 ///     - a CLS token
+///
+/// It builds the templates :obj:`[CLS] $A [SEP]` and :obj:`[CLS] $A [SEP] $B:1 [SEP]:1`. The
+/// result is a :class:`~tokenizers.processors.TemplateProcessing`; only the string
+/// representation of the tokens is dropped, since the engine keeps ids.
 ///
 /// Args:
 ///     sep (:obj:`Tuple[str, int]`):
@@ -327,53 +456,35 @@ where
 ///
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "BertProcessing")]
 pub struct PyBertProcessing {}
+
 #[pymethods]
 impl PyBertProcessing {
     #[new]
-    #[pyo3(text_signature = "(self, sep, cls_token: str| int)")]
-    fn new(sep: (String, u32), cls_token: (String, u32)) -> PyClassInitializer<Self> {
-        PyClassInitializer::<PyPostProcessor>::from(PyPostProcessor::from(BertProcessing::new(
-            sep, cls_token,
-        )))
-        .add_subclass(PyBertProcessing {})
+    #[pyo3(text_signature = "(self, sep, cls)")]
+    fn new(sep: (String, u32), cls: (String, u32)) -> PyClassInitializer<Self> {
+        let (sep, cls) = (sep.1, cls.1);
+        let processor = PipelinePostProcessor {
+            // `[CLS] $A [SEP]`
+            single: Template {
+                prefix: run(&[cls], 0),
+                suffix: run(&[sep], 0),
+                ..Template::default()
+            },
+            // `[CLS] $A [SEP] $B@1 [SEP]@1`
+            pair: Template {
+                prefix: run(&[cls], 0),
+                infix: run(&[sep], 0),
+                suffix: run(&[sep], 1),
+                a_type_id: 0,
+                b_type_id: Some(1),
+            },
+        };
+        PyClassInitializer::<PyPostProcessor>::from(PyPostProcessor::from(processor))
+            .add_subclass(PyBertProcessing {})
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
         PyTuple::new(py, [("", 0), ("", 0)])
-    }
-
-    #[getter]
-    fn get_sep(self_: PyRef<'_, Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
-        let py = self_.py();
-        let (tok, id) = getter!(self_, Bert, get_sep_copy());
-        PyTuple::new(
-            py,
-            Vec::<Py<PyAny>>::from([tok.into_py_any(py)?, id.into_py_any(py)?]),
-        )
-    }
-
-    #[setter]
-    fn set_sep(self_: PyRef<Self>, sep: Bound<'_, PyTuple>) -> PyResult<()> {
-        let sep = sep.extract()?;
-        setter!(self_, Bert, sep, sep);
-        Ok(())
-    }
-
-    #[getter]
-    fn get_cls(self_: PyRef<'_, Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
-        let py = self_.py();
-        let (tok, id) = getter!(self_, Bert, get_cls_copy());
-        PyTuple::new(
-            py,
-            Vec::<Py<PyAny>>::from([tok.into_py_any(py)?, id.into_py_any(py)?]),
-        )
-    }
-
-    #[setter]
-    fn set_cls(self_: PyRef<Self>, cls: Bound<'_, PyTuple>) -> PyResult<()> {
-        let cls = cls.extract()?;
-        setter!(self_, Bert, cls, cls);
-        Ok(())
     }
 }
 
@@ -383,10 +494,8 @@ impl PyBertProcessing {
 ///     - a SEP token
 ///     - a CLS token
 ///
-/// It also takes care of trimming the offsets.
-/// By default, the ByteLevel BPE might include whitespaces in the produced tokens. If you don't
-/// want the offsets to include these whitespaces, then this PostProcessor should be initialized
-/// with :obj:`trim_offsets=True`
+/// It builds the templates :obj:`<s> $A </s>` and :obj:`<s> $A </s></s> $B </s>`, all at type
+/// id 0. The result is a :class:`~tokenizers.processors.TemplateProcessing`.
 ///
 /// Args:
 ///     sep (:obj:`Tuple[str, int]`):
@@ -396,11 +505,11 @@ impl PyBertProcessing {
 ///         A tuple with the string representation of the CLS token, and its id
 ///
 ///     trim_offsets (:obj:`bool`, `optional`, defaults to :obj:`True`):
-///         Whether to trim the whitespaces from the produced offsets.
+///         Accepted for compatibility and ignored. The pipeline does not keep offsets, so
+///         there is nothing to trim.
 ///
 ///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
-///         Whether the add_prefix_space option was enabled during pre-tokenization. This
-///         is relevant because it defines the way the offsets are trimmed out.
+///         Accepted for compatibility and ignored, for the same reason.
 ///
 /// Example::
 ///
@@ -411,107 +520,71 @@ impl PyBertProcessing {
 ///
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "RobertaProcessing")]
 pub struct PyRobertaProcessing {}
+
 #[pymethods]
 impl PyRobertaProcessing {
     #[new]
     #[pyo3(
-        signature = (sep, cls_token, trim_offsets = true, add_prefix_space = true),
-        text_signature = "(self, sep, cls_token, trim_offsets=True, add_prefix_space=True)"
+        signature = (sep, cls, trim_offsets = true, add_prefix_space = true),
+        text_signature = "(self, sep, cls, trim_offsets=True, add_prefix_space=True)"
     )]
     fn new(
         sep: (String, u32),
-        cls_token: (String, u32),
+        cls: (String, u32),
         trim_offsets: bool,
         add_prefix_space: bool,
     ) -> PyClassInitializer<Self> {
-        let proc = RobertaProcessing::new(sep, cls_token)
-            .trim_offsets(trim_offsets)
-            .add_prefix_space(add_prefix_space);
-        PyClassInitializer::<PyPostProcessor>::from(PyPostProcessor::from(proc))
+        let _ = (trim_offsets, add_prefix_space);
+        let (sep, cls) = (sep.1, cls.1);
+        let processor = PipelinePostProcessor {
+            // `<s> $A </s>`
+            single: Template {
+                prefix: run(&[cls], 0),
+                suffix: run(&[sep], 0),
+                ..Template::default()
+            },
+            // `<s> $A </s></s> $B </s>`, all at type id 0
+            pair: Template {
+                prefix: run(&[cls], 0),
+                infix: run(&[sep, sep], 0),
+                suffix: run(&[sep], 0),
+                a_type_id: 0,
+                b_type_id: Some(0),
+            },
+        };
+        PyClassInitializer::<PyPostProcessor>::from(PyPostProcessor::from(processor))
             .add_subclass(PyRobertaProcessing {})
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
         PyTuple::new(py, [("", 0), ("", 0)])
     }
-
-    #[getter]
-    fn get_sep(self_: PyRef<'_, Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
-        let py = self_.py();
-        let (tok, id) = getter!(self_, Roberta, get_sep_copy());
-        PyTuple::new(
-            py,
-            Vec::<Py<PyAny>>::from([tok.into_py_any(py)?, id.into_py_any(py)?]),
-        )
-    }
-
-    #[setter]
-    fn set_sep(self_: PyRef<Self>, sep: Bound<'_, PyTuple>) -> PyResult<()> {
-        let sep = sep.extract()?;
-        setter!(self_, Roberta, sep, sep);
-        Ok(())
-    }
-
-    #[getter]
-    fn get_cls(self_: PyRef<'_, Self>) -> Result<Bound<'_, PyTuple>, PyErr> {
-        let py = self_.py();
-        let (tok, id) = getter!(self_, Roberta, get_cls_copy());
-        PyTuple::new(
-            py,
-            Vec::<Py<PyAny>>::from([tok.into_py_any(py)?, id.into_py_any(py)?]),
-        )
-    }
-
-    #[setter]
-    fn set_cls(self_: PyRef<Self>, cls: Bound<'_, PyTuple>) -> PyResult<()> {
-        let cls = cls.extract()?;
-        setter!(self_, Roberta, cls, cls);
-        Ok(())
-    }
-
-    #[getter]
-    fn get_trim_offsets(self_: PyRef<Self>) -> bool {
-        getter!(self_, Roberta, trim_offsets)
-    }
-
-    #[setter]
-    fn set_trim_offsets(self_: PyRef<Self>, trim_offsets: bool) {
-        setter!(self_, Roberta, trim_offsets, trim_offsets)
-    }
-
-    #[getter]
-    fn get_add_prefix_space(self_: PyRef<Self>) -> bool {
-        getter!(self_, Roberta, add_prefix_space)
-    }
-
-    #[setter]
-    fn set_add_prefix_space(self_: PyRef<Self>, add_prefix_space: bool) {
-        setter!(self_, Roberta, add_prefix_space, add_prefix_space)
-    }
 }
 
-/// This post-processor takes care of trimming the offsets.
+/// A post-processor that weaves nothing.
 ///
-/// By default, the ByteLevel BPE might include whitespaces in the produced tokens. If you don't
-/// want the offsets to include these whitespaces, then this PostProcessor must be used.
+/// It exists because a `ByteLevel` post-processor only ever re-tagged offsets, and the pipeline
+/// does not keep offsets. Constructing one gives the frame that adds no tokens and no type ids,
+/// which is also what a missing `post_processor` gives.
 ///
 /// Args:
-///     trim_offsets (:obj:`bool`):
-///         Whether to trim the whitespaces from the produced offsets.
+///     trim_offsets (:obj:`bool`, `optional`):
+///         Accepted for compatibility and ignored.
 ///
-///     add_prefix_space (:obj:`bool`, `optional`, defaults to :obj:`True`):
-///         If :obj:`True`, keeps the first token's offset as is. If :obj:`False`, increments
-///         the start of the first token's offset by 1. Only has an effect if :obj:`trim_offsets`
-///         is set to :obj:`True`.
+///     add_prefix_space (:obj:`bool`, `optional`):
+///         Accepted for compatibility and ignored.
+///
+///     use_regex (:obj:`bool`, `optional`):
+///         Accepted for compatibility and ignored.
 ///
 /// Example::
 ///
 ///     >>> from tokenizers.processors import ByteLevel
-///     >>> processor = ByteLevel(trim_offsets=True)
-///     >>> # Offsets will be trimmed to exclude leading whitespace bytes
+///     >>> processor = ByteLevel()
 ///
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "ByteLevel")]
 pub struct PyByteLevel {}
+
 #[pymethods]
 impl PyByteLevel {
     #[new]
@@ -525,123 +598,11 @@ impl PyByteLevel {
         use_regex: Option<bool>,
         _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyClassInitializer<Self> {
-        let mut byte_level = ByteLevel::default();
-
-        if let Some(aps) = add_prefix_space {
-            byte_level = byte_level.add_prefix_space(aps);
-        }
-
-        if let Some(to) = trim_offsets {
-            byte_level = byte_level.trim_offsets(to);
-        }
-
-        if let Some(ur) = use_regex {
-            byte_level = byte_level.use_regex(ur);
-        }
-
-        PyClassInitializer::<PyPostProcessor>::from(PyPostProcessor::from(byte_level))
-            .add_subclass(PyByteLevel {})
-    }
-
-    #[getter]
-    fn get_add_prefix_space(self_: PyRef<Self>) -> bool {
-        getter!(self_, ByteLevel, add_prefix_space)
-    }
-
-    #[setter]
-    fn set_add_prefix_space(self_: PyRef<Self>, add_prefix_space: bool) {
-        setter!(self_, ByteLevel, add_prefix_space, add_prefix_space)
-    }
-
-    #[getter]
-    fn get_trim_offsets(self_: PyRef<Self>) -> bool {
-        getter!(self_, ByteLevel, trim_offsets)
-    }
-
-    #[setter]
-    fn set_trim_offsets(self_: PyRef<Self>, trim_offsets: bool) {
-        setter!(self_, ByteLevel, trim_offsets, trim_offsets)
-    }
-
-    #[getter]
-    fn get_use_regex(self_: PyRef<Self>) -> bool {
-        getter!(self_, ByteLevel, use_regex)
-    }
-
-    #[setter]
-    fn set_use_regex(self_: PyRef<Self>, use_regex: bool) {
-        setter!(self_, ByteLevel, use_regex, use_regex)
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct PySpecialToken(SpecialToken);
-
-impl From<PySpecialToken> for SpecialToken {
-    fn from(v: PySpecialToken) -> Self {
-        v.0
-    }
-}
-
-impl<'a, 'py> FromPyObject<'a, 'py> for PySpecialToken {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        if let Ok(v) = ob.extract::<(String, u32)>() {
-            Ok(Self(v.into()))
-        } else if let Ok(v) = ob.extract::<(u32, String)>() {
-            Ok(Self(v.into()))
-        } else if let Ok(d) = ob.cast::<PyDict>() {
-            let id = d
-                .get_item("id")?
-                .ok_or_else(|| exceptions::PyValueError::new_err("`id` must be specified"))?
-                .extract::<String>()?;
-            let ids = d
-                .get_item("ids")?
-                .ok_or_else(|| exceptions::PyValueError::new_err("`ids` must be specified"))?
-                .extract::<Vec<u32>>()?;
-            let tokens = d
-                .get_item("tokens")?
-                .ok_or_else(|| exceptions::PyValueError::new_err("`tokens` must be specified"))?
-                .extract::<Vec<String>>()?;
-
-            Ok(Self(
-                ToPyResult(SpecialToken::new(id, ids, tokens)).into_py()?,
-            ))
-        } else {
-            Err(exceptions::PyTypeError::new_err(
-                "Expected Union[Tuple[str, int], Tuple[int, str], dict]",
-            ))
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct PyTemplate(Template);
-
-impl From<PyTemplate> for Template {
-    fn from(v: PyTemplate) -> Self {
-        v.0
-    }
-}
-
-impl<'a, 'py> FromPyObject<'a, 'py> for PyTemplate {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        if let Ok(s) = ob.extract::<String>() {
-            Ok(Self(
-                s.try_into().map_err(exceptions::PyValueError::new_err)?,
-            ))
-        } else if let Ok(s) = ob.extract::<Vec<String>>() {
-            Ok(Self(
-                s.try_into().map_err(exceptions::PyValueError::new_err)?,
-            ))
-        } else {
-            Err(exceptions::PyTypeError::new_err(
-                "Expected Union[str, List[str]]",
-            ))
-        }
+        let _ = (add_prefix_space, trim_offsets, use_regex);
+        PyClassInitializer::<PyPostProcessor>::from(PyPostProcessor::from(
+            PipelinePostProcessor::default(),
+        ))
+        .add_subclass(PyByteLevel {})
     }
 }
 
@@ -684,6 +645,12 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyTemplate {
 /// to something totally different in a `Tokenizer` using this `PostProcessor`, it
 /// might lead to unexpected results.
 ///
+/// The engine holds one shape, ``prefix? $A infix? ($B suffix?)?``, so a template must
+/// reference ``$A`` exactly once, reference ``$B`` at most once and after ``$A``, and place its
+/// special tokens only before ``$A``, between the two sequences, or after the last one. The
+/// ``single`` template must not reference ``$B``, and the ``pair`` template must. Anything else
+/// raises a :obj:`ValueError` rather than being silently reshaped.
+///
 /// Args:
 ///     single (:obj:`Template`):
 ///         The template used for single sequences
@@ -711,6 +678,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyTemplate {
 ///          the same length.
 #[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "TemplateProcessing")]
 pub struct PyTemplateProcessing {}
+
 #[pymethods]
 impl PyTemplateProcessing {
     #[new]
@@ -719,24 +687,32 @@ impl PyTemplateProcessing {
         text_signature = "(self, single=None, pair=None, special_tokens=None)"
     )]
     fn new(
-        single: Option<PyTemplate>,
-        pair: Option<PyTemplate>,
-        special_tokens: Option<Vec<PySpecialToken>>,
+        single: Option<PyTemplateSpec>,
+        pair: Option<PyTemplateSpec>,
+        special_tokens: Option<PySpecialTokens>,
     ) -> PyResult<PyClassInitializer<Self>> {
-        let mut builder = tk::processors::template::TemplateProcessing::builder();
+        let specials = special_tokens.map(|t| t.0).unwrap_or_default();
 
-        if let Some(seq) = single {
-            builder.single(seq.into());
-        }
-        if let Some(seq) = pair {
-            builder.pair(seq.into());
-        }
-        if let Some(sp) = special_tokens {
-            builder.special_tokens(sp);
-        }
-        let processor = builder
-            .build()
-            .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?;
+        let build = |spec: Option<PyTemplateSpec>, is_pair: bool| -> PyResult<Template> {
+            let Some(spec) = spec else {
+                // The template that reproduces the sequence, which is what an unset one means.
+                return Ok(Template {
+                    b_type_id: is_pair.then_some(1),
+                    ..Template::default()
+                });
+            };
+            let pieces = spec
+                .0
+                .iter()
+                .map(|token| parse_piece(token, &specials))
+                .collect::<PyResult<Vec<Piece>>>()?;
+            build_template(&pieces, is_pair)
+        };
+
+        let processor = PipelinePostProcessor {
+            single: build(single, false)?,
+            pair: build(pair, true)?,
+        };
 
         Ok(
             PyClassInitializer::<PyPostProcessor>::from(PyPostProcessor::from(processor))
@@ -744,115 +720,18 @@ impl PyTemplateProcessing {
         )
     }
 
+    /// The single-sequence template, as the canonical list of pieces.
     #[getter]
-    fn get_single(self_: PyRef<Self>) -> String {
-        getter!(self_, Template, get_single())
+    fn get_single(self_: PyRef<Self>) -> PyResult<String> {
+        let processor = self_.as_ref().read()?;
+        Ok(serde_json::Value::from(pieces_to_json(&processor.single)).to_string())
     }
 
-    #[setter]
-    fn set_single(self_: PyRef<Self>, single: PyTemplate) -> PyResult<()> {
-        let template: Template = Template::from(single);
-        let super_ = self_.as_ref();
-        if let PyPostProcessorTypeWrapper::Single(ref inner) = super_.processor
-            && let PostProcessorWrapper::Template(ref mut post) = *inner
-                .write()
-                .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))? {
-                post.set_single(template);
-            }
-        Ok(())
-    }
-}
-
-/// Sequence Processor
-///
-/// Chains multiple post-processors together, applying them in order. Each processor
-/// in the sequence processes the output of the previous one.
-///
-/// Args:
-///     processors (:obj:`List[PostProcessor]`):
-///         The list of post-processors to chain together.
-///
-/// Example::
-///
-///     >>> from tokenizers.processors import BertProcessing, ByteLevel, Sequence
-///     >>> processor = Sequence([ByteLevel(trim_offsets=True), BertProcessing(("[SEP]", 102), ("[CLS]", 101))])
-///
-#[pyclass(extends=PyPostProcessor, module = "tokenizers.processors", name = "Sequence")]
-pub struct PySequence {}
-
-#[pymethods]
-impl PySequence {
-    #[new]
-    #[pyo3(signature = (processors_py), text_signature = "(self, processors)")]
-    fn new(processors_py: &Bound<'_, PyList>) -> PyResult<PyClassInitializer<Self>> {
-        let mut processors = Vec::with_capacity(processors_py.len());
-        for n in processors_py.iter() {
-            let processor: PyRef<PyPostProcessor> = n.extract()?;
-            match &processor.processor {
-                PyPostProcessorTypeWrapper::Sequence(inner) => {
-                    processors.extend(inner.iter().cloned())
-                }
-                PyPostProcessorTypeWrapper::Single(inner) => processors.push(inner.clone()),
-            }
-        }
-        Ok(
-            PyClassInitializer::<PyPostProcessor>::from(PyPostProcessor::new(
-                PyPostProcessorTypeWrapper::Sequence(processors),
-            ))
-            .add_subclass(PySequence {}),
-        )
-    }
-
-    fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
-        PyTuple::new(py, [PyList::empty(py)])
-    }
-
-    fn __getitem__(self_: PyRef<'_, Self>, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
-        match &self_.as_ref().processor {
-            PyPostProcessorTypeWrapper::Sequence(inner) => match inner.get(index) {
-                Some(item) => {
-                    PyPostProcessor::new(PyPostProcessorTypeWrapper::Single(item.clone()))
-                        .get_as_subtype(py)
-                }
-                _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                    "Index not found",
-                )),
-            },
-            _ => Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                "This processor is not a Sequence, it does not support __getitem__",
-            )),
-        }
-    }
-
-    fn __setitem__(self_: PyRef<'_, Self>, index: usize, value: Bound<'_, PyAny>) -> PyResult<()> {
-        let processor: PyPostProcessor = value.extract()?;
-        let PyPostProcessorTypeWrapper::Single(processor) = processor.processor else {
-            return Err(PyException::new_err("processor should not be a sequence"));
-        };
-
-        match &self_.as_ref().processor {
-            PyPostProcessorTypeWrapper::Sequence(inner) => match inner.get(index) {
-                Some(item) => {
-                    *item
-                        .write()
-                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))? = processor
-                        .read()
-                        .map_err(|_| PyException::new_err("RwLock synchronisation primitive is poisoned, cannot get subtype of PyPostProcessor"))?
-                        .clone();
-                }
-                _ => {
-                    return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                        "Index not found",
-                    ));
-                }
-            },
-            _ => {
-                return Err(PyException::new_err(
-                    "This processor is not a Sequence, it does not support __setitem__",
-                ));
-            }
-        };
-        Ok(())
+    /// The pair template, as the canonical list of pieces.
+    #[getter]
+    fn get_pair(self_: PyRef<Self>) -> PyResult<String> {
+        let processor = self_.as_ref().read()?;
+        Ok(serde_json::Value::from(pieces_to_json(&processor.pair)).to_string())
     }
 }
 
@@ -868,65 +747,98 @@ pub mod processors {
     #[pymodule_export]
     pub use super::PyRobertaProcessing;
     #[pymodule_export]
-    pub use super::PySequence;
-    #[pymodule_export]
     pub use super::PyTemplateProcessing;
 }
 
 #[cfg(test)]
 mod test {
-    use std::sync::{Arc, RwLock};
+    use super::*;
 
-    use pyo3::prelude::*;
-    use tk::processors::PostProcessorWrapper;
-    use tk::processors::bert::BertProcessing;
+    /// `[CLS] $A [SEP]` / `[CLS] $A [SEP] $B:1 [SEP]:1`, the shape the docstring advertises.
+    fn bert() -> PipelinePostProcessor {
+        PipelinePostProcessor {
+            single: Template {
+                prefix: run(&[1], 0),
+                suffix: run(&[0], 0),
+                ..Template::default()
+            },
+            pair: Template {
+                prefix: run(&[1], 0),
+                infix: run(&[0], 0),
+                suffix: run(&[0], 1),
+                a_type_id: 0,
+                b_type_id: Some(1),
+            },
+        }
+    }
 
-    use crate::processors::{PyPostProcessor, PyPostProcessorTypeWrapper};
-
-    #[test]
-    fn get_subtype() {
-        Python::attach(|py| {
-            let py_proc = PyPostProcessor::new(PyPostProcessorTypeWrapper::Single(Arc::new(
-                RwLock::new(BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 1)).into()),
-            )));
-            let py_bert = py_proc.get_as_subtype(py).unwrap();
-            assert_eq!(
-                "BertProcessing",
-                py_bert.bind(py).get_type().qualname().unwrap()
-            );
+    fn parse(single: &str, pair: &str, specials: &[(&str, u32)]) -> PyResult<PipelinePostProcessor> {
+        let table: HashMap<String, Vec<u32>> = specials
+            .iter()
+            .map(|&(name, id)| (name.to_string(), vec![id]))
+            .collect();
+        let build = |spec: &str, is_pair: bool| -> PyResult<Template> {
+            let pieces = spec
+                .split_whitespace()
+                .map(|token| parse_piece(token, &table))
+                .collect::<PyResult<Vec<Piece>>>()?;
+            build_template(&pieces, is_pair)
+        };
+        Ok(PipelinePostProcessor {
+            single: build(single, false)?,
+            pair: build(pair, true)?,
         })
     }
 
     #[test]
-    fn serialize() {
-        let rs_processing = BertProcessing::new(("SEP".into(), 0), ("CLS".into(), 1));
-        let rs_wrapper: PostProcessorWrapper = rs_processing.clone().into();
-        let rs_processing_ser = serde_json::to_string(&rs_processing).unwrap();
-        let rs_wrapper_ser = serde_json::to_string(&rs_wrapper).unwrap();
+    fn the_docstring_template_lowers_to_the_documented_shape() {
+        let parsed = parse(
+            "[CLS] $0 [SEP]",
+            "[CLS] $A [SEP] $B:1 [SEP]:1",
+            &[("[CLS]", 1), ("[SEP]", 0)],
+        )
+        .unwrap();
+        let expected = bert();
+        assert_eq!(parsed.single.prefix, expected.single.prefix);
+        assert_eq!(parsed.single.suffix, expected.single.suffix);
+        assert_eq!(parsed.pair.prefix, expected.pair.prefix);
+        assert_eq!(parsed.pair.infix, expected.pair.infix);
+        assert_eq!(parsed.pair.suffix, expected.pair.suffix);
+        assert_eq!(parsed.pair.b_type_id, Some(1));
+    }
 
-        let py_processing = PyPostProcessor::new(PyPostProcessorTypeWrapper::Single(Arc::new(
-            RwLock::new(rs_wrapper),
-        )));
-        let py_ser = serde_json::to_string(&py_processing).unwrap();
-        assert_eq!(py_ser, rs_processing_ser);
-        assert_eq!(py_ser, rs_wrapper_ser);
+    #[test]
+    fn json_round_trips() {
+        let json = to_json(&bert());
+        let back = from_json(&json).unwrap();
+        assert_eq!(to_json(&back), json);
+        assert_eq!(json["type"], "TemplateProcessing");
+    }
 
-        let py_processing: PyPostProcessor = serde_json::from_str(&rs_processing_ser).unwrap();
-        match py_processing.processor {
-            PyPostProcessorTypeWrapper::Single(inner) => match *inner.as_ref().read().unwrap() {
-                PostProcessorWrapper::Bert(_) => (),
-                _ => panic!("Expected Bert postprocessor."),
-            },
-            _ => panic!("Expected a single processor, got a sequence"),
+    #[test]
+    fn shapes_the_engine_cannot_hold_are_rejected() {
+        // A special token in the middle of a sequence, a `$B` before `$A`, `$A` twice, a `single`
+        // that references `$B`, and a `pair` that does not.
+        for (single, pair) in [
+            ("$A [SEP] $A", "$A $B"),
+            ("$A", "$B $A"),
+            ("$A $A", "$A $B"),
+            ("$A $B", "$A $B"),
+            ("$A", "$A"),
+        ] {
+            assert!(
+                parse(single, pair, &[("[SEP]", 0)]).is_err(),
+                "expected {single:?} / {pair:?} to be rejected"
+            );
         }
+    }
 
-        let py_processing: PyPostProcessor = serde_json::from_str(&rs_wrapper_ser).unwrap();
-        match py_processing.processor {
-            PyPostProcessorTypeWrapper::Single(inner) => match *inner.as_ref().read().unwrap() {
-                PostProcessorWrapper::Bert(_) => (),
-                _ => panic!("Expected Bert postprocessor."),
-            },
-            _ => panic!("Expected a single processor, got a sequence"),
-        };
+    #[test]
+    fn an_unknown_special_token_names_itself() {
+        let err = parse("[CLS] $A", "$A $B", &[]).unwrap_err();
+        assert!(
+            format!("{err}").contains("[CLS]"),
+            "error should name the token: {err}"
+        );
     }
 }

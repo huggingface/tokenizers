@@ -3251,6 +3251,7 @@ dependencies = [
  "tempfile",
  "tk-convert",
  "tk-encode",
+ "tk-serialize",
  "tracing",
  "tracing-subscriber",
 ]

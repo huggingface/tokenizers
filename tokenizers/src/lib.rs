@@ -46,6 +46,13 @@ pub use tk_encode::utils::parallelism;
 pub use tk_encode::FromPretrainedParameters;
 
 // ---------------------------------------------------------------------------
+// The reader and the writer — re-exported from `tk-serialize`.
+// ---------------------------------------------------------------------------
+pub use tk_serialize::{
+    from_json, from_json_file, post_processor_from_json, post_processor_to_json, to_json,
+};
+
+// ---------------------------------------------------------------------------
 // The legacy-config upgrade pass — all that is left of the config layer.
 // ---------------------------------------------------------------------------
 pub use tk_convert::{

@@ -13,56 +13,11 @@ pub(super) fn read_post_processor(cfg: Option<&Json<'_>>) -> Result<PipelinePost
         .type_tag()
         .ok_or_else(|| unsupported("a post-processor with no `type`"))?;
     match kind {
-        "ByteLevel" => Ok(PipelinePostProcessor::default()),
+        // The only spelling there is. `ByteLevel`, `BertProcessing`, `RobertaProcessing` and a
+        // `Sequence` wrapper are legacy names that tk-convert rewrites into this one.
         "TemplateProcessing" => read_template(cfg),
-        // type id at 0, where bert retags the second sequence.
-        "BertProcessing" | "RobertaProcessing" => {
-            let cls = read_special_id(cfg, "cls")?;
-            let sep = read_special_id(cfg, "sep")?;
-            let run = |ids: &[u32], type_id: u8| -> Box<[(PipelineToken, u8)]> {
-                ids.iter()
-                    .map(|&id| (PipelineToken::from(id), type_id))
-                    .collect()
-            };
-            // `[CLS] $A [SEP]`
-            let single = Template {
-                prefix: run(&[cls], 0),
-                suffix: run(&[sep], 0),
-                ..Template::default()
-            };
-            let pair = if kind == "BertProcessing" {
-                // `[CLS] $A [SEP] $B@1 [SEP]@1`
-                Template {
-                    prefix: run(&[cls], 0),
-                    infix: run(&[sep], 0),
-                    suffix: run(&[sep], 1),
-                    a_type_id: 0,
-                    b_type_id: Some(1),
-                }
-            } else {
-                // `<s> $A </s></s> $B </s>`, all at type id 0
-                Template {
-                    prefix: run(&[cls], 0),
-                    infix: run(&[sep, sep], 0),
-                    suffix: run(&[sep], 0),
-                    a_type_id: 0,
-                    b_type_id: Some(0),
-                }
-            };
-            Ok(PipelinePostProcessor { single, pair })
-        }
         other => Err(unsupported(&format!("the `{other}` post-processor"))),
     }
-}
-
-/// A `["<token>", id]` pair, which is how `BertProcessing` and `RobertaProcessing` spell `cls` and
-/// `sep`. Only the id reaches the pipeline; the string is the human-readable half.
-fn read_special_id(cfg: &Json<'_>, key: &str) -> Result<u32> {
-    cfg.field(key)
-        .and_then(Json::as_array)
-        .filter(|pair| pair.len() == 2)
-        .and_then(|pair| pair[1].as_u32())
-        .ok_or_else(|| format!("`{key}` is not a [token, id] pair").into())
 }
 
 fn read_template(cfg: &Json<'_>) -> Result<PipelinePostProcessor> {
