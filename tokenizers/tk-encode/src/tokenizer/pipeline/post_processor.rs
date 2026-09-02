@@ -1,6 +1,4 @@
-//! The post-processor half of the pipeline: two [`Template`]s and the helper that composes them.
-
-use crate::tokenizer::Result;
+//! The post-processor half of the pipeline: the two [`Template`]s an encode weaves in.
 
 use super::{Encoding, PipelineToken};
 
@@ -23,19 +21,7 @@ impl Default for PipelinePostProcessor {
     }
 }
 
-/// Which member of an input pair a sequence refers to.
-#[derive(Clone, Copy, Debug)]
-pub enum Seq {
-    A,
-    B,
-}
-
 /// A template, in the only shape there is: `prefix? $A infix? ($B suffix?)?`.
-///
-/// `$A` appears exactly once, `$B` only in a pair template and only after it, and every other
-/// piece is a special token -- so the three runs are concatenated when the template is read and
-/// the encode path never walks a piece list. Specials are `(id, type_id)` pairs because one piece
-/// can carry several ids and adjacent pieces can disagree on the type id (XLNet: `<sep>@0 <cls>@2`).
 #[derive(Clone, Debug, Default)]
 pub struct Template {
     pub prefix: Box<[(PipelineToken, u8)]>,
@@ -102,8 +88,6 @@ impl Template {
                 if SPECIALS {
                     ids.reserve(self.n_special());
                     ids.extend(self.suffix.iter().map(|&(id, _)| id));
-                    // TODO: hand A's buffer `prefix.len()` free slots up front and this becomes a
-                    // `copy_from_slice`, with `SPECIALS == false` returning a start offset.
                     if !self.prefix.is_empty() {
                         ids.splice(0..0, self.prefix.iter().map(|&(id, _)| id));
                     }
@@ -114,9 +98,6 @@ impl Template {
         Encoding::new(ids, type_ids)
     }
 
-    /// One exact allocation. A pair cannot reuse A's buffer -- that would do all these same copies
-    /// and then memmove A and B aside for the prefix -- and inlining this measurably slows the
-    /// single-sequence path, which is the common one.
     #[inline(never)]
     fn weave_pair<const SPECIALS: bool>(
         &self,
@@ -138,31 +119,6 @@ impl Template {
         ids
     }
 
-    /// Adds nothing and retags nothing, so it is a no-op member of a `Sequence`.
-    fn is_pass_through(&self) -> bool {
-        self.n_special() == 0 && self.a_type_id == 0 && matches!(self.b_type_id, None | Some(1))
-    }
-}
-
-/// The one member of a `Sequence` post-processor that actually does something. Falls back to the
-/// first, so an all-pass-through `Sequence` keeps that member's sequence arrangement.
-pub fn compose<'a>(templates: impl Iterator<Item = &'a Template>) -> Result<Template> {
-    let (mut first, mut chosen) = (None, None);
-    for template in templates {
-        first = first.or(Some(template));
-        if template.is_pass_through() {
-            continue;
-        }
-        if chosen.replace(template).is_some() {
-            return Err(
-                "post processor Sequence with multiple sequence referencing members is not supported".into(),
-            );
-        }
-    }
-    chosen
-        .or(first)
-        .cloned()
-        .ok_or_else(|| "empty Sequence post processor is not supported".into())
 }
 
 #[cfg(test)]
@@ -181,9 +137,8 @@ mod tests {
             suffix: run(&[0]),
             ..Template::default()
         };
-        assert!(!bert.has_type_ids() && !bert.is_pass_through());
+        assert!(!bert.has_type_ids());
         assert_eq!(bert.n_special(), 2);
-        assert!(Template::default().is_pass_through());
         // `$A <sep>@0 <cls>@2`, tagged in the suffix, and `... $B@1 ...`, tagged through B.
         for tagged in [
             Template {

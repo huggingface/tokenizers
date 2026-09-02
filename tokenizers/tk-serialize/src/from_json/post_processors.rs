@@ -2,7 +2,7 @@
 
 use super::unsupported;
 use crate::json::Json;
-use tk_encode::pipeline::{PipelinePostProcessor, PipelineToken, Template, compose};
+use tk_encode::pipeline::{PipelinePostProcessor, PipelineToken, Template};
 use tk_encode::tokenizer::Result;
 
 pub(super) fn read_post_processor(cfg: Option<&Json<'_>>) -> Result<PipelinePostProcessor> {
@@ -67,6 +67,33 @@ pub(super) fn read_post_processor(cfg: Option<&Json<'_>>) -> Result<PipelinePost
         }
         other => Err(unsupported(&format!("the `{other}` post-processor"))),
     }
+}
+
+/// The one member of a `Sequence` post-processor that actually does something.
+///
+/// A pass-through member -- no specials, sequences in the default arrangement (`$A`, or `$A $B`
+/// with type ids 0 then 1) -- is a no-op, so it is dropped. Falls back to the first member, so an
+/// all-pass-through `Sequence` still keeps that member's sequence arrangement.
+fn compose<'a>(templates: impl Iterator<Item = &'a Template>) -> Result<Template> {
+    let pass_through = |t: &&Template| {
+        t.n_special() == 0 && t.a_type_id == 0 && matches!(t.b_type_id, None | Some(1))
+    };
+    let (mut first, mut chosen) = (None, None);
+    for template in templates {
+        first = first.or(Some(template));
+        if pass_through(&template) {
+            continue;
+        }
+        if chosen.replace(template).is_some() {
+            return Err(
+                "post processor Sequence with multiple sequence referencing members is not supported".into(),
+            );
+        }
+    }
+    chosen
+        .or(first)
+        .cloned()
+        .ok_or_else(|| "empty Sequence post processor is not supported".into())
 }
 
 /// A `["<token>", id]` pair, which is how `BertProcessing` and `RobertaProcessing` spell `cls` and

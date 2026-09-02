@@ -36,7 +36,7 @@ mod post_processor;
 mod pre_tokenizer;
 
 pub use normalizer::{Normalizer, NormalizerChain, PipelineNormalizer, normalize_all};
-pub use post_processor::{PipelinePostProcessor, Seq, Template, compose};
+pub use post_processor::{PipelinePostProcessor, Template};
 pub use pre_tokenizer::{
     PipelinePreTokenizer, PreTokenizer, PreTokenizerScratch, SplitPolicy, split, split_delimiter,
     split_matches,
