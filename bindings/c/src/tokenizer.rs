@@ -3,6 +3,7 @@ use std::ffi::c_char;
 use crate::decoded_string::DecodedString;
 use crate::encoding::Encoding;
 use crate::error::Error;
+use crate::options::{DecodeOptions, EncodeOptions};
 use crate::utils::{
     Handle, RustOwned, Slice, convert_c_buf, convert_c_str, free_handle, wrap_in_handle,
 };
@@ -50,20 +51,22 @@ pub unsafe extern "C" fn tk_tokenizer_free(tokenizer: *mut Handle<Tokenizer>) {
     unsafe { free_handle(tokenizer) }
 }
 
-/// Encodes the input text to tokens using the provided tokenizer.
+/// Encodes `input` to tokens with `tokenizer` and writes the encoding's handle to `out`, or NULL
+/// to `out` if this call fails. NULL `options` means the defaults.
 ///
 /// # Safety
-/// 1. `tokenizer` must be non-NULL and point to a valid, not-yet-freed `TkHandle_Tokenizer`.
-/// 2. `input` must be non-NULL and valid for reads of `input_len` bytes for the duration of
-///    this call. It must not be mutated while this function runs.
-/// 3. `out` must be a valid, writable pointer to a `TkHandle_Encoding`. On return, it
-///    holds a live handle if this function returns NULL, or NULL otherwise.
+/// 1. `tokenizer` must be NULL, or a `TkHandle_Tokenizer` that is not freed while this call runs.
+/// 2. `input` must be NULL, or point to `input_len` readable bytes that are neither freed nor
+///    modified while this call runs.
+/// 3. `options` must be NULL, or a `TkHandle_EncodeOptions` that is neither freed nor modified
+///    (`tk_encode_options_set_*`) while this call runs.
+/// 4. `out` must be NULL, or a writable pointer to a `TkHandle_Encoding`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tk_tokenizer_encode(
     tokenizer: Handle<Tokenizer>,
     input: *const c_char,
     input_len: usize,
-    add_special_tokens: bool,
+    options: Handle<EncodeOptions>,
     out: *mut Handle<Encoding>,
 ) -> Handle<Error> {
     let inner = move || -> tk_encode::Result<Encoding> {
@@ -75,9 +78,18 @@ pub unsafe extern "C" fn tk_tokenizer_encode(
         }
         // SAFETY: just checked non-NULL; rest of the caller's obligation is documented above.
         let input = unsafe { convert_c_buf(input, input_len) }?;
+        let options = if options.is_null() {
+            EncodeOptions::default()
+        } else {
+            // SAFETY: caller's obligation, documented above.
+            *unsafe { options.as_ref() }
+        };
         // SAFETY: just checked non-NULL; rest of the caller's obligation is documented above.
         let tokenizer = unsafe { tokenizer.as_ref() };
-        let mut encodings = tokenizer.0.encode(input, add_special_tokens).wait()?;
+        let mut encodings = tokenizer
+            .0
+            .encode(input, options.add_special_tokens)
+            .wait()?;
         // `Inputs::Single` always yields exactly one result.
         let encoding = encodings.remove(0);
         let ids = encoding.ids().iter().map(|id| id.id()).collect();
@@ -88,19 +100,21 @@ pub unsafe extern "C" fn tk_tokenizer_encode(
     unsafe { wrap_in_handle(out, inner) }
 }
 
-/// Decodes a slice of token ids back into a utf8 string
+/// Decodes `ids` back into a UTF-8 string with `tokenizer` and writes the string's handle to
+/// `out`, or NULL to `out` if this call fails. NULL `options` means the defaults.
 ///
 /// # Safety
-/// 1. `tokenizer` must be non-NULL and point to a valid, not-yet-freed `TkHandle_Tokenizer`.
-/// 2. `ids.ptr` must be NULL, or valid for reads of `ids.len` elements of `u32` for the
-///    duration of this call. It must not be mutated while this function runs.
-/// 3. `out` must be a valid, writable pointer to a `TkHandle_DecodedString`. On return, it
-///    holds a live handle if this function returns NULL, or NULL otherwise.
+/// 1. `tokenizer` must be NULL, or a `TkHandle_Tokenizer` that is not freed while this call runs.
+/// 2. `ids.ptr` must be NULL, or point to `ids.len` readable `uint32_t`s that are neither freed
+///    nor modified while this call runs.
+/// 3. `options` must be NULL, or a `TkHandle_DecodeOptions` that is neither freed nor modified
+///    (`tk_decode_options_set_*`) while this call runs.
+/// 4. `out` must be NULL, or a writable pointer to a `TkHandle_DecodedString`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tk_tokenizer_decode(
     tokenizer: Handle<Tokenizer>,
     ids: Slice<u32>,
-    skip_special_tokens: bool,
+    options: Handle<DecodeOptions>,
     out: *mut Handle<DecodedString>,
 ) -> Handle<Error> {
     let inner = move || -> tk_encode::Result<DecodedString> {
@@ -111,7 +125,13 @@ pub unsafe extern "C" fn tk_tokenizer_decode(
         let tokenizer = unsafe { tokenizer.as_ref() };
         // SAFETY: caller's obligation, documented above.
         let ids = unsafe { ids.as_slice() };
-        let decoded = tokenizer.0.decode(ids, skip_special_tokens)?;
+        let options = if options.is_null() {
+            DecodeOptions::default()
+        } else {
+            // SAFETY: caller's obligation, documented above.
+            *unsafe { options.as_ref() }
+        };
+        let decoded = tokenizer.0.decode(ids, options.skip_special_tokens)?;
         Ok(DecodedString(decoded))
     };
     unsafe { wrap_in_handle(out, inner) }

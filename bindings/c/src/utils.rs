@@ -31,13 +31,24 @@ impl<T> Handle<T> {
         self.0.is_null()
     }
 
-    /// Borrows the value the handle points at, for as long as the caller asserts it stays valid.
+    /// Borrows the value the handle points at.
     ///
     /// # Safety
-    /// The handle must be non-NULL and point to a `T` that stays live and unmutated for `'a`.
+    /// The handle must be non-NULL and point to a `T` that is neither freed nor modified
+    /// during `'a`.
     pub(crate) unsafe fn as_ref<'a>(self) -> &'a T {
         // SAFETY: caller's obligation, documented above.
         unsafe { &*self.0 }
+    }
+
+    /// Borrows the value the handle points at, exclusively.
+    ///
+    /// # Safety
+    /// The handle must be non-NULL and point to a `T` that is not freed during `'a`, with no
+    /// other reference to it alive during `'a`.
+    pub(crate) unsafe fn as_mut<'a>(self) -> &'a mut T {
+        // SAFETY: caller's obligation, documented above.
+        unsafe { &mut *self.0 }
     }
 }
 
