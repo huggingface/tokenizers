@@ -20,8 +20,10 @@
  * is given, so calling it twice on the same pointer is a no-op. A `TkSlice*` owns nothing: one
  * read from a `Tk*` object is valid until that object is freed.
  *
- * NULL: a NULL argument is reported as an error, never dereferenced. A `TkSlice*` whose `ptr` is
- * NULL is the empty slice if its `len` is 0, and an error otherwise.
+ * NULL: a NULL argument is never dereferenced. A function that returns a `TkError *` reports it as
+ * an error; a read that returns its value directly (`tk_error_message`, `tk_string_cstr`,
+ * `tk_encoding_ids`, ...) returns NULL, 0 or the empty slice. A `TkSlice*` whose `ptr` is NULL is
+ * the empty slice if its `len` is 0, and an error otherwise.
  *
  * Threads: a `Tk*` object may be read from several threads at once, e.g. one `TkTokenizer` shared
  * by concurrent `tk_tokenizer_encode` calls. A `tk_*_set_*` call needs the object to itself, and
@@ -43,7 +45,7 @@ typedef struct TkString TkString;
 typedef struct TkTokenizer TkTokenizer;
 
 /**
- * A borrowed view of `len` contiguous `T`s: a pointer and a length. It owns nothing, in either
+ * A borrowed view of `len` contiguous elements: a pointer and a length. It owns nothing, in either
  * direction: C reads a `tk_*` result through one, and hands `tk_tokenizer_decode` its ids in
  * one. A NULL `ptr` with `len` 0 is the empty slice.
  */
@@ -53,7 +55,7 @@ typedef struct {
 } TkSliceU32;
 
 /**
- * A borrowed view of `len` contiguous `T`s: a pointer and a length. It owns nothing, in either
+ * A borrowed view of `len` contiguous elements: a pointer and a length. It owns nothing, in either
  * direction: C reads a `tk_*` result through one, and hands `tk_tokenizer_decode` its ids in
  * one. A NULL `ptr` with `len` 0 is the empty slice.
  */
@@ -77,24 +79,23 @@ extern "C" {
 void tk_encoding_free(TkEncoding **encoding);
 
 /**
- * Writes `encoding`'s token ids to `out`. The slice points into `encoding` and is valid until
+ * Returns `encoding`'s token ids, or the empty slice if `encoding` is NULL. The slice points
+ * into `encoding` and is valid until `tk_encoding_free`.
+ *
+ * # Safety
+ * `encoding` must be NULL, or an encoding that is not freed while this call runs.
+ */
+TkSliceU32 tk_encoding_ids(const TkEncoding *encoding);
+
+/**
+ * Returns `encoding`'s per-token type ids, or the empty slice if the tokenizer doesn't produce
+ * them or `encoding` is NULL. The slice points into `encoding` and is valid until
  * `tk_encoding_free`.
  *
  * # Safety
- * 1. `encoding` must be NULL, or an encoding that is not freed while this call runs.
- * 2. `out` must be NULL, or a writable pointer to a `TkSlice_u32`.
+ * `encoding` must be NULL, or an encoding that is not freed while this call runs.
  */
-TkError *tk_encoding_ids(const TkEncoding *encoding, TkSliceU32 *out);
-
-/**
- * Writes `encoding`'s per-token type ids to `out`, or an empty slice if the tokenizer
- * doesn't produce them. The slice points into `encoding` and is valid until `tk_encoding_free`.
- *
- * # Safety
- * 1. `encoding` must be NULL, or an encoding that is not freed while this call runs.
- * 2. `out` must be NULL, or a writable pointer to a `TkSlice_u8`.
- */
-TkError *tk_encoding_type_ids(const TkEncoding *encoding, TkSliceU8 *out);
+TkSliceU8 tk_encoding_type_ids(const TkEncoding *encoding);
 
 /**
  * Returns a pointer to `err`'s message, or NULL if `err` is NULL. The message points into `err`

@@ -35,8 +35,7 @@ int main(int argc, char **argv)
     handle_error(tk_tokenizer_encode(tokenizer, text, strlen(text), NULL, &encoding));
 
     // Read encoding
-    TkSliceU32 ids;
-    handle_error(tk_encoding_ids(encoding, &ids));
+    TkSliceU32 ids = tk_encoding_ids(encoding);
     printf("encoded  \"%s\" into %zu token(s):", text, ids.len);
     for (size_t i = 0; i < ids.len; i++)
     {
@@ -44,8 +43,7 @@ int main(int argc, char **argv)
     }
     printf("\n");
 
-    TkSliceU8 type_ids;
-    handle_error(tk_encoding_type_ids(encoding, &type_ids));
+    TkSliceU8 type_ids = tk_encoding_type_ids(encoding);
     if (type_ids.len > 0)
     {
         printf("type ids:");

@@ -20,10 +20,16 @@ fn main() {
 }
 
 // Exported fns that run no code that could panic, and so are allowed to skip the guard.
-const PANIC_CATCH_EXEMPT: &[&str] = &["tk_error_message", "tk_string_cstr", "tk_string_len"];
+const PANIC_CATCH_EXEMPT: &[&str] = &[
+    "tk_error_message",
+    "tk_string_cstr",
+    "tk_string_len",
+    "tk_encoding_ids",
+    "tk_encoding_type_ids",
+];
 
 // The helpers that run a body under `catch_unwind` and report the outcome as a `*mut Error`.
-const GUARDS: &[&str] = &["wrap_in_ptr", "wrap_in_slice", "catch_panic"];
+const GUARDS: &[&str] = &["wrap_in_ptr", "catch_panic"];
 
 /// Fails the build unless every exported fn either runs its whole body under one of the [`GUARDS`]
 /// and returns the resulting `*mut Error`, is a `*_free` fn whose whole body is `free_ptr(..)`, or is

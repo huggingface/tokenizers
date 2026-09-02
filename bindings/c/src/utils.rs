@@ -64,13 +64,13 @@ pub(crate) unsafe fn wrap_in_ptr<T: RustOwned, E: std::fmt::Display>(
     })
 }
 
-/// A borrowed view of `len` contiguous `T`s: a pointer and a length. It owns nothing, in either
+/// A borrowed view of `len` contiguous elements: a pointer and a length. It owns nothing, in either
 /// direction: C reads a `tk_*` result through one, and hands `tk_tokenizer_decode` its ids in
 /// one. A NULL `ptr` with `len` 0 is the empty slice.
 #[repr(C)]
 pub(crate) struct Slice<T> {
-    ptr: *const T,
-    len: usize,
+    pub(crate) ptr: *const T,
+    pub(crate) len: usize,
 }
 
 impl<T> Slice<T> {
@@ -78,7 +78,7 @@ impl<T> Slice<T> {
         Self { ptr, len }
     }
 
-    pub(crate) fn null() -> Self {
+    pub(crate) fn empty() -> Self {
         Self::new(std::ptr::null(), 0)
     }
 
@@ -108,36 +108,6 @@ impl<T> From<&[T]> for Slice<T> {
             len: value.len(),
         }
     }
-}
-
-/// A wrapper for FFI functions that output a [`Slice`].
-///
-/// Takes care of:
-/// - reporting a [`Error`] instead of writing anything, if `out` is NULL
-/// - initializing the out pointer to an empty slice
-/// - catching panic unwinds so they don't reach C code
-/// - writing `inner`'s slice to the out pointer, when it succeeds
-///
-/// A missing value (e.g. an encoding with no type ids) is a `body` that returns `Ok(&[])`: a
-/// [`Slice`] can't tell "absent" from "empty" apart, and nothing needs it to.
-///
-/// # Safety
-/// `out` must be NULL, or a writable pointer to a [`Slice<T>`], initialized or not.
-pub(crate) unsafe fn wrap_in_slice<'a, T: 'a, E: std::fmt::Display>(
-    out: *mut Slice<T>,
-    inner: impl FnOnce() -> Result<&'a [T], E>,
-) -> *mut Error {
-    if out.is_null() {
-        return Error::into_ptr("out pointer must not be NULL");
-    }
-    // SAFETY: caller's obligation, documented above.
-    unsafe { out.write(Slice::null()) };
-    catch_panic(move || -> Result<(), E> {
-        let slice = inner()?;
-        // SAFETY: caller's obligation, documented above.
-        unsafe { out.write(Slice::from(slice)) };
-        Ok(())
-    })
 }
 
 /// Borrows a NUL-terminated C string as a UTF-8 `&str`, without copying.
@@ -233,43 +203,5 @@ mod tests {
         let result = unsafe { wrap_in_ptr(&mut out, || -> Result<Dummy, &str> { Err("nope") }) };
         assert!(!result.is_null());
         assert!(out.is_null());
-    }
-
-    #[test]
-    fn wrap_in_slice_out_null_reports_an_error_without_calling_inner() {
-        let called = Cell::new(false);
-        let result = unsafe {
-            wrap_in_slice::<u32, &str>(std::ptr::null_mut(), || {
-                called.set(true);
-                Ok(&[][..])
-            })
-        };
-        assert!(!result.is_null());
-        assert!(!called.get(), "inner must not run when out is NULL");
-    }
-
-    #[test]
-    fn wrap_in_slice_resets_out_to_empty_even_when_inner_fails() {
-        let mut out = Slice::<u32> {
-            ptr: std::ptr::dangling(),
-            len: 99,
-        }; // poison
-        let result = unsafe { wrap_in_slice(&mut out, || -> Result<&[u32], &str> { Err("nope") }) };
-        assert!(!result.is_null());
-        assert!(out.ptr.is_null());
-        assert_eq!(out.len, 0);
-    }
-
-    #[test]
-    fn wrap_in_slice_writes_the_slice_on_success() {
-        let data = [1u32, 2, 3];
-        let mut out = Slice::<u32>::null();
-        let result =
-            unsafe { wrap_in_slice(&mut out, || -> Result<&[u32], &str> { Ok(&data[..]) }) };
-        assert!(result.is_null());
-        assert_eq!(
-            unsafe { std::slice::from_raw_parts(out.ptr, out.len) },
-            &data
-        );
     }
 }
