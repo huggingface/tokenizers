@@ -6,9 +6,19 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::parallelism::pool;
 use crate::pipeline::scratch_pool::{EncodeScratch, ScratchGuard};
 use crate::pipeline::{
-    EncodeHandle, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer, Segment, Seq,
+    EncodeHandle, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer, Segment,
     SpecialSegmentIterator,
 };
+
+/// Which half of an [`Input::Pair`] a chunk was cut from. [`Input::Single`] is all `A`.
+///
+/// Local to the planner: the post-processor used to spell its sequences this way, but a
+/// `Template` now carries the two type ids positionally and has no need of the distinction.
+#[derive(Clone, Copy, Debug)]
+enum Seq {
+    A,
+    B,
+}
 
 use super::Result;
 

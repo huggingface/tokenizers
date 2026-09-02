@@ -37,7 +37,7 @@ mod post_processor;
 mod pre_tokenizer;
 
 pub use normalizer::{Normalizer, NormalizerChain, PipelineNormalizer, normalize_all};
-pub use post_processor::{PipelinePostProcessor, Seq, Slice, Template, build_slices, compose};
+pub use post_processor::{PipelinePostProcessor, Template};
 pub use pre_tokenizer::{
     PipelinePreTokenizer, PreTokenizer, PreTokenizerScratch, SplitPolicy, split, split_delimiter,
     split_matches,
@@ -613,6 +613,9 @@ impl PipelineTokenizer {
         }
     }
 
+    /// Pick the template the input shape calls for and let it add the specials.
+    ///
+    /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside.
     fn post_process(
         &self,
         s1: Vec<PipelineToken>,
@@ -621,63 +624,11 @@ impl PipelineTokenizer {
     ) -> Result<Encoding> {
         let pp = &self.inner.post_processor;
         let template = if s2.is_some() { &pp.pair } else { &pp.single };
-
-        // Fast path: when nothing has to be woven around the sequence, the sequence already *is*
-        // the encoding, and the loop below is a second full pass over every token plus a second
-        // allocation to hold it. That pass is invisible on sparse text and the dominant added cost
-        // on token-dense text, which is where it showed up: the regression against
-        // `poc/target-encode-clean` tracked tokens-per-byte, not bytes.
-        //
-        // Taken only when the template would reproduce `s1` exactly: one sequence, it is `A`, no
-        // type ids to interleave, and any `Specials` slices are being skipped anyway.
-        if s2.is_none() && !template.has_type_ids {
-            let mut sequences = 0usize;
-            let reproduces_s1 = template.slices.iter().all(|slice| match slice {
-                Slice::Specials { .. } => !add_special_tokens,
-                Slice::Sequence { seq: Seq::A, .. } => {
-                    sequences += 1;
-                    true
-                }
-                Slice::Sequence { seq: Seq::B, .. } => false,
-            });
-            if reproduces_s1 && sequences == 1 {
-                return Ok(Encoding::new(s1, None));
-            }
-        }
-
-        let seq_len = s1.len() + s2.as_ref().map_or(0, Vec::len);
-        let cap = template.n_special + seq_len;
-
-        let (mut a, mut b) = (Some(s1), s2);
-        let mut ids = Vec::with_capacity(cap);
-        let mut type_ids = template.has_type_ids.then(|| Vec::with_capacity(cap));
-
-        for slice in &template.slices {
-            match slice {
-                Slice::Specials { tokens, type_id } => {
-                    if !add_special_tokens {
-                        continue;
-                    }
-                    ids.extend_from_slice(tokens);
-                    if let Some(tids) = type_ids.as_mut() {
-                        tids.resize(tids.len() + tokens.len(), *type_id);
-                    }
-                }
-                Slice::Sequence { seq, type_id } => {
-                    let tokens = match seq {
-                        Seq::A => a.take(),
-                        Seq::B => b.take(),
-                    }
-                    .ok_or("[BUG] valid template should guarantee each referenced sequence is provided exactly once")?;
-                    if let Some(tids) = type_ids.as_mut() {
-                        tids.resize(tids.len() + tokens.len(), *type_id);
-                    }
-                    ids.extend(tokens);
-                }
-            }
-        }
-
-        Ok(Encoding::new(ids, type_ids))
+        Ok(if add_special_tokens {
+            template.post_process::<true>(s1, s2)
+        } else {
+            template.post_process::<false>(s1, s2)
+        })
     }
 
     /// Encode one sequence, appending its ids to `output`.
@@ -782,7 +733,7 @@ impl PipelineTokenizer {
     /// handle, and no copy out of either. [`Self::encode`] is this plus those wrappers, and an
     /// encode-only caller in a loop -- a server, a benchmark -- wants this one.
     ///
-    /// Falls back to the general path when the post-processor actually has something to weave
+    /// Falls back to the general path when the post-processor actually has something to add
     /// around the sequence, since that has to assemble a whole `Encoding` anyway.
     pub fn encode_into(
         &self,
@@ -792,18 +743,9 @@ impl PipelineTokenizer {
     ) -> Result<()> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         let template = &self.inner.post_processor.single;
-        let mut sequences = 0usize;
-        // The same question `post_process` asks: would the template just reproduce the sequence?
-        let reproduces_sequence = !template.has_type_ids
-            && template.slices.iter().all(|slice| match slice {
-                Slice::Specials { .. } => !add_special_tokens,
-                Slice::Sequence { seq: Seq::A, .. } => {
-                    sequences += 1;
-                    true
-                }
-                Slice::Sequence { seq: Seq::B, .. } => false,
-            })
-            && sequences == 1;
+        // Would the template just reproduce the sequence? Nothing to add, nothing to tag.
+        let reproduces_sequence =
+            !template.has_type_ids() && (!add_special_tokens || template.n_special() == 0);
         if reproduces_sequence {
             return self.encode_sequence_into(input, &mut scratch, out);
         }

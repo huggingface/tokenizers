@@ -212,8 +212,8 @@ const IDEMPOTENT: &[(&str, &str)] = &[
 ];
 
 /// `(slot, in, out)`: what the pipeline folded or dropped. An empty `Sequence` disappears, a nested
-/// one flattens, a decoder reads past `ByteLevel`'s flags and `Metaspace`'s `split` (but keeps
-/// `prepend_scheme: first`), and Bert/Roberta processing are frames, so both become one template.
+/// one flattens, and a decoder reads past `ByteLevel`'s flags and `Metaspace`'s `split` (but keeps
+/// `prepend_scheme: first`).
 #[rustfmt::skip]
 const REWRITTEN: &[(&str, &str, &str)] = &[
     ("normalizer", r#"{"type": "Sequence", "normalizers": []}"#, "null"),
@@ -225,12 +225,6 @@ const REWRITTEN: &[(&str, &str, &str)] = &[
                 r#"{"type": "ByteLevel"}"#),
     ("decoder", r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first", "split": false}"#,
                 r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first"}"#),
-    ("post_processor", r#"{"type": "BertProcessing", "cls": ["a", 0], "sep": ["b", 1]}"#,
-        r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
-            "pair": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}, {"seq": "B", "type_id": 1}, {"ids": [1], "type_id": 1}]}"#),
-    ("post_processor", r#"{"type": "RobertaProcessing", "cls": ["a", 0], "sep": ["b", 1], "trim_offsets": true, "add_prefix_space": true}"#,
-        r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
-            "pair": [{"ids": [0]}, {"seq": "A"}, {"ids": [1, 1]}, {"seq": "B"}, {"ids": [1]}]}"#),
     // Ascending id order is load-bearing: the reader replays added tokens in that order, and
     // `add_tokens` reuses a model id when the token is already in the vocabulary.
     ("added_tokens", r#"[{"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true},

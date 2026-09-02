@@ -1,13 +1,13 @@
 //! The `post_processor` object, written back out of the two `Template`s it was lowered into.
 use super::writer::Out;
-use tk_encode::pipeline::{PipelinePostProcessor, Seq, Slice, Template};
+use tk_encode::pipeline::{PipelinePostProcessor, PipelineToken, Template};
 use tk_encode::tokenizer::Result;
 
 pub(super) fn write_post_processor(
     out: &mut Out,
     post_processor: &PipelinePostProcessor,
 ) -> Result<()> {
-    let (single, pair) = post_processor.templates();
+    let (single, pair) = (&post_processor.single, &post_processor.pair);
     if is_default(single, pair) {
         out.null();
         return Ok(());
@@ -25,25 +25,12 @@ pub(super) fn write_post_processor(
 /// type ids. That is [`PipelinePostProcessor::default`], which is what a missing `post_processor`
 /// and a `ByteLevel` both produce.
 fn is_default(single: &Template, pair: &Template) -> bool {
-    matches!(
-        single.slices(),
-        [Slice::Sequence {
-            seq: Seq::A,
-            type_id: 0
-        }]
-    ) && matches!(
-        pair.slices(),
-        [
-            Slice::Sequence {
-                seq: Seq::A,
-                type_id: 0
-            },
-            Slice::Sequence {
-                seq: Seq::B,
-                type_id: 1
-            }
-        ]
-    )
+    single.n_special() == 0
+        && single.a_type_id == 0
+        && single.b_type_id.is_none()
+        && pair.n_special() == 0
+        && pair.a_type_id == 0
+        && pair.b_type_id == Some(1)
 }
 
 /// One template as an array of pieces: `{"seq": "A"}` for a sequence, `{"ids": [...]}` for a run of
@@ -51,28 +38,43 @@ fn is_default(single: &Template, pair: &Template) -> bool {
 fn write_pieces(out: &mut Out, key: &str, template: &Template) {
     out.key(key);
     out.arr_open();
-    for slice in template.slices() {
-        out.obj_open();
-        match slice {
-            Slice::Sequence { seq, type_id } => {
-                out.field_str("seq", if matches!(seq, Seq::A) { "A" } else { "B" });
-                write_type_id(out, *type_id);
-            }
-            Slice::Specials { tokens, type_id } => {
-                // The ids, which is all the pipeline kept. The strings behind them are in the
-                // vocabulary, so a name here would only repeat it -- and a name needs a table.
-                out.key("ids");
-                out.arr_open();
-                for token in tokens.iter() {
-                    out.u32(token.id());
-                }
-                out.arr_close();
-                write_type_id(out, *type_id);
-            }
-        }
-        out.obj_close();
+    write_specials(out, &template.prefix);
+    write_seq(out, "A", template.a_type_id);
+    write_specials(out, &template.infix);
+    if let Some(type_id) = template.b_type_id {
+        write_seq(out, "B", type_id);
     }
+    write_specials(out, &template.suffix);
     out.arr_close();
+}
+
+fn write_seq(out: &mut Out, seq: &str, type_id: u8) {
+    out.obj_open();
+    out.field_str("seq", seq);
+    write_type_id(out, type_id);
+    out.obj_close();
+}
+
+/// Consecutive specials sharing a `type_id` go back out as the one `{"ids": [...]}` piece they
+/// most likely came in as.
+///
+/// The ids are all the pipeline kept. The strings behind them are in the vocabulary, so a name
+/// here would only repeat it -- and a name needs a table.
+fn write_specials(out: &mut Out, specials: &[(PipelineToken, u8)]) {
+    let mut rest = specials;
+    while let Some(&(_, type_id)) = rest.first() {
+        let n = rest.iter().take_while(|&&(_, id)| id == type_id).count();
+        out.obj_open();
+        out.key("ids");
+        out.arr_open();
+        for &(token, _) in &rest[..n] {
+            out.u32(token.id());
+        }
+        out.arr_close();
+        write_type_id(out, type_id);
+        out.obj_close();
+        rest = &rest[n..];
+    }
 }
 
 fn write_type_id(out: &mut Out, type_id: u8) {

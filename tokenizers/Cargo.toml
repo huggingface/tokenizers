@@ -59,6 +59,19 @@ tk-encode = { path = "tk-encode", version = "1.0.0-rc.0", default-features = fal
   "unicode-scripts",
 ] }
 tk-convert = { path = "tk-convert", version = "1.0.0-rc.0", default-features = false }
+# The reader and the writer. Same component features as `tk-encode` above: the reader has one match
+# arm per component, so a component compiled out of the runtime cannot be read into it either.
+tk-serialize = { path = "tk-serialize", version = "1.0.0-rc.0", default-features = false, features = [
+  "deserialize",
+  "serialize",
+  "parallelism",
+  "normalizers",
+  "bpe",
+  "unigram",
+  "wordpiece",
+  "wordlevel",
+  "unicode-scripts",
+] }
 
 [features]
 default = ["progressbar"]

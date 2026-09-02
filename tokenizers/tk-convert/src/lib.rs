@@ -18,4 +18,7 @@
 //!
 pub mod convert;
 
-pub use convert::{ConvertError, canonicalize_file, canonicalize_str, canonicalize_value};
+pub use convert::{
+    ConvertError, canonicalize_file, canonicalize_post_processor, canonicalize_str,
+    canonicalize_value,
+};
