@@ -581,15 +581,7 @@ impl PipelineTokenizer {
         let pp = &self.inner.post_processor;
         let template = if s2.is_some() { &pp.pair } else { &pp.single };
 
-        // Fast path: a single-sequence template. Sequence A's buffer already holds
-        // almost the whole answer, so allocating a second one and copying A into it
-        // is pure waste — and on a batch of short documents that waste dominates,
-        // because a worker thread allocates the buffer and the consumer thread frees
-        // it, making every document cost a cross-thread free. Specials are spliced
-        // in place instead: appending the suffix is free, and the prefix costs one
-        // memmove rather than an allocation.
-        //
-        // Measured on 26k short documents: 3.28 -> 2.28 allocations per document.
+        // FIXME: this is shit, we re-compute the conditions everytime.
         if s2.is_none()
             && !template.has_type_ids
             && let Some(pos) = template
