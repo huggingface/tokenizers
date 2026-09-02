@@ -1,20 +1,15 @@
 use std::ffi::c_char;
 
+use crate::decoded_string::DecodedString;
+use crate::encoding::Encoding;
 use crate::error::Error;
 use crate::utils::{
     Handle, RustOwned, Slice, convert_c_buf, convert_c_str, free_handle, wrap_in_handle,
-    wrap_in_slice,
 };
 use tk_encode::pipeline::PipelineTokenizer;
 
 pub struct Tokenizer(PipelineTokenizer);
 impl RustOwned for Tokenizer {}
-
-pub struct Encoding {
-    ids: Vec<u32>,
-    type_ids: Option<Vec<u8>>,
-}
-impl RustOwned for Encoding {}
 
 /// Instantiates a tokenizer from its JSON config file.
 ///
@@ -93,59 +88,31 @@ pub unsafe extern "C" fn tk_tokenizer_encode(
     unsafe { wrap_in_handle(out, inner) }
 }
 
-/// Frees `encoding` and writes NULL to it, so calling this again on the same pointer is a
-/// no-op instead of a double free.
+/// Decodes a slice of token ids back into a utf8 string
 ///
 /// # Safety
-/// `encoding` must be non-NULL and point to a `TkHandle_Encoding` that is either NULL
-/// or live (not already freed).
+/// 1. `tokenizer` must be non-NULL and point to a valid, not-yet-freed `TkHandle_Tokenizer`.
+/// 2. `ids.ptr` must be NULL, or valid for reads of `ids.len` elements of `u32` for the
+///    duration of this call. It must not be mutated while this function runs.
+/// 3. `out` must be a valid, writable pointer to a `TkHandle_DecodedString`. On return, it
+///    holds a live handle if this function returns NULL, or NULL otherwise.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tk_encoding_free(encoding: *mut Handle<Encoding>) {
-    // SAFETY: caller's obligation, documented above.
-    unsafe { free_handle(encoding) }
-}
-
-/// Writes `encoding`'s token ids to `out`.
-///
-/// # Safety
-/// 1. `encoding` must be non-NULL and point to a valid, not-yet-freed `TkHandle_Encoding`.
-/// 2. `out` must be a valid, writable pointer to a `TkSlice_u32`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn tk_encoding_ids(
-    encoding: Handle<Encoding>,
-    out: *mut Slice<u32>,
+pub unsafe extern "C" fn tk_tokenizer_decode(
+    tokenizer: Handle<Tokenizer>,
+    ids: Slice<u32>,
+    skip_special_tokens: bool,
+    out: *mut Handle<DecodedString>,
 ) -> Handle<Error> {
-    let inner = move || -> Result<&[u32], &'static str> {
-        if encoding.is_null() {
-            return Err("encoding must not be NULL");
+    let inner = move || -> tk_encode::Result<DecodedString> {
+        if tokenizer.is_null() {
+            return Err("tokenizer must not be NULL".into());
         }
         // SAFETY: just checked non-NULL; rest of the caller's obligation is documented above.
-        let encoding = unsafe { encoding.as_ref() };
-        Ok(&encoding.ids[..])
+        let tokenizer = unsafe { tokenizer.as_ref() };
+        // SAFETY: caller's obligation, documented above.
+        let ids = unsafe { ids.as_slice() };
+        let decoded = tokenizer.0.decode(ids, skip_special_tokens)?;
+        Ok(DecodedString(decoded))
     };
-    // SAFETY: caller's obligation, documented above.
-    unsafe { wrap_in_slice(out, inner) }
-}
-
-/// Writes `encoding`'s per-token type ids to `out`, or an empty slice if the tokenizer
-/// doesn't produce them.
-///
-/// # Safety
-/// 1. `encoding` must be non-NULL and point to a valid, not-yet-freed `TkHandle_Encoding`.
-/// 2. `out` must be a valid, writable pointer to a `TkSlice_u8`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn tk_encoding_type_ids(
-    encoding: Handle<Encoding>,
-    out: *mut Slice<u8>,
-) -> Handle<Error> {
-    let inner = move || -> Result<&[u8], &'static str> {
-        if encoding.is_null() {
-            return Err("encoding must not be NULL");
-        }
-        // SAFETY: just checked non-NULL; rest of the caller's obligation is documented above.
-        let encoding = unsafe { encoding.as_ref() };
-        Ok(encoding.type_ids.as_deref().unwrap_or(&[]))
-    };
-    // SAFETY: caller's obligation, documented above.
-    unsafe { wrap_in_slice(out, inner) }
+    unsafe { wrap_in_handle(out, inner) }
 }

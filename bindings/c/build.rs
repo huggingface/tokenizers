@@ -21,6 +21,7 @@ fn main() {
 
 // Allowlist of exported functions that don't require to catch panic unwinding
 const PANIC_CATCH_EXEMPT: &[&str] = &[
+    "tk_decoded_string_free",
     "tk_error_message",
     "tk_error_free",
     "tk_tokenizer_free",

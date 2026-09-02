@@ -11,6 +11,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+typedef struct TkDecodedString TkDecodedString;
+
 typedef struct TkEncoding TkEncoding;
 
 typedef struct TkError TkError;
@@ -20,12 +22,22 @@ typedef struct TkTokenizer TkTokenizer;
 /**
  * An opaque pointer to a Rust-allocated type.
  */
-typedef struct TkError *TkHandle_Error;
+typedef struct TkDecodedString *TkHandle_DecodedString;
 
 /**
  * An opaque pointer to a Rust-allocated type.
  */
-typedef struct TkTokenizer *TkHandle_Tokenizer;
+typedef struct TkError *TkHandle_Error;
+
+/**
+ * A borrowed view into a Rust-owned slice.
+ * Bundles a pointer with the slice length.
+ * Valid only as long as whatever it points to is still alive.
+ */
+typedef struct TkSlice_u8 {
+  const uint8_t *ptr;
+  size_t len;
+} TkSlice_u8;
 
 /**
  * An opaque pointer to a Rust-allocated type.
@@ -43,18 +55,34 @@ typedef struct TkSlice_u32 {
 } TkSlice_u32;
 
 /**
- * A borrowed view into a Rust-owned slice.
- * Bundles a pointer with the slice length.
- * Valid only as long as whatever it points to is still alive.
+ * An opaque pointer to a Rust-allocated type.
  */
-typedef struct TkSlice_u8 {
-  const uint8_t *ptr;
-  size_t len;
-} TkSlice_u8;
+typedef struct TkTokenizer *TkHandle_Tokenizer;
 
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+/**
+ * Frees `decoded_string` and writes NULL to it, so calling this again on the same pointer is a
+ * no-op instead of a double free.
+ *
+ * # Safety
+ * `decoded_string` must be non-NULL and point to a `TkHandle_DecodedString` that is either NULL
+ * or live (not already freed).
+ */
+void tk_decoded_string_free(TkHandle_DecodedString *decoded_string);
+
+/**
+ * Writes `decoded_string`'s UTF-8 bytes to `out`.
+ *
+ * # Safety
+ * 1. `decoded_string` must be non-NULL and point to a valid, not-yet-freed
+ *    `TkHandle_DecodedString`.
+ * 2. `out` must be a valid, writable pointer to a `TkSlice_u8`.
+ */
+TkHandle_Error tk_decoded_string_bytes(TkHandle_DecodedString decoded_string,
+                                       struct TkSlice_u8 *out);
 
 /**
  * Returns a pointer to `err`'s message, or NULL if `err` is NULL. The pointer is owned by `err`
@@ -75,6 +103,35 @@ const char *tk_error_message(const struct TkError *err);
  * (not-yet-freed) error returned by a fallible FFI fn.
  */
 void tk_error_free(TkHandle_Error *err);
+
+/**
+ * Frees `encoding` and writes NULL to it, so calling this again on the same pointer is a
+ * no-op instead of a double free.
+ *
+ * # Safety
+ * `encoding` must be non-NULL and point to a `TkHandle_Encoding` that is either NULL
+ * or live (not already freed).
+ */
+void tk_encoding_free(TkHandle_Encoding *encoding);
+
+/**
+ * Writes `encoding`'s token ids to `out`.
+ *
+ * # Safety
+ * 1. `encoding` must be non-NULL and point to a valid, not-yet-freed `TkHandle_Encoding`.
+ * 2. `out` must be a valid, writable pointer to a `TkSlice_u32`.
+ */
+TkHandle_Error tk_encoding_ids(TkHandle_Encoding encoding, struct TkSlice_u32 *out);
+
+/**
+ * Writes `encoding`'s per-token type ids to `out`, or an empty slice if the tokenizer
+ * doesn't produce them.
+ *
+ * # Safety
+ * 1. `encoding` must be non-NULL and point to a valid, not-yet-freed `TkHandle_Encoding`.
+ * 2. `out` must be a valid, writable pointer to a `TkSlice_u8`.
+ */
+TkHandle_Error tk_encoding_type_ids(TkHandle_Encoding encoding, struct TkSlice_u8 *out);
 
 /**
  * Instantiates a tokenizer from its JSON config file.
@@ -115,33 +172,19 @@ TkHandle_Error tk_tokenizer_encode(TkHandle_Tokenizer tokenizer,
                                    TkHandle_Encoding *out);
 
 /**
- * Frees `encoding` and writes NULL to it, so calling this again on the same pointer is a
- * no-op instead of a double free.
+ * Decodes a slice of token ids back into a utf8 string
  *
  * # Safety
- * `encoding` must be non-NULL and point to a `TkHandle_Encoding` that is either NULL
- * or live (not already freed).
+ * 1. `tokenizer` must be non-NULL and point to a valid, not-yet-freed `TkHandle_Tokenizer`.
+ * 2. `ids.ptr` must be NULL, or valid for reads of `ids.len` elements of `u32` for the
+ *    duration of this call. It must not be mutated while this function runs.
+ * 3. `out` must be a valid, writable pointer to a `TkHandle_DecodedString`. On return, it
+ *    holds a live handle if this function returns NULL, or NULL otherwise.
  */
-void tk_encoding_free(TkHandle_Encoding *encoding);
-
-/**
- * Writes `encoding`'s token ids to `out`.
- *
- * # Safety
- * 1. `encoding` must be non-NULL and point to a valid, not-yet-freed `TkHandle_Encoding`.
- * 2. `out` must be a valid, writable pointer to a `TkSlice_u32`.
- */
-TkHandle_Error tk_encoding_ids(TkHandle_Encoding encoding, struct TkSlice_u32 *out);
-
-/**
- * Writes `encoding`'s per-token type ids to `out`, or an empty slice if the tokenizer
- * doesn't produce them.
- *
- * # Safety
- * 1. `encoding` must be non-NULL and point to a valid, not-yet-freed `TkHandle_Encoding`.
- * 2. `out` must be a valid, writable pointer to a `TkSlice_u8`.
- */
-TkHandle_Error tk_encoding_type_ids(TkHandle_Encoding encoding, struct TkSlice_u8 *out);
+TkHandle_Error tk_tokenizer_decode(TkHandle_Tokenizer tokenizer,
+                                   struct TkSlice_u32 ids,
+                                   bool skip_special_tokens,
+                                   TkHandle_DecodedString *out);
 
 #ifdef __cplusplus
 }  // extern "C"

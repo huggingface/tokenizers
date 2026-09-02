@@ -111,6 +111,20 @@ impl<T> Slice<T> {
             len: 0,
         }
     }
+
+    /// Borrows this slice's data as a `&[T]`, without copying. A NULL `ptr` is treated as an
+    /// empty slice regardless of `len`, matching [`Slice::null`].
+    ///
+    /// # Safety
+    /// `ptr` must be NULL, or valid for reads of `len` elements of `T` for as long as the
+    /// returned slice is used. The pointed-to memory must not be mutated during that time.
+    pub(crate) unsafe fn as_slice<'a>(&self) -> &'a [T] {
+        if self.ptr.is_null() {
+            return &[];
+        }
+        // SAFETY: caller's obligation, documented above.
+        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+    }
 }
 
 /// Writes a view of `value` to `out`, bundling pointer and slice length in one [`Slice`].
@@ -193,6 +207,25 @@ mod tests {
 
     struct Dummy;
     impl RustOwned for Dummy {}
+
+    #[test]
+    fn slice_as_slice_borrows_the_underlying_data() {
+        let data = [1u32, 2, 3];
+        let slice = Slice {
+            ptr: data.as_ptr(),
+            len: data.len(),
+        };
+        assert_eq!(unsafe { slice.as_slice() }, &data);
+    }
+
+    #[test]
+    fn slice_as_slice_null_ptr_is_empty_even_with_nonzero_len() {
+        let slice = Slice::<u32> {
+            ptr: std::ptr::null(),
+            len: 5,
+        };
+        assert_eq!(unsafe { slice.as_slice() }, &[] as &[u32]);
+    }
 
     #[test]
     fn convert_c_str_accepts_valid_utf8() {

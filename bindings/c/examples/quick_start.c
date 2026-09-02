@@ -24,16 +24,19 @@ int main(int argc, char **argv)
     const char *tokenizer_path = argv[1];
     const char *text = argc > 2 ? argv[2] : "Hello, world!";
 
+    // Reading the tokenizer from the tokenizer.json file
     TkHandle_Tokenizer tokenizer = NULL;
     handle_error(tk_tokenizer_from_file(tokenizer_path, &tokenizer));
     printf("loaded tokenizer from %s\n", tokenizer_path);
 
+    // Encode the provided utf8 string to token ids
     TkHandle_Encoding encoding = NULL;
     handle_error(tk_tokenizer_encode(tokenizer, text, strlen(text), true, &encoding));
 
+    // Read encoding
     struct TkSlice_u32 ids;
     handle_error(tk_encoding_ids(encoding, &ids));
-    printf("encoded \"%s\" into %zu token(s):", text, ids.len);
+    printf("encoded  \"%s\" into %zu token(s):", text, ids.len);
     for (size_t i = 0; i < ids.len; i++)
     {
         printf(" %u", ids.ptr[i]);
@@ -52,6 +55,15 @@ int main(int argc, char **argv)
         printf("\n");
     }
 
+    // Decode back into a string
+    TkHandle_DecodedString decoded = NULL;
+    handle_error(tk_tokenizer_decode(tokenizer, ids, false, &decoded));
+
+    struct TkSlice_u8 bytes;
+    handle_error(tk_decoded_string_bytes(decoded, &bytes));
+    printf("decoded: \"%.*s\"\n", (int)bytes.len, (const char *)bytes.ptr);
+
+    tk_decoded_string_free(&decoded);
     tk_encoding_free(&encoding);
     tk_tokenizer_free(&tokenizer);
     return 0;

@@ -61,6 +61,7 @@ int main(int argc, char **argv)
 
     tk_tokenizer_free(NULL);
     tk_encoding_free(NULL);
+    tk_decoded_string_free(NULL);
     tk_error_free(NULL);
     printf("ok: tk_*_free(NULL) doesn't crash\n");
 
@@ -136,6 +137,58 @@ int main(int argc, char **argv)
         TkHandle_Error err = tk_encoding_type_ids(enc, NULL);
         check(err != NULL, "tk_encoding_type_ids(..., NULL out) reports an error");
         tk_error_free(&err);
+    }
+
+    {
+        struct TkSlice_u32 ids = {0};
+        TkHandle_DecodedString dec = NULL;
+        TkHandle_Error err = tk_tokenizer_decode(NULL, ids, false, &dec);
+        check(err != NULL && dec == NULL, "tk_tokenizer_decode(NULL tokenizer) reports an error");
+        tk_error_free(&err);
+    }
+    {
+        struct TkSlice_u32 ids = {0};
+        TkHandle_Error err = tk_tokenizer_decode(tok, ids, false, NULL);
+        check(err != NULL, "tk_tokenizer_decode(..., NULL out) reports an error");
+        tk_error_free(&err);
+    }
+    {
+        // Unlike tk_tokenizer_encode's input, a NULL ids.ptr is valid as long as len is 0: a
+        // TkSlice can't tell "no ids" apart from an actually-invalid pointer, and here "no ids"
+        // is a legitimate, well-defined input (decodes to an empty string).
+        struct TkSlice_u32 ids = {NULL, 0};
+        TkHandle_DecodedString dec = NULL;
+        TkHandle_Error err = tk_tokenizer_decode(tok, ids, false, &dec);
+        check(err == NULL && dec != NULL,
+              "tk_tokenizer_decode(NULL ids.ptr, len=0) succeeds as an empty decode");
+        tk_decoded_string_free(&dec);
+    }
+
+    {
+        struct TkSlice_u32 ids = {NULL, 0};
+        TkHandle_DecodedString dec = NULL;
+        TkHandle_Error err = tk_tokenizer_decode(tok, ids, false, &dec);
+        if (err != NULL)
+        {
+            (void)fprintf(stderr, "setup: tk_tokenizer_decode failed: %s\n", tk_error_message(err));
+            exit(2);
+        }
+
+        {
+            struct TkSlice_u8 out;
+            TkHandle_Error bytes_err = tk_decoded_string_bytes(NULL, &out);
+            check(bytes_err != NULL, "tk_decoded_string_bytes(NULL decoded_string) reports an error");
+            tk_error_free(&bytes_err);
+        }
+        {
+            TkHandle_Error bytes_err = tk_decoded_string_bytes(dec, NULL);
+            check(bytes_err != NULL, "tk_decoded_string_bytes(..., NULL out) reports an error");
+            tk_error_free(&bytes_err);
+        }
+
+        tk_decoded_string_free(&dec);
+        tk_decoded_string_free(&dec);
+        check(dec == NULL, "tk_decoded_string_free() is a no-op the second time on the same handle");
     }
 
     tk_encoding_free(&enc);
