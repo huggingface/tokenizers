@@ -152,6 +152,7 @@ mod tests {
             PipelinePostProcessor::default(),
             None,
             Default::default(),
+            None,
         )
     }
 

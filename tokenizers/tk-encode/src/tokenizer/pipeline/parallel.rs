@@ -416,16 +416,25 @@ pub(crate) fn encode(
     add_special_tokens: bool,
 ) -> EncodeHandle {
     if inputs.size_bytes() < PARALLEL_MIN_BYTES {
-        return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
+        return EncodeHandle::blocking(
+            tok.encode_serial(inputs, add_special_tokens),
+            tok.inner.padding.clone(),
+        );
     }
     if let Inputs::Single(Input::Single(seq)) = &inputs
         && seq.len() < 2 * PARALLEL_MIN_BYTES
     {
-        return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
+        return EncodeHandle::blocking(
+            tok.encode_serial(inputs, add_special_tokens),
+            tok.inner.padding.clone(),
+        );
     }
     let Some(pool) = pool() else {
         // unable to get a pool handle, reverting to single threaded
-        return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
+        return EncodeHandle::blocking(
+            tok.encode_serial(inputs, add_special_tokens),
+            tok.inner.padding.clone(),
+        );
     };
     let Plan {
         chunks,
@@ -436,7 +445,10 @@ pub(crate) fn encode(
         chunk_count,
     } = tok.plan_work(&inputs);
     if tasks.len() < 2 {
-        return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
+        return EncodeHandle::blocking(
+            tok.encode_serial(inputs, add_special_tokens),
+            tok.inner.padding.clone(),
+        );
     }
     let n_seq = seq_start.len() - 1;
     let threads = tasks.len().min(pool.current_num_threads());
@@ -465,7 +477,7 @@ pub(crate) fn encode(
             while batch.encode_task(&mut scratch) {}
         });
     }
-    EncodeHandle::streaming(StreamingIter::new(batch))
+    EncodeHandle::streaming(StreamingIter::new(batch), tok.inner.padding.clone())
 }
 
 /// The flat batch path: each worker takes a run of documents, encodes them into one arena of its
