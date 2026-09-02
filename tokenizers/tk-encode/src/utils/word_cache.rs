@@ -58,6 +58,7 @@
 use std::fmt::Debug;
 
 use std::iter::Iterator;
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
 use wide::i8x16;
 
 #[cfg(test)]
@@ -517,28 +518,108 @@ impl Window {
 
     /// Finds all candidates in the window that match the needle, and the leftmost 0x00 (empty slot)
     fn find_matches_and_first_empty(&self, needle: u8) -> (SlotSet, Option<usize>) {
-        let window = i8x16::from(self.window.map(|byte| byte as i8));
-        let matches_bitmask = window.simd_eq(i8x16::from([needle as i8; 16])).to_bitmask() as u16;
-        let empty_bitmask = window
-            .simd_eq(i8x16::from([WordCache::EMPTY as i8; 16]))
-            .to_bitmask() as u16;
+        let (matches, empty) = lane_masks(&self.window, needle);
 
-        // a trick to truncate matches to before the first empty
-        let before_first_empty = !empty_bitmask & empty_bitmask.wrapping_sub(1);
+        // A trick to truncate matches to before the first empty. It reads the same for one bit per
+        // lane and for four: `empty - 1` fills every lane below the lowest set one, and `!empty`
+        // drops the lanes at or above it.
+        let before_first_empty = !empty & empty.wrapping_sub(1);
 
         let candidates = SlotSet {
-            mask: matches_bitmask & before_first_empty,
+            mask: matches & before_first_empty,
             offset: self.offset,
         };
         let first_empty =
-            (empty_bitmask != 0).then(|| self.offset + empty_bitmask.trailing_zeros() as usize);
+            (empty != 0).then(|| self.offset + (empty.trailing_zeros() / LANE_BITS) as usize);
         (candidates, first_empty)
     }
 }
 
+// ---------------------------------------------------------------------------
+// Per-lane comparison masks.
+//
+// The representation differs by architecture because the cheap way to get a vector comparison into
+// a general register does. x86 has `pmovmskb`: one bit per lane, one instruction. NEON has no
+// equivalent, and `wide`'s emulation of one costs a constant load, an `and`, a `tbl`, a cross-lane
+// `addv` and a SIMD->GPR `fmov` -- and a lookup needs two of them:
+//
+//   cmlt v1, v0, #0 ; and v1, v1, v2 ; tbl v1, {v1}, v3 ; addv h1, v1 ; fmov w9, s1
+//
+// `shrn` narrows 16 lanes of 0x00/0xFF to 16 *nibbles* of 0x0/0xF in one instruction, with no
+// cross-lane reduction and no constants, so the mask is a `u64` of nibbles and a lane index is
+// `trailing_zeros() / 4`. Every consumer goes through `LANE_BITS` and `pop_lowest_lane`, so the two
+// representations are interchangeable.
+// ---------------------------------------------------------------------------
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+type LaneMask = u64;
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+const LANE_BITS: u32 = 4;
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+const LANE_FULL: LaneMask = 0xF;
+
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+type LaneMask = u16;
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+const LANE_BITS: u32 = 1;
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+const LANE_FULL: LaneMask = 0x1;
+
+/// Clear the lowest set lane. For one bit per lane this is the usual `mask & (mask - 1)`; for four
+/// it has to clear the whole nibble, which `LANE_FULL` scaled to the lane's position does.
+#[inline]
+fn pop_lowest_lane(mask: LaneMask) -> LaneMask {
+    let lowest = mask & mask.wrapping_neg();
+    mask & !(lowest * LANE_FULL)
+}
+
+/// `(matches, empty)`, one lane each, for the 16 tags in `window`.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline]
+fn lane_masks(window: &[u8; WordCache::WINDOW_SIZE], needle: u8) -> (LaneMask, LaneMask) {
+    use core::arch::aarch64::{vceqq_u8, vdupq_n_u8, vld1q_u8};
+    // SAFETY: `window` is exactly 16 bytes, which is what `vld1q_u8` reads; NEON is a compile-time
+    // guarantee on this target via the `target_feature` gate above.
+    unsafe {
+        let w = vld1q_u8(window.as_ptr());
+        let matches = nibble_mask(vceqq_u8(w, vdupq_n_u8(needle)));
+        let empty = nibble_mask(vceqq_u8(w, vdupq_n_u8(WordCache::EMPTY)));
+        (matches, empty)
+    }
+}
+
+/// 16 lanes of `0x00`/`0xFF` to 16 nibbles of `0x0`/`0xF`, in a `shrn` and a `fmov`.
+///
+/// Each 16-bit lane holds two byte results; shifting right by four and narrowing to eight bits
+/// keeps the top nibble of the low byte and the bottom nibble of the high one, so nibble `j` of the
+/// result is lane `j`.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline]
+unsafe fn nibble_mask(cmp: core::arch::aarch64::uint8x16_t) -> u64 {
+    use core::arch::aarch64::{
+        vget_lane_u64, vreinterpret_u64_u8, vreinterpretq_u16_u8, vshrn_n_u16,
+    };
+    unsafe {
+        vget_lane_u64::<0>(vreinterpret_u64_u8(vshrn_n_u16::<4>(vreinterpretq_u16_u8(
+            cmp,
+        ))))
+    }
+}
+
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+#[inline]
+fn lane_masks(window: &[u8; WordCache::WINDOW_SIZE], needle: u8) -> (LaneMask, LaneMask) {
+    let w = i8x16::from(window.map(|byte| byte as i8));
+    let matches = w.simd_eq(i8x16::from([needle as i8; 16])).to_bitmask() as LaneMask;
+    let empty = w
+        .simd_eq(i8x16::from([WordCache::EMPTY as i8; 16]))
+        .to_bitmask() as LaneMask;
+    (matches, empty)
+}
+
 #[derive(Clone, Copy)]
 struct SlotSet {
-    mask: u16,
+    mask: LaneMask,
     offset: usize,
 }
 
@@ -549,8 +630,8 @@ impl Iterator for SlotSet {
         if self.mask == 0 {
             return None;
         }
-        let slot = self.mask.trailing_zeros() as usize;
-        self.mask &= self.mask - 1;
+        let slot = (self.mask.trailing_zeros() / LANE_BITS) as usize;
+        self.mask = pop_lowest_lane(self.mask);
         Some(slot + self.offset)
     }
 }
