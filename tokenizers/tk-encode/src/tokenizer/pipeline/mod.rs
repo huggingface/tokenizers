@@ -766,45 +766,27 @@ impl PipelineTokenizer {
         let pp = &self.inner.post_processor;
         let template = if s2.is_some() { &pp.pair } else { &pp.single };
 
-        // Fast path: a single-sequence template. Sequence A's buffer already holds
-        // almost the whole answer, so allocating a second one and copying A into it
-        // is pure waste — and on a batch of short documents that waste dominates,
-        // because a worker thread allocates the buffer and the consumer thread frees
-        // it, making every document cost a cross-thread free. Specials are spliced
-        // in place instead: appending the suffix is free, and the prefix costs one
-        // memmove rather than an allocation.
+        // Fast path: when nothing has to be woven around the sequence, the sequence already *is*
+        // the encoding, and the loop below is a second full pass over every token plus a second
+        // allocation to hold it. That pass is invisible on sparse text and the dominant added cost
+        // on token-dense text, which is where it showed up: the regression against
+        // `poc/target-encode-clean` tracked tokens-per-byte, not bytes.
         //
-        // Measured on 26k short documents: 3.28 -> 2.28 allocations per document.
-        if s2.is_none()
-            && !template.has_type_ids
-            && let Some(pos) = template
-                .slices
-                .iter()
-                .position(|s| matches!(s, Slice::Sequence { seq: Seq::A, .. }))
-            && template.slices.iter().enumerate().all(|(i, s)| {
-                // Everything that is not A must be specials we can splice around it.
-                i == pos || matches!(s, Slice::Specials { .. })
-            })
-        {
-            let mut ids = s1;
-            if add_special_tokens {
-                for slice in &template.slices[pos + 1..] {
-                    if let Slice::Specials { tokens, .. } = slice {
-                        ids.extend_from_slice(tokens);
-                    }
+        // Taken only when the template would reproduce `s1` exactly: one sequence, it is `A`, no
+        // type ids to interleave, and any `Specials` slices are being skipped anyway.
+        if s2.is_none() && !template.has_type_ids {
+            let mut sequences = 0usize;
+            let reproduces_s1 = template.slices.iter().all(|slice| match slice {
+                Slice::Specials { .. } => !add_special_tokens,
+                Slice::Sequence { seq: Seq::A, .. } => {
+                    sequences += 1;
+                    true
                 }
-                if template.slices[..pos].iter().any(|s| match s {
-                    Slice::Specials { tokens, .. } => !tokens.is_empty(),
-                    Slice::Sequence { .. } => false,
-                }) {
-                    let prefix = template.slices[..pos].iter().flat_map(|s| match s {
-                        Slice::Specials { tokens, .. } => tokens.iter().cloned(),
-                        Slice::Sequence { .. } => [].iter().cloned(),
-                    });
-                    ids.splice(0..0, prefix);
-                }
+                Slice::Sequence { seq: Seq::B, .. } => false,
+            });
+            if reproduces_s1 && sequences == 1 {
+                return Ok(Encoding::new(s1, None));
             }
-            return Ok(Encoding::new(ids, None));
         }
 
         let seq_len = s1.len() + s2.as_ref().map_or(0, Vec::len);
