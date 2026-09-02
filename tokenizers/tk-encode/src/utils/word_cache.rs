@@ -143,11 +143,24 @@ impl<'a> WordCache {
     /// the room has to be there even when fewer ids end up counting.
     #[inline]
     pub unsafe fn probe_emit_keyed(&'a self, key: u64, hash: u64, dst: *mut u32) -> ProbeEmit<'a> {
-        let placement = placement_from(LookupKey(key), hash, self.placement_mask);
-        // SAFETY: `index` is masked with `placement_mask` (`next_pow2 - 1`), and the table is
-        let slot = unsafe { *self.cached_words.as_ptr().add(placement.index) };
-        if slot.key == placement.key && !slot.is_spilled() {
+        // The home slot and the key are all the fast path needs; `tag` is only read by
+        // `lookup_placed`. Building the whole `InsertPlacement` up front put it on the stack before
+        // the hit was even tested, because it is 24 bytes and AAPCS passes anything over 16
+        // indirectly -- three stores on every hit for a value only the miss path consumes:
+        //
+        //   stp x8, x0, [sp, #160]   <- on every hit
+        //   strb w9, [sp, #176]      <- on every hit
+        //   ldr  x9, [x8] ; cmp x9, x0 ; b.ne <miss>
+        //
+        // Splitting the placement so the cold half is built in the cold branch moves them there.
+        let home = home_index(hash, self.placement_mask);
+        let key = LookupKey(key);
+        // SAFETY: `home` is masked with `placement_mask` (`next_pow2 - 1`), and the table holds
+        // `next_pow2 + WINDOW_SIZE` slots, so it is in bounds.
+        let slot = unsafe { *self.cached_words.as_ptr().add(home) };
+        if slot.key == key && !slot.is_spilled() {
             // SAFETY: the caller guarantees room for `MAX_INLINE_IDS`. Lanes past `ids_len` are
+            // written with whatever the slot holds, which the contract allows.
             unsafe {
                 for lane in 0..MAX_INLINE_IDS {
                     dst.add(lane).write(slot.payload[lane]);
@@ -155,6 +168,11 @@ impl<'a> WordCache {
             }
             return ProbeEmit::Wrote(slot.ids_len as usize);
         }
+        let placement = InsertPlacement {
+            key,
+            index: home,
+            tag: tag_of(hash),
+        };
         match self.lookup_placed(placement) {
             Lookup::Hit(ids) => ProbeEmit::Hit(ids),
             Lookup::Miss(at) => ProbeEmit::Miss(at),
@@ -429,13 +447,25 @@ fn make_lookup_key(word: &[u8], placement_mask: u64) -> InsertPlacement {
     placement_from(LookupKey(key), hash, placement_mask)
 }
 
+/// The window's first slot: the bottom bits of the hash.
+#[inline]
+fn home_index(hash: u64, placement_mask: u64) -> usize {
+    (hash & placement_mask) as usize
+}
+
+/// The slot's one-byte tag: the top byte of the hash, floored at `0x01` so it can never be
+/// mistaken for an `EMPTY` slot.
+#[inline]
+fn tag_of(hash: u64) -> u8 {
+    ((hash >> (64 - 8)) as u8).max(WordCache::EMPTY + 1)
+}
+
 #[inline]
 fn placement_from(key: LookupKey, hash: u64, placement_mask: u64) -> InsertPlacement {
     InsertPlacement {
         key,
-        index: (hash & placement_mask) as usize,
-        tag: ((hash >> (64 - 8)) as u8).max(WordCache::EMPTY + 1),
-        // ^ must be at least 0x01, otherwise can be mistaken for an EMPTY slot
+        index: home_index(hash, placement_mask),
+        tag: tag_of(hash),
     }
 }
 
