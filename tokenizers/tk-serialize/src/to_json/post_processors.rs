@@ -7,7 +7,7 @@ pub(super) fn write_post_processor(
     out: &mut Out,
     post_processor: &PipelinePostProcessor,
 ) -> Result<()> {
-    let (single, pair) = post_processor.templates();
+    let (single, pair) = (&post_processor.single, &post_processor.pair);
     if is_default(single, pair) {
         out.null();
         return Ok(());

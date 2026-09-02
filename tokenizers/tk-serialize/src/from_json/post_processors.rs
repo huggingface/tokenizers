@@ -23,10 +23,10 @@ pub(super) fn read_post_processor(cfg: Option<&Json<'_>>) -> Result<PipelinePost
                 .iter()
                 .map(|m| read_post_processor(Some(m)))
                 .collect::<Result<Vec<_>>>()?;
-            Ok(PipelinePostProcessor::new(
-                compose(built.iter().map(|m| m.templates().0))?,
-                compose(built.iter().map(|m| m.templates().1))?,
-            ))
+            Ok(PipelinePostProcessor {
+                single: compose(built.iter().map(|m| &m.single))?,
+                pair: compose(built.iter().map(|m| &m.pair))?,
+            })
         }
         "TemplateProcessing" => read_template(cfg),
         // type id at 0, where bert retags the second sequence.
@@ -63,7 +63,7 @@ pub(super) fn read_post_processor(cfg: Option<&Json<'_>>) -> Result<PipelinePost
                     b_type_id: Some(0),
                 }
             };
-            Ok(PipelinePostProcessor::new(single, pair))
+            Ok(PipelinePostProcessor { single, pair })
         }
         other => Err(unsupported(&format!("the `{other}` post-processor"))),
     }
@@ -134,8 +134,8 @@ fn read_template(cfg: &Json<'_>) -> Result<PipelinePostProcessor> {
         Ok(t)
     };
 
-    Ok(PipelinePostProcessor::new(
-        template_for("single")?,
-        template_for("pair")?,
-    ))
+    Ok(PipelinePostProcessor {
+        single: template_for("single")?,
+        pair: template_for("pair")?,
+    })
 }

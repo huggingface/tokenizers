@@ -572,6 +572,9 @@ impl PipelineTokenizer {
         }
     }
 
+    /// Pick the template the input shape calls for and let it weave the specials in.
+    ///
+    /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside.
     fn post_process(
         &self,
         s1: Vec<PipelineToken>,
@@ -579,46 +582,12 @@ impl PipelineTokenizer {
         add_special_tokens: bool,
     ) -> Result<Encoding> {
         let pp = &self.inner.post_processor;
-        let t = if s2.is_some() { &pp.pair } else { &pp.single };
-        // `prefix? A infix? B? suffix?` is the only shape a template has, so A's buffer is always
-        // the one to extend -- there is no arrangement where it would have to be copied.
-        let mut ids = s1;
-        let (a_len, b_len) = (ids.len(), s2.as_ref().map_or(0, Vec::len));
-
-        let type_ids = t.has_type_ids().then(|| {
-            let mut type_ids = Vec::with_capacity(t.n_special() + a_len + b_len);
-            if add_special_tokens {
-                type_ids.extend(t.prefix.iter().map(|&(_, id)| id));
-            }
-            type_ids.resize(type_ids.len() + a_len, t.a_type_id);
-            if add_special_tokens {
-                type_ids.extend(t.infix.iter().map(|&(_, id)| id));
-            }
-            if let Some(id) = t.b_type_id {
-                type_ids.resize(type_ids.len() + b_len, id);
-            }
-            if add_special_tokens {
-                type_ids.extend(t.suffix.iter().map(|&(_, id)| id));
-            }
-            type_ids
-        });
-
-        ids.reserve(t.n_special() + b_len);
-        if add_special_tokens {
-            ids.extend(t.infix.iter().map(|&(id, _)| id));
-        }
-        if let Some(b) = s2 {
-            ids.extend(b);
-        }
-        if add_special_tokens {
-            ids.extend(t.suffix.iter().map(|&(id, _)| id));
-            // TODO: hand A's buffer `prefix.len()` free slots up front and this becomes a
-            // `copy_from_slice`, with `!add_special_tokens` returning a start offset instead.
-            if !t.prefix.is_empty() {
-                ids.splice(0..0, t.prefix.iter().map(|&(id, _)| id));
-            }
-        }
-        Ok(Encoding::new(ids, type_ids))
+        let template = if s2.is_some() { &pp.pair } else { &pp.single };
+        Ok(if add_special_tokens {
+            template.post_process::<true>(s1, s2)
+        } else {
+            template.post_process::<false>(s1, s2)
+        })
     }
 
     /// Encode one sequence, appending its ids to `output`.
