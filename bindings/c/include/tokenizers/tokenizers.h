@@ -9,9 +9,28 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef struct TkDecodeOptions TkDecodeOptions;
+/*
+ * Conventions
+ *
+ * Errors: every function that can fail returns a `TkError *`, NULL on success. A non-NULL error
+ * carries a message (`tk_error_message`) and is freed with `tk_error_free`.
+ *
+ * Ownership: a pointer a `tk_*` function writes to its `out` argument is owned by the caller and
+ * freed with the matching `tk_*_free`. Every `tk_*_free` writes NULL back through the pointer it
+ * is given, so calling it twice on the same pointer is a no-op. A `TkSlice*` owns nothing: one
+ * read from a `Tk*` object is valid until that object is freed.
+ *
+ * NULL: a NULL argument is reported as an error, never dereferenced. A `TkSlice*` whose `ptr` is
+ * NULL is the empty slice if its `len` is 0, and an error otherwise.
+ *
+ * Threads: a `Tk*` object may be read from several threads at once, e.g. one `TkTokenizer` shared
+ * by concurrent `tk_tokenizer_encode` calls. A `tk_*_set_*` call needs the object to itself, and
+ * nothing may be freed while another call is using it.
+ *
+ * Text: every string argument (`path`, `input`) is UTF-8. Invalid UTF-8 is reported as an error.
+ */
 
-typedef struct TkDecodedString TkDecodedString;
+typedef struct TkDecodeOptions TkDecodeOptions;
 
 typedef struct TkEncodeOptions TkEncodeOptions;
 
@@ -19,51 +38,33 @@ typedef struct TkEncoding TkEncoding;
 
 typedef struct TkError TkError;
 
+typedef struct TkString TkString;
+
 typedef struct TkTokenizer TkTokenizer;
 
 /**
- * A borrowed view into a Rust-owned slice.
- * Bundles a pointer with the slice length.
- * Valid only as long as whatever it points to is still alive.
- */
-typedef struct {
-  const uint8_t *ptr;
-  size_t len;
-} TkSlice_u8;
-
-/**
- * A borrowed view into a Rust-owned slice.
- * Bundles a pointer with the slice length.
- * Valid only as long as whatever it points to is still alive.
+ * A borrowed view of `len` contiguous `T`s: a pointer and a length. It owns nothing, in either
+ * direction: C reads a `tk_*` result through one, and hands `tk_tokenizer_decode` its ids in
+ * one. A NULL `ptr` with `len` 0 is the empty slice.
  */
 typedef struct {
   const uint32_t *ptr;
   size_t len;
-} TkSlice_u32;
+} TkSliceU32;
+
+/**
+ * A borrowed view of `len` contiguous `T`s: a pointer and a length. It owns nothing, in either
+ * direction: C reads a `tk_*` result through one, and hands `tk_tokenizer_decode` its ids in
+ * one. A NULL `ptr` with `len` 0 is the empty slice.
+ */
+typedef struct {
+  const uint8_t *ptr;
+  size_t len;
+} TkSliceU8;
 
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
-
-/**
- * Frees `decoded_string` and writes NULL to it, so calling this again on the same pointer is a
- * no-op instead of a double free.
- *
- * # Safety
- * `decoded_string` must be NULL, or point to a writable `TkDecodedString *` holding NULL or a
- * string that is not yet freed and that no other thread is using.
- */
-void tk_decoded_string_free(TkDecodedString **decoded_string);
-
-/**
- * Writes `decoded_string`'s UTF-8 bytes to `out`. The slice points into `decoded_string` and is
- * valid until `tk_decoded_string_free`.
- *
- * # Safety
- * 1. `decoded_string` must be NULL, or a string that is not freed while this call runs.
- * 2. `out` must be NULL, or a writable pointer to a `TkSlice_u8`.
- */
-TkError *tk_decoded_string_bytes(const TkDecodedString *decoded_string, TkSlice_u8 *out);
 
 /**
  * Frees `encoding` and writes NULL to it, so calling this again on the same pointer is a
@@ -83,7 +84,7 @@ void tk_encoding_free(TkEncoding **encoding);
  * 1. `encoding` must be NULL, or an encoding that is not freed while this call runs.
  * 2. `out` must be NULL, or a writable pointer to a `TkSlice_u32`.
  */
-TkError *tk_encoding_ids(const TkEncoding *encoding, TkSlice_u32 *out);
+TkError *tk_encoding_ids(const TkEncoding *encoding, TkSliceU32 *out);
 
 /**
  * Writes `encoding`'s per-token type ids to `out`, or an empty slice if the tokenizer
@@ -93,7 +94,7 @@ TkError *tk_encoding_ids(const TkEncoding *encoding, TkSlice_u32 *out);
  * 1. `encoding` must be NULL, or an encoding that is not freed while this call runs.
  * 2. `out` must be NULL, or a writable pointer to a `TkSlice_u8`.
  */
-TkError *tk_encoding_type_ids(const TkEncoding *encoding, TkSlice_u8 *out);
+TkError *tk_encoding_type_ids(const TkEncoding *encoding, TkSliceU8 *out);
 
 /**
  * Returns a pointer to `err`'s message, or NULL if `err` is NULL. The message points into `err`
@@ -173,8 +174,38 @@ void tk_decode_options_free(TkDecodeOptions **options);
 TkError *tk_decode_options_set_skip_special_tokens(TkDecodeOptions *options, bool value);
 
 /**
- * Instantiates a tokenizer from its JSON config file and writes its pointer to `out`, or NULL
- * to `out` if this call fails.
+ * Frees `string` and writes NULL to it, so calling this again on the same pointer is a no-op
+ * instead of a double free.
+ *
+ * # Safety
+ * `string` must be NULL, or point to a writable `TkString *` holding NULL or a string that is
+ * not yet freed and that no other thread is using.
+ */
+void tk_string_free(TkString **string);
+
+/**
+ * Returns `string`'s text as a NUL-terminated C string, or NULL if `string` is NULL. The text is
+ * UTF-8 (see `tk_tokenizer_decode` for what happens to bytes a model emits that aren't). It
+ * points into `string` and is valid until `tk_string_free`.
+ *
+ * # Safety
+ * `string` must be NULL, or a string that is not freed while this call runs.
+ */
+const char *tk_string_cstr(const TkString *string);
+
+/**
+ * Returns the number of bytes in `string`'s text, not counting the NUL that follows them, or 0
+ * if `string` is NULL. Differs from `strlen(tk_string_cstr(string))` only when the text itself
+ * contains a NUL.
+ *
+ * # Safety
+ * `string` must be NULL, or a string that is not freed while this call runs.
+ */
+size_t tk_string_len(const TkString *string);
+
+/**
+ * Instantiates a tokenizer from its JSON config file (a `tokenizer.json`) and writes its
+ * pointer to `out`, or NULL to `out` if this call fails. `path` must be UTF-8.
  *
  * # Safety
  * 1. `path` must be NULL, or a NUL-terminated string that is neither freed nor modified while
@@ -194,8 +225,10 @@ TkError *tk_tokenizer_from_file(const char *path, TkTokenizer **out);
 void tk_tokenizer_free(TkTokenizer **tokenizer);
 
 /**
- * Encodes `input` to tokens with `tokenizer` and writes the encoding's pointer to `out`, or
- * NULL to `out` if this call fails. NULL `options` means the defaults.
+ * Encodes `input`, `input_len` bytes of UTF-8 text, to tokens with `tokenizer` and writes the
+ * encoding's pointer to `out`, or NULL to `out` if this call fails. Invalid UTF-8 is an error.
+ * A NULL `input` with `input_len` 0 is the empty text; with a non-zero `input_len` it is an
+ * error. NULL `options` means the defaults.
  *
  * # Safety
  * 1. `tokenizer` must be NULL, or a tokenizer that is not freed while this call runs.
@@ -212,8 +245,12 @@ TkError *tk_tokenizer_encode(const TkTokenizer *tokenizer,
                              TkEncoding **out);
 
 /**
- * Decodes `ids` back into a UTF-8 string with `tokenizer` and writes the string's pointer to
- * `out`, or NULL to `out` if this call fails. NULL `options` means the defaults.
+ * Decodes `ids` back into text with `tokenizer` and writes the text's pointer to `out`, or NULL
+ * to `out` if this call fails. The text is UTF-8 by replacement, not by guarantee of the model:
+ * a byte-level or byte-fallback model can emit byte sequences that aren't valid UTF-8, and those
+ * come back as U+FFFD, the same way the released `tokenizers` decodes them. Ids the tokenizer's
+ * vocabulary doesn't have are skipped. A NULL `ids.ptr` with `ids.len` 0 is no ids; with a
+ * non-zero `ids.len` it is an error. NULL `options` means the defaults.
  *
  * # Safety
  * 1. `tokenizer` must be NULL, or a tokenizer that is not freed while this call runs.
@@ -221,12 +258,12 @@ TkError *tk_tokenizer_encode(const TkTokenizer *tokenizer,
  *    nor modified while this call runs.
  * 3. `options` must be NULL, or decode options that are neither freed nor modified
  *    (`tk_decode_options_set_*`) while this call runs.
- * 4. `out` must be NULL, or a writable pointer to a `TkDecodedString *`.
+ * 4. `out` must be NULL, or a writable pointer to a `TkString *`.
  */
 TkError *tk_tokenizer_decode(const TkTokenizer *tokenizer,
-                             TkSlice_u32 ids,
+                             TkSliceU32 ids,
                              const TkDecodeOptions *options,
-                             TkDecodedString **out);
+                             TkString **out);
 
 #ifdef __cplusplus
 }  // extern "C"

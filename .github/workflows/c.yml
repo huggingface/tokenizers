@@ -69,7 +69,7 @@ jobs:
 
       - name: Check example formatting
         if: matrix.os == 'ubuntu-latest'
-        run: make -C examples format-check
+        run: make -C examples format_check
 
       - name: Lint example with clang-tidy
         if: matrix.os == 'ubuntu-latest'

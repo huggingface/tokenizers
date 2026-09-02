@@ -1,17 +1,17 @@
 use std::ffi::c_char;
 
-use crate::decoded_string::DecodedString;
 use crate::encoding::Encoding;
 use crate::error::Error;
 use crate::options::{DecodeOptions, EncodeOptions};
-use crate::utils::{RustOwned, Slice, convert_c_buf, convert_c_str, free_ptr, wrap_in_ptr};
+use crate::string;
+use crate::utils::{RustOwned, Slice, convert_c_str, free_ptr, wrap_in_ptr};
 use tk_encode::pipeline::PipelineTokenizer;
 
 pub struct Tokenizer(PipelineTokenizer);
 impl RustOwned for Tokenizer {}
 
-/// Instantiates a tokenizer from its JSON config file and writes its pointer to `out`, or NULL
-/// to `out` if this call fails.
+/// Instantiates a tokenizer from its JSON config file (a `tokenizer.json`) and writes its
+/// pointer to `out`, or NULL to `out` if this call fails. `path` must be UTF-8.
 ///
 /// # Safety
 /// 1. `path` must be NULL, or a NUL-terminated string that is neither freed nor modified while
@@ -48,8 +48,10 @@ pub unsafe extern "C" fn tk_tokenizer_free(tokenizer: *mut *mut Tokenizer) {
     unsafe { free_ptr(tokenizer) }
 }
 
-/// Encodes `input` to tokens with `tokenizer` and writes the encoding's pointer to `out`, or
-/// NULL to `out` if this call fails. NULL `options` means the defaults.
+/// Encodes `input`, `input_len` bytes of UTF-8 text, to tokens with `tokenizer` and writes the
+/// encoding's pointer to `out`, or NULL to `out` if this call fails. Invalid UTF-8 is an error.
+/// A NULL `input` with `input_len` 0 is the empty text; with a non-zero `input_len` it is an
+/// error. NULL `options` means the defaults.
 ///
 /// # Safety
 /// 1. `tokenizer` must be NULL, or a tokenizer that is not freed while this call runs.
@@ -70,11 +72,9 @@ pub unsafe extern "C" fn tk_tokenizer_encode(
         let Some(tokenizer) = tokenizer else {
             return Err("tokenizer must not be NULL".into());
         };
-        if input.is_null() {
-            return Err("input must not be NULL".into());
-        }
-        // SAFETY: just checked non-NULL; rest of the caller's obligation is documented above.
-        let input = unsafe { convert_c_buf(input, input_len) }?;
+        // SAFETY: caller's obligation, documented above.
+        let input = unsafe { Slice::new(input.cast::<u8>(), input_len).as_slice() }?;
+        let input = std::str::from_utf8(input)?;
         let options = options.copied().unwrap_or_default();
         let mut encodings = tokenizer
             .0
@@ -90,8 +90,12 @@ pub unsafe extern "C" fn tk_tokenizer_encode(
     unsafe { wrap_in_ptr(out, inner) }
 }
 
-/// Decodes `ids` back into a UTF-8 string with `tokenizer` and writes the string's pointer to
-/// `out`, or NULL to `out` if this call fails. NULL `options` means the defaults.
+/// Decodes `ids` back into text with `tokenizer` and writes the text's pointer to `out`, or NULL
+/// to `out` if this call fails. The text is UTF-8 by replacement, not by guarantee of the model:
+/// a byte-level or byte-fallback model can emit byte sequences that aren't valid UTF-8, and those
+/// come back as U+FFFD, the same way the released `tokenizers` decodes them. Ids the tokenizer's
+/// vocabulary doesn't have are skipped. A NULL `ids.ptr` with `ids.len` 0 is no ids; with a
+/// non-zero `ids.len` it is an error. NULL `options` means the defaults.
 ///
 /// # Safety
 /// 1. `tokenizer` must be NULL, or a tokenizer that is not freed while this call runs.
@@ -99,23 +103,23 @@ pub unsafe extern "C" fn tk_tokenizer_encode(
 ///    nor modified while this call runs.
 /// 3. `options` must be NULL, or decode options that are neither freed nor modified
 ///    (`tk_decode_options_set_*`) while this call runs.
-/// 4. `out` must be NULL, or a writable pointer to a `TkDecodedString *`.
+/// 4. `out` must be NULL, or a writable pointer to a `TkString *`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tk_tokenizer_decode(
     tokenizer: Option<&Tokenizer>,
     ids: Slice<u32>,
     options: Option<&DecodeOptions>,
-    out: *mut *mut DecodedString,
+    out: *mut *mut string::String,
 ) -> *mut Error {
-    let inner = move || -> tk_encode::Result<DecodedString> {
+    let inner = move || -> tk_encode::Result<string::String> {
         let Some(tokenizer) = tokenizer else {
             return Err("tokenizer must not be NULL".into());
         };
         // SAFETY: caller's obligation, documented above.
-        let ids = unsafe { ids.as_slice() };
+        let ids = unsafe { ids.as_slice() }?;
         let options = options.copied().unwrap_or_default();
         let decoded = tokenizer.0.decode(ids, options.skip_special_tokens)?;
-        Ok(DecodedString(decoded))
+        Ok(string::String::new(decoded))
     };
     // SAFETY: caller's obligation, documented above.
     unsafe { wrap_in_ptr(out, inner) }

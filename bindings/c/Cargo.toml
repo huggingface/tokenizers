@@ -36,3 +36,7 @@ tk-convert = { path = "../../tokenizers/tk-convert", default-features = false }
 [build-dependencies]
 cbindgen = "0.29"
 syn = { version = "2", features = ["full", "extra-traits"] }
+
+# Required to turn rust panics into C-visible errors instead of aborting
+[profile.release]
+panic = "unwind"

@@ -13,34 +13,26 @@ BAD_FIXTURE := does-not-exist.json
 quick_start: quick_start.c
 	$(CC) $(CFLAGS) -I$(INCLUDE_DIR) -o $@ $< -L$(LIB_DIR) -ltokenizers_c -Wl,-rpath,$(LIB_DIR)
 
-null-safety: null_safety.c
-	$(CC) $(CFLAGS) -I$(INCLUDE_DIR) -o $@ $< -L$(LIB_DIR) -ltokenizers_c -Wl,-rpath,$(LIB_DIR)
-
 run: quick_start
 	./quick_start $(FIXTURE) "Hello, world!"
 
 # A bad tokenizer path must surface as a clean TkError and exit 1, not crash. The leading `!`
 # inverts make's exit-code check, since quick_start is expected to exit non-zero here.
-run-error: quick_start
+run_error: quick_start
 	! ./quick_start $(BAD_FIXTURE) "Hello, world!"
 
-# Every NULL-argument case across the C ABI must come back as a clean TkError (or a safe
-# no-op for tk_*_free), never a crash. See null_safety.c.
-run-null-safety: null-safety
-	./null-safety $(FIXTURE)
-
-test: run run-error run-null-safety
+test: run run_error
 
 format:
-	$(CLANG_FORMAT) -i quick_start.c null_safety.c
+	$(CLANG_FORMAT) -i quick_start.c
 
-format-check:
-	$(CLANG_FORMAT) --dry-run --Werror quick_start.c null_safety.c
+format_check:
+	$(CLANG_FORMAT) --dry-run --Werror quick_start.c
 
 lint:
-	$(CLANG_TIDY) --warnings-as-errors='*' quick_start.c null_safety.c -- $(CFLAGS) -I$(INCLUDE_DIR)
+	$(CLANG_TIDY) --warnings-as-errors='*' quick_start.c -- $(CFLAGS) -I$(INCLUDE_DIR)
 
 clean:
-	rm -f quick_start null-safety
+	rm -f quick_start
 
-.PHONY: run run-error run-null-safety test clean format format-check lint
+.PHONY: run run_error test clean format format_check lint

@@ -8,8 +8,9 @@ use crate::error::{Error, catch_panic};
 /// Marks a type whose instances Rust heap-allocates and frees, and hands to C as an opaque
 /// pointer.
 ///
-/// C may use one pointer from several threads at once, and every `tk_*` fn borrows it as a
-/// `&T`, so the type has to be `Send + Sync` for that to be sound.
+/// C may use one pointer from several threads at once. The `tk_*` fns that read it borrow it as
+/// `&T`, which is sound because `T: Sync`. The `tk_*_set_*` fns borrow it as `&mut T`, which is
+/// sound only because their contract makes the caller the sole user for the call's duration.
 pub(crate) trait RustOwned: Send + Sync {}
 
 /// Moves `value` to the heap and returns the pointer C will hold, pairing with [`free_ptr`].
@@ -63,9 +64,9 @@ pub(crate) unsafe fn wrap_in_ptr<T: RustOwned, E: std::fmt::Display>(
     })
 }
 
-/// A borrowed view into a Rust-owned slice.
-/// Bundles a pointer with the slice length.
-/// Valid only as long as whatever it points to is still alive.
+/// A borrowed view of `len` contiguous `T`s: a pointer and a length. It owns nothing, in either
+/// direction: C reads a `tk_*` result through one, and hands `tk_tokenizer_decode` its ids in
+/// one. A NULL `ptr` with `len` 0 is the empty slice.
 #[repr(C)]
 pub(crate) struct Slice<T> {
     ptr: *const T,
@@ -73,25 +74,30 @@ pub(crate) struct Slice<T> {
 }
 
 impl<T> Slice<T> {
-    pub(crate) fn null() -> Self {
-        Self {
-            ptr: std::ptr::null(),
-            len: 0,
-        }
+    pub(crate) fn new(ptr: *const T, len: usize) -> Self {
+        Self { ptr, len }
     }
 
-    /// Borrows this slice's data as a `&[T]`, without copying. A NULL `ptr` is treated as an
-    /// empty slice regardless of `len`, matching [`Slice::null`].
+    pub(crate) fn null() -> Self {
+        Self::new(std::ptr::null(), 0)
+    }
+
+    /// Borrows this slice's data as a `&[T]`, without copying. A NULL `ptr` is the empty slice
+    /// when `len` is 0, and an error otherwise.
     ///
     /// # Safety
     /// `ptr` must be NULL, or point to `len` readable `T`s that are not modified for as long as
     /// the returned slice is used.
-    pub(crate) unsafe fn as_slice<'a>(&self) -> &'a [T] {
+    pub(crate) unsafe fn as_slice<'a>(&self) -> Result<&'a [T], &'static str> {
         if self.ptr.is_null() {
-            return &[];
+            return if self.len == 0 {
+                Ok(&[])
+            } else {
+                Err("slice has a NULL ptr but a non-zero len")
+            };
         }
-        // SAFETY: caller's obligation, documented above.
-        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+        // SAFETY: just checked non-NULL; rest of the caller's obligation is documented above.
+        Ok(unsafe { std::slice::from_raw_parts(self.ptr, self.len) })
     }
 }
 
@@ -145,21 +151,6 @@ pub(crate) unsafe fn convert_c_str<'a>(c_str: *const c_char) -> Result<&'a str, 
     c_str.to_str()
 }
 
-/// Borrows a `len`-byte buffer as a UTF-8 `&str`, without copying. Unlike [`convert_c_str`],
-/// `buf` doesn't need a NUL terminator and may contain embedded NUL bytes.
-///
-/// # Safety
-/// `buf` must be non-NULL and point to `len` readable bytes that are neither freed nor modified
-/// for as long as the returned `&str` is used.
-pub(crate) unsafe fn convert_c_buf<'a>(
-    buf: *const c_char,
-    len: usize,
-) -> Result<&'a str, Utf8Error> {
-    // SAFETY: caller's obligation, documented above.
-    let bytes = unsafe { std::slice::from_raw_parts(buf as *const u8, len) };
-    std::str::from_utf8(bytes)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,16 +163,19 @@ mod tests {
     fn slice_as_slice_borrows_the_underlying_data() {
         let data = [1u32, 2, 3];
         let slice = Slice::from(&data[..]);
-        assert_eq!(unsafe { slice.as_slice() }, &data);
+        assert_eq!(unsafe { slice.as_slice() }.unwrap(), &data);
     }
 
     #[test]
-    fn slice_as_slice_null_ptr_is_empty_even_with_nonzero_len() {
-        let slice = Slice::<u32> {
-            ptr: std::ptr::null(),
-            len: 5,
-        };
-        assert_eq!(unsafe { slice.as_slice() }, &[] as &[u32]);
+    fn slice_as_slice_null_ptr_with_zero_len_is_empty() {
+        let slice = Slice::<u32>::new(std::ptr::null(), 0);
+        assert_eq!(unsafe { slice.as_slice() }.unwrap(), &[] as &[u32]);
+    }
+
+    #[test]
+    fn slice_as_slice_null_ptr_with_nonzero_len_is_an_error() {
+        let slice = Slice::<u32>::new(std::ptr::null(), 5);
+        assert!(unsafe { slice.as_slice() }.is_err());
     }
 
     #[test]
@@ -195,22 +189,6 @@ mod tests {
     fn convert_c_str_rejects_invalid_utf8() {
         let bytes = b"\xff\xfe\0";
         let result = unsafe { convert_c_str(bytes.as_ptr() as *const c_char) };
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn convert_c_buf_accepts_embedded_nul_bytes() {
-        // Unlike convert_c_str, convert_c_buf takes an explicit length and tolerates NULs
-        // embedded in the middle of the buffer.
-        let bytes = b"a\0b";
-        let result = unsafe { convert_c_buf(bytes.as_ptr() as *const c_char, bytes.len()) };
-        assert_eq!(result.unwrap(), "a\0b");
-    }
-
-    #[test]
-    fn convert_c_buf_rejects_invalid_utf8() {
-        let bytes: [u8; 2] = [0xff, 0xfe];
-        let result = unsafe { convert_c_buf(bytes.as_ptr() as *const c_char, bytes.len()) };
         assert!(result.is_err());
     }
 

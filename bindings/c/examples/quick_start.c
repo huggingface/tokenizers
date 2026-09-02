@@ -35,7 +35,7 @@ int main(int argc, char **argv)
     handle_error(tk_tokenizer_encode(tokenizer, text, strlen(text), NULL, &encoding));
 
     // Read encoding
-    TkSlice_u32 ids;
+    TkSliceU32 ids;
     handle_error(tk_encoding_ids(encoding, &ids));
     printf("encoded  \"%s\" into %zu token(s):", text, ids.len);
     for (size_t i = 0; i < ids.len; i++)
@@ -44,7 +44,7 @@ int main(int argc, char **argv)
     }
     printf("\n");
 
-    TkSlice_u8 type_ids;
+    TkSliceU8 type_ids;
     handle_error(tk_encoding_type_ids(encoding, &type_ids));
     if (type_ids.len > 0)
     {
@@ -60,15 +60,13 @@ int main(int argc, char **argv)
     TkDecodeOptions *decode_options = NULL;
     handle_error(tk_decode_options_new(&decode_options));
     handle_error(tk_decode_options_set_skip_special_tokens(decode_options, false));
-    TkDecodedString *decoded = NULL;
+    TkString *decoded = NULL;
     handle_error(tk_tokenizer_decode(tokenizer, ids, decode_options, &decoded));
     tk_decode_options_free(&decode_options);
 
-    TkSlice_u8 bytes;
-    handle_error(tk_decoded_string_bytes(decoded, &bytes));
-    printf("decoded: \"%.*s\"\n", (int)bytes.len, (const char *)bytes.ptr);
+    printf("decoded: \"%s\" (%zu bytes)\n", tk_string_cstr(decoded), tk_string_len(decoded));
 
-    tk_decoded_string_free(&decoded);
+    tk_string_free(&decoded);
     tk_encoding_free(&encoding);
     tk_tokenizer_free(&tokenizer);
     return 0;
