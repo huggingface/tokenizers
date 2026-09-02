@@ -20,17 +20,17 @@ typedef struct TkTokenizer TkTokenizer;
 /**
  * An opaque pointer to a Rust-allocated type.
  */
-typedef struct TkError *TkHandle_TkError;
+typedef struct TkError *TkHandle_Error;
 
 /**
  * An opaque pointer to a Rust-allocated type.
  */
-typedef struct TkTokenizer *TkHandle_TkTokenizer;
+typedef struct TkTokenizer *TkHandle_Tokenizer;
 
 /**
  * An opaque pointer to a Rust-allocated type.
  */
-typedef struct TkEncoding *TkHandle_TkEncoding;
+typedef struct TkEncoding *TkHandle_Encoding;
 
 /**
  * A borrowed view into a Rust-owned slice.
@@ -71,10 +71,10 @@ const char *tk_error_message(const struct TkError *err);
  * instead of a double free.
  *
  * # Safety
- * `err` must be non-NULL and point to a [`TkHandle<TkError>`] that is either NULL or a live
+ * `err` must be non-NULL and point to a `TkHandle_Error` that is either NULL or a live
  * (not-yet-freed) error returned by a fallible FFI fn.
  */
-void tk_error_free(TkHandle_TkError *err);
+void tk_error_free(TkHandle_Error *err);
 
 /**
  * Instantiates a tokenizer from its JSON config file.
@@ -83,65 +83,65 @@ void tk_error_free(TkHandle_TkError *err);
  * 1. `path` must be non-NULL, point to a NUL-terminated byte string, and be valid for reads
  *    up to and including that NUL byte for the duration of this call. It must not be mutated
  *    while this function runs.
- * 2. `out` must be valid, writable pointer to a [`TkHandle<TkTokenizer>`]. On return, it
+ * 2. `out` must be valid, writable pointer to a `TkHandle_Tokenizer`. On return, it
  *    holds a live handle if this function returns NULL, or NULL otherwise.
  */
-TkHandle_TkError tk_tokenizer_from_file(const char *path, TkHandle_TkTokenizer *out);
+TkHandle_Error tk_tokenizer_from_file(const char *path, TkHandle_Tokenizer *out);
 
 /**
- * Frees `tk_tokenizer` and writes NULL to it, so calling this again on the same pointer is a
+ * Frees `tokenizer` and writes NULL to it, so calling this again on the same pointer is a
  * no-op instead of a double free.
  *
  * # Safety
- * `tk_tokenizer` must be non-NULL and point to a [`TkHandle<TkTokenizer>`] that is either NULL
+ * `tokenizer` must be non-NULL and point to a `TkHandle_Tokenizer` that is either NULL
  * or live (not already freed).
  */
-void tk_tokenizer_free(TkHandle_TkTokenizer *tk_tokenizer);
+void tk_tokenizer_free(TkHandle_Tokenizer *tokenizer);
 
 /**
  * Encodes the input text to tokens using the provided tokenizer.
  *
  * # Safety
- * 1. `tk_tokenizer` must be non-NULL and point to a valid, not-yet-freed [`TkHandle<TkTokenizer>`].
+ * 1. `tokenizer` must be non-NULL and point to a valid, not-yet-freed `TkHandle_Tokenizer`.
  * 2. `input` must be non-NULL and valid for reads of `input_len` bytes for the duration of
  *    this call. It must not be mutated while this function runs.
- * 3. `out` must be a valid, writable pointer to a [`TkHandle<TkEncoding>`]. On return, it
+ * 3. `out` must be a valid, writable pointer to a `TkHandle_Encoding`. On return, it
  *    holds a live handle if this function returns NULL, or NULL otherwise.
  */
-TkHandle_TkError tk_tokenizer_encode(TkHandle_TkTokenizer tk_tokenizer,
-                                     const char *input,
-                                     size_t input_len,
-                                     bool add_special_tokens,
-                                     TkHandle_TkEncoding *out);
+TkHandle_Error tk_tokenizer_encode(TkHandle_Tokenizer tokenizer,
+                                   const char *input,
+                                   size_t input_len,
+                                   bool add_special_tokens,
+                                   TkHandle_Encoding *out);
 
 /**
- * Frees `tk_encoding` and writes NULL to it, so calling this again on the same pointer is a
+ * Frees `encoding` and writes NULL to it, so calling this again on the same pointer is a
  * no-op instead of a double free.
  *
  * # Safety
- * `tk_encoding` must be non-NULL and point to a [`TkHandle<TkEncoding>`] that is either NULL
+ * `encoding` must be non-NULL and point to a `TkHandle_Encoding` that is either NULL
  * or live (not already freed).
  */
-void tk_encoding_free(TkHandle_TkEncoding *tk_encoding);
+void tk_encoding_free(TkHandle_Encoding *encoding);
 
 /**
- * Writes `tk_encoding`'s token ids to `out`.
+ * Writes `encoding`'s token ids to `out`.
  *
  * # Safety
- * 1. `tk_encoding` must be non-NULL and point to a valid, not-yet-freed [`TkHandle<TkEncoding>`].
- * 2. `out` must be a valid, writable pointer to a [`TkSlice<u32>`].
+ * 1. `encoding` must be non-NULL and point to a valid, not-yet-freed `TkHandle_Encoding`.
+ * 2. `out` must be a valid, writable pointer to a `TkSlice_u32`.
  */
-TkHandle_TkError tk_encoding_ids(TkHandle_TkEncoding tk_encoding, struct TkSlice_u32 *out);
+TkHandle_Error tk_encoding_ids(TkHandle_Encoding encoding, struct TkSlice_u32 *out);
 
 /**
- * Writes `tk_encoding`'s per-token type ids to `out`, or an empty slice if the tokenizer
+ * Writes `encoding`'s per-token type ids to `out`, or an empty slice if the tokenizer
  * doesn't produce them.
  *
  * # Safety
- * 1. `tk_encoding` must be non-NULL and point to a valid, not-yet-freed [`TkHandle<TkEncoding>`].
- * 2. `out` must be a valid, writable pointer to a [`TkSlice<u8>`].
+ * 1. `encoding` must be non-NULL and point to a valid, not-yet-freed `TkHandle_Encoding`.
+ * 2. `out` must be a valid, writable pointer to a `TkSlice_u8`.
  */
-TkHandle_TkError tk_encoding_type_ids(TkHandle_TkEncoding tk_encoding, struct TkSlice_u8 *out);
+TkHandle_Error tk_encoding_type_ids(TkHandle_Encoding encoding, struct TkSlice_u8 *out);
 
 #ifdef __cplusplus
 }  // extern "C"

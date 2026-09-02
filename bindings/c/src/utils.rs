@@ -3,28 +3,28 @@ use std::{
     str::Utf8Error,
 };
 
-use crate::error::{TkError, catch_panic};
+use crate::error::{Error, catch_panic};
 
 /// Marks a type whose instances Rust heap-allocates and frees.
-/// Must be wrapped in a [`TkHandle`] to be passed to C code.
+/// Must be wrapped in a [`Handle`] to be passed to C code.
 pub(crate) trait RustOwned {}
 
 /// An opaque pointer to a Rust-allocated type.
 #[repr(transparent)]
-pub(crate) struct TkHandle<T>(*mut T);
+pub(crate) struct Handle<T>(*mut T);
 
-impl<T> Copy for TkHandle<T> {}
+impl<T> Copy for Handle<T> {}
 
-impl<T> Clone for TkHandle<T> {
+impl<T> Clone for Handle<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T> TkHandle<T> {
+impl<T> Handle<T> {
     /// A handle representing "no value", ie a null pointer
     pub(crate) fn null() -> Self {
-        TkHandle(std::ptr::null_mut())
+        Handle(std::ptr::null_mut())
     }
 
     pub(crate) fn is_null(&self) -> bool {
@@ -41,18 +41,18 @@ impl<T> TkHandle<T> {
     }
 }
 
-/// Leaks `value` onto the heap and returns it as a raw pointer, pairing with [`free_tk_handle`].
-pub(crate) fn new_tk_handle<T: RustOwned>(value: T) -> TkHandle<T> {
-    TkHandle(Box::into_raw(Box::new(value)))
+/// Leaks `value` onto the heap and returns it as a raw pointer, pairing with [`free_handle`].
+pub(crate) fn new_handle<T: RustOwned>(value: T) -> Handle<T> {
+    Handle(Box::into_raw(Box::new(value)))
 }
 
 /// Frees `handle` and writes NULL to it, so calling this again on the same pointer is a no-op
 /// instead of a double free.
 ///
 /// # Safety
-/// `handle` must point to a [`TkHandle<T>`] that is either NULL or a live
+/// `handle` must point to a [`Handle<T>`] that is either NULL or a live
 /// (not-yet-freed) instance of `T`.
-pub(crate) unsafe fn free_tk_handle<T: RustOwned>(handle: *mut TkHandle<T>) {
+pub(crate) unsafe fn free_handle<T: RustOwned>(handle: *mut Handle<T>) {
     if handle.is_null() {
         return;
     }
@@ -64,33 +64,33 @@ pub(crate) unsafe fn free_tk_handle<T: RustOwned>(handle: *mut TkHandle<T>) {
 
     // SAFETY: just checked non-NULL; liveness is the caller's obligation, documented above.
     drop(unsafe { Box::from_raw(handle.0) });
-    *handle = TkHandle::null();
+    *handle = Handle::null();
 }
 
-/// A wrapper for FFI functions that output a [`TkHandle`].
+/// A wrapper for FFI functions that output a [`Handle`].
 ///
 /// Takes care of:
-/// - reporting a [`TkError`] instead of writing anything, if `out` is NULL
+/// - reporting a [`Error`] instead of writing anything, if `out` is NULL
 /// - initializing the out pointer to NULL
 /// - catching panic unwinds so they don't reach C code
-/// - converting the output of `inner` to a [`TkHandle`] when successful
+/// - converting the output of `inner` to a [`Handle`] when successful
 ///
 /// # Safety
-/// `out` must be NULL, or point to valid, writable memory for a [`TkHandle<T>`]. It can be
+/// `out` must be NULL, or point to valid, writable memory for a [`Handle<T>`]. It can be
 /// uninitialized.
-pub(crate) unsafe fn wrap_in_tk_handle<T: RustOwned, E: std::fmt::Display>(
-    out: *mut TkHandle<T>,
+pub(crate) unsafe fn wrap_in_handle<T: RustOwned, E: std::fmt::Display>(
+    out: *mut Handle<T>,
     inner: impl FnOnce() -> Result<T, E>,
-) -> TkHandle<TkError> {
+) -> Handle<Error> {
     if out.is_null() {
-        return TkError::into_handle("out pointer must not be NULL");
+        return Error::into_handle("out pointer must not be NULL");
     }
     // SAFETY: caller's obligation, documented above.
-    unsafe { std::ptr::write(out, TkHandle::null()) };
+    unsafe { std::ptr::write(out, Handle::null()) };
     catch_panic(move || -> Result<(), E> {
         let value = inner()?;
         // SAFETY: caller's obligation, documented above.
-        unsafe { std::ptr::write(out, new_tk_handle(value)) };
+        unsafe { std::ptr::write(out, new_handle(value)) };
         Ok(())
     })
 }
@@ -99,12 +99,12 @@ pub(crate) unsafe fn wrap_in_tk_handle<T: RustOwned, E: std::fmt::Display>(
 /// Bundles a pointer with the slice length.
 /// Valid only as long as whatever it points to is still alive.
 #[repr(C)]
-pub(crate) struct TkSlice<T> {
+pub(crate) struct Slice<T> {
     ptr: *const T,
     len: usize,
 }
 
-impl<T> TkSlice<T> {
+impl<T> Slice<T> {
     pub(crate) fn null() -> Self {
         Self {
             ptr: std::ptr::null(),
@@ -113,12 +113,12 @@ impl<T> TkSlice<T> {
     }
 }
 
-/// Writes a view of `value` to `out`, bundling pointer and slice length in one [`TkSlice`].
+/// Writes a view of `value` to `out`, bundling pointer and slice length in one [`Slice`].
 ///
 /// # Safety
-/// `out` must point to valid, writable memory for a [`TkSlice<T>`]. It can be uninitialized.
-pub(crate) unsafe fn write_tk_slice<T>(out: *mut TkSlice<T>, value: &[T]) {
-    let slice = TkSlice {
+/// `out` must point to valid, writable memory for a [`Slice<T>`]. It can be uninitialized.
+pub(crate) unsafe fn write_slice<T>(out: *mut Slice<T>, value: &[T]) {
+    let slice = Slice {
         ptr: value.as_ptr(),
         len: value.len(),
     };
@@ -128,33 +128,33 @@ pub(crate) unsafe fn write_tk_slice<T>(out: *mut TkSlice<T>, value: &[T]) {
     }
 }
 
-/// A wrapper for FFI functions that output a [`TkSlice`].
+/// A wrapper for FFI functions that output a [`Slice`].
 ///
 /// Takes care of:
-/// - reporting a [`TkError`] instead of writing anything, if `out` is NULL
+/// - reporting a [`Error`] instead of writing anything, if `out` is NULL
 /// - initializing the out pointer to an empty slice
 /// - catching panic unwinds so they don't reach C code
 /// - writing `inner`'s slice to the out pointer, when it succeeds
 ///
 /// A missing value (e.g. an encoding with no type ids) is a `body` that returns `Ok(&[])`: a
-/// [`TkSlice`] can't tell "absent" from "empty" apart, and nothing needs it to.
+/// [`Slice`] can't tell "absent" from "empty" apart, and nothing needs it to.
 ///
 /// # Safety
-/// `out` must be NULL, or point to valid, writable memory for a [`TkSlice<T>`]. It can be
+/// `out` must be NULL, or point to valid, writable memory for a [`Slice<T>`]. It can be
 /// uninitialized.
-pub(crate) unsafe fn wrap_in_tk_slice<'a, T: 'a, E: std::fmt::Display>(
-    out: *mut TkSlice<T>,
+pub(crate) unsafe fn wrap_in_slice<'a, T: 'a, E: std::fmt::Display>(
+    out: *mut Slice<T>,
     inner: impl FnOnce() -> Result<&'a [T], E>,
-) -> TkHandle<TkError> {
+) -> Handle<Error> {
     if out.is_null() {
-        return TkError::into_handle("out pointer must not be NULL");
+        return Error::into_handle("out pointer must not be NULL");
     }
     // SAFETY: caller's obligation, documented above.
-    unsafe { std::ptr::write(out, TkSlice::null()) };
+    unsafe { std::ptr::write(out, Slice::null()) };
     catch_panic(move || -> Result<(), E> {
         let slice = inner()?;
         // SAFETY: caller's obligation, documented above.
-        unsafe { write_tk_slice(out, slice) };
+        unsafe { write_slice(out, slice) };
         Ok(())
     })
 }
@@ -225,32 +225,32 @@ mod tests {
     }
 
     #[test]
-    fn free_tk_handle_outer_null_is_a_no_op() {
+    fn free_handle_outer_null_is_a_no_op() {
         // Doesn't crash -- that's the whole test.
-        unsafe { free_tk_handle::<Dummy>(std::ptr::null_mut()) };
+        unsafe { free_handle::<Dummy>(std::ptr::null_mut()) };
     }
 
     #[test]
-    fn free_tk_handle_frees_and_nulls_the_slot() {
-        let mut handle = new_tk_handle(Dummy);
+    fn free_handle_frees_and_nulls_the_slot() {
+        let mut handle = new_handle(Dummy);
         assert!(!handle.is_null());
-        unsafe { free_tk_handle(&mut handle) };
+        unsafe { free_handle(&mut handle) };
         assert!(handle.is_null());
     }
 
     #[test]
-    fn free_tk_handle_is_a_no_op_the_second_time_on_the_same_slot() {
-        let mut handle = new_tk_handle(Dummy);
-        unsafe { free_tk_handle(&mut handle) };
-        unsafe { free_tk_handle(&mut handle) }; // must not double-free
+    fn free_handle_is_a_no_op_the_second_time_on_the_same_slot() {
+        let mut handle = new_handle(Dummy);
+        unsafe { free_handle(&mut handle) };
+        unsafe { free_handle(&mut handle) }; // must not double-free
         assert!(handle.is_null());
     }
 
     #[test]
-    fn wrap_in_tk_handle_out_null_reports_an_error_without_calling_inner() {
+    fn wrap_in_handle_out_null_reports_an_error_without_calling_inner() {
         let called = Cell::new(false);
         let result = unsafe {
-            wrap_in_tk_handle::<Dummy, &str>(std::ptr::null_mut(), || {
+            wrap_in_handle::<Dummy, &str>(std::ptr::null_mut(), || {
                 called.set(true);
                 Ok(Dummy)
             })
@@ -260,19 +260,18 @@ mod tests {
     }
 
     #[test]
-    fn wrap_in_tk_handle_resets_out_to_null_even_when_inner_fails() {
-        let mut out = TkHandle::<Dummy>(std::ptr::dangling_mut()); // poison: some non-null value
-        let result =
-            unsafe { wrap_in_tk_handle(&mut out, || -> Result<Dummy, &str> { Err("nope") }) };
+    fn wrap_in_handle_resets_out_to_null_even_when_inner_fails() {
+        let mut out = Handle::<Dummy>(std::ptr::dangling_mut()); // poison: some non-null value
+        let result = unsafe { wrap_in_handle(&mut out, || -> Result<Dummy, &str> { Err("nope") }) };
         assert!(!result.is_null());
         assert!(out.is_null());
     }
 
     #[test]
-    fn wrap_in_tk_slice_out_null_reports_an_error_without_calling_inner() {
+    fn wrap_in_slice_out_null_reports_an_error_without_calling_inner() {
         let called = Cell::new(false);
         let result = unsafe {
-            wrap_in_tk_slice::<u32, &str>(std::ptr::null_mut(), || {
+            wrap_in_slice::<u32, &str>(std::ptr::null_mut(), || {
                 called.set(true);
                 Ok(&[][..])
             })
@@ -282,24 +281,23 @@ mod tests {
     }
 
     #[test]
-    fn wrap_in_tk_slice_resets_out_to_empty_even_when_inner_fails() {
-        let mut out = TkSlice::<u32> {
+    fn wrap_in_slice_resets_out_to_empty_even_when_inner_fails() {
+        let mut out = Slice::<u32> {
             ptr: std::ptr::dangling(),
             len: 99,
         }; // poison
-        let result =
-            unsafe { wrap_in_tk_slice(&mut out, || -> Result<&[u32], &str> { Err("nope") }) };
+        let result = unsafe { wrap_in_slice(&mut out, || -> Result<&[u32], &str> { Err("nope") }) };
         assert!(!result.is_null());
         assert!(out.ptr.is_null());
         assert_eq!(out.len, 0);
     }
 
     #[test]
-    fn wrap_in_tk_slice_writes_the_slice_on_success() {
+    fn wrap_in_slice_writes_the_slice_on_success() {
         let data = [1u32, 2, 3];
-        let mut out = TkSlice::<u32>::null();
+        let mut out = Slice::<u32>::null();
         let result =
-            unsafe { wrap_in_tk_slice(&mut out, || -> Result<&[u32], &str> { Ok(&data[..]) }) };
+            unsafe { wrap_in_slice(&mut out, || -> Result<&[u32], &str> { Ok(&data[..]) }) };
         assert!(result.is_null());
         assert_eq!(
             unsafe { std::slice::from_raw_parts(out.ptr, out.len) },

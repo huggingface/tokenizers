@@ -1,18 +1,18 @@
-use crate::utils::{RustOwned, TkHandle, free_tk_handle, new_tk_handle};
+use crate::utils::{Handle, RustOwned, free_handle, new_handle};
 use std::ffi::{CString, c_char};
 use std::panic::{self, AssertUnwindSafe};
 
-pub struct TkError {
+pub struct Error {
     message: CString,
 }
 
-impl RustOwned for TkError {}
+impl RustOwned for Error {}
 
-impl TkError {
-    pub(crate) fn into_handle(msg: impl std::fmt::Display) -> TkHandle<TkError> {
+impl Error {
+    pub(crate) fn into_handle(msg: impl std::fmt::Display) -> Handle<Error> {
         let message = CString::new(msg.to_string())
             .unwrap_or_else(|_| CString::new("error message contained a NUL byte").unwrap());
-        new_tk_handle(TkError { message })
+        new_handle(Error { message })
     }
 }
 
@@ -23,7 +23,7 @@ impl TkError {
 /// `err` must be NULL, or a live pointer returned by a fallible FFI fn and not yet freed with
 /// `tk_error_free`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tk_error_message(err: *const TkError) -> *const c_char {
+pub unsafe extern "C" fn tk_error_message(err: *const Error) -> *const c_char {
     if err.is_null() {
         return std::ptr::null();
     }
@@ -34,12 +34,12 @@ pub unsafe extern "C" fn tk_error_message(err: *const TkError) -> *const c_char 
 /// instead of a double free.
 ///
 /// # Safety
-/// `err` must be non-NULL and point to a [`TkHandle<TkError>`] that is either NULL or a live
+/// `err` must be non-NULL and point to a `TkHandle_Error` that is either NULL or a live
 /// (not-yet-freed) error returned by a fallible FFI fn.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tk_error_free(err: *mut TkHandle<TkError>) {
+pub unsafe extern "C" fn tk_error_free(err: *mut Handle<Error>) {
     // SAFETY: caller's obligation, documented above.
-    unsafe { free_tk_handle(err) }
+    unsafe { free_handle(err) }
 }
 
 fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
@@ -53,11 +53,11 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 /// Catches unwind panic and converts it to an error
 pub(crate) fn catch_panic<E: std::fmt::Display>(
     body: impl FnOnce() -> Result<(), E>,
-) -> TkHandle<TkError> {
+) -> Handle<Error> {
     match panic::catch_unwind(AssertUnwindSafe(body)) {
-        Ok(Ok(())) => TkHandle::null(),
-        Ok(Err(err)) => TkError::into_handle(err),
-        Err(payload) => TkError::into_handle(panic_message(payload)),
+        Ok(Ok(())) => Handle::null(),
+        Ok(Err(err)) => Error::into_handle(err),
+        Err(payload) => Error::into_handle(panic_message(payload)),
     }
 }
 
@@ -65,7 +65,7 @@ pub(crate) fn catch_panic<E: std::fmt::Display>(
 mod tests {
     use super::*;
 
-    fn message_of(handle: TkHandle<TkError>) -> String {
+    fn message_of(handle: Handle<Error>) -> String {
         assert!(!handle.is_null());
         let err = unsafe { handle.as_ref() };
         err.message.to_str().unwrap().to_string()

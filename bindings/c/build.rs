@@ -27,7 +27,7 @@ const PANIC_CATCH_EXEMPT: &[&str] = &[
     "tk_encoding_free",
 ];
 
-/// Checks every exported functions properly handle panics and returns a *mut TkHandle<TkError>
+/// Checks every exported functions properly handle panics and returns a *mut Handle<Error>
 fn check_every_exported_fn_catches_panic(src_dir: &Path) {
     let unguarded: Vec<String> = rust_files(src_dir)
         .iter()
@@ -36,10 +36,10 @@ fn check_every_exported_fn_catches_panic(src_dir: &Path) {
 
     if !unguarded.is_empty() {
         panic!(
-            "{} exported fn(s) (#[unsafe(no_mangle)]) aren't declared `-> TkHandle<TkError>`:\n\
+            "{} exported fn(s) (#[unsafe(no_mangle)]) aren't declared `-> Handle<Error>`:\n\
              {}\n\n\
              A panic in one of these would unwind into C code, which is undefined behavior.\
-             Every fn reachable from C must be declared `-> TkHandle<TkError>` and call `catch_panic` (`src/panic.rs`) \
+             Every fn reachable from C must be declared `-> Handle<Error>` and call `catch_panic` (`src/panic.rs`) \
              as its body's tail expression, or be added to PANIC_CATCH_EXEMPT in build.rs with a comment explaining why \
              it doesn't need one.",
             unguarded.len(),
@@ -100,7 +100,7 @@ fn is_no_mangle(attr: &syn::Attribute) -> bool {
             .is_ok_and(|inner| inner.is_ident("no_mangle"))
 }
 
-/// Checks whether `f` returns `TkHandle<TkError>` and catches panic unwinding
+/// Checks whether `f` returns `Handle<Error>` and catches panic unwinding
 fn is_guarded(f: &syn::ItemFn) -> bool {
     let syn::ReturnType::Type(_, ty) = &f.sig.output else {
         return false;
@@ -114,9 +114,9 @@ fn is_guarded(f: &syn::ItemFn) -> bool {
     let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
         return false;
     };
-    segment.ident == "TkHandle"
+    segment.ident == "Handle"
         && args.args.len() == 1
-        && matches!(&args.args[0], syn::GenericArgument::Type(t) if path_ends_in(t, "TkError"))
+        && matches!(&args.args[0], syn::GenericArgument::Type(t) if path_ends_in(t, "Error"))
 }
 
 fn path_ends_in(ty: &syn::Type, name: &str) -> bool {
