@@ -57,10 +57,10 @@ fn ids(text: &str, input: &str) -> Vec<u32> {
 #[rustfmt::skip]
 const ENCODES: &[(&str, &str, &str, &[u32])] = &[
     ("model", TINY_BPE, "abab", &[3]),
-    // [CLS] $A [SEP] around the single sequence, from either spelling of the frame.
-    ("post_processor", r#"{"type": "BertProcessing", "sep": ["b", 1], "cls": ["a", 0]}"#, "abab", &[0, 3, 1]),
-    ("post_processor", r#"{"type": "RobertaProcessing", "sep": ["b", 1], "cls": ["a", 0],
-        "trim_offsets": true, "add_prefix_space": true}"#, "abab", &[0, 3, 1]),
+    // [CLS] $A [SEP] around the single sequence. The `BertProcessing` and `RobertaProcessing`
+    // spellings of this frame are tk-convert's to rewrite, so the reader sees only this one.
+    ("post_processor", r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
+        "pair": [{"seq": "A"}, {"seq": "B", "type_id": 1}]}"#, "abab", &[0, 3, 1]),
 ];
 
 #[cfg(feature = "unigram")]
@@ -118,7 +118,8 @@ const REFUSED: &[(&str, &str, &str)] = &[
     ("pre_tokenizer", r#"{"type": "ByteLevel", "use_regex": true}"#, "`ByteLevel` pre-tokenizer"),
     ("pre_tokenizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "always"}"#,
         "`Metaspace` pre-tokenizer"),
-    ("post_processor", r#"{"type": "BertProcessing", "sep": ["b"], "cls": ["a", 0]}"#, "[token, id] pair"),
+    ("post_processor", r#"{"type": "BertProcessing", "sep": ["b", 1], "cls": ["a", 0]}"#, "`BertProcessing` post-processor"),
+    ("post_processor", r#"{"type": "Sequence", "processors": []}"#, "`Sequence` post-processor"),
     ("padding", r#"{"direction": "Right", "pad_id": 0, "pad_type_id": 0, "pad_token": "[PAD]"}"#, "no `strategy`"),
     ("padding", r#"{"strategy": "Invented", "direction": "Right", "pad_id": 0, "pad_type_id": 0,
         "pad_token": "[PAD]"}"#, "unknown padding strategy"),

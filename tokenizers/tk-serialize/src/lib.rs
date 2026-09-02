@@ -21,10 +21,10 @@ pub(crate) const BASE64: base64::engine::GeneralPurpose = base64::engine::Genera
 mod from_json;
 
 #[cfg(feature = "deserialize")]
-pub use from_json::{from_json, from_json_file};
+pub use from_json::{from_json, from_json_file, post_processor_from_json};
 
 #[cfg(any(feature = "serialize", all(test, feature = "deserialize")))]
 mod to_json;
 
 #[cfg(feature = "serialize")]
-pub use to_json::to_json;
+pub use to_json::{post_processor_to_json, to_json};
