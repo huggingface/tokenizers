@@ -61,8 +61,8 @@ pub(crate) fn new_handle<T: RustOwned>(value: T) -> Handle<T> {
 /// instead of a double free.
 ///
 /// # Safety
-/// `handle` must point to a [`Handle<T>`] that is either NULL or a live
-/// (not-yet-freed) instance of `T`.
+/// `handle` must be NULL, or point to a writable [`Handle<T>`] holding NULL or a handle from
+/// [`new_handle`] that is not yet freed and that nothing else is using.
 pub(crate) unsafe fn free_handle<T: RustOwned>(handle: *mut Handle<T>) {
     if handle.is_null() {
         return;
@@ -87,8 +87,7 @@ pub(crate) unsafe fn free_handle<T: RustOwned>(handle: *mut Handle<T>) {
 /// - converting the output of `inner` to a [`Handle`] when successful
 ///
 /// # Safety
-/// `out` must be NULL, or point to valid, writable memory for a [`Handle<T>`]. It can be
-/// uninitialized.
+/// `out` must be NULL, or a writable pointer to a [`Handle<T>`], initialized or not.
 pub(crate) unsafe fn wrap_in_handle<T: RustOwned, E: std::fmt::Display>(
     out: *mut Handle<T>,
     inner: impl FnOnce() -> Result<T, E>,
@@ -127,8 +126,8 @@ impl<T> Slice<T> {
     /// empty slice regardless of `len`, matching [`Slice::null`].
     ///
     /// # Safety
-    /// `ptr` must be NULL, or valid for reads of `len` elements of `T` for as long as the
-    /// returned slice is used. The pointed-to memory must not be mutated during that time.
+    /// `ptr` must be NULL, or point to `len` readable `T`s that are not modified for as long as
+    /// the returned slice is used.
     pub(crate) unsafe fn as_slice<'a>(&self) -> &'a [T] {
         if self.ptr.is_null() {
             return &[];
@@ -141,7 +140,7 @@ impl<T> Slice<T> {
 /// Writes a view of `value` to `out`, bundling pointer and slice length in one [`Slice`].
 ///
 /// # Safety
-/// `out` must point to valid, writable memory for a [`Slice<T>`]. It can be uninitialized.
+/// `out` must be a writable pointer to a [`Slice<T>`], initialized or not.
 pub(crate) unsafe fn write_slice<T>(out: *mut Slice<T>, value: &[T]) {
     let slice = Slice {
         ptr: value.as_ptr(),
@@ -165,8 +164,7 @@ pub(crate) unsafe fn write_slice<T>(out: *mut Slice<T>, value: &[T]) {
 /// [`Slice`] can't tell "absent" from "empty" apart, and nothing needs it to.
 ///
 /// # Safety
-/// `out` must be NULL, or point to valid, writable memory for a [`Slice<T>`]. It can be
-/// uninitialized.
+/// `out` must be NULL, or a writable pointer to a [`Slice<T>`], initialized or not.
 pub(crate) unsafe fn wrap_in_slice<'a, T: 'a, E: std::fmt::Display>(
     out: *mut Slice<T>,
     inner: impl FnOnce() -> Result<&'a [T], E>,
@@ -187,9 +185,8 @@ pub(crate) unsafe fn wrap_in_slice<'a, T: 'a, E: std::fmt::Display>(
 /// Borrows a NUL-terminated C string as a UTF-8 `&str`, without copying.
 ///
 /// # Safety
-/// `c_str` must be non-NULL, point to a single NUL-terminated byte string, and be valid for
-/// reads up to and including that NUL byte for as long as the returned `&str` is alive. The
-/// pointed-to memory must not be mutated during that time.
+/// `c_str` must be non-NULL and point to a NUL-terminated string that is neither freed nor
+/// modified for as long as the returned `&str` is used.
 pub(crate) unsafe fn convert_c_str<'a>(c_str: *const c_char) -> Result<&'a str, Utf8Error> {
     // SAFETY: caller's obligation, documented above.
     let c_str = unsafe { CStr::from_ptr(c_str) };
@@ -200,8 +197,8 @@ pub(crate) unsafe fn convert_c_str<'a>(c_str: *const c_char) -> Result<&'a str, 
 /// `buf` doesn't need a NUL terminator and may contain embedded NUL bytes.
 ///
 /// # Safety
-/// `buf` must be non-NULL and valid for reads of `len` bytes for as long as the returned `&str`
-/// is alive. The pointed-to memory must not be mutated during that time.
+/// `buf` must be non-NULL and point to `len` readable bytes that are neither freed nor modified
+/// for as long as the returned `&str` is used.
 pub(crate) unsafe fn convert_c_buf<'a>(
     buf: *const c_char,
     len: usize,

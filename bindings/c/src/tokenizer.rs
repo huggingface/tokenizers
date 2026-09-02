@@ -12,14 +12,13 @@ use tk_encode::pipeline::PipelineTokenizer;
 pub struct Tokenizer(PipelineTokenizer);
 impl RustOwned for Tokenizer {}
 
-/// Instantiates a tokenizer from its JSON config file.
+/// Instantiates a tokenizer from its JSON config file and writes its handle to `out`, or NULL
+/// to `out` if this call fails.
 ///
 /// # Safety
-/// 1. `path` must be non-NULL, point to a NUL-terminated byte string, and be valid for reads
-///    up to and including that NUL byte for the duration of this call. It must not be mutated
-///    while this function runs.
-/// 2. `out` must be valid, writable pointer to a `TkHandle_Tokenizer`. On return, it
-///    holds a live handle if this function returns NULL, or NULL otherwise.
+/// 1. `path` must be NULL, or a NUL-terminated string that is neither freed nor modified while
+///    this call runs.
+/// 2. `out` must be NULL, or a writable pointer to a `TkHandle_Tokenizer`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tk_tokenizer_from_file(
     path: *const c_char,
@@ -43,8 +42,8 @@ pub unsafe extern "C" fn tk_tokenizer_from_file(
 /// no-op instead of a double free.
 ///
 /// # Safety
-/// `tokenizer` must be non-NULL and point to a `TkHandle_Tokenizer` that is either NULL
-/// or live (not already freed).
+/// `tokenizer` must be NULL, or point to a `TkHandle_Tokenizer` holding NULL or a handle that is
+/// not yet freed and that no other thread is using.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tk_tokenizer_free(tokenizer: *mut Handle<Tokenizer>) {
     // SAFETY: caller's obligation, documented above.

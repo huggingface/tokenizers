@@ -16,17 +16,17 @@ impl Error {
     }
 }
 
-/// Returns a pointer to `err`'s message, or NULL if `err` is NULL. The pointer is owned by `err`
-/// and only valid until `err` is freed with `tk_error_free`.
+/// Returns a pointer to `err`'s message, or NULL if `err` is NULL. The message points into `err`
+/// and is valid until `tk_error_free`.
 ///
 /// # Safety
-/// `err` must be NULL, or a live pointer returned by a fallible FFI fn and not yet freed with
-/// `tk_error_free`.
+/// `err` must be NULL, or an error returned by a `tk_*` call that is not yet freed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tk_error_message(err: *const Error) -> *const c_char {
     if err.is_null() {
         return std::ptr::null();
     }
+    // SAFETY: just checked non-NULL; rest of the caller's obligation is documented above.
     unsafe { &*err }.message.as_ptr()
 }
 
@@ -34,8 +34,8 @@ pub unsafe extern "C" fn tk_error_message(err: *const Error) -> *const c_char {
 /// instead of a double free.
 ///
 /// # Safety
-/// `err` must be non-NULL and point to a `TkHandle_Error` that is either NULL or a live
-/// (not-yet-freed) error returned by a fallible FFI fn.
+/// `err` must be NULL, or point to a `TkHandle_Error` holding NULL or an error returned by a
+/// `tk_*` call that is not yet freed and that no other thread is using.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tk_error_free(err: *mut Handle<Error>) {
     // SAFETY: caller's obligation, documented above.
