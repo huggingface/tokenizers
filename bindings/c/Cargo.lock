@@ -1189,7 +1189,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers-c"
-version = "1.0.0-rc0"
+version = "0.1.0"
 dependencies = [
  "cbindgen",
  "syn 2.0.119",
