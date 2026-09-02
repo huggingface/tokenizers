@@ -49,14 +49,7 @@ pub enum Seq {
     B,
 }
 
-/// A post-processing template, in the only shape there is: `prefix? $A infix? ($B suffix?)?`.
-///
-/// Nothing else needs supporting. A template references `$A` exactly once, references `$B` only in
-/// a pair template and only after `$A`, and every other piece is a special token -- so the three
-/// runs of specials are concatenated once, when the template is read, and the encode path never
-/// walks a piece list. It appends `infix`, B and `suffix` to sequence A's own buffer and splices
-/// `prefix` in front, which is why there is no fast path left to pre-compute: for a single
-/// template that reuse is unconditional.
+/// A post-processing template: `prefix? $A infix? ($B suffix?)?`.
 ///
 /// Specials are `(id, type_id)` pairs because one piece can carry several ids, and adjacent pieces
 /// can disagree on the type id -- XLNet's suffix is `<sep>@0 <cls>@2`.
