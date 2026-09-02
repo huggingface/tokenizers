@@ -6,7 +6,7 @@
 //! - the top byte is a **tag**, stored in a separate table ([`WordCache::quick_lookup`])
 //!
 //! A lookup walks a 16 byte window in [`WordCache::quick_lookup`] to find a matching tag, if the tag
-//! matches the slot's 128 bit key ([`LookupKey`]) confirms whether it's a match or not.
+//! matches the slot's 64 bit key ([`LookupKey`]) confirms whether it's a match or not.
 //!
 //! On miss, we return where the cache should insert ([`WordCache::insert`]) the ids;
 //! Either the slot already holding a stale copy of the word ([`WordCacheSlot::is_stale`]),
@@ -32,10 +32,15 @@
 //!
 //! # Note
 //!
-//! A cache hit for a word of 15 bytes or shorter is guaranteed to return correct ids.
-//! For longer words, the cache hit relies on equality of 127 bits of hash of the word's bytes.
-//! Two long words can in principle share the same 127 bit hash (a collision) which could make the
+//! A cache hit for a word of `INLINE_KEY_BYTES` bytes or shorter is guaranteed to return correct
+//! ids: the key holds those bytes verbatim, so a key comparison *is* a byte comparison.
+//! For longer words, the cache hit relies on equality of the 64 bit hash of the word's bytes.
+//! Two long words can in principle share the same 64 bit hash (a collision) which could make the
 //! cache return incorrect ids for one of them, even though the collision is extremely unlikely.
+//!
+//! Widening [`LookupKey`] to a `u128` would raise the exact-comparison bound to 15 bytes and cost
+//! no extra memory -- a slot has 11 unused bytes today -- but it is not what the code does. See
+//! [`WordCacheSlot`].
 //!
 //! # Where the ideas come from
 //!
@@ -262,11 +267,11 @@ impl<'a> WordCache {
 ///
 /// The token ids are encoded inline in the cache slot:
 /// ```text
-/// ┌────────────────────────┬────────────┬────────────┬────────────┬─────────┬─────────┐
-/// │          key           │   id[0]    │   id[1]    │   id[2]    │ ids_len │   _pad  │
-/// │       LookupKey        │    u32     │    u32     │    u32     │    u8   │ [u8; 3] │
-/// └────────────────────────┴────────────┴────────────┴────────────┴─────────┴─────────┘
-/// 0                        16           20           24           28        29        32 bytes
+/// ┌────────────┬────────────┬────────────┬────────────┬─────────┬─────────┬──────────────┐
+/// │    key     │   id[0]    │   id[1]    │   id[2]    │ ids_len │  _pad   │   (padding)  │
+/// │ LookupKey  │    u32     │    u32     │    u32     │   u8    │ [u8; 3] │              │
+/// └────────────┴────────────┴────────────┴────────────┴─────────┴─────────┴──────────────┘
+/// 0            8            12           16           20        21        24            32
 /// ```
 ///
 /// ## spilled: more than 3 ids to cache
@@ -274,12 +279,16 @@ impl<'a> WordCache {
 /// The token ids are stored in [`WordCache::spilled_buffer`].
 /// The slot holds offsets in that buffer.
 /// ```text
-/// ┌────────────────────────┬────────────┬────────────┬────────────┬─────────┬─────────┐
-/// │          key           │   start    │    end     │ generation │ SPILLED │   _pad  │
-/// │       LookupKey        │    u32     │    u32     │    u32     │    u8   │ [u8; 3] │
-/// └────────────────────────┴────────────┴────────────┴────────────┴─────────┴─────────┘
-/// 0                        16           20           24           28        29        32 bytes
+/// ┌────────────┬────────────┬────────────┬────────────┬─────────┬─────────┬──────────────┐
+/// │    key     │   start    │    end     │ generation │ SPILLED │  _pad   │   (padding)  │
+/// │ LookupKey  │    u32     │    u32     │    u32     │   u8    │ [u8; 3] │              │
+/// └────────────┴────────────┴────────────┴────────────┴─────────┴─────────┴──────────────┘
+/// 0            8            12           16           20        21        24            32
 /// ```
+///
+/// The trailing 8 bytes are alignment padding and the 3 in `_pad` are explicit, so 11 of the 32
+/// bytes carry nothing. That is what a `u128` key would consume if [`LookupKey`] were widened; the
+/// slot is sized for it already.
 #[repr(C, align(32))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct WordCacheSlot {
@@ -376,34 +385,36 @@ impl<'a> SelfContained<'a> {
     }
 }
 
-/// The lookup key, packed in a u128
+/// The lookup key, packed in a `u64`.
 ///
-/// There are two variants depending on the word's length in bytes:
+/// It is exactly what [`key_and_hash`] returns as its first element, and there are two variants
+/// depending on the word's length in bytes. Unlike a `u128` key, the two are *not* discriminated by
+/// a tag bit -- the length in the top byte does it, and a hashed key is simply one whose top byte
+/// happens not to be a length it could have come from.
 ///
-/// ## inline: the word is 15 bytes or shorter
+/// ## inline: the word is `INLINE_KEY_BYTES` bytes or shorter
 ///
-/// The key holds the word's bytes as is, plus the word's length in the top byte.
+/// The key holds the word's bytes as is, plus the word's length in the top byte, so comparing keys
+/// compares the words themselves and a hit cannot be a false positive.
 ///
-/// bit 127 = 0, inline: the word is its own key (len <= 15)
 /// ```text
-/// ┌───┬──────────────┬───────────────────────────────────────────────────────────────────────┐
-/// │ 0 │    length    │                 word bytes, little-endian, zero padded                │
-/// │   │    7 bits    │                                120 bits                               │
-/// └───┴──────────────┴───────────────────────────────────────────────────────────────────────┘
-///  127 126        120 119                                                                   0
+/// ┌──────────────┬────────────────────────────────────────────────────────┐
+/// │    length    │        word bytes, little-endian, zero padded         │
+/// │    8 bits    │                       56 bits                         │
+/// └──────────────┴────────────────────────────────────────────────────────┘
+///  63          56 55                                                    0
 /// ```
 ///
-/// ## hashed: the word is longer than 15 bytes
+/// ## hashed: the word is longer than `INLINE_KEY_BYTES`
 ///
-/// the key holds 127 bits of hash of the word's bytes
+/// The key is the full 64 bit ahash of the word's bytes, and the placement hash is the same value
+/// (see `key_and_hash_long`). Two such words can collide; the module docs say what that costs.
 ///
-/// bit 127 = 1, hashed: longer words compare by hash
 /// ```text
-/// ┌───┬───────────────────────────────────────────┬────────────────────────────────────────────┐
-/// │ 1 │             discriminant hash             │               placement hash               │
-/// │   │                  63 bits                  │                  64 bits                   │
-/// └───┴───────────────────────────────────────────┴────────────────────────────────────────────┘
-///  127 126                                      64 63                                         0
+/// ┌────────────────────────────────────────────────────────────────────────┐
+/// │                       64 bit hash of the bytes                        │
+/// └────────────────────────────────────────────────────────────────────────┘
+///  63                                                                    0
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[repr(transparent)]
