@@ -80,54 +80,9 @@ struct SequenceChunk {
     range: Range<usize>,
 }
 
-/// One bucket per power-of-two length, plus one for empty chunks.
-const SIZE_CLASSES: usize = usize::BITS as usize + 1;
-
-/// Which bucket a chunk of `len` bytes goes in. Class `k + 1` holds `2^k .. 2^(k+1)`, so walking
-/// the classes downwards visits the chunks longest-group-first, which is all the task grouping
-/// needs -- it accumulates bytes until it has a task's worth, and never asks for a total order.
-#[inline]
-fn size_class(len: usize) -> usize {
-    if len == 0 {
-        0
-    } else {
-        len.ilog2() as usize + 1
-    }
-}
-
-/// Indices of `chunks` grouped by descending size class, and the per-sequence chunk counts, in one
-/// pass each. A counting sort: histogram, exclusive prefix sums largest-class-first, scatter.
-///
-/// Moves 4-byte indices rather than 40-byte [`SequenceChunk`]s, and is O(n) rather than
-/// O(n log n) -- which matters because this runs on the caller before any worker is spawned.
-fn order_and_counts(chunks: &[SequenceChunk], n_seq: usize) -> (Vec<u32>, Vec<usize>) {
-    let mut class_count = [0usize; SIZE_CLASSES];
-    let mut chunk_count = vec![0usize; n_seq];
-    for chunk in chunks {
-        class_count[size_class(chunk.range.len())] += 1;
-        chunk_count[chunk.seq] += 1;
-    }
-    let mut cursor = [0usize; SIZE_CLASSES];
-    let mut at = 0;
-    for class in (0..SIZE_CLASSES).rev() {
-        cursor[class] = at;
-        at += class_count[class];
-    }
-    let mut order = vec![0u32; chunks.len()];
-    for (i, chunk) in chunks.iter().enumerate() {
-        let slot = &mut cursor[size_class(chunk.range.len())];
-        order[*slot] = i as u32;
-        *slot += 1;
-    }
-    (order, chunk_count)
-}
-
 struct Plan {
-    /// Sequence chunks created based on the inputs, in the order `plan_sequence` emitted them
+    /// Sequence chunks created based on the inputs
     chunks: Vec<SequenceChunk>,
-    /// Indices into [`Self::chunks`], grouped longest-class-first. [`Self::tasks`] are ranges over
-    /// *this*, not over `chunks`.
-    order: Vec<u32>,
     /// Groups of sequence chunks to be picked up by workers: this is used so that a given worker can process
     /// a given number of bytes in one go rather than contend on [`EncodeBatch`] (useful when lots of tiny chunks)
     tasks: Vec<Range<usize>>,
@@ -143,8 +98,6 @@ struct Plan {
 struct EncodeBatch {
     inputs: Box<Inputs>,
     chunks: Vec<SequenceChunk>,
-    /// Indices into [`Self::chunks`], longest-class-first; [`Self::tasks`] index this.
-    order: Vec<u32>,
     /// All the tasks to be picked up by workers: each tasks represents one or many [`SequenceChunk`]s to process
     tasks: Vec<Range<usize>>,
     outputs: Vec<Vec<ChunkResult>>,
@@ -192,7 +145,7 @@ impl EncodeBatch {
 
         let mut finished = Vec::new();
         for i in task.clone() {
-            let chunk = &self.chunks[self.order[i] as usize];
+            let chunk = &self.chunks[i];
             let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let input = self
                     .inputs
@@ -406,26 +359,33 @@ impl PipelineTokenizer {
             }
             outputs.push(seq_outputs);
         }
-        // Schedule the batch longest-chunk-group first.
+        // Scheduling wants the big chunks taken first, so one cannot be picked last and become the
+        // straggler the whole batch waits on. It does *not* need a total order: the tasks below are
+        // already byte-balanced, each grown until it holds `PARALLEL_MIN_BYTES`, so how the ones
+        // below that threshold are arranged among themselves cannot change a task's size.
         //
-        // This used to be `chunks.sort_unstable_by_key(Reverse(len))` plus a separate fold for
-        // `chunk_count`. Two costs there: the sort is O(n log n) *moves of a 40-byte
-        // `SequenceChunk`*, and it runs in the serial prologue -- on the caller, before a single
-        // worker is spawned -- so it is pure Amdahl fraction, worst exactly in the many-small-inputs
-        // case tasks were introduced for (one chunk per sequence means n == the batch size).
-        //
-        // The grouping below never needs a total order: it walks the chunks accumulating bytes and
-        // cuts a task every `PARALLEL_MIN_BYTES`. Ordering by power-of-two size class is enough, and
-        // that is a counting sort: one pass to histogram, one to scatter, moving 4-byte indices
-        // instead of 40-byte structs. The per-sequence `chunk_count` comes off the same pass.
-        let (order, chunk_count) = order_and_counts(&chunks, outputs.len());
-
+        // Sorting every chunk to get that was O(n log n) of 40-byte moves on the calling thread,
+        // before any worker starts -- and n is the batch size when each sequence is one chunk, so a
+        // batch of short documents sorted tens of thousands of structs to answer a question that
+        // only needs two classes. Partitioning the chunks that are a task by themselves to the
+        // front is O(n) and keeps the property that matters.
+        let mut boundary = 0;
+        for i in 0..chunks.len() {
+            if chunks[i].range.len() >= PARALLEL_MIN_BYTES {
+                chunks.swap(boundary, i);
+                boundary += 1;
+            }
+        }
+        let chunk_count = chunks.iter().fold(vec![0; outputs.len()], |mut uc, u| {
+            uc[u.seq] += 1;
+            uc
+        });
         let mut tasks = Vec::new();
         let mut start = 0;
         let mut acc = 0;
 
-        for (i, &c) in order.iter().enumerate() {
-            acc += chunks[c as usize].range.len();
+        for (i, u) in chunks.iter().enumerate() {
+            acc += u.range.len();
             if acc >= PARALLEL_MIN_BYTES {
                 tasks.push(start..i + 1);
                 start = i + 1;
@@ -433,13 +393,12 @@ impl PipelineTokenizer {
             }
         }
 
-        if start < order.len() {
-            tasks.push(start..order.len());
+        if start < chunks.len() {
+            tasks.push(start..chunks.len());
         }
 
         Plan {
             chunks,
-            order,
             tasks,
             side_a_len,
             outputs,
@@ -475,7 +434,6 @@ pub(crate) fn encode(
     };
     let Plan {
         chunks,
-        order,
         tasks,
         side_a_len,
         outputs,
@@ -501,7 +459,6 @@ pub(crate) fn encode(
         outputs,
         side_a_len,
         chunks,
-        order,
         tasks,
     });
     for _ in 0..threads {
@@ -518,67 +475,56 @@ pub(crate) fn encode(
 mod tests {
     use super::*;
 
-    fn chunk(seq: usize, len: usize) -> SequenceChunk {
-        SequenceChunk {
-            seq,
-            idx: 0,
-            side: Seq::A,
-            range: 0..len,
-        }
-    }
-
+    /// The partition has to leave every chunk that is a task by itself ahead of every chunk that is
+    /// not, and it has to keep all of them -- it reorders, it never drops.
     #[test]
-    fn size_class_is_monotonic_in_length() {
-        assert_eq!(size_class(0), 0);
-        let mut last = 0;
-        for len in [1usize, 2, 3, 4, 7, 8, 4095, 4096, 8191, 8192, 1 << 30] {
-            let class = size_class(len);
-            assert!(class >= last, "class fell from {last} at len {len}");
-            last = class;
-        }
-        // A class holds exactly one power-of-two band.
-        assert_eq!(size_class(8), size_class(15));
-        assert!(size_class(16) > size_class(15));
-    }
-
-    #[test]
-    fn the_order_is_a_permutation_grouped_largest_class_first() {
-        let lens = [1usize, 70_000, 3, 8192, 0, 8191, 300, 70_001];
-        let chunks: Vec<_> = lens.iter().map(|&l| chunk(0, l)).collect();
-        let (order, _) = order_and_counts(&chunks, 1);
-
-        // Every index exactly once.
-        let mut seen: Vec<u32> = order.clone();
-        seen.sort_unstable();
-        assert_eq!(seen, (0..lens.len() as u32).collect::<Vec<_>>());
-
-        // Classes never increase as we walk it, so the byte-accumulating task grouping meets the
-        // big chunks first and leaves a short tail.
-        let classes: Vec<usize> = order
+    fn the_partition_puts_whole_task_chunks_first_and_keeps_them_all() {
+        let lens = [
+            1usize,
+            PARALLEL_MIN_BYTES,
+            3,
+            PARALLEL_MIN_BYTES * 9,
+            0,
+            PARALLEL_MIN_BYTES - 1,
+            PARALLEL_MIN_BYTES + 1,
+            700,
+        ];
+        let mut chunks: Vec<SequenceChunk> = lens
             .iter()
-            .map(|&i| size_class(chunks[i as usize].range.len()))
+            .map(|&len| SequenceChunk {
+                seq: 0,
+                idx: 0,
+                side: Seq::A,
+                range: 0..len,
+            })
             .collect();
+
+        let mut boundary = 0;
+        for i in 0..chunks.len() {
+            if chunks[i].range.len() >= PARALLEL_MIN_BYTES {
+                chunks.swap(boundary, i);
+                boundary += 1;
+            }
+        }
+
+        assert_eq!(boundary, 3, "three chunks are a task on their own");
         assert!(
-            classes.windows(2).all(|w| w[0] >= w[1]),
-            "classes not descending: {classes:?}"
+            chunks[..boundary]
+                .iter()
+                .all(|c| c.range.len() >= PARALLEL_MIN_BYTES),
+            "a chunk below the threshold got into the front"
         );
-        // The two 70k chunks lead and the empty one is last.
-        assert_eq!(chunks[order[0] as usize].range.len() / 1000, 70);
-        assert_eq!(chunks[*order.last().unwrap() as usize].range.len(), 0);
-    }
+        assert!(
+            chunks[boundary..]
+                .iter()
+                .all(|c| c.range.len() < PARALLEL_MIN_BYTES),
+            "a whole-task chunk got left in the tail"
+        );
 
-    #[test]
-    fn counts_are_per_sequence() {
-        let chunks = vec![chunk(0, 10), chunk(2, 20), chunk(0, 30), chunk(2, 40)];
-        let (order, counts) = order_and_counts(&chunks, 3);
-        assert_eq!(counts, vec![2, 0, 2]);
-        assert_eq!(order.len(), 4);
-    }
-
-    #[test]
-    fn an_empty_plan_orders_nothing() {
-        let (order, counts) = order_and_counts(&[], 2);
-        assert!(order.is_empty());
-        assert_eq!(counts, vec![0, 0]);
+        let mut got: Vec<usize> = chunks.iter().map(|c| c.range.len()).collect();
+        let mut want = lens.to_vec();
+        got.sort_unstable();
+        want.sort_unstable();
+        assert_eq!(got, want, "the partition lost or invented a chunk");
     }
 }
