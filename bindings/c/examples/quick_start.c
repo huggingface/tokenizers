@@ -4,7 +4,7 @@
 
 #include "tokenizers/tokenizers.h"
 
-static void handle_error(TkHandle_TkError err)
+static void handle_error(TkHandle_Error err)
 {
     if (err != NULL)
     {
@@ -24,11 +24,11 @@ int main(int argc, char **argv)
     const char *tokenizer_path = argv[1];
     const char *text = argc > 2 ? argv[2] : "Hello, world!";
 
-    TkHandle_TkTokenizer tokenizer = NULL;
+    TkHandle_Tokenizer tokenizer = NULL;
     handle_error(tk_tokenizer_from_file(tokenizer_path, &tokenizer));
     printf("loaded tokenizer from %s\n", tokenizer_path);
 
-    TkHandle_TkEncoding encoding = NULL;
+    TkHandle_Encoding encoding = NULL;
     handle_error(tk_tokenizer_encode(tokenizer, text, strlen(text), true, &encoding));
 
     struct TkSlice_u32 ids;

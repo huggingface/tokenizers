@@ -95,11 +95,5 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json --repo-type dataset --revision e20ac5914f5ada06874e4f9d45e49b31a049904e --local-dir ../../tokenizers/data
 
-      # examples/Makefile's `test` target builds and runs encode.c and null_safety.c against
-      # the freshly built cdylib, plain and under ASan/UBSan -- the only thing in this crate
-      # that exercises the FFI ABI end to end rather than just the Rust side of it. ASan/UBSan
-      # still catch use-after-free/double-free/OOB reads made through the dylib even though
-      # only the example is compiled with the sanitizers, since both share the same process
-      # and the same libc allocator symbols.
       - name: Run the example test suite
         run: make -C examples test
