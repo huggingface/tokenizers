@@ -20,13 +20,7 @@ fn main() {
 }
 
 // Allowlist of exported functions that don't require to catch panic unwinding
-const PANIC_CATCH_EXEMPT: &[&str] = &[
-    "tk_decoded_string_free",
-    "tk_error_message",
-    "tk_error_free",
-    "tk_tokenizer_free",
-    "tk_encoding_free",
-];
+const PANIC_CATCH_EXEMPT: &[&str] = &["tk_error_message"];
 
 /// Checks every exported functions properly handle panics and returns a *mut Handle<Error>
 fn check_every_exported_fn_catches_panic(src_dir: &Path) {
@@ -41,8 +35,8 @@ fn check_every_exported_fn_catches_panic(src_dir: &Path) {
              {}\n\n\
              A panic in one of these would unwind into C code, which is undefined behavior.\
              Every fn reachable from C must be declared `-> Handle<Error>` and call `catch_panic` (`src/panic.rs`) \
-             as its body's tail expression, or be added to PANIC_CATCH_EXEMPT in build.rs with a comment explaining why \
-             it doesn't need one.",
+             as its body's tail expression, delegate its whole body to `free_handle` like the other `*_free` fns do, \
+             or be added to PANIC_CATCH_EXEMPT in build.rs.",
             unguarded.len(),
             unguarded
                 .iter()
@@ -67,6 +61,7 @@ fn unguarded_fns_in(path: &Path) -> Vec<String> {
         })
         .filter(|f| f.attrs.iter().any(is_no_mangle))
         .filter(|f| !PANIC_CATCH_EXEMPT.contains(&f.sig.ident.to_string().as_str()))
+        .filter(|f| !is_free_helper(f))
         .filter(|f| !is_guarded(f))
         .map(|f| format!("{} ({})", f.sig.ident, path.display()))
         .collect()
@@ -99,6 +94,17 @@ fn is_no_mangle(attr: &syn::Attribute) -> bool {
         && attr
             .parse_args::<syn::Path>()
             .is_ok_and(|inner| inner.is_ident("no_mangle"))
+}
+
+/// Checks whether `f`'s entire body is `unsafe { free_handle(..) }`
+fn is_free_helper(f: &syn::ItemFn) -> bool {
+    let [syn::Stmt::Expr(syn::Expr::Unsafe(unsafe_block), _)] = f.block.stmts.as_slice() else {
+        return false;
+    };
+    let [syn::Stmt::Expr(syn::Expr::Call(call), _)] = unsafe_block.block.stmts.as_slice() else {
+        return false;
+    };
+    matches!(call.func.as_ref(), syn::Expr::Path(p) if p.path.is_ident("free_handle"))
 }
 
 /// Checks whether `f` returns `Handle<Error>` and catches panic unwinding
