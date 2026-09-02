@@ -351,7 +351,11 @@ mod test {
     /// The shapes the engine cannot hold are refused by the reader, not reshaped here.
     #[test]
     fn a_shape_the_engine_cannot_hold_is_refused() {
-        for (single, pair) in [("$A [SEP] $A", "$A $B"), ("$A", "$B $A"), ("$A $B", "$A $B")] {
+        for (single, pair) in [
+            ("$A [SEP] $A", "$A $B"),
+            ("$A", "$B $A"),
+            ("$A $B", "$A $B"),
+        ] {
             let mut node = json!({
                 "type": "TemplateProcessing",
                 "single": pieces(Some(single.split(' ').map(String::from).collect()), ""),
@@ -361,7 +365,10 @@ mod test {
             let read = tk::canonicalize_post_processor(&mut node)
                 .map_err(py_err)
                 .and_then(|()| tk::post_processor_from_json(&node.to_string()).map_err(py_err));
-            assert!(read.is_err(), "expected {single:?} / {pair:?} to be refused");
+            assert!(
+                read.is_err(),
+                "expected {single:?} / {pair:?} to be refused"
+            );
         }
     }
 
