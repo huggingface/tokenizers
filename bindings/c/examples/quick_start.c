@@ -4,7 +4,7 @@
 
 #include "tokenizers/tokenizers.h"
 
-static void handle_error(TkHandle_Error err)
+static void handle_error(TkError *err)
 {
     if (err != NULL)
     {
@@ -25,17 +25,17 @@ int main(int argc, char **argv)
     const char *text = argc > 2 ? argv[2] : "Hello, world!";
 
     // Reading the tokenizer from the tokenizer.json file
-    TkHandle_Tokenizer tokenizer = NULL;
+    TkTokenizer *tokenizer = NULL;
     handle_error(tk_tokenizer_from_file(tokenizer_path, &tokenizer));
     printf("loaded tokenizer from %s\n", tokenizer_path);
 
     // Encode the provided utf8 string to token ids. A NULL options pointer means the defaults
     // (add_special_tokens: true).
-    TkHandle_Encoding encoding = NULL;
+    TkEncoding *encoding = NULL;
     handle_error(tk_tokenizer_encode(tokenizer, text, strlen(text), NULL, &encoding));
 
     // Read encoding
-    struct TkSlice_u32 ids;
+    TkSlice_u32 ids;
     handle_error(tk_encoding_ids(encoding, &ids));
     printf("encoded  \"%s\" into %zu token(s):", text, ids.len);
     for (size_t i = 0; i < ids.len; i++)
@@ -44,7 +44,7 @@ int main(int argc, char **argv)
     }
     printf("\n");
 
-    struct TkSlice_u8 type_ids;
+    TkSlice_u8 type_ids;
     handle_error(tk_encoding_type_ids(encoding, &type_ids));
     if (type_ids.len > 0)
     {
@@ -57,14 +57,14 @@ int main(int argc, char **argv)
     }
 
     // Decode back into a string, keeping special tokens (the default skips them).
-    TkHandle_DecodeOptions decode_options = NULL;
+    TkDecodeOptions *decode_options = NULL;
     handle_error(tk_decode_options_new(&decode_options));
     handle_error(tk_decode_options_set_skip_special_tokens(decode_options, false));
-    TkHandle_DecodedString decoded = NULL;
+    TkDecodedString *decoded = NULL;
     handle_error(tk_tokenizer_decode(tokenizer, ids, decode_options, &decoded));
     tk_decode_options_free(&decode_options);
 
-    struct TkSlice_u8 bytes;
+    TkSlice_u8 bytes;
     handle_error(tk_decoded_string_bytes(decoded, &bytes));
     printf("decoded: \"%.*s\"\n", (int)bytes.len, (const char *)bytes.ptr);
 

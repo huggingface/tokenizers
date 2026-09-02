@@ -1,6 +1,6 @@
 //! Generates `include/tokenizers/tokenizers.h` from this crate's `#[unsafe(no_mangle)]` exports with cbindgen.
-//! Before generating, we check that every exported fn is guarded against panics unwinding into C, which is undefined behavior;
-//! see `check_every_exported_fn_catches_panic`.
+//! Before generating, we check that every exported fn is guarded against panics. A panic reaching an
+//! `extern "C"` boundary aborts the whole host process; see `check_every_exported_fn_catches_panic`.
 
 use std::env;
 use std::fs;
@@ -22,7 +22,7 @@ fn main() {
 // Allowlist of exported functions that don't require to catch panic unwinding
 const PANIC_CATCH_EXEMPT: &[&str] = &["tk_error_message"];
 
-/// Checks every exported functions properly handle panics and returns a *mut Handle<Error>
+/// Checks every exported function properly handles panics and returns a `*mut Error`
 fn check_every_exported_fn_catches_panic(src_dir: &Path) {
     let unguarded: Vec<String> = rust_files(src_dir)
         .iter()
@@ -31,11 +31,11 @@ fn check_every_exported_fn_catches_panic(src_dir: &Path) {
 
     if !unguarded.is_empty() {
         panic!(
-            "{} exported fn(s) (#[unsafe(no_mangle)]) aren't declared `-> Handle<Error>`:\n\
+            "{} exported fn(s) (#[unsafe(no_mangle)]) aren't declared `-> *mut Error`:\n\
              {}\n\n\
-             A panic in one of these would unwind into C code, which is undefined behavior.\
-             Every fn reachable from C must be declared `-> Handle<Error>` and call `catch_panic` (`src/panic.rs`) \
-             as its body's tail expression, delegate its whole body to `free_handle` like the other `*_free` fns do, \
+             A panic in one of these would reach the `extern \"C\"` boundary and abort the host process.\
+             Every fn reachable from C must be declared `-> *mut Error` and call `catch_panic` (`src/error.rs`) \
+             as its body's tail expression, delegate its whole body to `free_ptr` like the other `*_free` fns do, \
              or be added to PANIC_CATCH_EXEMPT in build.rs.",
             unguarded.len(),
             unguarded
@@ -96,7 +96,7 @@ fn is_no_mangle(attr: &syn::Attribute) -> bool {
             .is_ok_and(|inner| inner.is_ident("no_mangle"))
 }
 
-/// Checks whether `f`'s entire body is `unsafe { free_handle(..) }`
+/// Checks whether `f`'s entire body is `unsafe { free_ptr(..) }`
 fn is_free_helper(f: &syn::ItemFn) -> bool {
     let [syn::Stmt::Expr(syn::Expr::Unsafe(unsafe_block), _)] = f.block.stmts.as_slice() else {
         return false;
@@ -104,26 +104,18 @@ fn is_free_helper(f: &syn::ItemFn) -> bool {
     let [syn::Stmt::Expr(syn::Expr::Call(call), _)] = unsafe_block.block.stmts.as_slice() else {
         return false;
     };
-    matches!(call.func.as_ref(), syn::Expr::Path(p) if p.path.is_ident("free_handle"))
+    matches!(call.func.as_ref(), syn::Expr::Path(p) if p.path.is_ident("free_ptr"))
 }
 
-/// Checks whether `f` returns `Handle<Error>` and catches panic unwinding
+/// Checks whether `f` returns `*mut Error` and catches panic unwinding
 fn is_guarded(f: &syn::ItemFn) -> bool {
     let syn::ReturnType::Type(_, ty) = &f.sig.output else {
         return false;
     };
-    let syn::Type::Path(path) = ty.as_ref() else {
+    let syn::Type::Ptr(ptr) = ty.as_ref() else {
         return false;
     };
-    let Some(segment) = path.path.segments.last() else {
-        return false;
-    };
-    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
-        return false;
-    };
-    segment.ident == "Handle"
-        && args.args.len() == 1
-        && matches!(&args.args[0], syn::GenericArgument::Type(t) if path_ends_in(t, "Error"))
+    ptr.mutability.is_some() && path_ends_in(&ptr.elem, "Error")
 }
 
 fn path_ends_in(ty: &syn::Type, name: &str) -> bool {

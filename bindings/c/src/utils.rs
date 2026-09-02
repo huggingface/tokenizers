@@ -5,102 +5,60 @@ use std::{
 
 use crate::error::{Error, catch_panic};
 
-/// Marks a type whose instances Rust heap-allocates and frees.
-/// Must be wrapped in a [`Handle`] to be passed to C code.
-pub(crate) trait RustOwned {}
+/// Marks a type whose instances Rust heap-allocates and frees, and hands to C as an opaque
+/// pointer.
+///
+/// C may use one pointer from several threads at once, and every `tk_*` fn borrows it as a
+/// `&T`, so the type has to be `Send + Sync` for that to be sound.
+pub(crate) trait RustOwned: Send + Sync {}
 
-/// An opaque pointer to a Rust-allocated type.
-#[repr(transparent)]
-pub(crate) struct Handle<T>(*mut T);
-
-impl<T> Copy for Handle<T> {}
-
-impl<T> Clone for Handle<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
+/// Moves `value` to the heap and returns the pointer C will hold, pairing with [`free_ptr`].
+pub(crate) fn new_ptr<T: RustOwned>(value: T) -> *mut T {
+    Box::into_raw(Box::new(value))
 }
 
-impl<T> Handle<T> {
-    /// A handle representing "no value", ie a null pointer
-    pub(crate) fn null() -> Self {
-        Handle(std::ptr::null_mut())
-    }
-
-    pub(crate) fn is_null(&self) -> bool {
-        self.0.is_null()
-    }
-
-    /// Borrows the value the handle points at.
-    ///
-    /// # Safety
-    /// The handle must be non-NULL and point to a `T` that is neither freed nor modified
-    /// during `'a`.
-    pub(crate) unsafe fn as_ref<'a>(self) -> &'a T {
-        // SAFETY: caller's obligation, documented above.
-        unsafe { &*self.0 }
-    }
-
-    /// Borrows the value the handle points at, exclusively.
-    ///
-    /// # Safety
-    /// The handle must be non-NULL and point to a `T` that is not freed during `'a`, with no
-    /// other reference to it alive during `'a`.
-    pub(crate) unsafe fn as_mut<'a>(self) -> &'a mut T {
-        // SAFETY: caller's obligation, documented above.
-        unsafe { &mut *self.0 }
-    }
-}
-
-/// Leaks `value` onto the heap and returns it as a raw pointer, pairing with [`free_handle`].
-pub(crate) fn new_handle<T: RustOwned>(value: T) -> Handle<T> {
-    Handle(Box::into_raw(Box::new(value)))
-}
-
-/// Frees `handle` and writes NULL to it, so calling this again on the same pointer is a no-op
-/// instead of a double free.
+/// Frees the pointer in `slot` and writes NULL to it, so calling this again on the same slot is
+/// a no-op instead of a double free.
 ///
 /// # Safety
-/// `handle` must be NULL, or point to a writable [`Handle<T>`] holding NULL or a handle from
-/// [`new_handle`] that is not yet freed and that nothing else is using.
-pub(crate) unsafe fn free_handle<T: RustOwned>(handle: *mut Handle<T>) {
-    if handle.is_null() {
-        return;
-    }
+/// `slot` must be NULL, or point to a writable `*mut T` holding NULL or a pointer from
+/// [`new_ptr`] that is not yet freed and that nothing else is using.
+pub(crate) unsafe fn free_ptr<T: RustOwned>(slot: *mut *mut T) {
     // SAFETY: caller's obligation, documented above.
-    let handle = unsafe { &mut *handle };
-    if handle.is_null() {
+    let Some(slot) = (unsafe { slot.as_mut() }) else {
+        return;
+    };
+    if slot.is_null() {
         return;
     }
-
     // SAFETY: just checked non-NULL; liveness is the caller's obligation, documented above.
-    drop(unsafe { Box::from_raw(handle.0) });
-    *handle = Handle::null();
+    drop(unsafe { Box::from_raw(*slot) });
+    *slot = std::ptr::null_mut();
 }
 
-/// A wrapper for FFI functions that output a [`Handle`].
+/// A wrapper for FFI functions that output a pointer to a new Rust-owned value.
 ///
 /// Takes care of:
 /// - reporting a [`Error`] instead of writing anything, if `out` is NULL
 /// - initializing the out pointer to NULL
 /// - catching panic unwinds so they don't reach C code
-/// - converting the output of `inner` to a [`Handle`] when successful
+/// - moving the output of `inner` to the heap and writing its pointer to `out`, when it succeeds
 ///
 /// # Safety
-/// `out` must be NULL, or a writable pointer to a [`Handle<T>`], initialized or not.
-pub(crate) unsafe fn wrap_in_handle<T: RustOwned, E: std::fmt::Display>(
-    out: *mut Handle<T>,
+/// `out` must be NULL, or a writable pointer to a `*mut T`, initialized or not.
+pub(crate) unsafe fn wrap_in_ptr<T: RustOwned, E: std::fmt::Display>(
+    out: *mut *mut T,
     inner: impl FnOnce() -> Result<T, E>,
-) -> Handle<Error> {
+) -> *mut Error {
     if out.is_null() {
-        return Error::into_handle("out pointer must not be NULL");
+        return Error::into_ptr("out pointer must not be NULL");
     }
     // SAFETY: caller's obligation, documented above.
-    unsafe { std::ptr::write(out, Handle::null()) };
+    unsafe { out.write(std::ptr::null_mut()) };
     catch_panic(move || -> Result<(), E> {
         let value = inner()?;
         // SAFETY: caller's obligation, documented above.
-        unsafe { std::ptr::write(out, new_handle(value)) };
+        unsafe { out.write(new_ptr(value)) };
         Ok(())
     })
 }
@@ -137,18 +95,12 @@ impl<T> Slice<T> {
     }
 }
 
-/// Writes a view of `value` to `out`, bundling pointer and slice length in one [`Slice`].
-///
-/// # Safety
-/// `out` must be a writable pointer to a [`Slice<T>`], initialized or not.
-pub(crate) unsafe fn write_slice<T>(out: *mut Slice<T>, value: &[T]) {
-    let slice = Slice {
-        ptr: value.as_ptr(),
-        len: value.len(),
-    };
-    // SAFETY: caller's obligation, documented above.
-    unsafe {
-        std::ptr::write(out, slice);
+impl<T> From<&[T]> for Slice<T> {
+    fn from(value: &[T]) -> Self {
+        Self {
+            ptr: value.as_ptr(),
+            len: value.len(),
+        }
     }
 }
 
@@ -168,16 +120,16 @@ pub(crate) unsafe fn write_slice<T>(out: *mut Slice<T>, value: &[T]) {
 pub(crate) unsafe fn wrap_in_slice<'a, T: 'a, E: std::fmt::Display>(
     out: *mut Slice<T>,
     inner: impl FnOnce() -> Result<&'a [T], E>,
-) -> Handle<Error> {
+) -> *mut Error {
     if out.is_null() {
-        return Error::into_handle("out pointer must not be NULL");
+        return Error::into_ptr("out pointer must not be NULL");
     }
     // SAFETY: caller's obligation, documented above.
-    unsafe { std::ptr::write(out, Slice::null()) };
+    unsafe { out.write(Slice::null()) };
     catch_panic(move || -> Result<(), E> {
         let slice = inner()?;
         // SAFETY: caller's obligation, documented above.
-        unsafe { write_slice(out, slice) };
+        unsafe { out.write(Slice::from(slice)) };
         Ok(())
     })
 }
@@ -219,10 +171,7 @@ mod tests {
     #[test]
     fn slice_as_slice_borrows_the_underlying_data() {
         let data = [1u32, 2, 3];
-        let slice = Slice {
-            ptr: data.as_ptr(),
-            len: data.len(),
-        };
+        let slice = Slice::from(&data[..]);
         assert_eq!(unsafe { slice.as_slice() }, &data);
     }
 
@@ -266,32 +215,32 @@ mod tests {
     }
 
     #[test]
-    fn free_handle_outer_null_is_a_no_op() {
+    fn free_ptr_outer_null_is_a_no_op() {
         // Doesn't crash -- that's the whole test.
-        unsafe { free_handle::<Dummy>(std::ptr::null_mut()) };
+        unsafe { free_ptr::<Dummy>(std::ptr::null_mut()) };
     }
 
     #[test]
-    fn free_handle_frees_and_nulls_the_slot() {
-        let mut handle = new_handle(Dummy);
-        assert!(!handle.is_null());
-        unsafe { free_handle(&mut handle) };
-        assert!(handle.is_null());
+    fn free_ptr_frees_and_nulls_the_slot() {
+        let mut slot = new_ptr(Dummy);
+        assert!(!slot.is_null());
+        unsafe { free_ptr(&mut slot) };
+        assert!(slot.is_null());
     }
 
     #[test]
-    fn free_handle_is_a_no_op_the_second_time_on_the_same_slot() {
-        let mut handle = new_handle(Dummy);
-        unsafe { free_handle(&mut handle) };
-        unsafe { free_handle(&mut handle) }; // must not double-free
-        assert!(handle.is_null());
+    fn free_ptr_is_a_no_op_the_second_time_on_the_same_slot() {
+        let mut slot = new_ptr(Dummy);
+        unsafe { free_ptr(&mut slot) };
+        unsafe { free_ptr(&mut slot) }; // must not double-free
+        assert!(slot.is_null());
     }
 
     #[test]
-    fn wrap_in_handle_out_null_reports_an_error_without_calling_inner() {
+    fn wrap_in_ptr_out_null_reports_an_error_without_calling_inner() {
         let called = Cell::new(false);
         let result = unsafe {
-            wrap_in_handle::<Dummy, &str>(std::ptr::null_mut(), || {
+            wrap_in_ptr::<Dummy, &str>(std::ptr::null_mut(), || {
                 called.set(true);
                 Ok(Dummy)
             })
@@ -301,9 +250,9 @@ mod tests {
     }
 
     #[test]
-    fn wrap_in_handle_resets_out_to_null_even_when_inner_fails() {
-        let mut out = Handle::<Dummy>(std::ptr::dangling_mut()); // poison: some non-null value
-        let result = unsafe { wrap_in_handle(&mut out, || -> Result<Dummy, &str> { Err("nope") }) };
+    fn wrap_in_ptr_resets_out_to_null_even_when_inner_fails() {
+        let mut out: *mut Dummy = std::ptr::dangling_mut(); // poison: some non-null value
+        let result = unsafe { wrap_in_ptr(&mut out, || -> Result<Dummy, &str> { Err("nope") }) };
         assert!(!result.is_null());
         assert!(out.is_null());
     }
