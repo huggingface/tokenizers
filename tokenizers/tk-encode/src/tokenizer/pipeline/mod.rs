@@ -613,7 +613,7 @@ impl PipelineTokenizer {
         }
     }
 
-    /// Pick the template the input shape calls for and let it weave the specials in.
+    /// Pick the template the input shape calls for and let it add the specials.
     ///
     /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside.
     fn post_process(
@@ -733,7 +733,7 @@ impl PipelineTokenizer {
     /// handle, and no copy out of either. [`Self::encode`] is this plus those wrappers, and an
     /// encode-only caller in a loop -- a server, a benchmark -- wants this one.
     ///
-    /// Falls back to the general path when the post-processor actually has something to weave
+    /// Falls back to the general path when the post-processor actually has something to add
     /// around the sequence, since that has to assemble a whole `Encoding` anyway.
     pub fn encode_into(
         &self,
@@ -743,7 +743,7 @@ impl PipelineTokenizer {
     ) -> Result<()> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         let template = &self.inner.post_processor.single;
-        // Would the template just reproduce the sequence? Nothing to weave, nothing to tag.
+        // Would the template just reproduce the sequence? Nothing to add, nothing to tag.
         let reproduces_sequence =
             !template.has_type_ids() && (!add_special_tokens || template.n_special() == 0);
         if reproduces_sequence {

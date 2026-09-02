@@ -43,7 +43,9 @@ pub enum ConvertError {
     #[error("unknown metaspace prepend_scheme {scheme:?}")]
     UnknownPrependScheme { scheme: String },
 
-    #[error("a `Sequence` post-processor with more than one weaving member is not supported")]
+    #[error(
+        "a `Sequence` post-processor with more than one member that adds tokens is not supported"
+    )]
     PostProcessorSequenceAmbiguous,
 
     #[error("a `Sequence` post-processor with no members is not supported")]
@@ -556,12 +558,12 @@ fn lower_template_processing(root: &mut Map<String, Value>) -> Result<(), Conver
     lower_template_node(pp)
 }
 
-/// Whether a `Sequence` member weaves nothing, so dropping it changes no ids.
+/// Whether a `Sequence` member adds no tokens, so dropping it changes no ids.
 ///
 /// Anything that is not a `TemplateProcessing` is one: a `ByteLevel` post-processor only re-tags
 /// offsets, which the pipeline does not keep. A `TemplateProcessing` is one when its pieces are
 /// the default arrangement, `$A` and `$A $B` with type ids 0 then 1.
-fn weaves_nothing(member: &Value) -> bool {
+fn adds_no_tokens(member: &Value) -> bool {
     if member.get("type").and_then(Value::as_str) != Some("TemplateProcessing") {
         return true;
     }
@@ -584,18 +586,18 @@ fn weaves_nothing(member: &Value) -> bool {
     is("single", &[("A", 0)]) && is("pair", &[("A", 0), ("B", 1)])
 }
 
-/// Replace a `Sequence` post-processor with the one member that actually weaves something.
+/// Replace a `Sequence` post-processor with the one member that actually adds tokens.
 ///
 fn collapse_sequence(node: &mut Value) -> Result<(), ConvertError> {
     let members = node
         .get_mut("processors")
         .and_then(Value::as_array_mut)
         .ok_or(ConvertError::PostProcessorSequenceEmpty)?;
-    let mut weaving = members
+    let mut adding = members
         .iter()
         .enumerate()
-        .filter(|(_, m)| !weaves_nothing(m));
-    let chosen = match (weaving.next(), weaving.next()) {
+        .filter(|(_, m)| !adds_no_tokens(m));
+    let chosen = match (adding.next(), adding.next()) {
         (Some(_), Some(_)) => return Err(ConvertError::PostProcessorSequenceAmbiguous),
         (Some((i, _)), None) => i,
         (None, _) if members.is_empty() => return Err(ConvertError::PostProcessorSequenceEmpty),

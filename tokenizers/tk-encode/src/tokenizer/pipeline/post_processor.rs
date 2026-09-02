@@ -1,8 +1,8 @@
-//! The post-processor half of the pipeline: the two [`Template`]s an encode weaves in.
+//! The post-processor half of the pipeline: the two [`Template`]s an encode adds its tokens from.
 
 use super::{Encoding, PipelineToken};
 
-/// The templates to weave around one sequence and around a pair.
+/// The templates to wrap around one sequence and around a pair.
 #[derive(Debug)]
 pub struct PipelinePostProcessor {
     pub single: Template,
@@ -75,7 +75,7 @@ impl Template {
         });
 
         let ids = match s2 {
-            Some(b) => self.weave_pair::<SPECIALS>(s1, b),
+            Some(b) => self.wrap_pair::<SPECIALS>(s1, b),
             None => {
                 // A's buffer already holds the front of the answer, so keep it.
                 debug_assert!(self.infix.is_empty(), "[BUG] single template with an infix");
@@ -94,7 +94,7 @@ impl Template {
     }
 
     #[inline(never)]
-    fn weave_pair<const SPECIALS: bool>(
+    fn wrap_pair<const SPECIALS: bool>(
         &self,
         a: Vec<PipelineToken>,
         b: Vec<PipelineToken>,

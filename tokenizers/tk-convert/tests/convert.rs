@@ -301,7 +301,7 @@ fn a_template_states_its_ids_instead_of_naming_them() {
 /// The canonical form has no `Sequence` post-processor -- the writer cannot spell one -- so the
 /// upgrade drops the wrapper rather than leaving the reader to collapse it at load time.
 #[test]
-fn a_sequence_post_processor_collapses_to_its_weaving_member() {
+fn a_sequence_post_processor_collapses_to_the_member_that_adds_tokens() {
     // llama-3's shape: a `ByteLevel` in front of a `TemplateProcessing`.
     let v = done(
         BPE,
@@ -320,7 +320,7 @@ fn a_sequence_post_processor_collapses_to_its_weaving_member() {
         serde_json::json!([{"ids": [1], "type_id": 0}, {"seq": "A", "type_id": 0}])
     );
 
-    // Nothing weaves, so the first member stands and still means the default frame -- which a
+    // Nothing adds tokens, so the first member stands and still means the default frame -- which a
     // `ByteLevel` lowers to, and `null` is how the writer spells it.
     let v = done(
         BPE,
@@ -329,7 +329,7 @@ fn a_sequence_post_processor_collapses_to_its_weaving_member() {
     );
     assert_eq!(v["post_processor"], serde_json::Value::Null);
 
-    // Two members that both weave: there is no one canonical answer.
+    // Two members that both add tokens: there is no one canonical answer.
     let msg = err(
         BPE,
         r#", "post_processor": {"type": "Sequence", "processors": [
@@ -341,7 +341,10 @@ fn a_sequence_post_processor_collapses_to_its_weaving_member() {
               "pair": [],
               "special_tokens": {"<s>": {"id": "<s>", "ids": [1], "tokens": ["<s>"]}}}]}"#,
     );
-    assert!(msg.contains("more than one weaving member"), "{msg}");
+    assert!(
+        msg.contains("more than one member that adds tokens"),
+        "{msg}"
+    );
 }
 
 /// `BertProcessing` and `RobertaProcessing` name a frame, so this pass spells it as the template
