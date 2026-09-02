@@ -2,6 +2,16 @@
 
 use super::{Encoding, PipelineToken};
 
+#[inline]
+fn push_ids(run: &[(PipelineToken, u8)], out: &mut Vec<PipelineToken>) {
+    out.extend(run.iter().map(|&(id, _)| id));
+}
+
+#[inline]
+fn push_type_ids(run: &[(PipelineToken, u8)], out: &mut Vec<u8>) {
+    out.extend(run.iter().map(|&(_, id)| id));
+}
+
 /// The templates to wrap around one sequence and around a pair.
 #[derive(Debug)]
 pub struct PipelinePostProcessor {
@@ -59,17 +69,17 @@ impl Template {
         let type_ids = self.has_type_ids().then(|| {
             let mut out = Vec::with_capacity(self.n_special() + a_len + b_len);
             if SPECIALS {
-                out.extend(self.prefix.iter().map(|&(_, id)| id));
+                push_type_ids(&self.prefix, &mut out);
             }
             out.resize(out.len() + a_len, self.a_type_id);
             if SPECIALS {
-                out.extend(self.infix.iter().map(|&(_, id)| id));
+                push_type_ids(&self.infix, &mut out);
             }
             if let Some(id) = self.b_type_id {
                 out.resize(out.len() + b_len, id);
             }
             if SPECIALS {
-                out.extend(self.suffix.iter().map(|&(_, id)| id));
+                push_type_ids(&self.suffix, &mut out);
             }
             out
         });
@@ -82,7 +92,7 @@ impl Template {
                 let mut ids = s1;
                 if SPECIALS {
                     ids.reserve(self.n_special());
-                    ids.extend(self.suffix.iter().map(|&(id, _)| id));
+                    push_ids(&self.suffix, &mut ids);
                     if !self.prefix.is_empty() {
                         ids.splice(0..0, self.prefix.iter().map(|&(id, _)| id));
                     }
@@ -101,15 +111,15 @@ impl Template {
     ) -> Vec<PipelineToken> {
         let mut ids = Vec::with_capacity(self.n_special() + a.len() + b.len());
         if SPECIALS {
-            ids.extend(self.prefix.iter().map(|&(id, _)| id));
+            push_ids(&self.prefix, &mut ids);
         }
         ids.extend(a);
         if SPECIALS {
-            ids.extend(self.infix.iter().map(|&(id, _)| id));
+            push_ids(&self.infix, &mut ids);
         }
         ids.extend(b);
         if SPECIALS {
-            ids.extend(self.suffix.iter().map(|&(id, _)| id));
+            push_ids(&self.suffix, &mut ids);
         }
         ids
     }
