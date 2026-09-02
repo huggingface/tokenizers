@@ -63,7 +63,7 @@ impl ScratchPool {
 /// get reused by a later call to [`PipelineTokenizer::encode`].
 ///
 /// TODO @McPatate : The Mutex can create contention, to be replaced by a better access pattern
-pub(super) struct ScratchGuard<'a> {
+pub(crate) struct ScratchGuard<'a> {
     scratch: EncodeScratch,
     pool: &'a ScratchPool,
 }

@@ -90,7 +90,9 @@ struct Plan {
     /// always considered [`Seq::A`])
     side_a_len: Vec<usize>,
     /// Empty pre-allocated output buffer
-    outputs: Vec<Vec<ChunkResult>>,
+    outputs: Vec<ChunkResult>,
+    /// `outputs[seq_start[i]..seq_start[i + 1]]` is sequence `i`'s results.
+    seq_start: Vec<usize>,
     /// Number of chunks per sequence (accessed via `chunk_count[seq]`)
     chunk_count: Vec<usize>,
 }
@@ -100,7 +102,9 @@ struct EncodeBatch {
     chunks: Vec<SequenceChunk>,
     /// All the tasks to be picked up by workers: each tasks represents one or many [`SequenceChunk`]s to process
     tasks: Vec<Range<usize>>,
-    outputs: Vec<Vec<ChunkResult>>,
+    outputs: Vec<ChunkResult>,
+    /// `outputs[seq_start[i]..seq_start[i + 1]]` is sequence `i`'s results.
+    seq_start: Vec<usize>,
     encodings: Vec<EncodingResult>,
     /// Chunks left to encode per sequence (remaining[seq] == chunks_left)
     remaining: Vec<AtomicUsize>,
@@ -164,7 +168,7 @@ impl EncodeBatch {
             .unwrap_or_else(|_| Err("encode worker panicked".into()));
             // SAFETY: no two threads can share the same chunk because each chunk is owned by
             // only one task
-            unsafe { self.outputs[chunk.seq][chunk.idx].set(res) };
+            unsafe { self.outputs[self.seq_start[chunk.seq] + chunk.idx].set(res) };
 
             if self.remaining[chunk.seq].fetch_sub(1, Ordering::AcqRel) == 1 {
                 let encoding = self.reconstruct(chunk.seq);
@@ -189,7 +193,7 @@ impl EncodeBatch {
     }
 
     fn reconstruct(&self, seq: usize) -> Result<Encoding> {
-        let chunk_results = &self.outputs[seq];
+        let chunk_results = &self.outputs[self.seq_start[seq]..self.seq_start[seq + 1]];
         let a_len = self.side_a_len[seq];
         let a = drain(&chunk_results[..a_len])?;
         let b = (a_len < chunk_results.len())
@@ -292,13 +296,14 @@ impl PipelineTokenizer {
         input: &str,
         chunks: &mut Vec<SequenceChunk>,
         seq_outputs: &mut Vec<ChunkResult>,
+        seq_base: usize,
     ) {
         // If input is not at least twice the size of the minimum meaningful parallel
         // chunk's size, we emit the full input as its own chunk because splitting would be inefficient
         if input.len() < 2 * PARALLEL_MIN_BYTES {
             chunks.push(SequenceChunk {
                 seq: seq_idx,
-                idx: seq_outputs.len(),
+                idx: seq_outputs.len() - seq_base,
                 side,
                 range: 0..input.len(),
             });
@@ -307,7 +312,7 @@ impl PipelineTokenizer {
         }
         let current_chunks_len = chunks.len();
         for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
-            let idx = seq_outputs.len();
+            let idx = seq_outputs.len() - seq_base;
             let (segment, offset) = match segment {
                 Segment::SpecialToken(id) => {
                     let token = PipelineToken::from(id);
@@ -327,7 +332,7 @@ impl PipelineTokenizer {
         // make sure we have at least one chunk per sequence, otherwise we'll wait indefinitely
         // for a completion event
         if current_chunks_len == chunks.len() {
-            let idx = seq_outputs.len();
+            let idx = seq_outputs.len() - seq_base;
             // sentinel chunk resulting in an encode no-op since range is 0..0
             chunks.push(SequenceChunk {
                 seq: seq_idx,
@@ -342,23 +347,28 @@ impl PipelineTokenizer {
     fn plan_work(&self, inputs: &Inputs) -> Plan {
         let mut chunks = Vec::with_capacity(inputs.len());
         let mut side_a_len = Vec::with_capacity(inputs.len());
-        let mut outputs = Vec::with_capacity(inputs.len());
+        // One flat buffer with per-sequence offsets, not a `Vec` per sequence. A batch of 20k
+        // short lines meant 20k heap allocations here, on the calling thread before any worker
+        // started, and it measured about as much as all the rest of the planning together.
+        let mut outputs: Vec<ChunkResult> = Vec::with_capacity(inputs.len());
+        let mut seq_start: Vec<usize> = Vec::with_capacity(inputs.len() + 1);
         for (seq_idx, input) in inputs.into_iter().enumerate() {
-            let mut seq_outputs = vec![];
+            let base = outputs.len();
+            seq_start.push(base);
             match input {
                 Input::Single(s) => {
-                    self.plan_sequence(seq_idx, Seq::A, s, &mut chunks, &mut seq_outputs);
-                    side_a_len.push(seq_outputs.len());
+                    self.plan_sequence(seq_idx, Seq::A, s, &mut chunks, &mut outputs, base);
+                    side_a_len.push(outputs.len() - base);
                 }
                 Input::Pair(s1, s2) => {
-                    self.plan_sequence(seq_idx, Seq::A, s1, &mut chunks, &mut seq_outputs);
-                    let a_len = seq_outputs.len();
-                    self.plan_sequence(seq_idx, Seq::B, s2, &mut chunks, &mut seq_outputs);
+                    self.plan_sequence(seq_idx, Seq::A, s1, &mut chunks, &mut outputs, base);
+                    let a_len = outputs.len() - base;
+                    self.plan_sequence(seq_idx, Seq::B, s2, &mut chunks, &mut outputs, base);
                     side_a_len.push(a_len);
                 }
             }
-            outputs.push(seq_outputs);
         }
+        seq_start.push(outputs.len());
         // make sure larger chunks are first in the batch to avoid having a straggler at the end
         let mut boundary = 0;
         for i in 0..chunks.len() {
@@ -393,6 +403,7 @@ impl PipelineTokenizer {
             tasks,
             side_a_len,
             outputs,
+            seq_start,
             chunk_count,
         }
     }
@@ -429,6 +440,7 @@ pub(crate) fn encode(
         tasks,
         side_a_len,
         outputs,
+        seq_start,
         chunk_count,
     } = tok.plan_work(&inputs);
     if tasks.len() < 2 {
@@ -437,7 +449,7 @@ pub(crate) fn encode(
             tok.inner.padding.clone(),
         );
     }
-    let n_seq = outputs.len();
+    let n_seq = seq_start.len() - 1;
     let threads = tasks.len().min(pool.current_num_threads());
     let batch = Arc::new(EncodeBatch {
         inputs: Box::new(inputs),
@@ -452,6 +464,7 @@ pub(crate) fn encode(
         remaining: chunk_count.iter().map(|&uc| AtomicUsize::new(uc)).collect(),
         encodings: (0..n_seq).map(|_| Slot::new(None)).collect(),
         outputs,
+        seq_start,
         side_a_len,
         chunks,
         tasks,
@@ -464,4 +477,117 @@ pub(crate) fn encode(
         });
     }
     EncodeHandle::streaming(StreamingIter::new(batch), tok.inner.padding.clone())
+}
+
+/// The flat batch path: each worker takes a run of documents, encodes them into one arena of its
+/// own, and records how long each came out. Nothing is shared, so there is no plan to build, no
+/// completion queue to drain and no lock on the hot path -- the whole coordination structure the
+/// general path needs exists to hand back a `Vec` per document, which this shape does not do.
+///
+/// Returns `None` when there is no pool or only one thread, so the caller runs its serial loop.
+pub(crate) fn encode_flat(
+    tok: &PipelineTokenizer,
+    inputs: &[&str],
+    prefix: &[PipelineToken],
+    suffix: &[PipelineToken],
+) -> Result<Option<Encoding>> {
+    use rayon::prelude::*;
+
+    let Some(pool) = pool() else {
+        return Ok(None);
+    };
+    let threads = pool.current_num_threads();
+    if threads < 2 {
+        return Ok(None);
+    }
+
+    // Chunks sized so each carries real work but every thread still gets several of them.
+    let total: usize = inputs.iter().map(|s| s.len()).sum();
+    let avg = (total / inputs.len().max(1)).max(1);
+    // Enough documents to be worth a task -- twice the parallel floor measured best, below which
+    // rayon's per-task cost starts to show -- but never so many that a thread gets only one run.
+    let by_bytes = (2 * PARALLEL_MIN_BYTES).div_ceil(avg);
+    let by_balance = (inputs.len() / (threads * 4).max(1)).max(1);
+    let chunk = by_bytes.min(by_balance).max(1);
+
+    let parts: Vec<Result<(Vec<PipelineToken>, Vec<u32>)>> = pool.install(|| {
+        inputs
+            .par_chunks(chunk)
+            // One scratch per worker, not one per chunk. `ScratchPool` is a mutex, and the
+            // scratch it hands back carries a 2 MB word cache: taking one per chunk both
+            // contends on the lock and drags that cache between cores as the pool reissues
+            // it to whichever thread asks next. Eight independent processes doing this same
+            // work scale 7.8x; taking the scratch per chunk was most of what stood between
+            // that and the pool.
+            .map_init(
+                || tok.scratch(),
+                |scratch, docs| {
+                    let bytes: usize = docs.iter().map(|s| s.len()).sum();
+                    let mut arena =
+                        Vec::with_capacity(bytes / 4 + (prefix.len() + suffix.len()) * docs.len());
+                    let mut lens = Vec::with_capacity(docs.len());
+                    for doc in docs {
+                        lens.push(tok.encode_framed(doc, scratch, prefix, suffix, &mut arena)?);
+                    }
+                    Ok((arena, lens))
+                },
+            )
+            .collect()
+    });
+    let parts = parts.into_iter().collect::<Result<Vec<_>>>()?;
+
+    // Concatenating the arenas in input order is the whole serial tail, and at eight threads it
+    // was most of what stopped this scaling: fitting Amdahl to the measured curve put the serial
+    // fraction at 7.5%, which is what a memcpy of every id and a push per row costs. Each part's
+    // destination is known once the lengths are, though, so the copy can be handed back to the
+    // pool -- `split_at_mut` hands out the disjoint runs and the workers fill them at once.
+    let total_ids: usize = parts.iter().map(|(arena, _)| arena.len()).sum();
+    let total_rows: usize = parts.iter().map(|(_, lens)| lens.len()).sum();
+
+    // `vec![PipelineToken(0); n]` would zero three megabytes the workers are about to
+    // overwrite, and that memset is serial: it cost more than the parallel copy saved.
+    // Hand out the uninitialised capacity instead -- `split_at_mut` still proves the runs
+    // are disjoint, so the only thing left unchecked is that each is fully written, which
+    // it is: every part copies exactly its own length.
+    let mut ids: Vec<PipelineToken> = Vec::with_capacity(total_ids);
+    let mut offsets = vec![0u32; total_rows + 1];
+    {
+        let mut id_rest = &mut ids.spare_capacity_mut()[..total_ids];
+        let mut off_rest = offsets.as_mut_slice();
+        let mut base = 0u32;
+        let mut jobs = Vec::with_capacity(parts.len());
+        for (arena, lens) in &parts {
+            let (id_dst, rest) = id_rest.split_at_mut(arena.len());
+            id_rest = rest;
+            let (off_dst, rest) = off_rest.split_at_mut(lens.len());
+            off_rest = rest;
+            jobs.push((arena, lens, base, id_dst, off_dst));
+            base += arena.len() as u32;
+        }
+        pool.install(|| {
+            jobs.par_iter_mut()
+                .for_each(|(arena, lens, base, id_dst, off_dst)| {
+                    // SAFETY: `id_dst` is `arena.len()` uninitialised slots handed out by
+                    // `split_at_mut`, so it is disjoint from every other job's run and cannot
+                    // overlap the source, which lives in the part.
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(
+                            arena.as_ptr(),
+                            id_dst.as_mut_ptr().cast::<PipelineToken>(),
+                            arena.len(),
+                        );
+                    }
+                    let mut at = *base;
+                    for (slot, len) in off_dst.iter_mut().zip(lens.iter()) {
+                        *slot = at;
+                        at += *len;
+                    }
+                });
+        });
+    }
+    // SAFETY: the loop above handed every one of the `total_ids` slots to exactly one job,
+    // and each job filled its run in full.
+    unsafe { ids.set_len(total_ids) };
+    offsets[total_rows] = total_ids as u32;
+    Ok(Some(Encoding::batch(ids, offsets)))
 }
