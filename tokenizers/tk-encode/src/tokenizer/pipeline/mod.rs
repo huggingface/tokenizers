@@ -494,7 +494,9 @@ impl Encoding {
         }
     }
 
-    /// A batch the caller already laid out contiguously.
+    /// A batch the caller already laid out contiguously. Only the parallel flat path builds one
+    /// this way; the serial loop fills `offsets` as it goes.
+    #[cfg(feature = "parallelism")]
     pub(crate) fn batch(ids: Vec<PipelineToken>, offsets: Vec<u32>) -> Self {
         debug_assert_eq!(
             offsets.last().copied(),
@@ -693,11 +695,7 @@ impl PipelineTokenizer {
     ///
     /// Falls back to [`Self::encode`] for a template the flat layout cannot model -- a pair
     /// template, or one carrying type ids.
-    pub fn encode_batch_flat(
-        &self,
-        inputs: &[&str],
-        add_special_tokens: bool,
-    ) -> Result<Encoding> {
+    pub fn encode_batch_flat(&self, inputs: &[&str], add_special_tokens: bool) -> Result<Encoding> {
         let Some((prefix, suffix)) = self.flat_specials(add_special_tokens) else {
             return self.flat_via_encode(inputs, add_special_tokens);
         };
@@ -793,7 +791,9 @@ impl PipelineTokenizer {
     /// exists to avoid.
     fn flat_via_encode(&self, inputs: &[&str], add_special_tokens: bool) -> Result<Encoding> {
         let owned: Vec<String> = inputs.iter().map(|s| (*s).to_string()).collect();
-        Ok(Encoding::concat(&self.encode(owned, add_special_tokens).wait()?))
+        Ok(Encoding::concat(
+            &self.encode(owned, add_special_tokens).wait()?,
+        ))
     }
 
     /// One scratch, for a caller that will encode many documents with it.
