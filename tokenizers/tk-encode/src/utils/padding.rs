@@ -1,6 +1,3 @@
-#[cfg(feature = "parallelism")]
-use crate::parallelism::{MaybeParallelRefIterator, MaybeParallelRefMutIterator};
-
 use crate::tokenizer::Result;
 use crate::tokenizer::pipeline::{Encoding, PipelineToken};
 
@@ -56,16 +53,7 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
 
     let mut pad_length = match params.strategy {
         PaddingStrategy::Fixed(size) => size,
-        PaddingStrategy::BatchLongest => {
-            #[cfg(feature = "parallelism")]
-            {
-                encodings.maybe_par_iter().map(Encoding::len).max().unwrap()
-            }
-            #[cfg(not(feature = "parallelism"))]
-            {
-                encodings.iter().map(Encoding::len).max().unwrap()
-            }
-        }
+        PaddingStrategy::BatchLongest => encodings.iter().map(Encoding::len).max().unwrap(),
     };
 
     if let Some(multiple) = params.pad_to_multiple_of
@@ -75,18 +63,9 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
         pad_length += multiple - pad_length % multiple;
     }
 
-    #[cfg(feature = "parallelism")]
-    {
-        encodings
-            .maybe_par_iter_mut()
-            .for_each(|encoding| pad_one(encoding, pad_length, params));
-    }
-    #[cfg(not(feature = "parallelism"))]
-    {
-        encodings
-            .iter_mut()
-            .for_each(|encoding| pad_one(encoding, pad_length, params));
-    }
+    encodings
+        .iter_mut()
+        .for_each(|encoding| pad_one(encoding, pad_length, params));
 
     Ok(())
 }
