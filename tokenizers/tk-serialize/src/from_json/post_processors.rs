@@ -2,7 +2,7 @@
 
 use super::unsupported;
 use crate::json::Json;
-use tk_encode::pipeline::{PipelinePostProcessor, PipelineToken, Seq, Slice, Template, compose};
+use tk_encode::pipeline::{PipelinePostProcessor, PipelineToken, Template, compose};
 use tk_encode::tokenizer::Result;
 
 pub(super) fn read_post_processor(cfg: Option<&Json<'_>>) -> Result<PipelinePostProcessor> {
@@ -33,31 +33,35 @@ pub(super) fn read_post_processor(cfg: Option<&Json<'_>>) -> Result<PipelinePost
         "BertProcessing" | "RobertaProcessing" => {
             let cls = read_special_id(cfg, "cls")?;
             let sep = read_special_id(cfg, "sep")?;
-            let one = |id: u32, type_id: u8| Slice::Specials {
-                tokens: Box::new([PipelineToken::from(id)]),
-                type_id,
+            let run = |ids: &[u32], type_id: u8| -> Box<[(PipelineToken, u8)]> {
+                ids.iter()
+                    .map(|&id| (PipelineToken::from(id), type_id))
+                    .collect()
             };
-            let sq = |seq, type_id| Slice::Sequence { seq, type_id };
-            let single = Template::new(vec![one(cls, 0), sq(Seq::A, 0), one(sep, 0)]);
+            // `[CLS] $A [SEP]`
+            let single = Template {
+                prefix: run(&[cls], 0),
+                suffix: run(&[sep], 0),
+                ..Template::default()
+            };
             let pair = if kind == "BertProcessing" {
-                Template::new(vec![
-                    one(cls, 0),
-                    sq(Seq::A, 0),
-                    one(sep, 0),
-                    sq(Seq::B, 1),
-                    one(sep, 1),
-                ])
+                // `[CLS] $A [SEP] $B@1 [SEP]@1`
+                Template {
+                    prefix: run(&[cls], 0),
+                    infix: run(&[sep], 0),
+                    suffix: run(&[sep], 1),
+                    a_type_id: 0,
+                    b_type_id: Some(1),
+                }
             } else {
-                Template::new(vec![
-                    one(cls, 0),
-                    sq(Seq::A, 0),
-                    Slice::Specials {
-                        tokens: Box::new([PipelineToken::from(sep), PipelineToken::from(sep)]),
-                        type_id: 0,
-                    },
-                    sq(Seq::B, 0),
-                    one(sep, 0),
-                ])
+                // `<s> $A </s></s> $B </s>`, all at type id 0
+                Template {
+                    prefix: run(&[cls], 0),
+                    infix: run(&[sep, sep], 0),
+                    suffix: run(&[sep], 0),
+                    a_type_id: 0,
+                    b_type_id: Some(0),
+                }
             };
             Ok(PipelinePostProcessor::new(single, pair))
         }
@@ -76,50 +80,62 @@ fn read_special_id(cfg: &Json<'_>, key: &str) -> Result<u32> {
 }
 
 fn read_template(cfg: &Json<'_>) -> Result<PipelinePostProcessor> {
-    let slices_for = |key: &str| -> Result<Vec<Slice>> {
+    let template_for = |key: &str| -> Result<Template> {
         let pieces = cfg.need("TemplateProcessing", key, Json::as_array)?;
-        let mut out = Vec::with_capacity(pieces.len());
+        let mut t = Template::default();
+        // Specials land before A, between A and B, or after the last sequence -- the only three
+        // places a piece can be.
+        let (mut prefix, mut infix, mut suffix) = (Vec::new(), Vec::new(), Vec::new());
+        let mut seen_a = false;
         for piece in pieces {
             // `type_id` is the sequence a piece belongs to, and `0` for all but the second half of
             // a pair, so it is written only when it is not that.
             let type_id = piece.field("type_id").and_then(Json::as_u32).unwrap_or(0) as u8;
             if let Some(seq) = piece.field("seq").and_then(Json::as_str) {
-                out.push(Slice::Sequence {
-                    seq: read_seq(seq)?,
-                    type_id,
-                });
+                match seq {
+                    "A" if !seen_a => {
+                        seen_a = true;
+                        t.a_type_id = type_id;
+                    }
+                    "B" if seen_a && t.b_type_id.is_none() => t.b_type_id = Some(type_id),
+                    "A" | "B" => {
+                        return Err(format!(
+                            "not supported: template references sequence {seq} out of order or more than once"
+                        )
+                        .into());
+                    }
+                    other => return Err(format!("unknown template sequence {other:?}").into()),
+                }
             } else if let Some(ids) = piece.field("ids").and_then(Json::as_array) {
-                let ids = ids
-                    .iter()
-                    .map(|id| {
-                        id.as_u32().ok_or_else(|| -> tk_encode::Error {
-                            "a template piece has a bad id".into()
-                        })
-                    })
-                    .collect::<Result<Vec<u32>>>()?;
-                out.push(Slice::Specials {
-                    tokens: ids.into_iter().map(PipelineToken::from).collect(),
-                    type_id,
-                });
+                let dst = match (seen_a, t.b_type_id.is_some(), key) {
+                    (false, ..) => &mut prefix,
+                    (true, false, "pair") => &mut infix,
+                    _ => &mut suffix,
+                };
+                for id in ids {
+                    let id = id
+                        .as_u32()
+                        .ok_or_else(|| -> tk_encode::Error { "a template piece has a bad id".into() })?;
+                    dst.push((PipelineToken::from(id), type_id));
+                }
             } else {
                 // The `{"SpecialToken": {"id": ...}}` wrapper and its `special_tokens` table are a
                 // `1.0` spelling, and a `1.0` file never reaches this reader.
                 return Err("a template piece has neither `seq` nor `ids`".into());
             }
         }
-        Ok(out)
+        if !seen_a {
+            return Err("not supported: template does not reference sequence A".into());
+        }
+        if (key == "pair") != t.b_type_id.is_some() {
+            return Err(format!("not supported: `{key}` template references the wrong sequences").into());
+        }
+        (t.prefix, t.infix, t.suffix) = (prefix.into(), infix.into(), suffix.into());
+        Ok(t)
     };
 
     Ok(PipelinePostProcessor::new(
-        Template::new(slices_for("single")?),
-        Template::new(slices_for("pair")?),
+        template_for("single")?,
+        template_for("pair")?,
     ))
-}
-
-fn read_seq(id: &str) -> Result<Seq> {
-    match id {
-        "A" => Ok(Seq::A),
-        "B" => Ok(Seq::B),
-        other => Err(format!("unknown template sequence {other:?}").into()),
-    }
 }

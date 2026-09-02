@@ -36,7 +36,7 @@ mod post_processor;
 mod pre_tokenizer;
 
 pub use normalizer::{Normalizer, NormalizerChain, PipelineNormalizer, normalize_all};
-pub use post_processor::{PipelinePostProcessor, Seq, Slice, Template, build_slices, compose};
+pub use post_processor::{PipelinePostProcessor, Seq, Template, compose};
 pub use pre_tokenizer::{
     PipelinePreTokenizer, PreTokenizer, PreTokenizerScratch, SplitPolicy, split, split_delimiter,
     split_matches,
@@ -579,73 +579,45 @@ impl PipelineTokenizer {
         add_special_tokens: bool,
     ) -> Result<Encoding> {
         let pp = &self.inner.post_processor;
-        let template = if s2.is_some() { &pp.pair } else { &pp.single };
+        let t = if s2.is_some() { &pp.pair } else { &pp.single };
+        // `prefix? A infix? B? suffix?` is the only shape a template has, so A's buffer is always
+        // the one to extend -- there is no arrangement where it would have to be copied.
+        let mut ids = s1;
+        let (a_len, b_len) = (ids.len(), s2.as_ref().map_or(0, Vec::len));
 
-        // FIXME: this is shit, we re-compute the conditions everytime.
-        if s2.is_none()
-            && !template.has_type_ids
-            && let Some(pos) = template
-                .slices
-                .iter()
-                .position(|s| matches!(s, Slice::Sequence { seq: Seq::A, .. }))
-            && template.slices.iter().enumerate().all(|(i, s)| {
-                // Everything that is not A must be specials we can splice around it.
-                i == pos || matches!(s, Slice::Specials { .. })
-            })
-        {
-            let mut ids = s1;
+        let type_ids = t.has_type_ids().then(|| {
+            let mut type_ids = Vec::with_capacity(t.n_special() + a_len + b_len);
             if add_special_tokens {
-                for slice in &template.slices[pos + 1..] {
-                    if let Slice::Specials { tokens, .. } = slice {
-                        ids.extend_from_slice(tokens);
-                    }
-                }
-                if template.slices[..pos].iter().any(|s| match s {
-                    Slice::Specials { tokens, .. } => !tokens.is_empty(),
-                    Slice::Sequence { .. } => false,
-                }) {
-                    let prefix = template.slices[..pos].iter().flat_map(|s| match s {
-                        Slice::Specials { tokens, .. } => tokens.iter().cloned(),
-                        Slice::Sequence { .. } => [].iter().cloned(),
-                    });
-                    ids.splice(0..0, prefix);
-                }
+                type_ids.extend(t.prefix.iter().map(|&(_, id)| id));
             }
-            return Ok(Encoding::new(ids, None));
+            type_ids.resize(type_ids.len() + a_len, t.a_type_id);
+            if add_special_tokens {
+                type_ids.extend(t.infix.iter().map(|&(_, id)| id));
+            }
+            if let Some(id) = t.b_type_id {
+                type_ids.resize(type_ids.len() + b_len, id);
+            }
+            if add_special_tokens {
+                type_ids.extend(t.suffix.iter().map(|&(_, id)| id));
+            }
+            type_ids
+        });
+
+        ids.reserve(t.n_special() + b_len);
+        if add_special_tokens {
+            ids.extend(t.infix.iter().map(|&(id, _)| id));
         }
-
-        let seq_len = s1.len() + s2.as_ref().map_or(0, Vec::len);
-        let cap = template.n_special + seq_len;
-
-        let (mut a, mut b) = (Some(s1), s2);
-        let mut ids = Vec::with_capacity(cap);
-        let mut type_ids = template.has_type_ids.then(|| Vec::with_capacity(cap));
-
-        for slice in &template.slices {
-            match slice {
-                Slice::Specials { tokens, type_id } => {
-                    if !add_special_tokens {
-                        continue;
-                    }
-                    ids.extend_from_slice(tokens);
-                    if let Some(tids) = type_ids.as_mut() {
-                        tids.resize(tids.len() + tokens.len(), *type_id);
-                    }
-                }
-                Slice::Sequence { seq, type_id } => {
-                    let tokens = match seq {
-                        Seq::A => a.take(),
-                        Seq::B => b.take(),
-                    }
-                    .ok_or("[BUG] valid template should guarantee each referenced sequence is provided exactly once")?;
-                    if let Some(tids) = type_ids.as_mut() {
-                        tids.resize(tids.len() + tokens.len(), *type_id);
-                    }
-                    ids.extend(tokens);
-                }
+        if let Some(b) = s2 {
+            ids.extend(b);
+        }
+        if add_special_tokens {
+            ids.extend(t.suffix.iter().map(|&(id, _)| id));
+            // TODO: hand A's buffer `prefix.len()` free slots up front and this becomes a
+            // `copy_from_slice`, with `!add_special_tokens` returning a start offset instead.
+            if !t.prefix.is_empty() {
+                ids.splice(0..0, t.prefix.iter().map(|&(id, _)| id));
             }
         }
-
         Ok(Encoding::new(ids, type_ids))
     }
 
@@ -761,18 +733,9 @@ impl PipelineTokenizer {
     ) -> Result<()> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         let template = &self.inner.post_processor.single;
-        let mut sequences = 0usize;
-        // The same question `post_process` asks: would the template just reproduce the sequence?
-        let reproduces_sequence = !template.has_type_ids
-            && template.slices.iter().all(|slice| match slice {
-                Slice::Specials { .. } => !add_special_tokens,
-                Slice::Sequence { seq: Seq::A, .. } => {
-                    sequences += 1;
-                    true
-                }
-                Slice::Sequence { seq: Seq::B, .. } => false,
-            })
-            && sequences == 1;
+        // Would the template just reproduce the sequence? Nothing to weave, nothing to tag.
+        let reproduces_sequence = !template.has_type_ids()
+            && (!add_special_tokens || template.n_special() == 0);
         if reproduces_sequence {
             return self.encode_sequence_into(input, &mut scratch, out);
         }
