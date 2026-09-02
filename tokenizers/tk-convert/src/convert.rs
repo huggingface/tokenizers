@@ -100,12 +100,6 @@ pub fn canonicalize_file(path: impl AsRef<Path>) -> Result<String, ConvertError>
     canonicalize_str(&text)
 }
 
-/// Canonicalize a lone `post_processor` -- the value of that one key -- rather than a whole
-/// config. Same steps as [`canonicalize_value`] runs on that slot, and idempotent for the same
-/// reason.
-///
-/// A caller holding a post-processor on its own needs this: the bindings build the legacy spelling
-/// from their own arguments, and this is what turns it into the one the reader accepts.
 pub fn canonicalize_post_processor(node: &mut Value) -> Result<(), ConvertError> {
     lower_template_node(node)
 }
@@ -592,10 +586,6 @@ fn weaves_nothing(member: &Value) -> bool {
 
 /// Replace a `Sequence` post-processor with the one member that actually weaves something.
 ///
-/// The canonical form has no wrapper -- the writer cannot even spell one -- so the reader should
-/// never have to collapse this at load time. llama-3's is a `ByteLevel` in front of a
-/// `TemplateProcessing`; the `ByteLevel` goes. With nothing that weaves, the first member stands,
-/// which is what leaves a `ByteLevel`-only `Sequence` meaning the default frame.
 fn collapse_sequence(node: &mut Value) -> Result<(), ConvertError> {
     let members = node
         .get_mut("processors")
@@ -615,9 +605,7 @@ fn collapse_sequence(node: &mut Value) -> Result<(), ConvertError> {
     Ok(())
 }
 
-/// `BertProcessing` and `RobertaProcessing` name the template they imply, so they are spelled as
-/// one here. That keeps every legacy post-processor name in this crate: the reader only ever sees
-/// a `TemplateProcessing`, and only this pass has to know what the old names meant.
+/// `BertProcessing` and `RobertaProcessing` name the template they imply, only this pass has to know what the old names meant.
 ///
 /// ```text
 ///   Bert     `[CLS] $A [SEP]`  and  `[CLS] $A [SEP] $B:1 [SEP]:1`
@@ -705,8 +693,7 @@ fn lower_template_node(node: &mut Value) -> Result<(), ConvertError> {
             *node = lowered;
             return Ok(());
         }
-        // A `ByteLevel` post-processor only ever re-tagged offsets, which the pipeline does not
-        // keep, so it weaves nothing -- and `null` is how the writer spells that.
+        // TODO: depending on how we implement the byte level post processor we might have to re implement that
         "ByteLevel" => {
             *node = Value::Null;
             return Ok(());

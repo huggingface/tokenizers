@@ -13,8 +13,6 @@ pub(super) fn read_post_processor(cfg: Option<&Json<'_>>) -> Result<PipelinePost
         .type_tag()
         .ok_or_else(|| unsupported("a post-processor with no `type`"))?;
     match kind {
-        // The only spelling there is. `ByteLevel`, `BertProcessing`, `RobertaProcessing` and a
-        // `Sequence` wrapper are legacy names that tk-convert rewrites into this one.
         "TemplateProcessing" => read_template(cfg),
         other => Err(unsupported(&format!("the `{other}` post-processor"))),
     }
