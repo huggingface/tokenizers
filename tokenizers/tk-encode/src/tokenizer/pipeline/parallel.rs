@@ -359,8 +359,14 @@ impl PipelineTokenizer {
             }
             outputs.push(seq_outputs);
         }
-        // Schedule encode batch by longest chunk first
-        chunks.sort_unstable_by_key(|u| std::cmp::Reverse(u.range.len()));
+         // make sure larger chunks are first in the batch to avoid having a straggler at the end
+        let mut boundary = 0;
+        for i in 0..chunks.len() {
+            if chunks[i].range.len() >= PARALLEL_MIN_BYTES {
+                chunks.swap(boundary, i);
+                boundary += 1;
+            }
+        }
         let chunk_count = chunks.iter().fold(vec![0; outputs.len()], |mut uc, u| {
             uc[u.seq] += 1;
             uc
@@ -398,6 +404,11 @@ pub(crate) fn encode(
     add_special_tokens: bool,
 ) -> EncodeHandle {
     if inputs.size_bytes() < PARALLEL_MIN_BYTES {
+        return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
+    }
+    if let Inputs::Single(Input::Single(seq)) = &inputs
+        && seq.len() < 2 * PARALLEL_MIN_BYTES
+    {
         return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
     }
     let Some(pool) = pool() else {
@@ -442,3 +453,4 @@ pub(crate) fn encode(
     }
     EncodeHandle::streaming(StreamingIter::new(batch))
 }
+
