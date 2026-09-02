@@ -320,13 +320,14 @@ fn a_sequence_post_processor_collapses_to_its_weaving_member() {
         serde_json::json!([{"ids": [1], "type_id": 0}, {"seq": "A", "type_id": 0}])
     );
 
-    // Nothing weaves, so the first member stands and still means the default frame.
+    // Nothing weaves, so the first member stands and still means the default frame -- which a
+    // `ByteLevel` lowers to, and `null` is how the writer spells it.
     let v = done(
         BPE,
         r#", "post_processor": {"type": "Sequence", "processors": [
              {"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": true, "use_regex": true}]}"#,
     );
-    assert_eq!(v["post_processor"]["type"], "ByteLevel");
+    assert_eq!(v["post_processor"], serde_json::Value::Null);
 
     // Two members that both weave: there is no one canonical answer.
     let msg = err(
@@ -341,6 +342,52 @@ fn a_sequence_post_processor_collapses_to_its_weaving_member() {
               "special_tokens": {"<s>": {"id": "<s>", "ids": [1], "tokens": ["<s>"]}}}]}"#,
     );
     assert!(msg.contains("more than one weaving member"), "{msg}");
+}
+
+/// `BertProcessing` and `RobertaProcessing` name a frame, so this pass spells it as the template
+/// it is. The reader has no arm for either name; this is the only place that knows what they meant.
+#[test]
+fn bert_and_roberta_processing_lower_to_the_frame_they_name() {
+    // `[CLS] $A [SEP]` and `[CLS] $A [SEP] $B:1 [SEP]:1`.
+    let v = done(
+        BPE,
+        r#", "post_processor": {"type": "BertProcessing", "cls": ["a", 0], "sep": ["b", 1]}"#,
+    );
+    assert_eq!(
+        v["post_processor"],
+        serde_json::json!({"type": "TemplateProcessing",
+            "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
+            "pair": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]},
+                     {"seq": "B", "type_id": 1}, {"ids": [1], "type_id": 1}]})
+    );
+
+    // `<s> $A </s>` and `<s> $A </s></s> $B </s>`, all at type id 0.
+    let v = done(
+        BPE,
+        r#", "post_processor": {"type": "RobertaProcessing", "cls": ["a", 0], "sep": ["b", 1],
+             "trim_offsets": true, "add_prefix_space": true}"#,
+    );
+    assert_eq!(
+        v["post_processor"],
+        serde_json::json!({"type": "TemplateProcessing",
+            "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
+            "pair": [{"ids": [0]}, {"seq": "A"}, {"ids": [1, 1]}, {"seq": "B"}, {"ids": [1]}]})
+    );
+
+    // A bare `ByteLevel` only ever re-tagged offsets, which the pipeline does not keep.
+    let v = done(
+        BPE,
+        r#", "post_processor": {"type": "ByteLevel", "add_prefix_space": true,
+             "trim_offsets": true, "use_regex": true}"#,
+    );
+    assert_eq!(v["post_processor"], serde_json::Value::Null);
+
+    // Only the id half of `["<token>", id]` is kept, so a pair that is not one cannot be read.
+    let msg = err(
+        BPE,
+        r#", "post_processor": {"type": "BertProcessing", "sep": ["b"], "cls": ["a", 0]}"#,
+    );
+    assert!(msg.contains("[token, id] pair"), "{msg}");
 }
 
 #[test]

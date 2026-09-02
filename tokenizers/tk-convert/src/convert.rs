@@ -100,6 +100,16 @@ pub fn canonicalize_file(path: impl AsRef<Path>) -> Result<String, ConvertError>
     canonicalize_str(&text)
 }
 
+/// Canonicalize a lone `post_processor` -- the value of that one key -- rather than a whole
+/// config. Same steps as [`canonicalize_value`] runs on that slot, and idempotent for the same
+/// reason.
+///
+/// A caller holding a post-processor on its own needs this: the bindings build the legacy spelling
+/// from their own arguments, and this is what turns it into the one the reader accepts.
+pub fn canonicalize_post_processor(node: &mut Value) -> Result<(), ConvertError> {
+    lower_template_node(node)
+}
+
 /// Idempotent: every step recognises the canonical shape and returns, or rewrites the legacy one
 /// into it. Safe to run unconditionally in front of a reader.
 pub fn canonicalize_value(value: &mut Value) -> Result<(), ConvertError> {

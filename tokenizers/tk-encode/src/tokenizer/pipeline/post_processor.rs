@@ -49,7 +49,7 @@ impl Template {
                 .any(|run| run.iter().any(|&(_, id)| id != 0))
     }
 
-    pub(super) fn post_process<const SPECIALS: bool>(
+    pub fn post_process<const SPECIALS: bool>(
         &self,
         s1: Vec<PipelineToken>,
         s2: Option<Vec<PipelineToken>>,
