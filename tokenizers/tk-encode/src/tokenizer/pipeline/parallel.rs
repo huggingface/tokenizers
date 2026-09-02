@@ -370,12 +370,7 @@ impl PipelineTokenizer {
             }
         }
         seq_start.push(outputs.len());
-        // Scheduling wants the big chunks taken first, so one cannot be picked last and become the
-        // straggler the whole batch waits on. It does *not* need a total order: tasks are already
-        // byte-balanced, being grown until they hold `PARALLEL_MIN_BYTES`. Sorting every chunk for
-        // that cost O(n log n) on the calling thread -- 18k chunks in a 20k-line batch, ~14% of the
-        // batch's encode time, all of it before a worker starts. Partitioning the chunks that are a
-        // task by themselves to the front is O(n) and keeps the property that matters.
+        // make sure larger chunks are first in the batch to avoid having a straggler at the end
         let mut boundary = 0;
         for i in 0..chunks.len() {
             if chunks[i].range.len() >= PARALLEL_MIN_BYTES {
@@ -421,6 +416,11 @@ pub(crate) fn encode(
     add_special_tokens: bool,
 ) -> EncodeHandle {
     if inputs.size_bytes() < PARALLEL_MIN_BYTES {
+        return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
+    }
+    if let Inputs::Single(Input::Single(seq)) = &inputs
+        && seq.len() < 2 * PARALLEL_MIN_BYTES
+    {
         return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
     }
     let Some(pool) = pool() else {
