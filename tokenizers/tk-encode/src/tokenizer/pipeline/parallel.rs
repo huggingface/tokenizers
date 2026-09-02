@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::parallelism::pool;
-use crate::pipeline::BatchEncoding;
 use crate::pipeline::scratch_pool::{EncodeScratch, ScratchGuard};
 use crate::pipeline::{
     EncodeHandle, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer, Segment, Seq,
@@ -491,7 +490,7 @@ pub(crate) fn encode_flat(
     inputs: &[&str],
     prefix: &[PipelineToken],
     suffix: &[PipelineToken],
-) -> Result<Option<BatchEncoding>> {
+) -> Result<Option<Encoding>> {
     use rayon::prelude::*;
 
     let Some(pool) = pool() else {
@@ -528,11 +527,7 @@ pub(crate) fn encode_flat(
                         Vec::with_capacity(bytes / 4 + (prefix.len() + suffix.len()) * docs.len());
                     let mut lens = Vec::with_capacity(docs.len());
                     for doc in docs {
-                        let start = arena.len();
-                        arena.extend_from_slice(prefix);
-                        tok.encode_sequence_into(doc, scratch, &mut arena)?;
-                        arena.extend_from_slice(suffix);
-                        lens.push((arena.len() - start) as u32);
+                        lens.push(tok.encode_framed(doc, scratch, prefix, suffix, &mut arena)?);
                     }
                     Ok((arena, lens))
                 },
@@ -594,5 +589,5 @@ pub(crate) fn encode_flat(
     // and each job filled its run in full.
     unsafe { ids.set_len(total_ids) };
     offsets[total_rows] = total_ids as u32;
-    Ok(Some(BatchEncoding::from_parts(ids, offsets)))
+    Ok(Some(Encoding::batch(ids, offsets)))
 }

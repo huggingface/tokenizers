@@ -26,7 +26,7 @@ fn check(tok: &PipelineTokenizer, add_special: bool) {
     let flat = tok.encode_batch_flat(&refs, add_special).unwrap();
     let one_by_one = tok.encode(owned.clone(), add_special).wait().unwrap();
 
-    assert_eq!(flat.len(), one_by_one.len(), "row count");
+    assert_eq!(flat.rows(), one_by_one.len(), "row count");
     for (i, enc) in one_by_one.iter().enumerate() {
         let want: Vec<u32> = enc.ids().iter().map(|t| t.id()).collect();
         let got: Vec<u32> = flat.row(i).unwrap().iter().map(|t| t.id()).collect();
