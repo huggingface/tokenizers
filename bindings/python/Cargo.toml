@@ -1,8 +1,6 @@
 [package]
 name = "tokenizers-python"
-# The one place the version is set: pyproject.toml declares its `version` dynamic and maturin
-# reads this, and `src/lib.rs` reports it as `__version__`.
-version = "0.23.1"
+version = "0.24.0"
 edition = "2024"
 publish = false
 

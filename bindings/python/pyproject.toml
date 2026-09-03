@@ -1,6 +1,5 @@
 [project]
 name = "tokenizers"
-# Read from Cargo.toml's `[package] version` by maturin.
 dynamic = ["version"]
 requires-python = ">=3.10"
 readme = "README.md"
