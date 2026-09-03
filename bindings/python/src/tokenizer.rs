@@ -329,21 +329,19 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyArrayUnicode {
             let n_elem = *(*arr).dimensions as usize;
             let all_bytes = std::slice::from_raw_parts(data as *const u8, elsize * n_elem);
 
+            // numpy dtype='U' stores UCS-4 (UTF-32LE on little-endian).
+            // Each element is `elsize` bytes = `elsize/4` code points, null-padded.
             let seq = (0..n_elem)
                 .map(|i| {
                     let bytes = &all_bytes[i * elsize..(i + 1) * elsize];
-                    Ok(std::str::from_utf8(bytes)
-                        .map_err(|e| exceptions::PyValueError::new_err(e.to_string()))?
-                        .to_owned())
-                    // let unicode = pyo3::ffi::PyUnicode_FromKindAndData(
-                    //     pyo3::ffi::PyUnicode_4BYTE_KIND as _,
-                    //     bytes.as_ptr() as *const _,
-                    //     elsize as isize / alignment as isize,
-                    // );
-                    // let py = ob.py();
-                    // let obj = Py<PyAny>::from_owned_ptr(py, unicode);
-                    // let s = obj.downcast_bound::<PyString>(py)?;
-                    // Ok(s.to_string_lossy().trim_matches(char::from(0)).to_owned())
+                    let s: String = bytes
+                        .chunks_exact(4)
+                        .filter_map(|chunk| {
+                            let code = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                            if code == 0 { None } else { char::from_u32(code) }
+                        })
+                        .collect();
+                    Ok(s)
                 })
                 .collect::<PyResult<Vec<_>>>()?;
 

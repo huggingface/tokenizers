@@ -344,6 +344,21 @@ class TestTokenizer:
         output_without_specials = tokenizer.encode("My name is John", add_special_tokens=False)
         assert output_without_specials.tokens == ["ĠMy", "Ġname", "Ġis", "ĠJohn"]
 
+    def test_numpy_unicode_ucs4(self):
+        """Numpy dtype='U' arrays store UCS-4, not UTF-8. Verify non-ASCII survives."""
+        tokenizer = Tokenizer(BPE())
+        tokenizer.add_tokens(["hello", "café", "日本語", "😁"])
+
+        # ASCII
+        output = tokenizer.encode_batch(np.array(["hello", "café"], dtype="U"))
+        assert output[0].tokens == ["hello"]
+        assert output[1].tokens == ["café"]
+
+        # Non-ASCII / multibyte
+        output = tokenizer.encode_batch(np.array(["日本語", "😁"], dtype="U"))
+        assert output[0].tokens == ["日本語"]
+        assert output[1].tokens == ["😁"]
+
     def test_truncation(self):
         tokenizer = Tokenizer(BPE())
         tokenizer.add_tokens(["my", "name", "is", "john", "pair"])
