@@ -194,6 +194,24 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
     }
 }
 
+thread_local! {
+    /// Phase 1's gather buffer, allocated on this thread's first decode and reused after.
+    ///
+    /// A fresh `Vec` per call meant a malloc plus a first touch of every page of it, every call:
+    /// on a ~2250-token chunk producing 10 kB of text, a 36 kB allocation written and then read
+    /// straight back, to move 10 kB.
+    ///
+    /// `(ptr, len)` rather than `(start, end)` into the slab **on purpose**. Offsets are half the
+    /// size, but phase 2 then has to re-slice the slab and eat a bounds check per token, which
+    /// measured -3.3% on english -- more than the malloc was costing. Keeping the payload
+    /// pointer-shaped leaves the copy phase untouched and still retires the allocation.
+    ///
+    /// Thread-local rather than in `ScratchPool`: that pool is a `Mutex` taken once per call, and
+    /// decode scales at 94% to ten threads precisely because it synchronises on nothing.
+    static DECODE_PARTS: std::cell::RefCell<Vec<(*const u8, usize)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
 struct TokenizerInner {
     added_vocabulary: BucketAddedVocabulary,
     normalizers: Vec<PipelineNormalizer>,
@@ -838,27 +856,48 @@ impl PipelineTokenizer {
         ids: &[u32],
         skip_special_tokens: bool,
     ) -> String {
-        let mut parts: Vec<&[u8]> = Vec::with_capacity(ids.len());
-        let mut total = 0usize;
-        for (i, &id) in ids.iter().enumerate() {
-            if id >= self.inner.added_id_min {
-                let mut out = self.decode_byte_level_one_pass(bpe, &ids[..i], skip_special_tokens);
-                out.push_str(&self.decode_byte_level_one_pass(bpe, &ids[i..], skip_special_tokens));
-                return out;
+        DECODE_PARTS.with_borrow_mut(|parts| {
+            parts.clear();
+            let mut total = 0usize;
+            for (i, &id) in ids.iter().enumerate() {
+                if id >= self.inner.added_id_min {
+                    let mut out =
+                        self.decode_byte_level_one_pass(bpe, &ids[..i], skip_special_tokens);
+                    out.push_str(&self.decode_byte_level_one_pass(
+                        bpe,
+                        &ids[i..],
+                        skip_special_tokens,
+                    ));
+                    return out;
+                }
+                let bytes = bpe.id_to_token_bytes_for_decode(id);
+                total += bytes.len();
+                parts.push((bytes.as_ptr(), bytes.len()));
             }
-            let bytes = bpe.id_to_token_bytes_for_decode(id);
-            total += bytes.len();
-            parts.push(bytes);
-        }
 
-        let mut out: Vec<u8> = Vec::with_capacity(total);
-        for bytes in &parts {
-            out.extend_from_slice(bytes);
-        }
-        match String::from_utf8(out) {
-            Ok(decoded) => decoded,
-            Err(invalid) => String::from_utf8_lossy(invalid.as_bytes()).into_owned(),
-        }
+            // `extend_from_slice` per token would re-check the capacity and update the length
+            // every time. Phase 1 already computed the exact total, so those checks can only ever
+            // pass: write straight through the pointer and set the length once.
+            let mut out: Vec<u8> = Vec::with_capacity(total);
+            let mut dst = out.as_mut_ptr();
+            for &(src, len) in parts.iter() {
+                // SAFETY: `src`/`len` came from a slice borrowed out of the vocabulary slab during
+                // this same call, and `&self` keeps that alive throughout; `parts` was cleared
+                // above so nothing older is in it. `total` is the exact sum of these lengths and
+                // is the allocated capacity, so the cursor stays inside `out`, which is fresh and
+                // cannot overlap the slab.
+                unsafe {
+                    std::ptr::copy_nonoverlapping(src, dst, len);
+                    dst = dst.add(len);
+                }
+            }
+            // SAFETY: exactly `total` initialised bytes were just written.
+            unsafe { out.set_len(total) };
+            match String::from_utf8(out) {
+                Ok(decoded) => decoded,
+                Err(invalid) => String::from_utf8_lossy(invalid.as_bytes()).into_owned(),
+            }
+        })
     }
 
     /// The original interleaved probe-and-append walk. Still the path for any sequence holding an
