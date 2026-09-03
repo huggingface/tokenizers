@@ -172,16 +172,17 @@ jobs:
           if-no-files-found: error
 
   publish:
-    # Skip the npm publish step on rc tags — `napi prepublish` would try
-    # to create a GitHub release and call `npm publish` for each
-    # per-platform sub-package, both of which need stable-version /
-    # write-permission setup we only want on real releases. rc tags still
-    # exercise the build + universal-macOS jobs (so the matrix is tested
-    # end-to-end), they just don't push to the registry.
+    # Skip the npm publish step on rc tags — publishing requires a stable
+    # version and the npm-side write permissions / secrets we only want
+    # active on real releases. rc tags still exercise the build +
+    # universal-macOS jobs (so the matrix is tested end-to-end), they
+    # just don't push to the registry.
     if: ${{ !contains(github.ref, 'rc') }}
     permissions:
-      # `napi prepublish` creates a GitHub Release; needs contents=write.
-      contents: write
+      # npm provenance signing needs id-token=write; the publish itself
+      # authenticates via NODE_AUTH_TOKEN (NPM_TOKEN secret), set up by
+      # actions/setup-node with registry-url.
+      contents: read
       id-token: write
     name: Publish
     environment: release
@@ -215,12 +216,18 @@ jobs:
         run: npx napi create-npm-dirs
 
       - name: Move artifacts
+        # `napi artifacts` copies every discovered `.node` binary into the
+        # root workspace (in addition to the per-platform npm/<triple>/
+        # directories). Because package.json `files` includes `*.node`,
+        # those root-level binaries are what `npm pack` will include.
         working-directory: ./bindings/node
         run: yarn artifacts
-      - name: List packages
+      - name: Verify package contents
         working-directory: ./bindings/node
-        run: ls -R ./npm
-        shell: bash
+        run: npm pack --dry-run --ignore-scripts
       - name: Publish
         working-directory: ./bindings/node
-        run: npm publish --access public --provenance
+        run: npm publish --access public --provenance --ignore-scripts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
