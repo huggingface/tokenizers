@@ -169,6 +169,21 @@ pub struct BucketVocabStore {
     spans: Box<[Span]>,
     /// `id_to_slot[token_id] -> entry_idx` -> index into entries as the entries are not really sorted.
     id_to_slot: Box<[u32]>,
+    /// Decode-side index: `bytes[decode_off[id] .. decode_off[id + 1]]` is id's token.
+    ///
+    /// Length `max_id + 2`, monotonically non-decreasing, last entry `bytes.len()`. Exists because
+    /// decoding by id through [`Self::id_to_token_bytes`] is a three-load pointer chase --
+    /// `id_to_slot[id]` then `spans[slot]` then `bytes` -- whose middle hop is a *random* access,
+    /// since slot order is the MPHF's, not id order. `build` lays `bytes` out in ascending id
+    /// order, which makes the two offsets a decoder needs adjacent (usually the same cache line)
+    /// and collapses the chase to one load plus the copy.
+    ///
+    /// An id the vocabulary does not hold gets `decode_off[id] == decode_off[id + 1]`, i.e. an
+    /// empty slice, which is what a decoder should append for it anyway.
+    ///
+    /// Costs 4 bytes per id in the id space (~513 kB on a 128k-id vocabulary), and no duplicated
+    /// token bytes.
+    decode_off: Box<[u32]>,
     /// Number of real tokens. Cached at build so `len()` is O(1): `entries` is sized to the
     /// MPHF's non-minimal slot range (with phantom padding slots), so its length is not the
     /// token count.
@@ -208,6 +223,13 @@ impl Default for BucketVocabStore {
 impl BucketVocabStore {
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         let n = tokens.len();
+
+        // Lay the slab out in ascending id order. Nothing below depends on the iteration order --
+        // `entries`, `spans` and `id_to_slot` are all written by slot or by id, and `keys` only
+        // feeds an order-independent `HashSet` -- so this is free, and it is what lets
+        // `decode_off` be a pair of adjacent offsets instead of a second copy of the bytes.
+        let mut tokens = tokens;
+        tokens.sort_unstable_by_key(|(_, id)| *id);
 
         let keys: Vec<u64> = tokens
             .iter()
@@ -272,12 +294,32 @@ impl BucketVocabStore {
             bytes.extend_from_slice(s);
         }
 
+        // 5. The decode-side index. `bytes` is in ascending id order, so one ascending walk with a
+        //    running cursor gives every boundary; a missing id contributes nothing and so leaves
+        //    `decode_off[id] == decode_off[id + 1]`.
+        let mut decode_off = vec![0u32; max_id as usize + 2];
+        let mut cursor = 0u32;
+        for id in 0..=max_id as usize {
+            decode_off[id] = cursor;
+            let slot = id_to_slot[id];
+            if slot != u32::MAX {
+                cursor += spans[slot as usize].len as u32;
+            }
+        }
+        decode_off[max_id as usize + 1] = cursor;
+        debug_assert_eq!(
+            cursor as usize,
+            bytes.len(),
+            "decode_off must span the whole slab"
+        );
+
         Self {
             mphf,
             bytes: bytes.into_boxed_slice(),
             entries: entries.into_boxed_slice(),
             spans: spans.into_boxed_slice(),
             id_to_slot: id_to_slot.into_boxed_slice(),
+            decode_off: decode_off.into_boxed_slice(),
             n,
         }
     }
@@ -291,6 +333,7 @@ impl BucketVocabStore {
             entries: Box::new([]),
             spans: Box::new([]),
             id_to_slot: Box::new([]),
+            decode_off: Box::new([]),
             n: 0,
         }
     }
@@ -372,6 +415,27 @@ impl BucketVocabStore {
         self.bytes.get(start..start + sp.len as usize)
     }
 
+    /// `id -> token bytes` for the decode path, through [`Self::decode_off`].
+    ///
+    /// One load of an adjacent `u32` pair, then the slice — against
+    /// [`Self::id_to_token_bytes`]'s `id_to_slot` -> `spans` -> `bytes` chase. Returns an empty
+    /// slice where that returns `None` (an id outside the id space, or a hole inside it), because
+    /// a decoder appends nothing in either case; use `id_to_token_bytes` when the distinction
+    /// between "absent" and "empty" matters.
+    #[inline]
+    pub fn id_to_token_bytes_for_decode(&self, id: u32) -> &[u8] {
+        let i = id as usize;
+        let Some(pair) = self.decode_off.get(i..i + 2) else {
+            return &[];
+        };
+        let (start, end) = (pair[0] as usize, pair[1] as usize);
+        // `decode_off` is non-decreasing and ends at `bytes.len()`, both established in `build`,
+        // so this range is always in bounds. Left checked on purpose: it is a compare against a
+        // register, and `get_unchecked` would turn a corrupt table into unsoundness rather than a
+        // wrong string.
+        self.bytes.get(start..end).unwrap_or_default()
+    }
+
     #[inline]
     pub fn id_to_token(&self, id: u32) -> Option<String> {
         // we are not sure its a valid utf8 so if not, adds replacement char
@@ -442,6 +506,47 @@ impl BucketVocabStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The decode index must agree with the pointer chase it replaces, for **every** id in the id
+    /// space -- not just the ids that exist.
+    ///
+    /// Sparse ids are the whole risk here: `decode_off` encodes a hole as
+    /// `decode_off[id] == decode_off[id + 1]`, and a single off-by-one in that walk would hand a
+    /// hole its *neighbour's* bytes rather than nothing. That is a silently wrong decode, not a
+    /// crash, so it is asserted rather than left to a benchmark to notice.
+    #[test]
+    fn decode_index_matches_the_pointer_chase() {
+        // Deliberately sparse and out of order, with a multi-byte token and a 1-byte token, and
+        // ids 1, 4, 6, 9 missing inside the range.
+        let toks: Vec<(Vec<u8>, u32)> = vec![
+            (b"the".to_vec(), 0),
+            (b"\xc4\xa0quick".to_vec(), 7),
+            (b"x".to_vec(), 2),
+            ("▁héllo".as_bytes().to_vec(), 5),
+            (b"\n".to_vec(), 3),
+            (b"dog".to_vec(), 8),
+        ];
+        let vocab = BucketVocabStore::build(toks.clone());
+
+        // One past the highest id, so the walk covers the holes and the upper edge.
+        for id in 0..=10u32 {
+            let expected = vocab.id_to_token_bytes(id).unwrap_or_default();
+            assert_eq!(
+                vocab.id_to_token_bytes_for_decode(id),
+                expected,
+                "decode index disagrees at id {id}"
+            );
+        }
+        // And the tokens really are reachable, so the loop above is not vacuously comparing
+        // empty slices.
+        for (bytes, id) in &toks {
+            assert_eq!(
+                vocab.id_to_token_bytes_for_decode(*id),
+                bytes.as_slice(),
+                "id {id} did not round-trip"
+            );
+        }
+    }
 
     #[test]
     fn single_token() {

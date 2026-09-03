@@ -822,9 +822,9 @@ impl PipelineTokenizer {
                 }
                 continue;
             }
-            if let Some(bytes) = bpe.id_to_token_bytes(id) {
-                out.extend_from_slice(bytes);
-            }
+            // Empty slice for an id the vocabulary does not hold, which appends nothing -- the
+            // same outcome the `Option` route reached, without the branch or the pointer chase.
+            out.extend_from_slice(bpe.id_to_token_bytes_for_decode(id));
         }
         match String::from_utf8(out) {
             Ok(decoded) => decoded,
