@@ -6,7 +6,7 @@
 //! This is the whole reason you see 'Ġ' everywhere! It's the encode " " char.
 
 use crate::tokenizer::{Decoder, Result};
-use crate::utils::byte_level::CHAR_BYTES_LOOKUP;
+use crate::utils::byte_level::char_to_byte;
 
 /// Maps the byte-level alphabet back to the bytes it stands for.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -25,8 +25,8 @@ impl Decoder for ByteLevelDecoder {
             .flat_map(|t| {
                 t.chars()
                     .try_fold(vec![], |mut acc, c| {
-                        CHAR_BYTES_LOOKUP.get(&c).map(|b| {
-                            acc.push(*b);
+                        char_to_byte(c).map(|b| {
+                            acc.push(b);
                             acc
                         })
                     })
