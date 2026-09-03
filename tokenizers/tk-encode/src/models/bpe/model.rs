@@ -97,6 +97,11 @@ impl PipelineBPE {
         self.vocab.id_to_token(id)
     }
 
+    /// Every `(token, id)` the vocabulary holds, for a load-time decode transform.
+    pub(crate) fn content(&self) -> Vec<(String, u32)> {
+        self.vocab.content()
+    }
+
     /// One bit per vocabulary id: can a pretoken equal to this entry be emitted as this entry,
     /// without running the merge loop?
     ///

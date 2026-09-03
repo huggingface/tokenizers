@@ -231,6 +231,88 @@ thread_local! {
     static DECODE_OUT: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
+/// `id -> already-transformed bytes`, with byte-fallback entries flagged.
+///
+/// The byte-level path is fast partly because `byte_level::transform_vocab` decodes the whole
+/// vocabulary at load, leaving decode a gather and a `memcpy`. The SPM path was still applying
+/// `Replace` per token occurrence; this applies it once per vocabulary *entry* instead.
+///
+/// A byte-fallback entry cannot be pre-transformed -- it has to rejoin a run at decode time -- and
+/// its length does not identify it, since plenty of ordinary tokens are also one byte. The flag
+/// therefore lives in **bit 31 of the start offset**, so the single adjacent-pair load a decoder
+/// already does yields the span and the flag together, with no second array and no second cache
+/// line. Slabs are far below 2 GB, so 31 bits of offset is not a constraint.
+struct SpmDecodeTable {
+    /// `bytes[off[id] & MASK .. off[id + 1] & MASK]`, with `FLAG` set on a byte-fallback entry.
+    off: Box<[u32]>,
+    bytes: Box<[u8]>,
+}
+
+impl SpmDecodeTable {
+    const FLAG: u32 = 1 << 31;
+    const MASK: u32 = Self::FLAG - 1;
+
+    /// `(is_byte_fallback, bytes)`. An id the vocabulary does not hold yields an empty slice,
+    /// which contributes nothing -- the same as the generic route's `filter_map` dropping it.
+    #[inline]
+    fn get(&self, id: u32) -> (bool, &[u8]) {
+        let i = id as usize;
+        let Some(pair) = self.off.get(i..i + 2) else {
+            return (false, &[]);
+        };
+        let start = (pair[0] & Self::MASK) as usize;
+        let end = (pair[1] & Self::MASK) as usize;
+        let bytes = self.bytes.get(start..end).unwrap_or_default();
+        (pair[0] & Self::FLAG != 0, bytes)
+    }
+
+    fn build(spm: &FusedSpmDecoder, pairs: Vec<(String, u32)>) -> Self {
+        let Some(max_id) = pairs.iter().map(|(_, id)| *id).max() else {
+            return Self {
+                off: Box::new([0, 0]),
+                bytes: Box::new([]),
+            };
+        };
+        // Transform once per entry, in ascending id order so the offsets a decoder reads are an
+        // adjacent pair.
+        let mut sorted = pairs;
+        sorted.sort_unstable_by_key(|(_, id)| *id);
+        let mut entries: Vec<(Vec<u8>, u32, bool)> = Vec::with_capacity(sorted.len());
+        for (token, id) in sorted {
+            if let Some(byte) = byte_fallback_byte(token.as_bytes()) {
+                entries.push((vec![byte], id, true));
+            } else {
+                let mut buf = Vec::with_capacity(token.len());
+                spm.push_replaced(token.as_bytes(), &mut buf);
+                entries.push((buf, id, false));
+            }
+        }
+        let total: usize = entries.iter().map(|(b, _, _)| b.len()).sum();
+        let mut bytes = Vec::with_capacity(total);
+        let mut off = vec![0u32; max_id as usize + 2];
+        let mut len_of = vec![0u32; max_id as usize + 1];
+        let mut flag_of = vec![false; max_id as usize + 1];
+        for (b, id, bf) in &entries {
+            len_of[*id as usize] = b.len() as u32;
+            flag_of[*id as usize] = *bf;
+        }
+        let mut cursor = 0u32;
+        for id in 0..=max_id as usize {
+            off[id] = cursor | if flag_of[id] { Self::FLAG } else { 0 };
+            cursor += len_of[id];
+        }
+        off[max_id as usize + 1] = cursor;
+        for (b, _, _) in &entries {
+            bytes.extend_from_slice(b);
+        }
+        debug_assert_eq!(cursor as usize, bytes.len());
+        Self {
+            off: off.into_boxed_slice(),
+            bytes: bytes.into_boxed_slice(),
+        }
+    }
+}
+
 /// The SPM-family decoder chain, fused into a single pass over the ids.
 ///
 /// `Sequence[Replace{literal}, ByteFallback, Fuse]` -- gemma -- optionally followed by `Strip`
@@ -254,6 +336,8 @@ struct FusedSpmDecoder {
     /// A trailing `Strip`, which runs *after* `Fuse` and so applies to the whole output, not to
     /// each token: `(byte, leading, trailing)`.
     strip: Option<(u8, usize, usize)>,
+    /// The load-time transformed vocabulary. See [`SpmDecodeTable`].
+    table: Option<SpmDecodeTable>,
     /// Added-token ids, sorted, for a membership test that allocates nothing.
     ///
     /// `added_id_min` cannot serve here: gemma's `<pad>` is id 0, so `id >= added_id_min` is true
@@ -295,6 +379,7 @@ impl FusedSpmDecoder {
             from: pattern.as_bytes().into(),
             to: rep.content().as_bytes().into(),
             strip,
+            table: None,
             added_ids,
         })
     }
@@ -409,9 +494,16 @@ impl PipelineTokenizer {
             .copied()
             .collect();
         sorted_added.sort_unstable();
-        let fused_spm = decoder
+        let mut fused_spm = decoder
             .as_ref()
             .and_then(|d| FusedSpmDecoder::recognise(d, sorted_added.into_boxed_slice()));
+        // Transform the vocabulary once here rather than once per token occurrence at decode.
+        #[allow(irrefutable_let_patterns)]
+        if let Some(spm) = fused_spm.as_mut()
+            && let PipelineModel::BPE(bpe) = &model
+        {
+            spm.table = Some(SpmDecodeTable::build(spm, bpe.content()));
+        }
         let added_id_min = added_vocabulary
             .get_added_tokens_decoder()
             .keys()
@@ -1038,13 +1130,27 @@ impl PipelineTokenizer {
                     }
                     continue;
                 }
-                let token = bpe.id_to_token_bytes_for_decode(id);
-                if let Some(byte) = byte_fallback_byte(token) {
-                    run.push(byte);
+                // One adjacent-pair load gives the span and the byte-fallback flag; the bytes
+                // already have `Replace` applied, so this arm is a `memcpy` and nothing else.
+                let (is_byte_fallback, token) = match &spm.table {
+                    Some(table) => table.get(id),
+                    None => {
+                        let raw = bpe.id_to_token_bytes_for_decode(id);
+                        (byte_fallback_byte(raw).is_some(), raw)
+                    }
+                };
+                if is_byte_fallback {
+                    if let Some(&byte) = token.first() {
+                        run.push(byte);
+                    }
                     continue;
                 }
                 FusedSpmDecoder::flush_run(&mut run, out);
-                spm.push_replaced(token, out);
+                if spm.table.is_some() {
+                    out.extend_from_slice(token);
+                } else {
+                    spm.push_replaced(token, out);
+                }
             }
             FusedSpmDecoder::flush_run(&mut run, out);
 
