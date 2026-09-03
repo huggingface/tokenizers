@@ -149,46 +149,6 @@ class FixedLength(PreTokenizer):
     @length.setter
     def length(self, /, length: int) -> None: ...
 
-@final
-class Metaspace(PreTokenizer):
-    """
-    Metaspace pre-tokenizer
-
-    This pre-tokenizer replaces any whitespace by the provided replacement character.
-    It then tries to split on these spaces.
-
-    Args:
-        replacement (:obj:`str`, `optional`, defaults to :obj:`▁`):
-            The replacement character. Must be exactly one character. By default we
-            use the `▁` (U+2581) meta symbol (Same as in SentencePiece).
-
-        prepend_scheme (:obj:`str`, `optional`, defaults to :obj:`"always"`):
-            Whether to add a space to the first word if there isn't already one. This
-            lets us treat `hello` exactly like `say hello`.
-            Choices: "always", "never", "first". First means the space is only added on the first
-            token (relevant when special tokens are used or other pre_tokenizer are used).
-
-    Example::
-
-        >>> from tokenizers.pre_tokenizers import Metaspace
-        >>> pre_tokenizer = Metaspace()
-        >>> pre_tokenizer.pre_tokenize_str("Hello my friend")
-        [('▁Hello', (0, 5)), ('▁my', (6, 8)), ('▁friend', (9, 15))]
-    """
-    def __new__(cls, /, replacement: str = "▁", prepend_scheme: str = ..., split: bool = True) -> Metaspace: ...
-    @property
-    def prepend_scheme(self, /) -> str: ...
-    @prepend_scheme.setter
-    def prepend_scheme(self, /, prepend_scheme: str) -> None: ...
-    @property
-    def replacement(self, /) -> str: ...
-    @replacement.setter
-    def replacement(self, /, replacement: str) -> None: ...
-    @property
-    def split(self, /) -> bool: ...
-    @split.setter
-    def split(self, /, split: bool) -> None: ...
-
 class PreTokenizer:
     """
     Base class for all pre-tokenizers

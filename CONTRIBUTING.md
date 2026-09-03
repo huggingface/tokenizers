@@ -6,7 +6,8 @@
 tokenizers/
   tokenizers/         # Core Rust library (the main crate)
     src/              # Library source code
-    benches/          # Criterion benchmarks
+    tk-serialize/
+      benches/        # Criterion benchmarks (encode, decode)
     Makefile          # Build, test, bench, lint targets (with auto data download)
   bindings/
     python/           # PyO3 Python bindings
@@ -74,11 +75,17 @@ Benchmark results are stored in `target/criterion/` for comparison across runs.
 To run a specific benchmark:
 
 ```bash
-cargo bench --bench bpe_benchmark
-cargo bench --bench bert_benchmark
-cargo bench --bench llama3_benchmark
-cargo bench --bench layout_benchmark
+cargo bench -p tk-serialize --bench encode
+cargo bench -p tk-serialize --bench decode
 ```
+
+`encode` reports the fused pipeline plus one row per stage (added-token scan,
+normalize, pre-tokenize, model), so a regression can be attributed to a stage.
+The stage rows are single-threaded and take a `&str`, so they do not sum to the
+fused rows -- the gap is the fusion, the threading and the post-processor.
+
+The bigger benchmarks -- the cross-engine comparisons, the model matrix and the
+per-language sweeps -- live in [tokbench](https://github.com/huggingface/tokbench).
 
 ## Known issues
 
@@ -167,3 +174,28 @@ Profile from Python to see the full stack including PyO3 overhead:
 ```bash
 samply record python my_script.py
 ```
+
+### PipelineTokenizer oracle tests
+
+`PipelineTokenizer` (in `tk-encode`) is checked for parity against the latest
+*released* `tokenizers` crate: same token ids on encode, same decoded string,
+rather than the in-tree `Tokenizer` object model, which this rc doesn't ship
+(see `REQUIRED_FOR_V1.md`).
+
+Those checks link the released crate, so they live behind the `bench-baseline`
+feature and a plain `cargo test` skips them. One test per model (`gpt2`,
+`bert_base_uncased`, `t5_base`, `albert_base_v1`, `llama_3_2_1b`); `make oracle`
+fetches each model's fixture, then runs them all:
+
+```bash
+cd tokenizers
+make oracle   # needs HF_TOKEN
+```
+
+Run one model directly once its fixture is there:
+
+```bash
+cargo test -p tk-convert --features bench-baseline --test oracle gpt2
+```
+
+CI runs it in the **rust** workflow (`.github/workflows/rust.yml`).

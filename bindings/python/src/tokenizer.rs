@@ -1,21 +1,22 @@
-use serde::{ser::Error as SerError, Serialize, Serializer};
-use std::collections::{hash_map::DefaultHasher, HashMap};
+use serde::{Serialize, Serializer, ser::Error as SerError};
+use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use numpy::{npyffi, PyArray1, PyArrayMethods};
+use numpy::{PyArray1, PyArrayMethods, npyffi};
+use pyo3::IntoPyObject;
 use pyo3::class::basic::CompareOp;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3::IntoPyObject;
-use pyo3::{exceptions, IntoPyObjectExt};
+use pyo3::{IntoPyObjectExt, exceptions};
 use tk::models::bpe::BPE;
 use tk::tokenizer::{
-    Model, PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
+    PaddingDirection, PaddingParams, PaddingStrategy, PostProcessor, TokenizerImpl,
     TruncationDirection, TruncationParams, TruncationStrategy,
 };
 use tk::utils::iter::ResultShunt;
+use tk::{TokenizerTrainExt, Trainable};
 use tokenizers as tk;
 
 use super::decoders::PyDecoder;
@@ -394,15 +395,15 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PreTokenizedInputSequence<'py> {
         if let Ok(seq) = ob.extract::<PyArrayStr>() {
             return Ok(Self(seq.into()));
         }
-        if let Ok(s) = ob.cast::<PyList>() {
-            if let Ok(seq) = s.extract::<Vec<String>>() {
-                return Ok(Self(seq.into()));
-            }
+        if let Ok(s) = ob.cast::<PyList>()
+            && let Ok(seq) = s.extract::<Vec<String>>()
+        {
+            return Ok(Self(seq.into()));
         }
-        if let Ok(s) = ob.cast::<PyTuple>() {
-            if let Ok(seq) = s.extract::<Vec<String>>() {
-                return Ok(Self(seq.into()));
-            }
+        if let Ok(s) = ob.cast::<PyTuple>()
+            && let Ok(seq) = s.extract::<Vec<String>>()
+        {
+            return Ok(Self(seq.into()));
         }
         Err(exceptions::PyTypeError::new_err(
             "PreTokenizedInputSequence must be Union[List[str], Tuple[str]]",
@@ -426,13 +427,13 @@ impl<'a, 'py> FromPyObject<'a, 'py> for TextEncodeInput<'py> {
         if let Ok((i1, i2)) = ob.extract::<(TextInputSequence, TextInputSequence)>() {
             return Ok(Self((i1, i2).into()));
         }
-        if let Ok(arr) = ob.extract::<Vec<Py<PyAny>>>() {
-            if arr.len() == 2 {
-                let py = ob.py();
-                let first = arr[0].bind(py).extract::<TextInputSequence>()?;
-                let second = arr[1].bind(py).extract::<TextInputSequence>()?;
-                return Ok(Self((first, second).into()));
-            }
+        if let Ok(arr) = ob.extract::<Vec<Py<PyAny>>>()
+            && arr.len() == 2
+        {
+            let py = ob.py();
+            let first = arr[0].bind(py).extract::<TextInputSequence>()?;
+            let second = arr[1].bind(py).extract::<TextInputSequence>()?;
+            return Ok(Self((first, second).into()));
         }
         Err(exceptions::PyTypeError::new_err(
             "TextEncodeInput must be Union[TextInputSequence, Tuple[InputSequence, InputSequence]]",
@@ -456,13 +457,13 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PreTokenizedEncodeInput<'py> {
         {
             return Ok(Self((i1, i2).into()));
         }
-        if let Ok(arr) = ob.extract::<Vec<Py<PyAny>>>() {
-            if arr.len() == 2 {
-                let py = ob.py();
-                let first = arr[0].bind(py).extract::<PreTokenizedInputSequence>()?;
-                let second = arr[1].bind(py).extract::<PreTokenizedInputSequence>()?;
-                return Ok(Self((first, second).into()));
-            }
+        if let Ok(arr) = ob.extract::<Vec<Py<PyAny>>>()
+            && arr.len() == 2
+        {
+            let py = ob.py();
+            let first = arr[0].bind(py).extract::<PreTokenizedInputSequence>()?;
+            let second = arr[1].bind(py).extract::<PreTokenizedInputSequence>()?;
+            return Ok(Self((first, second).into()));
         }
         Err(exceptions::PyTypeError::new_err(
             "PreTokenizedEncodeInput must be Union[PreTokenizedInputSequence, \
@@ -598,45 +599,44 @@ impl PyTokenizer {
         for it in items {
             if is_pretokenized {
                 // Pair?
-                if let Ok(tup) = it.cast::<PyTuple>() {
-                    if tup.len() == 2 {
-                        let a = Self::extract_pretok_seq(&tup.get_item(0)?)?;
-                        let b = Self::extract_pretok_seq(&tup.get_item(1)?)?;
-                        out.push(tk::EncodeInput::Dual(a.into(), b.into()));
-                        continue;
-                    }
+                if let Ok(tup) = it.cast::<PyTuple>()
+                    && tup.len() == 2
+                {
+                    let a = Self::extract_pretok_seq(&tup.get_item(0)?)?;
+                    let b = Self::extract_pretok_seq(&tup.get_item(1)?)?;
+                    out.push(tk::EncodeInput::Dual(a.into(), b.into()));
+                    continue;
                 }
-                if let Ok(lst) = it.cast::<PyList>() {
-                    if lst.len() == 2 {
-                        let a = Self::extract_pretok_seq(&lst.get_item(0)?)?;
-                        let b = Self::extract_pretok_seq(&lst.get_item(1)?)?;
-                        out.push(tk::EncodeInput::Dual(a.into(), b.into()));
-                        continue;
-                    }
+                if let Ok(lst) = it.cast::<PyList>()
+                    && lst.len() == 2
+                {
+                    let a = Self::extract_pretok_seq(&lst.get_item(0)?)?;
+                    let b = Self::extract_pretok_seq(&lst.get_item(1)?)?;
+                    out.push(tk::EncodeInput::Dual(a.into(), b.into()));
+                    continue;
                 }
                 // Single pretokenized
                 let a = Self::extract_pretok_seq(it)?;
                 out.push(tk::EncodeInput::Single(a.into()));
             } else {
                 // Raw text: pair?
-                if let Ok(tup) = it.cast::<PyTuple>() {
-                    if tup.len() == 2 {
-                        let a: String = tup.get_item(0)?.extract()?;
-                        let b: String = tup.get_item(1)?.extract()?;
-                        out.push(tk::EncodeInput::Dual(a.into(), b.into()));
-                        continue;
-                    }
+                if let Ok(tup) = it.cast::<PyTuple>()
+                    && tup.len() == 2
+                {
+                    let a: String = tup.get_item(0)?.extract()?;
+                    let b: String = tup.get_item(1)?.extract()?;
+                    out.push(tk::EncodeInput::Dual(a.into(), b.into()));
+                    continue;
                 }
-                if let Ok(lst) = it.cast::<PyList>() {
-                    if lst.len() == 2
-                        && lst.get_item(0)?.cast::<PyString>().is_ok()
-                        && lst.get_item(1)?.cast::<PyString>().is_ok()
-                    {
-                        let a: String = lst.get_item(0)?.extract()?;
-                        let b: String = lst.get_item(1)?.extract()?;
-                        out.push(tk::EncodeInput::Dual(a.into(), b.into()));
-                        continue;
-                    }
+                if let Ok(lst) = it.cast::<PyList>()
+                    && lst.len() == 2
+                    && lst.get_item(0)?.cast::<PyString>().is_ok()
+                    && lst.get_item(1)?.cast::<PyString>().is_ok()
+                {
+                    let a: String = lst.get_item(0)?.extract()?;
+                    let b: String = lst.get_item(1)?.extract()?;
+                    out.push(tk::EncodeInput::Dual(a.into(), b.into()));
+                    continue;
                 }
                 // Single raw text
                 let s: String = it.extract()?;
@@ -2012,6 +2012,9 @@ mod test {
             .unwrap();
 
         let output = crate::utils::serde_pyo3::to_string(&tokenizer).unwrap();
-        assert_eq!(output, "Tokenizer(version=\"1.0\", truncation=None, padding=None, added_tokens=[], normalizer=Sequence(normalizers=[NFKC(), Lowercase()]), pre_tokenizer=None, post_processor=None, decoder=None, model=BPE(dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=False, byte_fallback=False, ignore_merges=False, vocab={}, merges=[]))");
+        assert_eq!(
+            output,
+            "Tokenizer(version=\"1.0\", truncation=None, padding=None, added_tokens=[], normalizer=Sequence(normalizers=[NFKC(), Lowercase()]), pre_tokenizer=None, post_processor=None, decoder=None, model=BPE(dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=False, byte_fallback=False, ignore_merges=False, vocab={}, merges=[]))"
+        );
     }
 }

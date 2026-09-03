@@ -1,7 +1,6 @@
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3_introspection::model::{Class, Module};
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -41,7 +40,11 @@ fn setup_python_env() -> Result<(), Box<dyn std::error::Error>> {
     let base_prefix = String::from_utf8(output.stdout)?;
     if !base_prefix.is_empty() {
         println!("Setting PYTHONHOME={}", base_prefix);
-        std::env::set_var("PYTHONHOME", &base_prefix);
+        // SAFETY: main is still single-threaded at this point — no other
+        // threads can race on the environment, and the embedded Python
+        // interpreter (which reads PYTHONHOME) hasn't been initialized yet.
+        // FIXME: doesn't look great
+        unsafe { std::env::set_var("PYTHONHOME", &base_prefix) };
     }
 
     Ok(())
@@ -107,15 +110,6 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
         let sys_path = bindings.cast::<PyList>()?;
         sys_path.insert(0, so_dir.to_str().unwrap())?;
 
-        let old = std::env::var_os("PYTHONPATH");
-        let mut new = OsString::new();
-        new.push(&so_dir);
-        if let Some(old) = old {
-            new.push(":");
-            new.push(old);
-        }
-        std::env::set_var("PYTHONPATH", &new);
-        println!("New PYTHONPATH={:?}", std::env::var_os("PYTHONPATH"));
         let sysconfig = PyModule::import(py, "sysconfig")?;
         let python_version = sysconfig.call_method0("get_python_version")?;
         println!("Using python version: {}", python_version);

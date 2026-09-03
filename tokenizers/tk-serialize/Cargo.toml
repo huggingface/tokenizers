@@ -1,0 +1,102 @@
+[package]
+name = "tk-serialize"
+version = "1.0.0-rc.0"
+edition = "2024"
+authors = [
+  "Anthony MOI <m.anthony.moi@gmail.com>",
+  "Nicolas Patry <patry.nicolas@protonmail.com>",
+  "Arthur Zucker <arthur@huggingface.co",
+  "Luc Georges <luc@huggingface.co",
+]
+homepage = "https://github.com/huggingface/tokenizers"
+repository = "https://github.com/huggingface/tokenizers"
+documentation = "https://docs.rs/tokenizers/"
+license = "Apache-2.0"
+keywords = ["tokenizer", "NLP", "huggingface", "BPE", "WordPiece"]
+description = """
+The reader for the canonical `tokenizer.json` format: a `hifijson` parse and a
+builder that constructs `tk-encode`'s runtime pipeline directly, with no serde
+anywhere. Legacy config shapes are `tk-convert`'s job, not this crate's.
+"""
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lib]
+name = "tk_serialize"
+path = "src/lib.rs"
+
+[dependencies]
+# The JSON parser. Not `serde_json`, and not ours either: `hifijson` is the one parser that never
+# converts a number to a float -- its `Num` is the raw `&str` -- which is what lets `json.rs` keep
+# reproducing `serde_json`'s exact rounding instead of improving on it and moving token ids.
+# 1,644 lines, MIT, and its only dependency (`serde`) is optional and off.
+hifijson = "0.5.0"
+# `Precompiled`'s charsmap is the one place a `tokenizer.json` holds binary. `base64` 0.13 is what
+# encoded every such charsmap in the wild, under `spm_precompiled`'s serde; 0.22 is the same crate
+# grown an `Engine` trait, no dependencies of its own, and already in the workspace lock. Reaching
+# for it instead of hand-rolling the alphabet is the whole point of a well-known leaf crate.
+base64 = "0.22"
+# The runtime this crate builds. No `config`: the whole point is that reading a canonical
+# `tokenizer.json` needs no serde layer at all.
+tk-encode = { path = "../tk-encode", default-features = false }
+# The GPT-2 pre-tokenizer pattern is a constant in `bitsplit`, and a `ByteLevel` pre-tokenizer is
+# spelled as a `Split` on it. Nothing else here reaches the FSM crate directly.
+bitsplit = { path = "../bitsplit" }
+
+[features]
+# Reading a canonical `tokenizer.json` into a `PipelineTokenizer`. On by default -- it is what the
+# crate is for, and an inference build wants exactly this and nothing else.
+default = ["deserialize"]
+deserialize = []
+# Writing a `PipelineTokenizer` back out as a canonical `tokenizer.json`. Off by default: an
+# inference build never writes a config, and the writer is the only reason the pipeline has to keep
+# anything it does not read -- the `Precompiled` charsmap being the one such thing.
+serialize = []
+
+# Forwarded to `tk-encode`, because the reader has one match arm per component and a component that
+# is compiled out cannot be built. A config naming one then fails at load, which is correct.
+normalizers = ["tk-encode/normalizers"]
+unicode-scripts = ["tk-encode/unicode-scripts"]
+unigram = ["tk-encode/unigram"]
+wordpiece = ["tk-encode/wordpiece"]
+wordlevel = ["tk-encode/wordlevel"]
+bpe = ["tk-encode/bpe"]
+fancy-regex = ["tk-encode/fancy-regex"]
+parallelism = ["tk-encode/parallelism"]
+
+[dev-dependencies]
+# The benches. `tk-serialize` hosts them because a bench needs a `PipelineTokenizer` and
+# `from_json_file` is the only way to build one -- the bigger cross-engine benchmarks live in
+# huggingface/tokbench.
+criterion = "0.8"
+# The benches load real configs from `../data`, which are all still version 1.0, so they have to
+# run the upgrade pass before the reader sees them. Not a cycle: tk-convert does not depend on us.
+tk-convert = { path = "../tk-convert" }
+# The reader is tested *against* `serde_json`: number parsing has to be bit-identical,
+# and every real config in `data/` has to parse to the same tree. A dev-dependency only, so the
+# library itself still links no serde.
+serde_json = "1.0"
+
+[[example]]
+name = "binsize_pipeline"
+# It calls `from_json_file`, so it cannot build without the reader. Declared rather than left
+# to fail, so that a build with `serialize` but not `deserialize` -- a writer with no reader --
+# is a configuration `cargo clippy --all-targets` can actually check.
+required-features = ["deserialize"]
+
+# Every bench reads a `tokenizer.json`, so none of them can build without the reader.
+[[bench]]
+name = "encode"
+harness = false
+required-features = ["deserialize"]
+
+[[bench]]
+name = "decode"
+harness = false
+required-features = ["deserialize"]
+
+[[bench]]
+name = "scratch_scaling"
+harness = false
+required-features = ["deserialize"]

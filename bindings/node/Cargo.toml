@@ -1,8 +1,8 @@
 [package]
 authors = ["Nicolas Patry <nicolas@huggingface.co>"]
-edition = "2021"
+edition = "2024"
 name    = "node"
-version = "0.23.2-dev.0"
+version = "1.0.0-rc.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -12,9 +12,32 @@ crate-type = ["cdylib"]
 [dependencies]
 napi        = "3"
 napi-derive = "3"
-serde       = { version = "1.0.163", features = ["derive"] }
-tokenizers  = { path = "../../tokenizers/" }
-ahash = { version = "0.8.11", features = ["serde"] }
+# Only what the encode path needs. The binding used to pull the `tokenizers` umbrella (for the
+# pre-v1 engine's wrappers), plus `serde` and `ahash` to (de)serialize them -- none of which the
+# pipeline path touches: `tk-serialize` reads the canonical form with no serde at all, and
+# `tk-convert` is the legacy "1.0" -> "2.0" upgrade, load path only.
+tk-encode    = { path = "../../tokenizers/tk-encode", default-features = false, features = [
+  "parallelism",
+  "normalizers",
+  "bpe",
+  "unigram",
+  "wordpiece",
+  "wordlevel",
+  "unicode-scripts",
+] }
+# Default features stay on: `deserialize` is the reader, which is the entire reason this is here.
+# The component list mirrors `tk-encode`'s, because the reader has one match arm per component and
+# a component compiled out of one but not the other would fail at load rather than at build.
+tk-serialize = { path = "../../tokenizers/tk-serialize", features = [
+  "parallelism",
+  "normalizers",
+  "bpe",
+  "unigram",
+  "wordpiece",
+  "wordlevel",
+  "unicode-scripts",
+] }
+tk-convert   = { path = "../../tokenizers/tk-convert", default-features = false }
 
 [build-dependencies]
 napi-build = "2"
