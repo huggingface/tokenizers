@@ -7,7 +7,13 @@ description = "Reworked tokenizers Python bindings, over the pipeline encode pat
 dependencies = ["numpy"]
 
 [dependency-groups]
-dev = ["maturin>=1.0,<2.0", "pytest", "ruff", "ty"]
+dev = [
+    "ipython>=8.39.0",
+    "maturin>=1.0,<2.0",
+    "pytest",
+    "ruff",
+    "ty",
+]
 
 [build-system]
 requires = ["maturin>=1.0,<2.0"]

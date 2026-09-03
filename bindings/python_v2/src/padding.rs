@@ -8,18 +8,7 @@ use tk_encode::{PaddingDirection, PaddingParams, PaddingStrategy};
 
 use crate::error::err;
 
-/// How a `Tokenizer` pads what it encodes.
-///
-/// Args:
-///     direction: `"right"` (the default) or `"left"`, the side the padding goes on.
-///     pad_id: The id of the padding token.
-///     pad_type_id: The type id of the padding token.
-///     pad_token: The text of the padding token.
-///     length: Pads every encoding to exactly this many tokens. `None` pads each batch to its
-///         longest item.
-///     pad_to_multiple_of: Rounds the padded length up to a multiple of this.
-///
-/// The defaults are those of the released `Tokenizer.enable_padding`.
+/// Padding parameters for Tokenizer.encode
 #[pyclass(frozen, eq, hash, module = "tokenizers")]
 #[derive(PartialEq, Hash)]
 pub struct Padding(PaddingParams);
@@ -36,8 +25,7 @@ impl From<PaddingParams> for Padding {
     }
 }
 
-/// `PaddingDirection` as Python sees it: the string `"left"` or `"right"`. Its type hint is
-/// `Literal["left", "right"]` where a plain `&str` would say `str`.
+/// Utils to type hint `PaddingDirection` as `Literal["left", "right"]`
 struct Direction(PaddingDirection);
 
 const DIRECTION_HINT: PyStaticExpr = type_hint_subscript!(
@@ -78,6 +66,21 @@ impl<'py> IntoPyObject<'py> for Direction {
 
 #[pymethods]
 impl Padding {
+    /// Args:
+    ///     direction: `"right"` (the default) or `"left"`
+    ///         whether padding tokens are appended to the right or
+    ///         prepended to the left  of encoded tokens.
+    ///     pad_id: int
+    ///         The id of the padding token.
+    ///     pad_type_id: int
+    ///         The type id of the padding token.
+    ///     pad_token: str
+    ///         The text of the padding token.
+    ///     length: int (optional)
+    ///         Pads every encoding to exactly this many tokens. `None` pads each batch to its
+    ///         longest item.
+    ///     pad_to_multiple_of: int (optional)
+    ///         Rounds the padded length up to a multiple of this.
     #[new]
     #[pyo3(signature = (direction=Direction(PaddingDirection::Right), pad_id=0, pad_type_id=0, pad_token="[PAD]", length=None, pad_to_multiple_of=None))]
     fn new(
@@ -98,7 +101,8 @@ impl Padding {
         })
     }
 
-    /// `"left"` or `"right"`.
+    /// `"left"` or `"right"`. 
+    /// Whether padding tokens are appended to the right or prepended to the left  of encoded tokens.
     #[getter]
     fn direction(&self) -> Direction {
         Direction(self.0.direction)

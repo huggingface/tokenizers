@@ -1,7 +1,4 @@
-//! numpy arrays in and out of the module.
-//!
-//! rust-numpy's types carry no pyo3 introspection, so a bare [`PyArray1`] in a signature would
-//! type as `Incomplete` in the generated stub. The two wrappers here give the stub real types.
+//! Helpers for numpy type hints
 
 use std::convert::Infallible;
 
@@ -10,7 +7,7 @@ use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use pyo3::{Borrowed, type_hint_identifier, type_hint_subscript, type_hint_union};
 
-/// A returned [`PyArray1<u32>`], typed `numpy.typing.NDArray[numpy.uint32]`.
+/// New type to implement PyO3 introspection traits on
 pub struct U32Array<'py>(pub Bound<'py, PyArray1<u32>>);
 
 impl<'py> IntoPyObject<'py> for U32Array<'py> {
@@ -28,16 +25,16 @@ impl<'py> IntoPyObject<'py> for U32Array<'py> {
     }
 }
 
-/// The ids handed to `Tokenizer.decode`, typed `Sequence[int] | NDArray[numpy.integer[Any]]`.
+/// Inputs for `Tokenizer.decode`, typed `Sequence[int] | NDArray[numpy.integer[Any]]`.
 ///
-/// A contiguous `uint32` array is read in place. Anything else, a list or an array of another
-/// integer dtype, is copied into a `Vec<u32>` one element at a time.
-pub enum Ids<'py> {
+/// A `uint32` numpy array is read in place, no copy.
+/// Any other sequence is copied into a `Vec<u32>` one element at a time.
+pub enum TokenIds<'py> {
     Array(PyReadonlyArray1<'py, u32>),
     Copied(Vec<u32>),
 }
 
-impl<'py> FromPyObject<'_, 'py> for Ids<'py> {
+impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
     type Error = PyErr;
 
     const INPUT_TYPE: PyStaticExpr = type_hint_union!(
@@ -65,7 +62,7 @@ impl<'py> FromPyObject<'_, 'py> for Ids<'py> {
     }
 }
 
-impl Ids<'_> {
+impl TokenIds<'_> {
     pub fn as_slice(&self) -> &[u32] {
         match self {
             Self::Array(array) => array.as_slice().expect("contiguous, checked in extract"),

@@ -1,6 +1,4 @@
-//! `Tokenizer.__repr__`, in the shape the released `tokenizers` prints one: the `tokenizer.json`
-//! the pipeline would write, with `{"type": "BPE", ...}` objects shown as `BPE(...)`, JSON
-//! scalars as Python literals, and lists and dicts cut after a few entries.
+//! Utils to render Tokenizers.__repr__
 
 use std::fmt::Write;
 
