@@ -2,7 +2,7 @@ use crate::tokenizer::Result;
 use crate::tokenizer::pipeline::{Encoding, PipelineToken};
 
 /// The various possible padding directions.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PaddingDirection {
     Left,
     Right,
@@ -17,7 +17,7 @@ impl std::convert::AsRef<str> for PaddingDirection {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PaddingParams {
     pub strategy: PaddingStrategy,
     pub direction: PaddingDirection,
@@ -40,7 +40,7 @@ impl Default for PaddingParams {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PaddingStrategy {
     BatchLongest,
     Fixed(usize),
