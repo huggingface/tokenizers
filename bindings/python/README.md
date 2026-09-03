@@ -63,4 +63,3 @@ Run `examples/` with `make examples` runs them.
 ## Caveats / Known issues
 
 - Multiprocessing is not supported at the moment: Tokenizer cannot be pickled
-- No support for free-threaded Python yet

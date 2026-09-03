@@ -2,6 +2,9 @@ import gc
 import importlib.metadata
 import json
 import math
+import multiprocessing
+import pickle
+import sys
 import threading
 from pathlib import Path
 
@@ -359,3 +362,31 @@ def test_decode_refuses_floats():
         tokenizer.decode(ids.astype(np.float64))  # ty: ignore[invalid-argument-type]
     with pytest.raises(TypeError):
         tokenizer.decode([1.5, 2.5])  # ty: ignore[invalid-argument-type]
+
+
+def test_tokenizer_can_be_pickled():
+    tokenizer = Tokenizer.from_file(BERT)
+
+    restored = pickle.loads(pickle.dumps(tokenizer))
+
+    assert restored.encode("Hello there").ids.tolist() == tokenizer.encode("Hello there").ids.tolist()
+
+
+def _encode_ids(tokenizer, text):
+    return tokenizer.encode(text).ids.tolist()
+
+
+def test_tokenizer_can_be_used_from_a_multiprocessing_worker():
+    # `spawn` pickles the tokenizer to hand it to the worker process; PyTorch's DataLoader and
+    # `datasets.map(num_proc=...)` do the same.
+    tokenizer = Tokenizer.from_file(BERT)
+
+    with multiprocessing.get_context("spawn").Pool(1) as pool:
+        ids = pool.apply(_encode_ids, (tokenizer, "Hello there"))
+
+    assert ids == tokenizer.encode("Hello there").ids.tolist()
+
+
+@pytest.mark.skipif(not hasattr(sys, "_is_gil_enabled"), reason="only meaningful on a free-threaded build")
+def test_importing_the_extension_keeps_the_gil_disabled():
+    assert sys._is_gil_enabled() is False  # ty: ignore[unresolved-attribute]
