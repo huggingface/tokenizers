@@ -36,21 +36,43 @@ fn widen(bytes: &[u8]) -> Vec<u32> {
 
 #[pymethods]
 impl Encoding {
-    /// The id of each token as a read-only numpy array of integers.
+    /// The id of each token, as a list of ints.
     #[getter]
-    fn ids<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
+    fn ids(&self) -> &[u32] {
+        &self.ids
+    }
+
+    /// The type id of each token, as a list of ints.
+    #[getter]
+    fn type_ids(&self) -> &[u32] {
+        &self.type_ids
+    }
+
+    /// Attention mask when the encoding is padded: 1 for token ids, 0 for padding tokens.
+    /// A list of ints.
+    #[getter]
+    fn attention_mask(&self) -> &[u32] {
+        &self.attention_mask
+    }
+
+    /// The id of each token, as a read-only `uint32` numpy array.
+    /// A view over the encoding, not a copy.
+    #[getter]
+    fn ids_array<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
         view(this, &this.get().ids)
     }
 
-    /// The type id of each token as a read-only numpy array of integers, or None if not defined
+    /// The type id of each token, as a read-only `uint32` numpy array.
+    /// A view over the encoding, not a copy.
     #[getter]
-    fn type_ids<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
+    fn type_ids_array<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
         view(this, &this.get().type_ids)
     }
 
     /// Attention mask when the encoding is padded: 1 for token ids, 0 for padding tokens.
+    /// A read-only `uint32` numpy array, a view over the encoding, not a copy.
     #[getter]
-    fn attention_mask<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
+    fn attention_mask_array<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
         view(this, &this.get().attention_mask)
     }
 

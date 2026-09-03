@@ -19,19 +19,38 @@ class Encoding:
     def __ne__(self, value: object, /) -> bool: ...
     def __repr__(self, /) -> str: ...
     @property
-    def attention_mask(self, /) -> NDArray[uint32]:
+    def attention_mask(self, /) -> list[int]:
         """
         Attention mask when the encoding is padded: 1 for token ids, 0 for padding tokens.
+        A list of ints.
         """
     @property
-    def ids(self, /) -> NDArray[uint32]:
+    def attention_mask_array(self, /) -> NDArray[uint32]:
         """
-        The id of each token as a read-only numpy array of integers.
+        Attention mask when the encoding is padded: 1 for token ids, 0 for padding tokens.
+        A read-only `uint32` numpy array, a view over the encoding, not a copy.
         """
     @property
-    def type_ids(self, /) -> NDArray[uint32]:
+    def ids(self, /) -> list[int]:
         """
-        The type id of each token as a read-only numpy array of integers, or None if not defined
+        The id of each token, as a list of ints.
+        """
+    @property
+    def ids_array(self, /) -> NDArray[uint32]:
+        """
+        The id of each token, as a read-only `uint32` numpy array.
+        A view over the encoding, not a copy.
+        """
+    @property
+    def type_ids(self, /) -> list[int]:
+        """
+        The type id of each token, as a list of ints.
+        """
+    @property
+    def type_ids_array(self, /) -> NDArray[uint32]:
+        """
+        The type id of each token, as a read-only `uint32` numpy array.
+        A view over the encoding, not a copy.
         """
 
 @final

@@ -108,8 +108,27 @@ def test_encode_returns_an_encoding():
     assert isinstance(encoding, Encoding)
     assert encoding.ids[0] == 1 and encoding.ids[-1] == 2
     assert len(encoding) == len(encoding.ids)
-    assert encoding.type_ids.tolist() == [0] * len(encoding)
-    assert encoding.attention_mask.tolist() == [1] * len(encoding)
+    assert encoding.type_ids == [0] * len(encoding)
+    assert encoding.attention_mask == [1] * len(encoding)
+
+
+def test_encoding_fields_are_lists_of_ints():
+    encoding = Tokenizer.from_file(BERT).encode("Hello there")
+
+    for field in (encoding.ids, encoding.type_ids, encoding.attention_mask):
+        assert type(field) is list
+        assert all(type(x) is int for x in field)
+        assert len(field) == len(encoding)
+    assert json.loads(json.dumps(encoding.ids)) == encoding.ids
+    assert encoding.ids + [0] == [*encoding.ids, 0]
+
+
+def test_encoding_array_fields_hold_the_same_values_as_the_lists():
+    encoding = Tokenizer.from_file(BERT).encode("Hello there")
+
+    assert encoding.ids_array.tolist() == encoding.ids
+    assert encoding.type_ids_array.tolist() == encoding.type_ids
+    assert encoding.attention_mask_array.tolist() == encoding.attention_mask
 
 
 def test_encodings_with_the_same_fields_are_equal():
@@ -122,7 +141,7 @@ def test_encodings_with_the_same_fields_are_equal():
 def test_encoding_repr_shows_its_fields():
     encoding = Tokenizer.from_file(BERT).encode("Hi", add_special_tokens=False)
 
-    assert repr(encoding) == f"Encoding(ids={encoding.ids.tolist()}, type_ids=[0], attention_mask=[1])"
+    assert repr(encoding) == f"Encoding(ids={encoding.ids}, type_ids=[0], attention_mask=[1])"
 
 
 def test_add_special_tokens_is_honoured():
@@ -140,7 +159,7 @@ def test_encode_batch_keeps_input_order():
 
     batch = tokenizer.encode_batch(texts)
 
-    assert [e.ids.tolist() for e in batch] == [tokenizer.encode(t).ids.tolist() for t in texts]
+    assert [e.ids for e in batch] == [tokenizer.encode(t).ids for t in texts]
 
 
 def test_encode_batch_of_nothing_is_empty():
@@ -213,9 +232,9 @@ def test_padding_to_the_longest_in_the_batch():
 
     assert len(short) == len(long)
     pad = len(long) - 1
-    assert short.ids[:pad].tolist() == [50256] * pad
-    assert short.attention_mask.tolist() == [0] * pad + [1]
-    assert long.attention_mask.tolist() == [1] * len(long)
+    assert short.ids[:pad] == [50256] * pad
+    assert short.attention_mask == [0] * pad + [1]
+    assert long.attention_mask == [1] * len(long)
 
 
 def test_padding_to_a_fixed_length():
@@ -224,8 +243,8 @@ def test_padding_to_a_fixed_length():
     encoding = tokenizer.encode("Hello")
 
     assert len(encoding) == 8
-    assert encoding.ids[1:].tolist() == [50256] * 7
-    assert encoding.attention_mask.tolist() == [1] + [0] * 7
+    assert encoding.ids[1:] == [50256] * 7
+    assert encoding.attention_mask == [1] + [0] * 7
 
 
 def test_padding_to_a_multiple():
@@ -314,28 +333,28 @@ def test_padding_and_encoding_are_read_only():
         encoding.ids = []  # ty: ignore[invalid-assignment]
 
 
-def test_encoding_fields_are_read_only_numpy_arrays():
+def test_encoding_array_fields_are_read_only_numpy_arrays():
     encoding = Tokenizer.from_file(BERT).encode("Hello there")
 
-    for field in (encoding.ids, encoding.type_ids, encoding.attention_mask):
+    for field in (encoding.ids_array, encoding.type_ids_array, encoding.attention_mask_array):
         assert isinstance(field, np.ndarray)
         assert field.dtype == np.uint32
         assert field.shape == (len(encoding),)
         assert not field.flags.writeable
     with pytest.raises(ValueError, match="read-only"):
-        encoding.ids[0] = 0
+        encoding.ids_array[0] = 0
 
 
-def test_encoding_fields_are_views_not_copies():
+def test_encoding_array_fields_are_views_not_copies():
     encoding = Tokenizer.from_file(BERT).encode("Hello there")
 
-    assert np.shares_memory(encoding.ids, encoding.ids)
-    assert not np.shares_memory(encoding.ids, encoding.type_ids)
-    assert encoding.ids.base is encoding
+    assert np.shares_memory(encoding.ids_array, encoding.ids_array)
+    assert not np.shares_memory(encoding.ids_array, encoding.type_ids_array)
+    assert encoding.ids_array.base is encoding
 
 
-def test_encoding_field_keeps_the_encoding_alive():
-    ids = Tokenizer.from_file(BERT).encode("Hello there").ids
+def test_encoding_array_field_keeps_the_encoding_alive():
+    ids = Tokenizer.from_file(BERT).encode("Hello there").ids_array
     expected = ids.tolist()
 
     gc.collect()
@@ -346,18 +365,19 @@ def test_encoding_field_keeps_the_encoding_alive():
 
 def test_decode_takes_any_integer_sequence():
     tokenizer = Tokenizer.from_file(BERT)
-    ids = tokenizer.encode("Hello there").ids
+    encoding = tokenizer.encode("Hello there")
+    ids = encoding.ids_array
 
+    assert tokenizer.decode(encoding.ids) == "hello there"
     assert tokenizer.decode(ids) == "hello there"
-    assert tokenizer.decode(ids.tolist()) == "hello there"
-    assert tokenizer.decode(tuple(ids.tolist())) == "hello there"
+    assert tokenizer.decode(tuple(encoding.ids)) == "hello there"
     assert tokenizer.decode(ids.astype(np.int64)) == "hello there"
     assert tokenizer.decode(ids[::2]) == tokenizer.decode(ids[::2].tolist())
 
 
 def test_decode_refuses_floats():
     tokenizer = Tokenizer.from_file(BERT)
-    ids = tokenizer.encode("Hello there").ids
+    ids = tokenizer.encode("Hello there").ids_array
 
     with pytest.raises(TypeError):
         tokenizer.decode(ids.astype(np.float64))  # ty: ignore[invalid-argument-type]
@@ -371,11 +391,11 @@ def test_tokenizer_can_be_pickled():
 
     restored = pickle.loads(pickle.dumps(tokenizer))
 
-    assert restored.encode("Hello there").ids.tolist() == tokenizer.encode("Hello there").ids.tolist()
+    assert restored.encode("Hello there").ids == tokenizer.encode("Hello there").ids
 
 
 def _encode_ids(tokenizer, text):
-    return tokenizer.encode(text).ids.tolist()
+    return tokenizer.encode(text).ids
 
 
 @pytest.mark.skip(reason="pickling a Tokenizer is not implemented yet")
@@ -387,7 +407,7 @@ def test_tokenizer_can_be_used_from_a_multiprocessing_worker():
     with multiprocessing.get_context("spawn").Pool(1) as pool:
         ids = pool.apply(_encode_ids, (tokenizer, "Hello there"))
 
-    assert ids == tokenizer.encode("Hello there").ids.tolist()
+    assert ids == tokenizer.encode("Hello there").ids
 
 
 # `sys._is_gil_enabled` exists on every build from 3.13 on, so only the config var tells the two apart.

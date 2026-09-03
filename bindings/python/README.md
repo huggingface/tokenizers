@@ -18,17 +18,20 @@ from tokenizers import Padding, Tokenizer
 tokenizer = Tokenizer.from_file("tokenizer.json")
 
 encoding = tokenizer.encode("Hello there, how are you?")
-encoding.ids             # array([101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102], dtype=uint32)
-encoding.type_ids        # array([0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=uint32)
-encoding.attention_mask  # array([1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=uint32)
-encoding.ids.tolist()    # [101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102]
+encoding.ids             # [101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102]
+encoding.type_ids        # [0, 0, 0, 0, 0, 0, 0, 0, 0]
+encoding.attention_mask  # [1, 1, 1, 1, 1, 1, 1, 1, 1]
 
-# The arrays are read-only views over the encoding, not copies. Reading a field costs nothing,
-# and an array keeps its encoding alive for as long as the array exists.
+# The same fields as numpy arrays: read-only views over the encoding, not copies. Reading one
+# costs nothing, and an array keeps its encoding alive for as long as the array exists.
+encoding.ids_array             # array([101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102], dtype=uint32)
+encoding.type_ids_array        # array([0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=uint32)
+encoding.attention_mask_array  # array([1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=uint32)
+torch.from_numpy(encoding.ids_array)  # still no copy
 
 tokenizer.encode("Hello", add_special_tokens=False).ids  # no [CLS]/[SEP]
 tokenizer.decode(encoding.ids)                           # "hello there, how are you?"
-tokenizer.decode([101, 7592, 102])                       # any sequence of ints works too
+tokenizer.decode(encoding.ids_array)                     # a numpy array works too
 tokenizer.decode(encoding.ids, skip_special_tokens=False)
 
 # Override the `Padding` settings. `length=None` pads each batch to its longest
@@ -36,7 +39,7 @@ tokenizer.decode(encoding.ids, skip_special_tokens=False)
 tokenizer.padding = Padding(direction="left", pad_id=0, pad_token="[PAD]")
 short, long = tokenizer.encode_batch(["Hello", "Hello there, how are you?"])
 len(short) == len(long)  # True
-short.attention_mask     # array([0, 0, 0, 0, 0, 0, 1, 1, 1], dtype=uint32)
+short.attention_mask     # [0, 0, 0, 0, 0, 0, 1, 1, 1]
 
 tokenizer.padding = Padding(length=16)            # every encoding is exactly 16 ids
 tokenizer.padding = Padding(pad_to_multiple_of=8)
