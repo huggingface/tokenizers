@@ -1,9 +1,0 @@
-[package]
-name = "stub-gen"
-version = "0.1.0"
-edition = "2024"
-publish = false
-description = "Generates the tokenizers module's .pyi stub from the built cdylib"
-
-[dependencies]
-pyo3-introspection = "0.29"

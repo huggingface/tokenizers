@@ -1,4 +1,5 @@
-"""Load a tokenizer.json, encode one text, look at the encoding, decode it back.
+"""
+Load a tokenizer.json, encode one text, look at the encoding, decode it back.
 
     python examples/encode_decode.py [path/to/tokenizer.json]
 

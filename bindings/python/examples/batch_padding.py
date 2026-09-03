@@ -1,9 +1,9 @@
-"""Encode a batch, padded to a rectangle the way a model wants it.
+"""
+Encode a batch of text with padding
 
     python examples/batch_padding.py [path/to/tokenizer.json]
 
-Defaults to the GPT-2 fixture `make test` fetches into `data/`. GPT-2 has no pad token of its
-own, so this pads with `<|endoftext|>`, the way every GPT-2 generation script does.
+Defaults to the GPT-2 fixture `make test` fetches into `data/`.
 """
 
 import sys

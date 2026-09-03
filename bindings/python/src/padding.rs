@@ -101,7 +101,7 @@ impl Padding {
         })
     }
 
-    /// `"left"` or `"right"`. 
+    /// `"left"` or `"right"`.
     /// Whether padding tokens are appended to the right or prepended to the left  of encoded tokens.
     #[getter]
     fn direction(&self) -> Direction {

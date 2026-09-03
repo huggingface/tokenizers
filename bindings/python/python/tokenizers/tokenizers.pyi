@@ -3,6 +3,7 @@ from numpy import integer, uint32
 from numpy.typing import NDArray
 from os import PathLike
 from typing import Any, Final, Literal, final
+
 __version__: Final[str]
 
 @final
@@ -41,7 +42,16 @@ class Padding:
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...
     def __ne__(self, value: object, /) -> bool: ...
-    def __new__(cls, /, direction: Literal["left", "right"] = ..., pad_id: int = 0, pad_type_id: int = 0, pad_token: str = "[PAD]", length: int |None = None, pad_to_multiple_of: int |None = None) -> Padding:
+    def __new__(
+        cls,
+        /,
+        direction: Literal["left", "right"] = ...,
+        pad_id: int = 0,
+        pad_type_id: int = 0,
+        pad_token: str = "[PAD]",
+        length: int | None = None,
+        pad_to_multiple_of: int | None = None,
+    ) -> Padding:
         """
         Args:
             direction: `"right"` (the default) or `"left"`
@@ -63,11 +73,11 @@ class Padding:
     @property
     def direction(self, /) -> Literal["left", "right"]:
         """
-        `"left"` or `"right"`. 
+        `"left"` or `"right"`.
         Whether padding tokens are appended to the right or prepended to the left  of encoded tokens.
         """
     @property
-    def length(self, /) -> int |None:
+    def length(self, /) -> int | None:
         """
         The fixed length padded to, or `None` when padding to the longest item in the batch.
         """
@@ -77,7 +87,7 @@ class Padding:
         The id of the padding token.
         """
     @property
-    def pad_to_multiple_of(self, /) -> int |None:
+    def pad_to_multiple_of(self, /) -> int | None:
         """
         The multiple the padded length is rounded up to, or `None`.
         """
@@ -98,7 +108,7 @@ class Tokenizer:
     A tokenizer. Encodes text into token ids, and decodes token ids back into text.
     """
     def __repr__(self, /) -> str: ...
-    def decode(self, /, ids: Sequence[int] |NDArray[integer[Any]], skip_special_tokens: bool = True) -> str:
+    def decode(self, /, ids: Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = True) -> str:
         """
         Decodes token ids back into text
 
@@ -139,7 +149,7 @@ class Tokenizer:
             List[Encoding]
         """
     @staticmethod
-    def from_file(path: str |PathLike[str], padding: Padding |None = None) -> Tokenizer:
+    def from_file(path: str | PathLike[str], padding: Padding | None = None) -> Tokenizer:
         """
         Loads a `tokenizer.json`.
 
@@ -147,14 +157,14 @@ class Tokenizer:
             path:
                 The file to read.
             padding:
-                Replaces the padding configuration the file declares. 
+                Replaces the padding configuration the file declares.
                 None` means use the file's padding configuration.
         """
     @property
-    def padding(self, /) -> Padding |None:
+    def padding(self, /) -> Padding | None:
         """
         The padding applied to every encode, or `None`.
         Assign `None` to switch padding off.
         """
     @padding.setter
-    def padding(self, /, padding: Padding |None) -> None: ...
+    def padding(self, /, padding: Padding | None) -> None: ...

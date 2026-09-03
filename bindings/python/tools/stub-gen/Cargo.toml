@@ -2,13 +2,8 @@
 name = "stub-gen"
 version = "0.1.0"
 edition = "2024"
-description = "Stub generation tool for tokenizers Python bindings"
-
-[[bin]]
-name = "stub-gen"
-path = "src/main.rs"
+publish = false
+description = "Generates the tokenizers module's .pyi stub from the built cdylib"
 
 [dependencies]
-env_logger = "0.11"
-pyo3 = { version="0.29", default-features = false, features = ["auto-initialize", "experimental-inspect"] }
-pyo3-introspection = { version="0.29"}
+pyo3-introspection = "0.29"
