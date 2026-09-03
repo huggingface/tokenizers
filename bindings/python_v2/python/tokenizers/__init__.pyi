@@ -11,14 +11,27 @@ class Encoding:
     The pipeline only stores `type_ids` and `attention_mask` when a post-processor or padding
     set them. When it did not, every token is of type 0 and attended to, so that is what the
     two lists report.
+
+    Reading `ids`, `type_ids` or `attention_mask` builds a new Python list from the Rust vector
+    on every access, an O(n) copy. Read the attribute once rather than inside a loop.
     """
     def __len__(self, /) -> int: ...
     @property
-    def attention_mask(self, /) -> list[int]: ...
+    def attention_mask(self, /) -> list[int]:
+        """
+        1 for every token, 0 for padding. A new list is built on every read.
+        """
     @property
-    def ids(self, /) -> list[int]: ...
+    def ids(self, /) -> list[int]:
+        """
+        The id of each token. A new list is built on every read.
+        """
     @property
-    def type_ids(self, /) -> list[int]: ...
+    def type_ids(self, /) -> list[int]:
+        """
+        The type id of each token, 0 unless a post-processor or padding set it. A new list is
+        built on every read.
+        """
 
 @final
 class Padding:

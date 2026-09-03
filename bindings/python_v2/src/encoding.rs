@@ -11,8 +11,12 @@ use tk_encode::pipeline::Encoding as PipelineEncoding;
 /// on every access, an O(n) copy. Read the attribute once rather than inside a loop.
 #[pyclass(frozen, get_all)]
 pub struct Encoding {
+    /// The id of each token. A new list is built on every read.
     ids: Vec<u32>,
+    /// The type id of each token, 0 unless a post-processor or padding set it. A new list is
+    /// built on every read.
     type_ids: Vec<u32>,
+    /// 1 for every token, 0 for padding. A new list is built on every read.
     attention_mask: Vec<u32>,
 }
 
