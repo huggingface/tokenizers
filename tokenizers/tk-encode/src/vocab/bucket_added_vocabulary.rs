@@ -322,7 +322,9 @@ impl AddedVocabulary {
             let flags = AddedTokenFlags::from(&token);
             let is_norm = flags.normalized;
             let norm_form: String = match normalizer {
-                Some(n) => n.normalize(&token.content, false)?.into_owned(),
+                // An added token is matched anywhere in the text, so its form is normalized as if
+                // it never opened the sequence.
+                Some(n) => n.normalize(&token.content, 1)?.into_owned(),
                 None => token.content.clone(),
             };
             let form = if is_norm {

@@ -170,7 +170,7 @@ impl EncodeBatch {
                 };
                 self.tokenizer.encode_sequence_with(
                     &input[chunk.range.clone()],
-                    chunk.range.start == 0,
+                    chunk.range.start,
                     scratch,
                 )
             }))
