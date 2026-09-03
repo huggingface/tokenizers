@@ -32,13 +32,11 @@ fn take_token_budget(token_sequences: &[Vec<u32>], budget: usize) -> &[Vec<u32>]
     &token_sequences[..end]
 }
 
-/// Text per `decode` call for the chunked bench, and the reason it exists.
+/// Text per `decode` call for the chunked bench.
 ///
-/// The line-by-line benches are dominated by *per-call* cost: one allocation and one full
-/// `from_utf8` validation for every short line. That hides anything happening inside the token
-/// loop — measured, a change that cut the loop from 420 to 348 instructions moved them not at all.
-/// 10 kB is what huggingface/tokbench feeds every engine, so a number measured here is both
-/// sensitive to the loop and comparable with that matrix.
+/// The line-by-line benches are dominated by per-call cost -- one allocation and one `from_utf8`
+/// per short line -- which hides the token loop entirely. 10 kB is what huggingface/tokbench
+/// feeds every engine, so these numbers are both loop-sensitive and comparable with that matrix.
 const CHUNK_BYTES: usize = 10 * 1024;
 
 /// Encode `data` in ~`chunk_bytes` slices, split on char boundaries so no engine is ever handed
@@ -171,21 +169,18 @@ pub fn decode(c: &mut Criterion) {
     }
 }
 
-/// The chunked decode bench across two vocabulary sizes.
+/// The chunked decode bench across vocabulary sizes and decoder families.
 ///
-/// Decode's cost is one random probe per token into an index sized by the *id space*, so the
-/// vocabulary's size is a first-order variable and one model cannot show it. llama-3 is 128k ids
-/// (a ~513 kB index); gemma is 262k (~1.05 MB), with more distinct ids live per corpus. A change
-/// that helps one and not the other is a cache-residency effect, and this is what says so.
+/// Decode costs one random probe per token into an index sized by the id space, so vocabulary
+/// size is a first-order variable that one model cannot show. A change that helps one of these
+/// and not the others is a cache-residency effect.
 pub fn decode_by_vocab(c: &mut Criterion) {
     for (model, config) in [
-        // ByteLevel, 128k ids -> ~513 kB index.
+        // ByteLevel, 128k ids.
         ("llama3", "../data/llama-3-tokenizer.json"),
-        // ByteLevel, 200k ids -> ~800 kB index. The residency control: same decode path as
-        // llama-3, 1.56x the table.
+        // ByteLevel, 200k ids: the residency control, same path and 1.56x the table.
         ("gptoss", "../data/gpt-oss.json"),
-        // NOT ByteLevel: BPE + byte_fallback with a Replace/ByteFallback/Fuse decoder chain, so
-        // this one does not take the fast path at all and shows what the generic route costs.
+        // BPE + byte_fallback with a Replace/ByteFallback/Fuse chain, i.e. the SPM path.
         ("gemma", "../data/gemma-4.json"),
     ] {
         let tokenizer = load(config);

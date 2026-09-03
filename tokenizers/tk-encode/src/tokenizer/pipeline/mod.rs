@@ -196,32 +196,18 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
 }
 
 thread_local! {
-    /// Phase 1's gather buffer, allocated on this thread's first decode and reused after.
+    /// Phase 1's gather buffer, reused across calls on this thread.
     ///
-    /// A fresh `Vec` per call meant a malloc plus a first touch of every page of it, every call:
-    /// on a ~2250-token chunk producing 10 kB of text, a 36 kB allocation written and then read
-    /// straight back, to move 10 kB.
-    ///
-    /// `(ptr, len)` rather than `(start, end)` into the slab **on purpose**. Offsets are half the
-    /// size, but phase 2 then has to re-slice the slab and eat a bounds check per token, which
-    /// measured -3.3% on english -- more than the malloc was costing. Keeping the payload
-    /// pointer-shaped leaves the copy phase untouched and still retires the allocation.
-    ///
-    /// Thread-local rather than in `ScratchPool`: that pool is a `Mutex` taken once per call, and
-    /// decode scales at 94% to ten threads precisely because it synchronises on nothing.
+    /// `(ptr, len)` rather than an offset pair so phase 2 copies a ready-made slice instead of
+    /// re-slicing the slab with a bounds check per token. Thread-local rather than in
+    /// `ScratchPool`, whose `Mutex` would give decode something to synchronise on.
     static DECODE_PARTS: std::cell::RefCell<Vec<(*const u8, usize)>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// Append `token`'s bytes to `out` with the literal `from` -> `to` replacement applied.
 ///
-/// Scans for the needle's first byte and bulk-copies the run in between rather than pushing one
-/// byte at a time. Most tokens contain no needle at all, and for those this is a single scan plus
-/// a single `memcpy`.
-///
-/// Only ever called while *building* the decode table -- once per vocabulary entry, never per
-/// token occurrence -- which is why the pattern is passed in rather than stored on
-/// [`FusedSpmDecoder`].
+/// Called once per vocabulary entry while building the decode table, never per token occurrence.
 fn push_replaced(from: &[u8], to: &[u8], token: &[u8], out: &mut Vec<u8>) {
     let n = from.len();
     let first = from[0];
@@ -256,32 +242,20 @@ fn byte_fallback_byte(token: &[u8]) -> Option<u8> {
 }
 
 thread_local! {
-    /// The fused decoder's output buffer, allocated on this thread's first such decode and reused
-    /// after, so the pass itself allocates nothing.
+    /// The fused decoder's output buffer, reused across calls on this thread.
     static DECODE_OUT: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// `id -> already-transformed bytes`, with byte-fallback entries flagged.
+/// `id -> already-transformed bytes`, with the per-id flags packed into the offset.
 ///
-/// The byte-level path is fast partly because `byte_level::transform_vocab` decodes the whole
-/// vocabulary at load, leaving decode a gather and a `memcpy`. The SPM path was still applying
-/// `Replace` per token occurrence; this applies it once per vocabulary *entry* instead.
+/// `Replace` is applied once per vocabulary entry here rather than once per token occurrence at
+/// decode, the same trick `byte_level::transform_vocab` plays for byte-level models.
 ///
-/// A byte-fallback entry cannot be pre-transformed -- it has to rejoin a run at decode time -- and
-/// its length does not identify it, since plenty of ordinary tokens are also one byte. That flag,
-/// and two more, therefore live in the **high bits of the start offset**, so the single
-/// adjacent-pair load a decoder already does answers every question about the token: is it a byte
-/// run member, is it an added token, is it special. No second array, no second probe, no branchy
-/// membership test.
-///
-/// That last part is the point of carrying `added` and `special` here. Profiling gemma showed the
-/// decode loop at 12.59 ns/token against a byte-level model's ~8.7, and the token mix explained
-/// why: byte-fallback tokens are 0% of english and 1.6% of japanese, added tokens 0% of both --
-/// so the run machinery was never the cost. The cost was a binary search over the added ids run
-/// on *every* token, 1.53M times for one pass over big.txt, always returning false.
-///
-/// Offsets keep the low 29 bits, capping a slab at 512 MB. Vocabulary slabs are three orders of
-/// magnitude below that.
+/// A byte-fallback entry cannot be pre-transformed -- it has to rejoin a run at decode time --
+/// and its length does not identify it, since plenty of ordinary tokens are also one byte. Its
+/// flag, and `SPECIAL`, therefore live in the high bits of the start offset, so the adjacent-pair
+/// load a decoder already does also answers both questions. Offsets keep the low 29 bits, capping
+/// a slab at 512 MB.
 struct SpmDecodeTable {
     /// `bytes[off[id] & MASK .. off[id + 1] & MASK]`, with `FLAG` set on a byte-fallback entry.
     off: Box<[u32]>,
@@ -377,22 +351,14 @@ impl SpmDecodeTable {
     }
 }
 
-/// The SPM-family decoder chain, fused into a single pass over the ids.
+/// `Sequence[Replace{literal}, ByteFallback, Fuse]`, optionally followed by `Strip`, fused into
+/// one pass over the ids.
 ///
-/// `Sequence[Replace{literal}, ByteFallback, Fuse]` -- gemma -- optionally followed by `Strip`
-/// -- llama-2, mistral, T5. Run through the generic route this costs roughly *three* `String`
-/// allocations per token plus a `Vec` clone per byte run: one in the gather (`id_to_token`), one
-/// in `Replace` (`"".to_string()` per token), a fresh `Vec<String>` and a
-/// `previous_byte_tokens.clone()` in `ByteFallback`, then `join("")` in `Fuse`. Measured on
-/// gemma: 34 MiB/s against 514 for a byte-level model on the same corpus, ~15x, and ~4.5M
-/// allocations for one pass over big.txt.
+/// The chain that gemma, llama-2, mistral and T5 use. Run through the generic route it allocates
+/// a `String` per token in the gather and again in `Replace`, plus a `Vec` clone per byte run.
 ///
-/// Fused, it is one pass into one reusable buffer with no allocation at all.
-///
-/// The semantics are reproduced, not approximated. In particular an **invalid** byte run yields
-/// one U+FFFD *per byte of the run*, which is `ByteFallback`'s behaviour and is exactly what a
-/// cheaper "append the raw bytes and let `from_utf8_lossy` sort it out" version got wrong -- that
-/// version differed from the released crate on gemma/english and on every llama-2 cell.
+/// The semantics are reproduced, not approximated: an **invalid** byte run yields one U+FFFD per
+/// byte of the run, not one per run.
 struct FusedSpmDecoder {
     /// A trailing `Strip`, which runs *after* `Fuse` and so applies to the whole output, not to
     /// each token: `(byte, leading, trailing)`.
@@ -1093,38 +1059,12 @@ impl PipelineTokenizer {
     }
 
     /// Decode for a byte-level BPE, whose vocab entries are already decoded raw bytes.
-    /// Two phases: gather every token's bytes, then stream them out.
-    ///
-    /// The one-pass loop interleaves a *random* probe into the decode index with an append to the
-    /// output, so each token's copy waits behind its own lookup. Splitting them means phase 1
-    /// issues nothing but independent random loads -- no output cursor to serialise on, so the
-    /// memory system can keep many in flight -- and phase 2 is a sequential walk over the gathered
-    /// slices. Phase 1 also yields the exact output length, which retires the `ids.len() * 4`
-    /// guess and the realloc it caused on Latin text.
-    ///
-    /// Measured on llama-3, 10 kB chunks: english 428 -> 501 MiB/s, japanese 490 -> 504.
-    ///
-    /// Three variants of this lost, and are recorded so they are not retried:
-    ///
-    /// * Splitting the id stream into 4 or 16 concurrent *lanes* with one output buffer each,
-    ///   concatenated at the end: -16% and -21% respectively, the overhead scaling with lane
-    ///   count. Each lane needs its own allocation and its `Vec` bookkeeping reloaded per token,
-    ///   and the concatenation is a second pass over the whole output. The parallelism it adds was
-    ///   already being extracted by the out-of-order engine; the bookkeeping was not free.
-    /// * Parking `(start, end)` in a reused thread-local scratch instead of `&[u8]` in a fresh
-    ///   `Vec`: -3.3% on english. It halves the scratch and removes a malloc, but phase 2 then has
-    ///   to re-slice the slab with a bounds check per token instead of copying a ready-made slice.
-    /// * Prefetching the index eight tokens ahead: +3.1% english, flat japanese. Real but not
-    ///   worth arch-gated inline asm.
-    ///
-    /// Falls back to the one-pass walk as soon as an added token appears: those produce an owned
-    /// `String` rather than a borrow into the vocabulary, so they cannot be gathered as slices,
-    /// and they are rare enough that the branch does not pay for itself in the common case.
     /// One pass over `ids`, applying the whole recognised chain, into one reusable buffer.
     ///
-    /// Order mirrors the chain: `Replace` is per token, `ByteFallback` accumulates a run of
-    /// `<0xNN>` tokens and resolves it when the run ends, `Fuse` is the concatenation this loop
-    /// already does, and a trailing `Strip` applies to the finished output.
+    /// Order mirrors the chain: `Replace` is already folded into the table, `ByteFallback`
+    /// accumulates a run of `<0xNN>` tokens and resolves it when the run ends, `Fuse` is the
+    /// concatenation this loop already does, and a trailing `Strip` applies to the finished
+    /// output.
     fn decode_fused_spm(
         &self,
         spm: &FusedSpmDecoder,
@@ -1170,6 +1110,14 @@ impl PipelineTokenizer {
         })
     }
 
+    /// Two phases: gather every token's bytes, then stream them out.
+    ///
+    /// Interleaving the random index probe with the append makes each copy wait behind its own
+    /// lookup. Split, phase 1 issues only independent loads with no output cursor to serialise
+    /// on, and it yields the exact output length, retiring the `ids.len() * 4` guess.
+    ///
+    /// Falls back to the one-pass walk as soon as an added token appears: those produce an owned
+    /// `String` rather than a borrow into the vocabulary, so they cannot be gathered as slices.
     fn decode_byte_level(
         &self,
         bpe: &PipelineBPE,

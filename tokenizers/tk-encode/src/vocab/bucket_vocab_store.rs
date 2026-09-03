@@ -171,18 +171,12 @@ pub struct BucketVocabStore {
     id_to_slot: Box<[u32]>,
     /// Decode-side index: `bytes[decode_off[id] .. decode_off[id + 1]]` is id's token.
     ///
-    /// Length `max_id + 2`, monotonically non-decreasing, last entry `bytes.len()`. Exists because
-    /// decoding by id through [`Self::id_to_token_bytes`] is a three-load pointer chase --
-    /// `id_to_slot[id]` then `spans[slot]` then `bytes` -- whose middle hop is a *random* access,
-    /// since slot order is the MPHF's, not id order. `build` lays `bytes` out in ascending id
-    /// order, which makes the two offsets a decoder needs adjacent (usually the same cache line)
-    /// and collapses the chase to one load plus the copy.
-    ///
-    /// An id the vocabulary does not hold gets `decode_off[id] == decode_off[id + 1]`, i.e. an
-    /// empty slice, which is what a decoder should append for it anyway.
-    ///
-    /// Costs 4 bytes per id in the id space (~513 kB on a 128k-id vocabulary), and no duplicated
-    /// token bytes.
+    /// Length `max_id + 2`, non-decreasing, last entry `bytes.len()`. Decoding through
+    /// [`Self::id_to_token_bytes`] instead is a three-load chase -- `id_to_slot[id]`, then
+    /// `spans[slot]`, then `bytes` -- whose middle hop is a random access, since slot order is
+    /// the MPHF's and not id order. `build` lays the slab out in ascending id order so these two
+    /// offsets are adjacent. An id the vocabulary does not hold gets equal offsets, i.e. an empty
+    /// slice. Costs 4 bytes per id in the id space.
     decode_off: Box<[u32]>,
     /// Number of real tokens. Cached at build so `len()` is O(1): `entries` is sized to the
     /// MPHF's non-minimal slot range (with phantom padding slots), so its length is not the
@@ -224,10 +218,9 @@ impl BucketVocabStore {
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Self {
         let n = tokens.len();
 
-        // Lay the slab out in ascending id order. Nothing below depends on the iteration order --
-        // `entries`, `spans` and `id_to_slot` are all written by slot or by id, and `keys` only
-        // feeds an order-independent `HashSet` -- so this is free, and it is what lets
-        // `decode_off` be a pair of adjacent offsets instead of a second copy of the bytes.
+        // Ascending id order, so `decode_off`'s two offsets are adjacent. Free: nothing below
+        // depends on the iteration order -- `entries`, `spans` and `id_to_slot` are written by
+        // slot or by id, and `keys` only feeds an order-independent `HashSet`.
         let mut tokens = tokens;
         tokens.sort_unstable_by_key(|(_, id)| *id);
 
@@ -294,9 +287,9 @@ impl BucketVocabStore {
             bytes.extend_from_slice(s);
         }
 
-        // 5. The decode-side index. `bytes` is in ascending id order, so one ascending walk with a
-        //    running cursor gives every boundary; a missing id contributes nothing and so leaves
-        //    `decode_off[id] == decode_off[id + 1]`.
+        // 5. The decode-side index. The slab is in ascending id order, so one walk with a running
+        //    cursor gives every boundary; a missing id contributes nothing and so leaves its two
+        //    offsets equal.
         let mut decode_off = vec![0u32; max_id as usize + 2];
         let mut cursor = 0u32;
         for id in 0..=max_id as usize {
