@@ -335,8 +335,33 @@ impl UnigramTrainer {
             seed_sentencepieces.push((character.to_string(), count.into()));
         }
 
-        // sort by decreasing score
-        substr_index.sort_by_key(|&a| Reverse(a));
+        // Sort by decreasing score -- but only the front of it is ever read, so partition there
+        // first and order what survives.
+        //
+        // `substr_index` has one entry per distinct substring of the whole flattened corpus that
+        // passed the filters above, which for a real training set is far more than `seed_size`
+        // (default 1_000_000). Ordering all of them to consume the first k is O(n log n) for an
+        // O(n) question, and it is the expensive kind of comparison: the key is
+        // `(score, &[char])`, so every tie is settled by comparing character slices rather than
+        // integers.
+        //
+        // `wanted` mirrors the loop below exactly, including its off-by-one: the length check
+        // happens *after* the push, so a `seed_sentencepieces` that is already at or past
+        // `seed_size` still takes one entry.
+        //
+        // Ties cannot change the outcome. The substrings are distinct, so `(score, string)` is a
+        // total order and the selected set matches what the full sort produced; and were two
+        // entries ever equal on both, they would push identical `(string, score)` pairs and be
+        // indistinguishable in the result anyway.
+        let wanted = self
+            .seed_size
+            .saturating_sub(seed_sentencepieces.len())
+            .max(1);
+        if wanted < substr_index.len() {
+            substr_index.select_nth_unstable_by_key(wanted, |&a| Reverse(a));
+            substr_index.truncate(wanted);
+        }
+        substr_index.sort_unstable_by_key(|&a| Reverse(a));
         for (score, char_string) in substr_index {
             // Just in case
             assert!(self.is_valid_sentencepiece(char_string));
@@ -495,7 +520,28 @@ impl UnigramTrainer {
         let pruned_size: usize = ((pieces.len() as f64) * self.shrinking_factor) as usize;
         let pruned_size = desired_vocab_size.max(pruned_size);
 
-        candidates.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+        // By decreasing loss, ties by ascending id. The id tie-break is not cosmetic: the sort
+        // used to be `sort_by`, which is stable, and `candidates` is built by walking ids in
+        // ascending order -- so equal losses already resolved by id. Spelling that out makes the
+        // order total, which is what lets the selection below pick the same set a full sort would.
+        let by_loss_then_id = |a: &(usize, f64), b: &(usize, f64)| {
+            b.1.partial_cmp(&a.1)
+                .expect("loss is NaN-checked when the candidate is pushed")
+                .then(a.0.cmp(&b.0))
+        };
+
+        // Only enough candidates to reach `pruned_size` are ever pushed, and this runs once per EM
+        // iteration, so the saving repeats. The `==` in the loop below means an already-oversized
+        // `new_pieces` never trips the break and takes every candidate -- that path keeps the full
+        // sort rather than quietly changing what it selects.
+        if new_pieces.len() < pruned_size {
+            let wanted = pruned_size - new_pieces.len();
+            if wanted < candidates.len() {
+                candidates.select_nth_unstable_by(wanted, by_loss_then_id);
+                candidates.truncate(wanted);
+            }
+        }
+        candidates.sort_unstable_by(by_loss_then_id);
         for (id, _score) in candidates {
             if new_pieces.len() == pruned_size {
                 break;
@@ -898,5 +944,92 @@ mod tests {
         assert_approx_eq!(scores[0], -1.098, 0.01);
         // ln(2) - ln(3)
         assert_approx_eq!(scores[1], -0.405, 0.01);
+    }
+
+    /// A `seed_size` of k has to give exactly the first k of an unbounded run. That is the property
+    /// the selection replaced a full sort with, and the existing tests never reached it: the
+    /// default `seed_size` is 1_000_000, so on any test-sized corpus the selection branch is
+    /// skipped entirely.
+    #[test]
+    fn a_bounded_seed_is_a_prefix_of_the_unbounded_one() {
+        // Repetitive on purpose: overlapping repeats make the suffix array emit many substrings
+        // with equal `freq * len` scores, so the kept/dropped boundary lands inside a run of ties
+        // and only the tie-break decides.
+        let sentences: Vec<Sentence> = vec![
+            ("abcabcabc abcabc abc".to_string(), 7),
+            ("xyzxyzxyz xyzxyz xyz".to_string(), 7),
+            ("abcxyz xyzabc abcxyz".to_string(), 3),
+        ];
+        let seeded = |seed_size: usize| -> Vec<String> {
+            let trainer = UnigramTrainerBuilder::default()
+                .show_progress(false)
+                .seed_size(seed_size)
+                .build()
+                .unwrap();
+            trainer
+                .make_seed_sentence_pieces(&sentences, &None)
+                .into_iter()
+                .map(|(piece, _)| piece)
+                .collect()
+        };
+
+        let full = seeded(1_000_000);
+        // The characters are pushed before any substring, unconditionally.
+        let n_chars = UnigramTrainerBuilder::default()
+            .show_progress(false)
+            .build()
+            .unwrap()
+            .required_chars(&sentences)
+            .len();
+        assert!(
+            full.len() > n_chars + 4,
+            "corpus is too small to exercise the selection: {} pieces, {n_chars} chars",
+            full.len()
+        );
+
+        for k in [n_chars + 1, n_chars + 2, n_chars + 5, full.len() - 1] {
+            assert_eq!(seeded(k), full[..k], "seed_size {k}");
+        }
+
+        // Below the character count the loop's length check runs *after* the push, so exactly one
+        // substring still comes through.
+        for k in [0, 1, n_chars] {
+            assert_eq!(seeded(k), full[..n_chars + 1], "seed_size {k}");
+        }
+    }
+
+    /// `prune_sentence_pieces` used a *stable* sort by descending loss, so equal losses resolved by
+    /// ascending id -- the order `candidates` is built in. Selecting instead of sorting is only
+    /// equivalent if that tie-break is spelled out, which is what `by_loss_then_id` does. This
+    /// checks the two agree on tie-heavy input, including at the boundary.
+    #[test]
+    fn selecting_candidates_matches_the_stable_sort_it_replaced() {
+        // Many shared losses, so most boundaries fall inside a tie run.
+        let candidates: Vec<(usize, f64)> = (0..300usize)
+            .map(|id| (id, ((id % 7) as f64) * 0.5))
+            .collect();
+
+        let reference = |wanted: usize| -> Vec<usize> {
+            let mut c = candidates.clone();
+            // Exactly the old code: stable, by descending loss, then take the front.
+            c.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+            c.into_iter().take(wanted).map(|(id, _)| id).collect()
+        };
+        let selected = |wanted: usize| -> Vec<usize> {
+            let mut c = candidates.clone();
+            let by_loss_then_id = |a: &(usize, f64), b: &(usize, f64)| {
+                b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0))
+            };
+            if wanted < c.len() {
+                c.select_nth_unstable_by(wanted, by_loss_then_id);
+                c.truncate(wanted);
+            }
+            c.sort_unstable_by(by_loss_then_id);
+            c.into_iter().map(|(id, _)| id).collect()
+        };
+
+        for wanted in [0, 1, 2, 43, 100, 299, 300] {
+            assert_eq!(selected(wanted), reference(wanted), "wanted {wanted}");
+        }
     }
 }
