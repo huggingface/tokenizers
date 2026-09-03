@@ -1,22 +1,23 @@
+use numpy::ndarray::ArrayView1;
+use numpy::{PyArray1, PyArrayMethods};
 use pyo3::prelude::*;
 use tk_encode::pipeline::Encoding as PipelineEncoding;
+
+use crate::arrays::U32Array;
 
 /// One encoded text: `ids`, `type_ids` and `attention_mask`, the fields the pipeline computes.
 ///
 /// The pipeline only stores `type_ids` and `attention_mask` when a post-processor or padding
 /// set them. When it did not, every token is of type 0 and attended to, so that is what the
-/// two lists report.
+/// two arrays report.
 ///
-/// Reading `ids`, `type_ids` or `attention_mask` builds a new Python list from the Rust vector
-/// on every access, an O(n) copy. Read the attribute once rather than inside a loop.
-#[pyclass(frozen, get_all)]
+/// Each field reads as a read-only numpy array over the encoding's own memory. Nothing is
+/// copied, and the array keeps the encoding alive for as long as the array exists.
+#[pyclass(frozen, eq, module = "tokenizers")]
+#[derive(PartialEq)]
 pub struct Encoding {
-    /// The id of each token. A new list is built on every read.
     ids: Vec<u32>,
-    /// The type id of each token, 0 unless a post-processor or padding set it. A new list is
-    /// built on every read.
     type_ids: Vec<u32>,
-    /// 1 for every token, 0 for padding. A new list is built on every read.
     attention_mask: Vec<u32>,
 }
 
@@ -41,7 +42,44 @@ fn widen(bytes: &[u8]) -> Vec<u32> {
 
 #[pymethods]
 impl Encoding {
+    /// The id of each token.
+    #[getter]
+    fn ids<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
+        view(this, &this.get().ids)
+    }
+
+    /// The type id of each token, 0 unless a post-processor or padding set it.
+    #[getter]
+    fn type_ids<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
+        view(this, &this.get().type_ids)
+    }
+
+    /// 1 for every token, 0 for padding.
+    #[getter]
+    fn attention_mask<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
+        view(this, &this.get().attention_mask)
+    }
+
+    /// The number of tokens, padding included.
     fn __len__(&self) -> usize {
         self.ids.len()
     }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Encoding(ids={:?}, type_ids={:?}, attention_mask={:?})",
+            self.ids, self.type_ids, self.attention_mask
+        )
+    }
+}
+
+/// A read-only numpy array over `data`, with `encoding` as the array's base.
+fn view<'py>(encoding: &Bound<'py, Encoding>, data: &[u32]) -> U32Array<'py> {
+    // SAFETY: `Encoding` is frozen and never resizes its vectors, so `data` stays put for as
+    // long as `encoding` lives, and numpy keeps `encoding` alive through the array's base.
+    let array = unsafe {
+        PyArray1::borrow_from_array(&ArrayView1::from(data), encoding.clone().into_any())
+    };
+    array.readwrite().make_nonwriteable();
+    U32Array(array)
 }

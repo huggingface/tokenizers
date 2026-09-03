@@ -12,9 +12,9 @@ TESTS_RESOURCES = $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/gpt2.json $(DATA_D
 develop:
 	maturin develop
 
-# Regenerates python/tokenizers/*.pyi from the extension actually built
-# (release mode, via the stub-gen tool), so the stubs can never drift from
-# what's exported.
+# Regenerates python/tokenizers/tokenizers.pyi from a release build of the extension: the
+# stub-gen tool builds it, then reads the signatures and docstrings pyo3 embedded in the
+# binary, so the stub can never drift from what's exported.
 stubs:
 	cargo run --manifest-path ./tools/stub-gen/Cargo.toml
 

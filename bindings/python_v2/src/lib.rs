@@ -9,11 +9,17 @@
 //! with one, and `padding` is the only thing you can change on one. [`encoding::Encoding`] is
 //! what an encode returns, [`padding::Padding`] is how a caller pads without editing the file.
 //! Both are read-only.
+mod arrays;
 mod encoding;
 mod error;
 mod padding;
+mod repr;
 mod tokenizer;
 
+/// Tokenizers backed by Rust.
+///
+/// `Tokenizer.from_file` loads a `tokenizer.json`, `encode` and `encode_batch` turn text into
+/// `Encoding`s, `decode` turns ids back into text. `Padding` says how encodings are padded.
 #[pyo3::pymodule]
 mod tokenizers {
     #[allow(non_upper_case_globals)]

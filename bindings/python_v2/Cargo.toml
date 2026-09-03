@@ -1,7 +1,7 @@
 [package]
 name = "tokenizers-python"
-# Kept equal to pyproject.toml's `[project] version`. `src/lib.rs` reports this as `__version__`,
-# so a mismatch would make pip and the module disagree about it.
+# The one place the version is set: pyproject.toml declares its `version` dynamic and maturin
+# reads this, and `src/lib.rs` reports it as `__version__`.
 version = "0.23.1"
 edition = "2024"
 publish = false
@@ -17,6 +17,7 @@ pyo3 = { version = "=0.29", default-features = false, features = [
   "abi3-py310",
   "experimental-inspect",
 ] }
+numpy = "=0.29"
 # Same three crates as `bindings/node`, for the same reason (see its Cargo.toml): only what the
 # pipeline encode path needs, not the pre-v1 engine's umbrella.
 tk-encode    = { path = "../../tokenizers/tk-encode", default-features = false, features = [
@@ -29,6 +30,8 @@ tk-encode    = { path = "../../tokenizers/tk-encode", default-features = false, 
   "unicode-scripts",
 ] }
 tk-serialize = { path = "../../tokenizers/tk-serialize", features = [
+  # `serialize` for `to_json`, which `Tokenizer.__repr__` renders.
+  "serialize",
   "parallelism",
   "normalizers",
   "bpe",
@@ -38,3 +41,12 @@ tk-serialize = { path = "../../tokenizers/tk-serialize", features = [
   "unicode-scripts",
 ] }
 tk-convert   = { path = "../../tokenizers/tk-convert", default-features = false }
+# `Tokenizer.__repr__` renders the `tokenizer.json` the pipeline writes.
+serde_json = "1.0"
+
+[build-dependencies]
+pyo3-build-config = "=0.29"
+
+# Not a workspace member, so this does not inherit tokenizers/Cargo.toml's profile.
+[profile.release]
+lto = "fat"

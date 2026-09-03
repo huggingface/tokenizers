@@ -1,15 +1,13 @@
 [project]
 name = "tokenizers"
-# Kept equal to Cargo.toml's `[package] version`.
-version = "0.23.1"
+# Read from Cargo.toml's `[package] version` by maturin.
+dynamic = ["version"]
 requires-python = ">=3.10"
 description = "Reworked tokenizers Python bindings, over the pipeline encode path (not for release yet)"
-dependencies = [
-    "ipython>=8.39.0",
-]
+dependencies = ["numpy"]
 
-[project.optional-dependencies]
-testing = ["pytest", "ruff", "ty"]
+[dependency-groups]
+dev = ["maturin>=1.0,<2.0", "pytest", "ruff", "ty"]
 
 [build-system]
 requires = ["maturin>=1.0,<2.0"]
@@ -19,9 +17,7 @@ build-backend = "maturin"
 python-source = "python"
 module-name = "tokenizers.tokenizers"
 bindings = "pyo3"
-features = ["pyo3/extension-module"]
 
 [tool.ruff]
 line-length = 119
-target-version = "py310"
 lint.select = ["E4", "E7", "E9", "F"]
