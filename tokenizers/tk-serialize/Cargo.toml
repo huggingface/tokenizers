@@ -66,7 +66,7 @@ fancy-regex = ["tk-encode/fancy-regex"]
 parallelism = ["tk-encode/parallelism"]
 
 [dev-dependencies]
-# The two benches. `tk-serialize` hosts them because a bench needs a `PipelineTokenizer` and
+# The benches. `tk-serialize` hosts them because a bench needs a `PipelineTokenizer` and
 # `from_json_file` is the only way to build one -- the bigger cross-engine benchmarks live in
 # huggingface/tokbench.
 criterion = "0.8"
@@ -85,7 +85,7 @@ name = "binsize_pipeline"
 # is a configuration `cargo clippy --all-targets` can actually check.
 required-features = ["deserialize"]
 
-# Both benches read a `tokenizer.json`, so neither can build without the reader.
+# Every bench reads a `tokenizer.json`, so none of them can build without the reader.
 [[bench]]
 name = "encode"
 harness = false
@@ -93,5 +93,10 @@ required-features = ["deserialize"]
 
 [[bench]]
 name = "decode"
+harness = false
+required-features = ["deserialize"]
+
+[[bench]]
+name = "scratch_scaling"
 harness = false
 required-features = ["deserialize"]
