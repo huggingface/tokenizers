@@ -78,12 +78,12 @@ function requireNative() {
         const binding = require('tokenizers-android-arm64')
         const bindingPackageVersion = require('tokenizers-android-arm64/package.json').version
         if (
-          bindingPackageVersion !== '0.15.3-dev0' &&
+          bindingPackageVersion !== '0.23.2' &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
         ) {
           throw new Error(
-            `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+            `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
           )
         }
         return binding
@@ -100,12 +100,12 @@ function requireNative() {
         const binding = require('tokenizers-android-arm-eabi')
         const bindingPackageVersion = require('tokenizers-android-arm-eabi/package.json').version
         if (
-          bindingPackageVersion !== '0.15.3-dev0' &&
+          bindingPackageVersion !== '0.23.2' &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
         ) {
           throw new Error(
-            `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+            `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
           )
         }
         return binding
@@ -130,12 +130,12 @@ function requireNative() {
           const binding = require('tokenizers-win32-x64-gnu')
           const bindingPackageVersion = require('tokenizers-win32-x64-gnu/package.json').version
           if (
-            bindingPackageVersion !== '0.15.3-dev0' &&
+            bindingPackageVersion !== '0.23.2' &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
           ) {
             throw new Error(
-              `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+              `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
             )
           }
           return binding
@@ -152,12 +152,12 @@ function requireNative() {
           const binding = require('tokenizers-win32-x64-msvc')
           const bindingPackageVersion = require('tokenizers-win32-x64-msvc/package.json').version
           if (
-            bindingPackageVersion !== '0.15.3-dev0' &&
+            bindingPackageVersion !== '0.23.2' &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
           ) {
             throw new Error(
-              `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+              `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
             )
           }
           return binding
@@ -175,12 +175,12 @@ function requireNative() {
         const binding = require('tokenizers-win32-ia32-msvc')
         const bindingPackageVersion = require('tokenizers-win32-ia32-msvc/package.json').version
         if (
-          bindingPackageVersion !== '0.15.3-dev0' &&
+          bindingPackageVersion !== '0.23.2' &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
         ) {
           throw new Error(
-            `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+            `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
           )
         }
         return binding
@@ -197,12 +197,12 @@ function requireNative() {
         const binding = require('tokenizers-win32-arm64-msvc')
         const bindingPackageVersion = require('tokenizers-win32-arm64-msvc/package.json').version
         if (
-          bindingPackageVersion !== '0.15.3-dev0' &&
+          bindingPackageVersion !== '0.23.2' &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
         ) {
           throw new Error(
-            `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+            `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
           )
         }
         return binding
@@ -222,12 +222,12 @@ function requireNative() {
       const binding = require('tokenizers-darwin-universal')
       const bindingPackageVersion = require('tokenizers-darwin-universal/package.json').version
       if (
-        bindingPackageVersion !== '0.15.3-dev0' &&
+        bindingPackageVersion !== '0.23.2' &&
         process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
         process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
       ) {
         throw new Error(
-          `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+          `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
         )
       }
       return binding
@@ -244,12 +244,12 @@ function requireNative() {
         const binding = require('tokenizers-darwin-x64')
         const bindingPackageVersion = require('tokenizers-darwin-x64/package.json').version
         if (
-          bindingPackageVersion !== '0.15.3-dev0' &&
+          bindingPackageVersion !== '0.23.2' &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
         ) {
           throw new Error(
-            `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+            `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
           )
         }
         return binding
@@ -266,12 +266,12 @@ function requireNative() {
         const binding = require('tokenizers-darwin-arm64')
         const bindingPackageVersion = require('tokenizers-darwin-arm64/package.json').version
         if (
-          bindingPackageVersion !== '0.15.3-dev0' &&
+          bindingPackageVersion !== '0.23.2' &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
         ) {
           throw new Error(
-            `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+            `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
           )
         }
         return binding
@@ -292,12 +292,12 @@ function requireNative() {
         const binding = require('tokenizers-freebsd-x64')
         const bindingPackageVersion = require('tokenizers-freebsd-x64/package.json').version
         if (
-          bindingPackageVersion !== '0.15.3-dev0' &&
+          bindingPackageVersion !== '0.23.2' &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
         ) {
           throw new Error(
-            `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+            `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
           )
         }
         return binding
@@ -314,12 +314,12 @@ function requireNative() {
         const binding = require('tokenizers-freebsd-arm64')
         const bindingPackageVersion = require('tokenizers-freebsd-arm64/package.json').version
         if (
-          bindingPackageVersion !== '0.15.3-dev0' &&
+          bindingPackageVersion !== '0.23.2' &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
         ) {
           throw new Error(
-            `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+            `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
           )
         }
         return binding
@@ -341,12 +341,12 @@ function requireNative() {
           const binding = require('tokenizers-linux-x64-musl')
           const bindingPackageVersion = require('tokenizers-linux-x64-musl/package.json').version
           if (
-            bindingPackageVersion !== '0.15.3-dev0' &&
+            bindingPackageVersion !== '0.23.2' &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
           ) {
             throw new Error(
-              `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+              `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
             )
           }
           return binding
@@ -363,12 +363,12 @@ function requireNative() {
           const binding = require('tokenizers-linux-x64-gnu')
           const bindingPackageVersion = require('tokenizers-linux-x64-gnu/package.json').version
           if (
-            bindingPackageVersion !== '0.15.3-dev0' &&
+            bindingPackageVersion !== '0.23.2' &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
           ) {
             throw new Error(
-              `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+              `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
             )
           }
           return binding
@@ -387,12 +387,12 @@ function requireNative() {
           const binding = require('tokenizers-linux-arm64-musl')
           const bindingPackageVersion = require('tokenizers-linux-arm64-musl/package.json').version
           if (
-            bindingPackageVersion !== '0.15.3-dev0' &&
+            bindingPackageVersion !== '0.23.2' &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
           ) {
             throw new Error(
-              `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+              `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
             )
           }
           return binding
@@ -409,12 +409,12 @@ function requireNative() {
           const binding = require('tokenizers-linux-arm64-gnu')
           const bindingPackageVersion = require('tokenizers-linux-arm64-gnu/package.json').version
           if (
-            bindingPackageVersion !== '0.15.3-dev0' &&
+            bindingPackageVersion !== '0.23.2' &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
           ) {
             throw new Error(
-              `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+              `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
             )
           }
           return binding
@@ -433,12 +433,12 @@ function requireNative() {
           const binding = require('tokenizers-linux-arm-musleabihf')
           const bindingPackageVersion = require('tokenizers-linux-arm-musleabihf/package.json').version
           if (
-            bindingPackageVersion !== '0.15.3-dev0' &&
+            bindingPackageVersion !== '0.23.2' &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
           ) {
             throw new Error(
-              `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+              `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
             )
           }
           return binding
@@ -455,12 +455,12 @@ function requireNative() {
           const binding = require('tokenizers-linux-arm-gnueabihf')
           const bindingPackageVersion = require('tokenizers-linux-arm-gnueabihf/package.json').version
           if (
-            bindingPackageVersion !== '0.15.3-dev0' &&
+            bindingPackageVersion !== '0.23.2' &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
           ) {
             throw new Error(
-              `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+              `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
             )
           }
           return binding
@@ -479,12 +479,12 @@ function requireNative() {
           const binding = require('tokenizers-linux-loong64-musl')
           const bindingPackageVersion = require('tokenizers-linux-loong64-musl/package.json').version
           if (
-            bindingPackageVersion !== '0.15.3-dev0' &&
+            bindingPackageVersion !== '0.23.2' &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
           ) {
             throw new Error(
-              `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+              `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
             )
           }
           return binding
@@ -501,12 +501,12 @@ function requireNative() {
           const binding = require('tokenizers-linux-loong64-gnu')
           const bindingPackageVersion = require('tokenizers-linux-loong64-gnu/package.json').version
           if (
-            bindingPackageVersion !== '0.15.3-dev0' &&
+            bindingPackageVersion !== '0.23.2' &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
           ) {
             throw new Error(
-              `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+              `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
             )
           }
           return binding
@@ -525,12 +525,12 @@ function requireNative() {
           const binding = require('tokenizers-linux-riscv64-musl')
           const bindingPackageVersion = require('tokenizers-linux-riscv64-musl/package.json').version
           if (
-            bindingPackageVersion !== '0.15.3-dev0' &&
+            bindingPackageVersion !== '0.23.2' &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
           ) {
             throw new Error(
-              `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+              `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
             )
           }
           return binding
@@ -547,12 +547,12 @@ function requireNative() {
           const binding = require('tokenizers-linux-riscv64-gnu')
           const bindingPackageVersion = require('tokenizers-linux-riscv64-gnu/package.json').version
           if (
-            bindingPackageVersion !== '0.15.3-dev0' &&
+            bindingPackageVersion !== '0.23.2' &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
             process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
           ) {
             throw new Error(
-              `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+              `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
             )
           }
           return binding
@@ -570,12 +570,12 @@ function requireNative() {
         const binding = require('tokenizers-linux-ppc64-gnu')
         const bindingPackageVersion = require('tokenizers-linux-ppc64-gnu/package.json').version
         if (
-          bindingPackageVersion !== '0.15.3-dev0' &&
+          bindingPackageVersion !== '0.23.2' &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
         ) {
           throw new Error(
-            `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+            `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
           )
         }
         return binding
@@ -592,12 +592,12 @@ function requireNative() {
         const binding = require('tokenizers-linux-s390x-gnu')
         const bindingPackageVersion = require('tokenizers-linux-s390x-gnu/package.json').version
         if (
-          bindingPackageVersion !== '0.15.3-dev0' &&
+          bindingPackageVersion !== '0.23.2' &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
         ) {
           throw new Error(
-            `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+            `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
           )
         }
         return binding
@@ -618,12 +618,12 @@ function requireNative() {
         const binding = require('tokenizers-openharmony-arm64')
         const bindingPackageVersion = require('tokenizers-openharmony-arm64/package.json').version
         if (
-          bindingPackageVersion !== '0.15.3-dev0' &&
+          bindingPackageVersion !== '0.23.2' &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
         ) {
           throw new Error(
-            `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+            `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
           )
         }
         return binding
@@ -640,12 +640,12 @@ function requireNative() {
         const binding = require('tokenizers-openharmony-x64')
         const bindingPackageVersion = require('tokenizers-openharmony-x64/package.json').version
         if (
-          bindingPackageVersion !== '0.15.3-dev0' &&
+          bindingPackageVersion !== '0.23.2' &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
         ) {
           throw new Error(
-            `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+            `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
           )
         }
         return binding
@@ -662,12 +662,12 @@ function requireNative() {
         const binding = require('tokenizers-openharmony-arm')
         const bindingPackageVersion = require('tokenizers-openharmony-arm/package.json').version
         if (
-          bindingPackageVersion !== '0.15.3-dev0' &&
+          bindingPackageVersion !== '0.23.2' &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK &&
           process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0'
         ) {
           throw new Error(
-            `Native binding package version mismatch, expected 0.15.3-dev0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
+            `Native binding package version mismatch, expected 0.23.2 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`,
           )
         }
         return binding
