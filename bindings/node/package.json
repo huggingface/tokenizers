@@ -14,7 +14,8 @@
   "description": "Provides an implementation of today's most used tokenizers, with a focus on performances and versatility.",
   "files": [
     "index.d.ts",
-    "index.js"
+    "index.js",
+    "*.node"
   ],
   "napi": {
     "binaryName": "tokenizers",
@@ -50,7 +51,6 @@
     "format:toml": "taplo format",
     "format:rs": "cargo fmt",
     "lint": "prettier . --check",
-    "prepublishOnly": "napi prepublish -t npm",
     "test": "node --test \"lib/**/*.test.ts\" \"examples/**/*.test.ts\"",
     "version": "napi version"
   },
