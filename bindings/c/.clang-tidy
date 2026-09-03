@@ -1,0 +1,17 @@
+# -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling: wants fprintf replaced
+# with fprintf_s, a C11 Annex K function glibc never implemented.
+Checks: >
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  bugprone-*,
+  cert-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-isolate-declaration,
+  -bugprone-easily-swappable-parameters,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling
+WarningsAsErrors: '*'
+FormatStyle: file
