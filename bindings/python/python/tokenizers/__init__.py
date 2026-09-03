@@ -1,9 +1,9 @@
-"""Tokenizers backed by Rust.
-
-`Tokenizer.from_file` loads a `tokenizer.json`, `encode` and `encode_batch` turn text into
-`Encoding`s, `decode` turns ids back into text. `Padding` says how encodings are padded.
-"""
-
 from .tokenizers import Encoding, Padding, Tokenizer, __version__
+
+"""
+Python bindings for Hugging Face's Tokenizers rust library
+
+Encode text to token ids and decode token ids back to text
+"""
 
 __all__ = ["Encoding", "Padding", "Tokenizer", "__version__"]
