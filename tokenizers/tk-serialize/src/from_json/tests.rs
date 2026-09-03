@@ -3,6 +3,7 @@
 
 use super::decoders::read_one_decoder;
 use super::*;
+use tk_encode::tokenizer::{PaddingDirection, PaddingStrategy};
 
 /// A minimal BPE that needs no data files: two merges over a four-token vocab.
 const TINY_BPE: &str = r#"{"type": "BPE", "byte_level": false, "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3},
@@ -19,13 +20,14 @@ fn config<'a>(overrides: &'a [(&'a str, &'a str)]) -> String {
     };
     format!(
         r#"{{"version": "2.0", "added_tokens": {}, "normalizer": {}, "pre_tokenizer": {},
-            "post_processor": {}, "decoder": {}, "model": {}}}"#,
+            "post_processor": {}, "decoder": {}, "model": {}, "padding": {}}}"#,
         field("added_tokens", "[]"),
         field("normalizer", "null"),
         field("pre_tokenizer", "null"),
         field("post_processor", "null"),
         field("decoder", "null"),
         field("model", TINY_BPE),
+        field("padding", "null"),
     )
 }
 
@@ -55,10 +57,10 @@ fn ids(text: &str, input: &str) -> Vec<u32> {
 #[rustfmt::skip]
 const ENCODES: &[(&str, &str, &str, &[u32])] = &[
     ("model", TINY_BPE, "abab", &[3]),
-    // [CLS] $A [SEP] around the single sequence, from either spelling of the frame.
-    ("post_processor", r#"{"type": "BertProcessing", "sep": ["b", 1], "cls": ["a", 0]}"#, "abab", &[0, 3, 1]),
-    ("post_processor", r#"{"type": "RobertaProcessing", "sep": ["b", 1], "cls": ["a", 0],
-        "trim_offsets": true, "add_prefix_space": true}"#, "abab", &[0, 3, 1]),
+    // [CLS] $A [SEP] around the single sequence. The `BertProcessing` and `RobertaProcessing`
+    // spellings of this frame are tk-convert's to rewrite, so the reader sees only this one.
+    ("post_processor", r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
+        "pair": [{"seq": "A"}, {"seq": "B", "type_id": 1}]}"#, "abab", &[0, 3, 1]),
 ];
 
 #[cfg(feature = "unigram")]
@@ -116,7 +118,13 @@ const REFUSED: &[(&str, &str, &str)] = &[
     ("pre_tokenizer", r#"{"type": "ByteLevel", "use_regex": true}"#, "`ByteLevel` pre-tokenizer"),
     ("pre_tokenizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "always"}"#,
         "`Metaspace` pre-tokenizer"),
-    ("post_processor", r#"{"type": "BertProcessing", "sep": ["b"], "cls": ["a", 0]}"#, "[token, id] pair"),
+    ("post_processor", r#"{"type": "BertProcessing", "sep": ["b", 1], "cls": ["a", 0]}"#, "`BertProcessing` post-processor"),
+    ("post_processor", r#"{"type": "Sequence", "processors": []}"#, "`Sequence` post-processor"),
+    ("padding", r#"{"direction": "Right", "pad_id": 0, "pad_type_id": 0, "pad_token": "[PAD]"}"#, "no `strategy`"),
+    ("padding", r#"{"strategy": "Invented", "direction": "Right", "pad_id": 0, "pad_type_id": 0,
+        "pad_token": "[PAD]"}"#, "unknown padding strategy"),
+    ("padding", r#"{"strategy": "BatchLongest", "direction": "Up", "pad_id": 0, "pad_type_id": 0,
+        "pad_token": "[PAD]"}"#, "unknown padding direction"),
 ];
 
 #[cfg(feature = "unigram")]
@@ -158,6 +166,45 @@ fn a_legacy_or_malformed_shape_is_refused_by_name() {
         let error = read_err(&config(&[(slot, json)]));
         assert!(error.contains(message), "{slot}: {json}\ngot: {error}");
     }
+}
+
+#[test]
+fn padding_null_reads_as_no_padding() {
+    let tokenizer = from_json(&config(&[])).unwrap();
+
+    assert!(tokenizer.get_padding().is_none());
+}
+
+#[test]
+fn padding_batch_longest_reads_back() {
+    let padding = r#"{"strategy": "BatchLongest", "direction": "Right", "pad_to_multiple_of": null,
+        "pad_id": 0, "pad_type_id": 0, "pad_token": "[PAD]"}"#;
+
+    let tokenizer = from_json(&config(&[("padding", padding)])).unwrap();
+    let params = tokenizer.get_padding().unwrap();
+
+    assert!(matches!(params.strategy, PaddingStrategy::BatchLongest));
+    assert!(matches!(params.direction, PaddingDirection::Right));
+    assert_eq!(params.pad_to_multiple_of, None);
+    assert_eq!(params.pad_id, 0);
+    assert_eq!(params.pad_type_id, 0);
+    assert_eq!(params.pad_token, "[PAD]");
+}
+
+#[test]
+fn padding_fixed_reads_back() {
+    let padding = r#"{"strategy": {"Fixed": 128}, "direction": "Left", "pad_to_multiple_of": 8,
+        "pad_id": 3, "pad_type_id": 1, "pad_token": "<pad>"}"#;
+
+    let tokenizer = from_json(&config(&[("padding", padding)])).unwrap();
+    let params = tokenizer.get_padding().unwrap();
+
+    assert!(matches!(params.strategy, PaddingStrategy::Fixed(128)));
+    assert!(matches!(params.direction, PaddingDirection::Left));
+    assert_eq!(params.pad_to_multiple_of, Some(8));
+    assert_eq!(params.pad_id, 3);
+    assert_eq!(params.pad_type_id, 1);
+    assert_eq!(params.pad_token, "<pad>");
 }
 
 /// `crate::BASE64` is a spelled-out engine rather than `STANDARD`, purely so that decoding stays

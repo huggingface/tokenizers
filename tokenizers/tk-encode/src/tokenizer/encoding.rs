@@ -1,7 +1,4 @@
-#[cfg(feature = "parallelism")]
-use crate::parallelism::MaybeParallelRefMutIterator;
 use crate::tokenizer::{Offsets, Token};
-use crate::utils::padding::PaddingDirection;
 use crate::utils::truncation::TruncationDirection;
 use ahash::AHashMap;
 use std::ops::Range;
@@ -466,80 +463,6 @@ impl Encoding {
         self.attention_mask.extend(pair.attention_mask);
         self.overflowing = overflowings;
     }
-
-    pub fn pad(
-        &mut self,
-        target_length: usize,
-        pad_id: u32,
-        pad_type_id: u32,
-        pad_token: &str,
-        direction: PaddingDirection,
-    ) {
-        // Dispatch call to all the overflowings first
-        #[cfg(feature = "parallelism")]
-        self.overflowing.maybe_par_iter_mut().for_each(|encoding| {
-            encoding.pad(target_length, pad_id, pad_type_id, pad_token, direction)
-        });
-        #[cfg(not(feature = "parallelism"))]
-        self.overflowing.iter_mut().for_each(|encoding| {
-            encoding.pad(target_length, pad_id, pad_type_id, pad_token, direction)
-        });
-
-        // Then check if we should pad ourself
-        if self.ids.len() >= target_length {
-            // We just do nothing if the wanted padding length is smaller than us
-            return;
-        }
-        let pad_length = target_length - self.ids.len();
-
-        match direction {
-            PaddingDirection::Left => {
-                self.ids = (0..pad_length)
-                    .map(|_| pad_id)
-                    .chain(self.ids.drain(..))
-                    .collect();
-                self.type_ids = (0..pad_length)
-                    .map(|_| pad_type_id)
-                    .chain(self.type_ids.drain(..))
-                    .collect();
-                self.tokens = (0..pad_length)
-                    .map(|_| pad_token.to_owned())
-                    .chain(self.tokens.drain(..))
-                    .collect();
-                self.words = (0..pad_length)
-                    .map(|_| None)
-                    .chain(self.words.drain(..))
-                    .collect();
-                self.attention_mask = (0..pad_length)
-                    .map(|_| 0)
-                    .chain(self.attention_mask.drain(..))
-                    .collect();
-                self.special_tokens_mask = (0..pad_length)
-                    .map(|_| 1)
-                    .chain(self.special_tokens_mask.drain(..))
-                    .collect();
-                self.offsets = (0..pad_length)
-                    .map(|_| (0, 0))
-                    .chain(self.offsets.drain(..))
-                    .collect();
-                self.sequence_ranges
-                    .iter_mut()
-                    .for_each(|(_seq_id, range)| {
-                        *range = (range.start + pad_length)..(range.end + pad_length)
-                    });
-            }
-            PaddingDirection::Right => {
-                self.ids.extend((0..pad_length).map(|_| pad_id));
-                self.type_ids.extend((0..pad_length).map(|_| pad_type_id));
-                self.tokens
-                    .extend((0..pad_length).map(|_| pad_token.to_owned()));
-                self.words.extend((0..pad_length).map(|_| None));
-                self.attention_mask.extend((0..pad_length).map(|_| 0));
-                self.special_tokens_mask.extend((0..pad_length).map(|_| 1));
-                self.offsets.extend((0..pad_length).map(|_| (0, 0)));
-            }
-        }
-    }
 }
 
 impl std::iter::FromIterator<Encoding> for Encoding {
@@ -888,32 +811,5 @@ mod tests {
         assert_eq!(encoding.char_to_word(23, 0), Some(3));
         assert_eq!(encoding.char_to_word(2, 1), Some(0));
         assert_eq!(encoding.char_to_word(9, 1), Some(2));
-    }
-
-    #[test]
-    fn padding() {
-        let mut a = Encoding {
-            ids: vec![1],
-            type_ids: vec![0],
-            tokens: vec![String::from("Hello ")],
-            words: vec![Some(0)],
-            offsets: vec![(0, 6)],
-            special_tokens_mask: vec![0],
-            attention_mask: vec![1],
-            sequence_ranges: AHashMap::from([(0, 0..1)]),
-            ..Default::default()
-        };
-        let target_length = 2;
-        let pad_id = 99;
-        let pad_type_id = 0;
-        let pad_token = "[PAD]";
-        a.pad(
-            target_length,
-            pad_id,
-            pad_type_id,
-            pad_token,
-            PaddingDirection::Left,
-        );
-        assert_eq!(a.sequence_ranges, AHashMap::from([(0, 1..2)]));
     }
 }

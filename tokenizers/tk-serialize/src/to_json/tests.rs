@@ -21,13 +21,14 @@ fn config(slots: &[(&str, &str)]) -> String {
     };
     format!(
         r#"{{"version": "2.0", "added_tokens": {}, "normalizer": {}, "pre_tokenizer": {},
-            "post_processor": {}, "decoder": {}, "model": {}}}"#,
+            "post_processor": {}, "decoder": {}, "model": {}, "padding": {}}}"#,
         slot("added_tokens", "[]"),
         slot("normalizer", "null"),
         slot("pre_tokenizer", "null"),
         slot("post_processor", "null"),
         slot("decoder", "null"),
         slot("model", BPE_MODEL),
+        slot("padding", "null"),
     )
 }
 
@@ -211,8 +212,8 @@ const IDEMPOTENT: &[(&str, &str)] = &[
 ];
 
 /// `(slot, in, out)`: what the pipeline folded or dropped. An empty `Sequence` disappears, a nested
-/// one flattens, a decoder reads past `ByteLevel`'s flags and `Metaspace`'s `split` (but keeps
-/// `prepend_scheme: first`), and Bert/Roberta processing are frames, so both become one template.
+/// one flattens, and a decoder reads past `ByteLevel`'s flags and `Metaspace`'s `split` (but keeps
+/// `prepend_scheme: first`).
 #[rustfmt::skip]
 const REWRITTEN: &[(&str, &str, &str)] = &[
     ("normalizer", r#"{"type": "Sequence", "normalizers": []}"#, "null"),
@@ -224,12 +225,6 @@ const REWRITTEN: &[(&str, &str, &str)] = &[
                 r#"{"type": "ByteLevel"}"#),
     ("decoder", r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first", "split": false}"#,
                 r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first"}"#),
-    ("post_processor", r#"{"type": "BertProcessing", "cls": ["a", 0], "sep": ["b", 1]}"#,
-        r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
-            "pair": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}, {"seq": "B", "type_id": 1}, {"ids": [1], "type_id": 1}]}"#),
-    ("post_processor", r#"{"type": "RobertaProcessing", "cls": ["a", 0], "sep": ["b", 1], "trim_offsets": true, "add_prefix_space": true}"#,
-        r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
-            "pair": [{"ids": [0]}, {"seq": "A"}, {"ids": [1, 1]}, {"seq": "B"}, {"ids": [1]}]}"#),
     // Ascending id order is load-bearing: the reader replays added tokens in that order, and
     // `add_tokens` reuses a model id when the token is already in the vocabulary.
     ("added_tokens", r#"[{"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true},
@@ -267,6 +262,20 @@ fn components_round_trip_to_their_canonical_spelling() {
     }
     for (slot, input, expected) in REWRITTEN {
         assert_eq!(written(slot, input), json(expected), "{slot}: {input}");
+    }
+}
+
+/// Padding is state the tokenizer carries rather than a component, so no other test here would
+/// catch it being dropped. Both strategies, and `pad_to_multiple_of` in both of its states.
+#[test]
+fn padding_round_trips() {
+    for spelling in [
+        r#"{"strategy": "BatchLongest", "direction": "Right", "pad_to_multiple_of": null,
+            "pad_id": 0, "pad_type_id": 0, "pad_token": "[PAD]"}"#,
+        r#"{"strategy": {"Fixed": 128}, "direction": "Left", "pad_to_multiple_of": 8,
+            "pad_id": 3, "pad_type_id": 1, "pad_token": "<pad>"}"#,
+    ] {
+        assert_eq!(written("padding", spelling), json(spelling), "{spelling}");
     }
 }
 

@@ -6,9 +6,19 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::parallelism::pool;
 use crate::pipeline::scratch_pool::{EncodeScratch, ScratchGuard};
 use crate::pipeline::{
-    EncodeHandle, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer, Segment, Seq,
+    EncodeHandle, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer, Segment,
     SpecialSegmentIterator,
 };
+
+/// Which half of an [`Input::Pair`] a chunk was cut from. [`Input::Single`] is all `A`.
+///
+/// Local to the planner: the post-processor used to spell its sequences this way, but a
+/// `Template` now carries the two type ids positionally and has no need of the distinction.
+#[derive(Clone, Copy, Debug)]
+enum Seq {
+    A,
+    B,
+}
 
 use super::Result;
 
@@ -359,8 +369,14 @@ impl PipelineTokenizer {
             }
             outputs.push(seq_outputs);
         }
-        // Schedule encode batch by longest chunk first
-        chunks.sort_unstable_by_key(|u| std::cmp::Reverse(u.range.len()));
+        // make sure larger chunks are first in the batch to avoid having a straggler at the end
+        let mut boundary = 0;
+        for i in 0..chunks.len() {
+            if chunks[i].range.len() >= PARALLEL_MIN_BYTES {
+                chunks.swap(boundary, i);
+                boundary += 1;
+            }
+        }
         let chunk_count = chunks.iter().fold(vec![0; outputs.len()], |mut uc, u| {
             uc[u.seq] += 1;
             uc
@@ -398,11 +414,25 @@ pub(crate) fn encode(
     add_special_tokens: bool,
 ) -> EncodeHandle {
     if inputs.size_bytes() < PARALLEL_MIN_BYTES {
-        return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
+        return EncodeHandle::blocking(
+            tok.encode_serial(inputs, add_special_tokens),
+            tok.inner.padding.clone(),
+        );
+    }
+    if let Inputs::Single(Input::Single(seq)) = &inputs
+        && seq.len() < 2 * PARALLEL_MIN_BYTES
+    {
+        return EncodeHandle::blocking(
+            tok.encode_serial(inputs, add_special_tokens),
+            tok.inner.padding.clone(),
+        );
     }
     let Some(pool) = pool() else {
         // unable to get a pool handle, reverting to single threaded
-        return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
+        return EncodeHandle::blocking(
+            tok.encode_serial(inputs, add_special_tokens),
+            tok.inner.padding.clone(),
+        );
     };
     let Plan {
         chunks,
@@ -412,7 +442,10 @@ pub(crate) fn encode(
         chunk_count,
     } = tok.plan_work(&inputs);
     if tasks.len() < 2 {
-        return EncodeHandle::blocking(tok.encode_serial(inputs, add_special_tokens));
+        return EncodeHandle::blocking(
+            tok.encode_serial(inputs, add_special_tokens),
+            tok.inner.padding.clone(),
+        );
     }
     let n_seq = outputs.len();
     let threads = tasks.len().min(pool.current_num_threads());
@@ -440,5 +473,5 @@ pub(crate) fn encode(
             while batch.encode_task(&mut scratch) {}
         });
     }
-    EncodeHandle::streaming(StreamingIter::new(batch))
+    EncodeHandle::streaming(StreamingIter::new(batch), tok.inner.padding.clone())
 }

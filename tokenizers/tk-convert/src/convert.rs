@@ -43,6 +43,17 @@ pub enum ConvertError {
     #[error("unknown metaspace prepend_scheme {scheme:?}")]
     UnknownPrependScheme { scheme: String },
 
+    #[error(
+        "a `Sequence` post-processor with more than one member that adds tokens is not supported"
+    )]
+    PostProcessorSequenceAmbiguous,
+
+    #[error("a `Sequence` post-processor with no members is not supported")]
+    PostProcessorSequenceEmpty,
+
+    #[error("a `{kind}`'s `{key}` is not a [token, id] pair")]
+    PostProcessorBadSpecial { kind: String, key: String },
+
     #[error("a `Metaspace` has no `replacement`")]
     MetaspaceNoReplacement,
 
@@ -89,6 +100,10 @@ pub fn canonicalize_file(path: impl AsRef<Path>) -> Result<String, ConvertError>
         source,
     })?;
     canonicalize_str(&text)
+}
+
+pub fn canonicalize_post_processor(node: &mut Value) -> Result<(), ConvertError> {
+    lower_template_node(node)
 }
 
 /// Idempotent: every step recognises the canonical shape and returns, or rewrites the legacy one
@@ -543,6 +558,113 @@ fn lower_template_processing(root: &mut Map<String, Value>) -> Result<(), Conver
     lower_template_node(pp)
 }
 
+/// Whether a `Sequence` member adds no tokens, so dropping it changes no ids.
+///
+/// Anything that is not a `TemplateProcessing` is one: a `ByteLevel` post-processor only re-tags
+/// offsets, which the pipeline does not keep. A `TemplateProcessing` is one when its pieces are
+/// the default arrangement, `$A` and `$A $B` with type ids 0 then 1.
+fn adds_no_tokens(member: &Value) -> bool {
+    if member.get("type").and_then(Value::as_str) != Some("TemplateProcessing") {
+        return true;
+    }
+    let default_seq = |piece: &Value, id: &str, type_id: u64| {
+        piece.get("seq").and_then(Value::as_str) == Some(id)
+            && piece.get("type_id").map_or(0, |t| t.as_u64().unwrap_or(1)) == type_id
+    };
+    let is = |key, expected: &[(&str, u64)]| {
+        member
+            .get(key)
+            .and_then(Value::as_array)
+            .is_some_and(|pieces| {
+                pieces.len() == expected.len()
+                    && pieces
+                        .iter()
+                        .zip(expected)
+                        .all(|(piece, &(id, type_id))| default_seq(piece, id, type_id))
+            })
+    };
+    is("single", &[("A", 0)]) && is("pair", &[("A", 0), ("B", 1)])
+}
+
+/// Replace a `Sequence` post-processor with the one member that actually adds tokens.
+///
+fn collapse_sequence(node: &mut Value) -> Result<(), ConvertError> {
+    let members = node
+        .get_mut("processors")
+        .and_then(Value::as_array_mut)
+        .ok_or(ConvertError::PostProcessorSequenceEmpty)?;
+    let mut adding = members
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| !adds_no_tokens(m));
+    let chosen = match (adding.next(), adding.next()) {
+        (Some(_), Some(_)) => return Err(ConvertError::PostProcessorSequenceAmbiguous),
+        (Some((i, _)), None) => i,
+        (None, _) if members.is_empty() => return Err(ConvertError::PostProcessorSequenceEmpty),
+        (None, _) => 0,
+    };
+    *node = members.swap_remove(chosen);
+    Ok(())
+}
+
+/// `BertProcessing` and `RobertaProcessing` name the template they imply, only this pass has to know what the old names meant.
+///
+/// ```text
+///   Bert     `[CLS] $A [SEP]`  and  `[CLS] $A [SEP] $B:1 [SEP]:1`
+///   Roberta  `<s> $A </s>`     and  `<s> $A </s></s> $B </s>`, all at type id 0
+/// ```
+fn lower_bert_like(pp: &Map<String, Value>, kind: &str) -> Result<Value, ConvertError> {
+    // `["<token>", id]`, which is how both spell `cls` and `sep`. Only the id is kept; the string
+    // is in the vocabulary, so naming it here would only repeat it.
+    let id_of = |key: &str| -> Result<u64, ConvertError> {
+        pp.get(key)
+            .and_then(Value::as_array)
+            .filter(|pair| pair.len() == 2)
+            .and_then(|pair| pair[1].as_u64())
+            .ok_or_else(|| ConvertError::PostProcessorBadSpecial {
+                kind: kind.to_string(),
+                key: key.to_string(),
+            })
+    };
+    let (cls, sep) = (id_of("cls")?, id_of("sep")?);
+
+    let piece = |key: &str, value: Value, type_id: u64| {
+        let mut piece = Map::new();
+        piece.insert(key.to_string(), value);
+        if type_id != 0 {
+            piece.insert("type_id".to_string(), Value::from(type_id));
+        }
+        Value::Object(piece)
+    };
+    let ids = |run: &[u64], type_id: u64| piece("ids", Value::from(run.to_vec()), type_id);
+    let seq = |name: &str, type_id: u64| piece("seq", Value::from(name), type_id);
+
+    let single = vec![ids(&[cls], 0), seq("A", 0), ids(&[sep], 0)];
+    let pair = if kind == "BertProcessing" {
+        vec![
+            ids(&[cls], 0),
+            seq("A", 0),
+            ids(&[sep], 0),
+            seq("B", 1),
+            ids(&[sep], 1),
+        ]
+    } else {
+        vec![
+            ids(&[cls], 0),
+            seq("A", 0),
+            ids(&[sep, sep], 0),
+            seq("B", 0),
+            ids(&[sep], 0),
+        ]
+    };
+
+    let mut out = Map::new();
+    out.insert("type".to_string(), Value::from("TemplateProcessing"));
+    out.insert("single".to_string(), Value::Array(single));
+    out.insert("pair".to_string(), Value::Array(pair));
+    Ok(Value::Object(out))
+}
+
 /// A `TemplateProcessing` can sit inside a `Sequence` post-processor -- llama-3 puts one behind a
 /// `ByteLevel` -- so the whole subtree is walked rather than just the slot.
 fn lower_template_node(node: &mut Value) -> Result<(), ConvertError> {
@@ -558,10 +680,28 @@ fn lower_template_node(node: &mut Value) -> Result<(), ConvertError> {
     if pp.get("type").and_then(Value::as_str) == Some("Sequence")
         && let Some(children) = pp.get_mut("processors")
     {
-        return lower_template_node(children);
+        lower_template_node(children)?;
+        return collapse_sequence(node);
     }
-    if pp.get("type").and_then(Value::as_str) != Some("TemplateProcessing") {
-        return Ok(());
+    // Owned, so the borrow of `pp` ends before `node` is written through.
+    let kind = pp
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    match kind.as_str() {
+        "BertProcessing" | "RobertaProcessing" => {
+            let lowered = lower_bert_like(pp, &kind)?;
+            *node = lowered;
+            return Ok(());
+        }
+        // TODO: depending on how we implement the byte level post processor we might have to re implement that
+        "ByteLevel" => {
+            *node = Value::Null;
+            return Ok(());
+        }
+        "TemplateProcessing" => {}
+        _ => return Ok(()),
     }
     let specials = pp.get("special_tokens").cloned().unwrap_or(Value::Null);
     // Already canonical: the table is what a legacy file has, and the pieces are flat without it.
