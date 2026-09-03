@@ -51,7 +51,11 @@ pub fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) {
         return key_and_hash(word);
     }
     // SAFETY: `readable >= 8` bytes exist from `word.as_ptr()`, and `len <= 7 < 8`.
-    let raw = unsafe { word.as_ptr().cast::<u64>().read_unaligned() };
+    // `from_le_bytes` rather than a `cast::<u64>()` reinterpret, because the key layout is
+    // little-endian: `key_and_hash` builds it with `u32::from_le_bytes`. A native load on a
+    // big-endian host would keep `word[8-len..8]` instead of `word[0..len]` once masked, and
+    // put `LEN_TAG` over `word[0]`.
+    let raw = u64::from_le_bytes(unsafe { word.as_ptr().cast::<[u8; 8]>().read_unaligned() });
     // SAFETY: `len <= INLINE_KEY_BYTES == 7`, and both tables have 8 entries.
     let (mask, tag) = unsafe { (*KEY_MASK.get_unchecked(len), *LEN_TAG.get_unchecked(len)) };
     let key = (raw & mask) | tag;
@@ -442,6 +446,57 @@ impl BucketVocabStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The key is a little-endian pack of the word with its length on top -- not whatever a `u64`
+    // load of those bytes happens to give. Built with shifts here so the expected value is the
+    // same on a big-endian target.
+    #[test]
+    fn inline_key_is_little_endian() {
+        let words: [&[u8]; 8] = [
+            b"",
+            b"a",
+            b" the",
+            b"hello",
+            b"abcdefg",
+            &[0x00],
+            &[0xff, 0x00],
+            &[0x80, 0x7f, 0x01, 0xfe, 0x00, 0x11, 0xc0],
+        ];
+        for word in words {
+            let mut expect = (word.len() as u64) << 56;
+            for (i, b) in word.iter().enumerate() {
+                expect |= (*b as u64) << (8 * i);
+            }
+            assert_eq!(key_and_hash(word), (expect, mix(expect)), "{word:?}");
+        }
+    }
+
+    // The fast path masks one 8-byte load instead of stitching the word together, so both have to
+    // land on the same key. On big-endian a native load gives a different one: the mask keeps the
+    // wrong end of the word and the length tag lands on `word[0]`.
+    #[test]
+    fn fast_path_matches_stitched_pack() {
+        // Words are slices of a bigger buffer -- that is what makes 8 bytes readable past the end.
+        let buf: &[u8] = b"\x00\xffhello \xc0\xc1world\x80\x7f\x01\xfe\x00 the quick\xff";
+        for start in 0..8 {
+            for len in 0..=INLINE_KEY_BYTES + 3 {
+                let word = &buf[start..start + len];
+                let want = key_and_hash(word);
+                let readable = buf.len() - start;
+                assert_eq!(
+                    key_and_hash_readable(word, readable),
+                    want,
+                    "start {start} len {len}"
+                );
+                // Under 8 readable bytes the load would run off the end, so it must not happen.
+                assert_eq!(
+                    key_and_hash_readable(word, len),
+                    want,
+                    "start {start} len {len}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn single_token() {
