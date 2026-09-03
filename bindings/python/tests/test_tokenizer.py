@@ -5,6 +5,7 @@ import math
 import multiprocessing
 import pickle
 import sys
+import sysconfig
 import threading
 from pathlib import Path
 
@@ -387,6 +388,7 @@ def test_tokenizer_can_be_used_from_a_multiprocessing_worker():
     assert ids == tokenizer.encode("Hello there").ids.tolist()
 
 
-@pytest.mark.skipif(not hasattr(sys, "_is_gil_enabled"), reason="only meaningful on a free-threaded build")
+# `sys._is_gil_enabled` exists on every build from 3.13 on, so only the config var tells the two apart.
+@pytest.mark.skipif(not sysconfig.get_config_var("Py_GIL_DISABLED"), reason="only meaningful on a free-threaded build")
 def test_importing_the_extension_keeps_the_gil_disabled():
     assert sys._is_gil_enabled() is False  # ty: ignore[unresolved-attribute]
