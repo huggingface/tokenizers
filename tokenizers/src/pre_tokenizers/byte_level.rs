@@ -141,7 +141,16 @@ impl PreTokenizer for ByteLevel {
                         .map(|(i, b)| (BYTES_CHAR[b], isize::from(i > 0))),
                 );
             }
-            normalized.transform(transformations, 0);
+            // Remap every normalized byte to its byte-level char over the full
+            // normalized range (not the original range) so bytes that map to a
+            // zero-width original span -- e.g. a prepended prefix space/marker --
+            // are still covered; addressing them via the original range would
+            // exclude them and desync the transformation offsets.
+            normalized.transform_range(
+                crate::tokenizer::normalizer::Range::Normalized(..),
+                transformations,
+                0,
+            );
             Ok(())
         })
     }
