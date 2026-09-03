@@ -213,6 +213,36 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
+/// Append `token`'s bytes to `out` with the literal `from` -> `to` replacement applied.
+///
+/// Scans for the needle's first byte and bulk-copies the run in between rather than pushing one
+/// byte at a time. Most tokens contain no needle at all, and for those this is a single scan plus
+/// a single `memcpy`.
+///
+/// Only ever called while *building* the decode table -- once per vocabulary entry, never per
+/// token occurrence -- which is why the pattern is passed in rather than stored on
+/// [`FusedSpmDecoder`].
+fn push_replaced(from: &[u8], to: &[u8], token: &[u8], out: &mut Vec<u8>) {
+    let n = from.len();
+    let first = from[0];
+    let mut rest = token;
+    loop {
+        let Some(k) = rest.iter().position(|&b| b == first) else {
+            out.extend_from_slice(rest);
+            return;
+        };
+        out.extend_from_slice(&rest[..k]);
+        rest = &rest[k..];
+        if rest.len() >= n && rest[..n] == from[..] {
+            out.extend_from_slice(to);
+            rest = &rest[n..];
+        } else {
+            out.push(rest[0]);
+            rest = &rest[1..];
+        }
+    }
+}
+
 /// The raw byte a `<0xNN>` byte-fallback token stands for, if it is one. Same test
 /// `ByteFallback::decode_chain` applies.
 #[inline]
@@ -252,7 +282,6 @@ thread_local! {
 ///
 /// Offsets keep the low 29 bits, capping a slab at 512 MB. Vocabulary slabs are three orders of
 /// magnitude below that.
-#[derive(Default)]
 struct SpmDecodeTable {
     /// `bytes[off[id] & MASK .. off[id + 1] & MASK]`, with `FLAG` set on a byte-fallback entry.
     off: Box<[u32]>,
@@ -282,7 +311,8 @@ impl SpmDecodeTable {
     }
 
     fn build(
-        spm: &FusedSpmDecoder,
+        from: &[u8],
+        to: &[u8],
         added: &BucketAddedVocabulary,
         model_vocab: Vec<(String, u32)>,
     ) -> Self {
@@ -315,7 +345,7 @@ impl SpmDecodeTable {
                 vec![byte]
             } else {
                 let mut buf = Vec::with_capacity(token.len());
-                spm.push_replaced(token.as_bytes(), &mut buf);
+                push_replaced(from, to, token.as_bytes(), &mut buf);
                 buf
             };
             len_of[*id as usize] = buf.len() as u32;
@@ -364,9 +394,6 @@ impl SpmDecodeTable {
 /// cheaper "append the raw bytes and let `from_utf8_lossy` sort it out" version got wrong -- that
 /// version differed from the released crate on gemma/english and on every llama-2 cell.
 struct FusedSpmDecoder {
-    /// `Replace`'s literal pattern and its replacement. A regex pattern does not qualify.
-    from: Box<[u8]>,
-    to: Box<[u8]>,
     /// A trailing `Strip`, which runs *after* `Fuse` and so applies to the whole output, not to
     /// each token: `(byte, leading, trailing)`.
     strip: Option<(u8, usize, usize)>,
@@ -415,14 +442,13 @@ impl FusedSpmDecoder {
         let PipelineModel::BPE(bpe) = model else {
             return None;
         };
-        let mut me = Self {
-            from: pattern.as_bytes().into(),
-            to: rep.content().as_bytes().into(),
-            strip,
-            table: SpmDecodeTable::default(),
-        };
-        me.table = SpmDecodeTable::build(&me, added, bpe.content());
-        Some(me)
+        let table = SpmDecodeTable::build(
+            pattern.as_bytes(),
+            rep.content().as_bytes(),
+            added,
+            bpe.content(),
+        );
+        Some(Self { strip, table })
     }
 
     /// `ByteFallback`'s end-of-run rule: the run as UTF-8 if it is valid, else one replacement
@@ -440,35 +466,6 @@ impl FusedSpmDecoder {
             }
         }
         run.clear();
-    }
-
-    /// Append `token`'s bytes with the literal replacement applied.
-    ///
-    /// Scans for the needle's first byte and bulk-copies the run in between, rather than pushing
-    /// one byte at a time. Most tokens contain no needle at all, and for those this is a single
-    /// scan plus a single `memcpy` -- the byte-at-a-time version left the SPM path at ~4x the
-    /// generic route where it could be far more, because it did per-*byte* work on a path whose
-    /// whole point is per-*token* work.
-    #[inline]
-    fn push_replaced(&self, token: &[u8], out: &mut Vec<u8>) {
-        let n = self.from.len();
-        let first = self.from[0];
-        let mut rest = token;
-        loop {
-            let Some(k) = rest.iter().position(|&b| b == first) else {
-                out.extend_from_slice(rest);
-                return;
-            };
-            out.extend_from_slice(&rest[..k]);
-            rest = &rest[k..];
-            if rest.len() >= n && rest[..n] == self.from[..] {
-                out.extend_from_slice(&self.to);
-                rest = &rest[n..];
-            } else {
-                out.push(rest[0]);
-                rest = &rest[1..];
-            }
-        }
     }
 }
 
