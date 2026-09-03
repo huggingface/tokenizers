@@ -385,7 +385,6 @@ def test_decode_refuses_floats():
         tokenizer.decode([1.5, 2.5])  # ty: ignore[invalid-argument-type]
 
 
-@pytest.mark.skip(reason="pickling a Tokenizer is not implemented yet")
 def test_tokenizer_can_be_pickled():
     tokenizer = Tokenizer.from_file(BERT)
 
@@ -394,11 +393,53 @@ def test_tokenizer_can_be_pickled():
     assert restored.encode("Hello there").ids == tokenizer.encode("Hello there").ids
 
 
+def test_pickling_a_tokenizer_keeps_the_padding_in_force_not_the_files(padded_wiki):
+    tokenizer = Tokenizer.from_file(padded_wiki)
+    tokenizer.padding = Padding(direction="left", length=8)
+
+    restored = pickle.loads(pickle.dumps(tokenizer))
+
+    assert restored.padding == tokenizer.padding
+    assert restored.encode("Hello").ids == tokenizer.encode("Hello").ids
+
+
+def test_switching_padding_off_survives_pickling(padded_wiki):
+    tokenizer = Tokenizer.from_file(padded_wiki)
+    tokenizer.padding = None
+
+    restored = pickle.loads(pickle.dumps(tokenizer))
+
+    assert restored.padding is None
+
+
+def test_encoding_can_be_pickled():
+    encoding = Tokenizer.from_file(BERT).encode("Hello there")
+
+    assert pickle.loads(pickle.dumps(encoding)) == encoding
+
+
+def test_padding_can_be_pickled():
+    padding = Padding(direction="left", pad_id=50256, pad_token="<|endoftext|>", pad_to_multiple_of=8)
+
+    assert pickle.loads(pickle.dumps(padding)) == padding
+
+
+# A class that pickle cannot rebuild breaks `multiprocessing` and `copy.deepcopy` for everything
+# holding it, so every class the module exports has to round-trip.
+def test_every_class_the_module_exports_can_be_pickled():
+    tokenizer = Tokenizer.from_file(BERT)
+    samples = [tokenizer, tokenizer.encode("Hello there"), Padding(length=8)]
+
+    exported = {value for value in vars(tokenizers).values() if isinstance(value, type)}
+    assert {type(sample) for sample in samples} == exported
+    for sample in samples:
+        assert repr(pickle.loads(pickle.dumps(sample))) == repr(sample)
+
+
 def _encode_ids(tokenizer, text):
     return tokenizer.encode(text).ids
 
 
-@pytest.mark.skip(reason="pickling a Tokenizer is not implemented yet")
 def test_tokenizer_can_be_used_from_a_multiprocessing_worker():
     # `spawn` pickles the tokenizer to hand it to the worker process; PyTorch's DataLoader and
     # `datasets.map(num_proc=...)` do the same.

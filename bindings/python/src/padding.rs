@@ -7,6 +7,7 @@ use pyo3::{Borrowed, type_hint_identifier, type_hint_subscript};
 use tk_encode::{PaddingDirection, PaddingParams, PaddingStrategy};
 
 use crate::error::err;
+use crate::pickle::{self, Reduced};
 
 /// Padding parameters for Tokenizer.encode
 #[pyclass(frozen, eq, hash, module = "tokenizers")]
@@ -63,6 +64,9 @@ impl<'py> IntoPyObject<'py> for Direction {
         Ok(PyString::new(py, self.0.as_ref()))
     }
 }
+
+/// What `Padding.__reduce__` hands pickle: every argument of its constructor.
+type Arguments = (Direction, u32, u32, String, Option<usize>, Option<usize>);
 
 #[pymethods]
 impl Padding {
@@ -139,6 +143,18 @@ impl Padding {
     #[getter]
     fn pad_to_multiple_of(&self) -> Option<usize> {
         self.0.pad_to_multiple_of
+    }
+
+    fn __reduce__(&self, py: Python<'_>) -> Reduced<Arguments> {
+        let arguments = (
+            self.direction(),
+            self.pad_id(),
+            self.pad_type_id(),
+            self.pad_token().to_owned(),
+            self.length(),
+            self.pad_to_multiple_of(),
+        );
+        (pickle::class::<Self>(py), arguments)
     }
 
     pub(crate) fn __repr__(&self) -> String {

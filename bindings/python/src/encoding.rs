@@ -3,6 +3,7 @@ use numpy::{PyArray1, PyArrayMethods};
 use pyo3::prelude::*;
 use tk_encode::pipeline::Encoding as PipelineEncoding;
 
+use crate::pickle::{self, Reduced};
 use crate::type_hints::U32Array;
 
 /// Text encoded to token ids by a tokenizer.
@@ -33,6 +34,9 @@ impl From<&PipelineEncoding> for Encoding {
 fn widen(bytes: &[u8]) -> Vec<u32> {
     bytes.iter().map(|&b| u32::from(b)).collect()
 }
+
+/// What `Encoding.__reduce__` hands pickle: `ids`, `type_ids` and `attention_mask`.
+type Arguments = (Vec<u32>, Vec<u32>, Vec<u32>);
 
 #[pymethods]
 impl Encoding {
@@ -81,6 +85,15 @@ impl Encoding {
         self.ids.len()
     }
 
+    fn __reduce__(&self, py: Python<'_>) -> PyResult<Reduced<Arguments>> {
+        let arguments = (
+            self.ids.clone(),
+            self.type_ids.clone(),
+            self.attention_mask.clone(),
+        );
+        Ok((pickle::rebuilder(py, "_unpickle_encoding")?, arguments))
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Encoding(ids={:?}, type_ids={:?}, attention_mask={:?})",
@@ -98,4 +111,19 @@ fn view<'py>(encoding: &Bound<'py, Encoding>, data: &[u32]) -> U32Array<'py> {
     };
     array.readwrite().make_nonwriteable();
     U32Array(array)
+}
+
+/// Rebuilds the `Encoding` that `Encoding.__reduce__` took apart. Private, because an `Encoding`
+/// comes out of `Tokenizer.encode` and is not built by hand.
+#[pyfunction]
+pub(crate) fn _unpickle_encoding(
+    ids: Vec<u32>,
+    type_ids: Vec<u32>,
+    attention_mask: Vec<u32>,
+) -> Encoding {
+    Encoding {
+        ids,
+        type_ids,
+        attention_mask,
+    }
 }

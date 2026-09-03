@@ -17,6 +17,7 @@ class Encoding:
         The number of tokens in the encoding
         """
     def __ne__(self, value: object, /) -> bool: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[list[int], list[int], list[int]]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def attention_mask(self, /) -> list[int]:
@@ -88,6 +89,7 @@ class Padding:
             pad_to_multiple_of: int (optional)
                 Rounds the padded length up to a multiple of this.
         """
+    def __reduce__(self, /) -> tuple[Any, tuple[Literal["left", "right"], int, int, str, int | None, int | None]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def direction(self, /) -> Literal["left", "right"]:
@@ -126,6 +128,7 @@ class Tokenizer:
     """
     A tokenizer. Encodes text into token ids, and decodes token ids back into text.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str, Padding | None]]: ...
     def __repr__(self, /) -> str: ...
     def decode(self, /, ids: Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = True) -> str:
         """
@@ -187,3 +190,18 @@ class Tokenizer:
         """
     @padding.setter
     def padding(self, /, padding: Padding | None) -> None: ...
+
+def _unpickle_encoding(ids: Sequence[int], type_ids: Sequence[int], attention_mask: Sequence[int]) -> Encoding:
+    """
+    Rebuilds the `Encoding` that `Encoding.__reduce__` took apart. Private, because an `Encoding`
+    comes out of `Tokenizer.encode` and is not built by hand.
+    """
+
+def _unpickle_tokenizer(json: str, padding: Padding | None) -> Tokenizer:
+    """
+    Rebuilds the `Tokenizer` that `Tokenizer.__reduce__` took apart. Private, because reading a
+    `tokenizer.json` from a string is not public API yet.
+
+    `__reduce__` writes the canonical `tokenizer.json` the pipeline holds, so unlike
+    `Tokenizer.from_file` this skips the conversion pass for older files.
+    """
