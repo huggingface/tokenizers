@@ -19,7 +19,7 @@ use ahash::AHashMap;
 use std::cmp;
 
 use crate::models::bpe::MergeMap;
-use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, CHAR_BYTES_LOOKUP};
+use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, char_to_byte};
 
 /// What one vocab token is worth to the fold table.
 pub(super) enum Fold {
@@ -95,11 +95,7 @@ impl<'a> ByteLevelFold<'a> {
 
     /// Verdict for `token`, whose external id is `external`.
     pub(super) fn fold(&self, token: &str, external: u32) -> Fold {
-        let Some(bytes) = token
-            .chars()
-            .map(|ch| CHAR_BYTES_LOOKUP.get(&ch).copied())
-            .collect::<Option<Vec<u8>>>()
-        else {
+        let Some(bytes) = token.chars().map(char_to_byte).collect::<Option<Vec<u8>>>() else {
             // if any of the byte was not in the lookup return
             return Fold::Skip;
         };
@@ -174,11 +170,7 @@ fn boundary_merge_ranks(
         else {
             continue;
         };
-        let Some(bytes) = token
-            .chars()
-            .map(|c| CHAR_BYTES_LOOKUP.get(&c).copied())
-            .collect::<Option<Vec<u8>>>()
-        else {
+        let Some(bytes) = token.chars().map(char_to_byte).collect::<Option<Vec<u8>>>() else {
             continue;
         };
         if let (Some(f), Some(l)) = (bytes.first(), bytes.last()) {
