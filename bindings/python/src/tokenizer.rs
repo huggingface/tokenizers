@@ -6,7 +6,7 @@ use tk_encode::PaddingParams;
 use tk_encode::pipeline::PipelineTokenizer as Pipeline;
 
 use crate::encoding::Encoding;
-use crate::error::{convert_err, err};
+use crate::error::{convert_err, err, poison_err};
 use crate::padding::Padding;
 use crate::repr;
 use crate::type_hints::TokenIds;
@@ -21,8 +21,8 @@ pub struct Tokenizer {
 }
 
 impl Tokenizer {
-    fn clone_padding_params(&self) -> Option<PaddingParams> {
-        self.padding.lock().unwrap().clone()
+    fn clone_padding_params(&self) -> PyResult<Option<PaddingParams>> {
+        Ok(self.padding.lock().map_err(poison_err)?.clone())
     }
 }
 
@@ -54,13 +54,14 @@ impl Tokenizer {
     /// The padding applied to every encode, or `None`.
     /// Assign `None` to switch padding off.
     #[getter]
-    fn padding(&self) -> Option<Padding> {
-        self.clone_padding_params().map(Padding::from)
+    fn padding(&self) -> PyResult<Option<Padding>> {
+        Ok(self.clone_padding_params()?.map(Padding::from))
     }
 
     #[setter]
-    fn set_padding(&self, padding: Option<PyRef<'_, Padding>>) {
-        *self.padding.lock().unwrap() = padding.map(|padding| padding.params().clone());
+    fn set_padding(&self, padding: Option<PyRef<'_, Padding>>) -> PyResult<()> {
+        *self.padding.lock().map_err(poison_err)? = padding.map(|padding| padding.params().clone());
+        Ok(())
     }
 
     /// Encodes the given text to token ids.
@@ -75,7 +76,7 @@ impl Tokenizer {
     ///     Encoding
     #[pyo3(signature = (text, add_special_tokens=true))]
     fn encode(&self, py: Python<'_>, text: String, add_special_tokens: bool) -> PyResult<Encoding> {
-        let padding = self.clone_padding_params();
+        let padding = self.clone_padding_params()?;
         // py.detach releases the GIL while encode runs on Rust side
         let encodings = py
             .detach(|| {
@@ -105,7 +106,7 @@ impl Tokenizer {
         texts: Vec<String>,
         add_special_tokens: bool,
     ) -> PyResult<Vec<Encoding>> {
-        let padding = self.clone_padding_params();
+        let padding = self.clone_padding_params()?;
         // py.detach releases the GIL while encode runs on Rust side
         let encodings = py
             .detach(|| {
@@ -145,7 +146,7 @@ impl Tokenizer {
         let file: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(&file).map_err(err)?;
         let padding = self
-            .padding()
+            .padding()?
             .map_or_else(|| "None".to_owned(), |padding| padding.__repr__());
         Ok(repr::tokenizer(&file, &padding))
     }
