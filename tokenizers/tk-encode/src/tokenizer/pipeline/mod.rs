@@ -15,6 +15,7 @@ use crate::{
     pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     tokenizer::Decoder as _,
+    utils::search::ReplacePattern,
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
 };
 #[cfg(feature = "parallelism")]
@@ -194,6 +195,246 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
     }
 }
 
+thread_local! {
+    /// Phase 1's gather buffer, reused across calls on this thread.
+    ///
+    /// `(ptr, len)` rather than an offset pair so phase 2 copies a ready-made slice instead of
+    /// re-slicing the slab with a bounds check per token. Thread-local rather than in
+    /// `ScratchPool`, whose `Mutex` would give decode something to synchronise on.
+    static DECODE_PARTS: std::cell::RefCell<Vec<(*const u8, usize)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Append `token`'s bytes to `out` with the literal `from` -> `to` replacement applied.
+///
+/// Called once per vocabulary entry while building the decode table, never per token occurrence.
+fn push_replaced(from: &[u8], to: &[u8], token: &[u8], out: &mut Vec<u8>) {
+    let n = from.len();
+    let first = from[0];
+    let mut rest = token;
+    loop {
+        let Some(k) = rest.iter().position(|&b| b == first) else {
+            out.extend_from_slice(rest);
+            return;
+        };
+        out.extend_from_slice(&rest[..k]);
+        rest = &rest[k..];
+        if rest.len() >= n && rest[..n] == from[..] {
+            out.extend_from_slice(to);
+            rest = &rest[n..];
+        } else {
+            out.push(rest[0]);
+            rest = &rest[1..];
+        }
+    }
+}
+
+/// The raw byte a `<0xNN>` byte-fallback token stands for, if it is one. Same test
+/// `ByteFallback::decode_chain` applies.
+#[inline]
+fn byte_fallback_byte(token: &[u8]) -> Option<u8> {
+    if token.len() != 6 || !token.starts_with(b"<0x") || !token.ends_with(b">") {
+        return None;
+    }
+    let hi = (token[3] as char).to_digit(16)?;
+    let lo = (token[4] as char).to_digit(16)?;
+    Some((hi * 16 + lo) as u8)
+}
+
+thread_local! {
+    /// The fused decoder's output buffer, reused across calls on this thread.
+    static DECODE_OUT: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// `id -> already-transformed bytes`, with the per-id flags packed into the offset.
+///
+/// `Replace` is applied once per vocabulary entry here rather than once per token occurrence at
+/// decode, the same trick `byte_level::transform_vocab` plays for byte-level models.
+///
+/// A byte-fallback entry cannot be pre-transformed -- it has to rejoin a run at decode time --
+/// and its length does not identify it, since plenty of ordinary tokens are also one byte. Its
+/// flag, and `SPECIAL`, therefore live in the high bits of the start offset, so the adjacent-pair
+/// load a decoder already does also answers both questions. Offsets keep the low 29 bits, capping
+/// a slab at 512 MB.
+struct SpmDecodeTable {
+    /// `bytes[off[id] & MASK .. off[id + 1] & MASK]`, with `FLAG` set on a byte-fallback entry.
+    off: Box<[u32]>,
+    bytes: Box<[u8]>,
+}
+
+impl SpmDecodeTable {
+    /// Member of a byte-fallback run: contributes its one raw byte to the run, not to the output.
+    const BYTE_FALLBACK: u32 = 1 << 31;
+    /// Dropped when `skip_special_tokens`. Set from `is_special_token`, which tests the token
+    /// *string*, so an ordinary vocabulary entry that happens to spell a special token is flagged
+    /// exactly as the generic route would have treated it.
+    const SPECIAL: u32 = 1 << 30;
+    const MASK: u32 = (1 << 29) - 1;
+
+    /// `(flags, bytes)`. An id the vocabulary does not hold yields an empty slice, which
+    /// contributes nothing -- the same as the generic route's `filter_map` dropping it.
+    #[inline]
+    fn get(&self, id: u32) -> (u32, &[u8]) {
+        let i = id as usize;
+        let Some(pair) = self.off.get(i..i + 2) else {
+            return (0, &[]);
+        };
+        let start = (pair[0] & Self::MASK) as usize;
+        let end = (pair[1] & Self::MASK) as usize;
+        (pair[0], self.bytes.get(start..end).unwrap_or_default())
+    }
+
+    fn build(
+        from: &[u8],
+        to: &[u8],
+        added: &BucketAddedVocabulary,
+        model_vocab: Vec<(String, u32)>,
+    ) -> Self {
+        // The added vocabulary is authoritative for its own ids, and may hold ids past the end of
+        // the model's, so it is layered over the model's entries rather than appended.
+        let mut by_id: BTreeMap<u32, String> =
+            model_vocab.into_iter().map(|(t, i)| (i, t)).collect();
+        for (id, token) in added.get_added_tokens_decoder() {
+            by_id.insert(id, token.content);
+        }
+        let Some(&max_id) = by_id.keys().next_back() else {
+            return Self {
+                off: Box::new([0, 0]),
+                bytes: Box::new([]),
+            };
+        };
+
+        let mut len_of = vec![0u32; max_id as usize + 1];
+        let mut flag_of = vec![0u32; max_id as usize + 1];
+        // `BTreeMap` iterates in ascending id order, which is the order the slab needs so a
+        // decoder's two offsets are adjacent.
+        let mut decoded: Vec<Vec<u8>> = Vec::with_capacity(by_id.len());
+        for (id, token) in &by_id {
+            let mut flags = 0;
+            if added.is_special_token(token) {
+                flags |= Self::SPECIAL;
+            }
+            let buf = if let Some(byte) = byte_fallback_byte(token.as_bytes()) {
+                flags |= Self::BYTE_FALLBACK;
+                vec![byte]
+            } else {
+                let mut buf = Vec::with_capacity(token.len());
+                push_replaced(from, to, token.as_bytes(), &mut buf);
+                buf
+            };
+            len_of[*id as usize] = buf.len() as u32;
+            flag_of[*id as usize] = flags;
+            decoded.push(buf);
+        }
+
+        let total: usize = decoded.iter().map(Vec::len).sum();
+        assert!(
+            total <= Self::MASK as usize,
+            "decode slab exceeds the 29-bit offset field"
+        );
+        let mut off = vec![0u32; max_id as usize + 2];
+        let mut cursor = 0u32;
+        for id in 0..=max_id as usize {
+            off[id] = cursor | flag_of[id];
+            cursor += len_of[id];
+        }
+        off[max_id as usize + 1] = cursor;
+        let mut bytes = Vec::with_capacity(total);
+        for buf in &decoded {
+            bytes.extend_from_slice(buf);
+        }
+        debug_assert_eq!(cursor as usize, bytes.len());
+        Self {
+            off: off.into_boxed_slice(),
+            bytes: bytes.into_boxed_slice(),
+        }
+    }
+}
+
+/// `Sequence[Replace{literal}, ByteFallback, Fuse]`, optionally followed by `Strip`, fused into
+/// one pass over the ids.
+///
+/// The chain that gemma, llama-2, mistral and T5 use. Run through the generic route it allocates
+/// a `String` per token in the gather and again in `Replace`, plus a `Vec` clone per byte run.
+///
+/// The semantics are reproduced, not approximated: an **invalid** byte run yields one U+FFFD per
+/// byte of the run, not one per run.
+struct FusedSpmDecoder {
+    /// A trailing `Strip`, which runs *after* `Fuse` and so applies to the whole output, not to
+    /// each token: `(byte, leading, trailing)`.
+    strip: Option<(u8, usize, usize)>,
+    /// The load-time transformed vocabulary, which also carries the per-id flags. See
+    /// [`SpmDecodeTable`].
+    table: SpmDecodeTable,
+}
+
+impl FusedSpmDecoder {
+    /// Recognise the chain, or decline. Declining is always safe: the generic route stays.
+    fn recognise(
+        decoder: &DecoderRuntime,
+        model: &PipelineModel,
+        added: &BucketAddedVocabulary,
+    ) -> Option<Self> {
+        let DecoderRuntime::Sequence(chain) = decoder else {
+            return None;
+        };
+        let (head, strip) = match chain.as_slice() {
+            [a, b, c] => ([a, b, c], None),
+            [a, b, c, DecoderRuntime::Strip(st)] => (
+                [a, b, c],
+                Some((u8::try_from(st.content).ok()?, st.start, st.stop)),
+            ),
+            _ => return None,
+        };
+        let [
+            DecoderRuntime::Replace(rep),
+            DecoderRuntime::ByteFallback(_),
+            DecoderRuntime::Fuse(_),
+        ] = head
+        else {
+            return None;
+        };
+        let ReplacePattern::String(pattern) = rep.pattern() else {
+            // A regex pattern is not a literal substitution; leave it to the chain.
+            return None;
+        };
+        if pattern.is_empty() {
+            return None;
+        }
+        // Only BPE exposes its vocabulary for the load-time transform, and without that table
+        // this path has no advantage over the generic route, so decline rather than carry a
+        // second, slower implementation of the same semantics.
+        #[allow(irrefutable_let_patterns)]
+        let PipelineModel::BPE(bpe) = model else {
+            return None;
+        };
+        let table = SpmDecodeTable::build(
+            pattern.as_bytes(),
+            rep.content().as_bytes(),
+            added,
+            bpe.content(),
+        );
+        Some(Self { strip, table })
+    }
+
+    /// `ByteFallback`'s end-of-run rule: the run as UTF-8 if it is valid, else one replacement
+    /// character per byte.
+    #[inline]
+    fn flush_run(run: &mut Vec<u8>, out: &mut Vec<u8>) {
+        if run.is_empty() {
+            return;
+        }
+        if std::str::from_utf8(run).is_ok() {
+            out.extend_from_slice(run);
+        } else {
+            for _ in 0..run.len() {
+                out.extend_from_slice("\u{fffd}".as_bytes());
+            }
+        }
+        run.clear();
+    }
+}
+
 struct TokenizerInner {
     added_vocabulary: BucketAddedVocabulary,
     normalizers: Vec<PipelineNormalizer>,
@@ -201,6 +442,9 @@ struct TokenizerInner {
     model: PipelineModel,
     post_processor: PipelinePostProcessor,
     decoder: Option<DecoderRuntime>,
+    /// The recognised SPM chain, fused. `None` when the chain is something else, in which case
+    /// the generic route runs. See [`FusedSpmDecoder`].
+    fused_spm: Option<FusedSpmDecoder>,
     /// Lowest id owned by the added vocabulary, or `u32::MAX` when there is none.
     /// Allows to skip the added vocabulary lookup if the token id is lower than this value.
     added_id_min: u32,
@@ -243,6 +487,10 @@ impl PipelineTokenizer {
         role_to_token: BTreeMap<String, String>,
         padding: Option<PaddingParams>,
     ) -> Self {
+        // The vocabulary is transformed once here, not once per token occurrence at decode.
+        let fused_spm = decoder
+            .as_ref()
+            .and_then(|d| FusedSpmDecoder::recognise(d, &model, &added_vocabulary));
         let added_id_min = added_vocabulary
             .get_added_tokens_decoder()
             .keys()
@@ -257,6 +505,7 @@ impl PipelineTokenizer {
                 model,
                 post_processor,
                 decoder,
+                fused_spm,
                 added_id_min,
                 role_to_token,
                 padding,
@@ -780,6 +1029,11 @@ impl PipelineTokenizer {
         {
             return Ok(self.decode_byte_level(bpe, ids, skip_special_tokens));
         }
+        // A recognised SPM chain, fused into one allocation-free pass. See `FusedSpmDecoder`.
+        #[allow(irrefutable_let_patterns)]
+        if let Some(spm) = &self.inner.fused_spm {
+            return Ok(self.decode_fused_spm(spm, ids, skip_special_tokens));
+        }
         let tokens = ids
             .iter()
             .filter_map(|&id| {
@@ -805,7 +1059,118 @@ impl PipelineTokenizer {
     }
 
     /// Decode for a byte-level BPE, whose vocab entries are already decoded raw bytes.
+    /// One pass over `ids`, applying the whole recognised chain, into one reusable buffer.
+    ///
+    /// Order mirrors the chain: `Replace` is already folded into the table, `ByteFallback`
+    /// accumulates a run of `<0xNN>` tokens and resolves it when the run ends, `Fuse` is the
+    /// concatenation this loop already does, and a trailing `Strip` applies to the finished
+    /// output.
+    fn decode_fused_spm(
+        &self,
+        spm: &FusedSpmDecoder,
+        ids: &[u32],
+        skip_special_tokens: bool,
+    ) -> String {
+        DECODE_OUT.with_borrow_mut(|out| {
+            out.clear();
+            let mut run: Vec<u8> = Vec::new();
+            // One adjacent-pair load per token gives the span and every flag, and the bytes
+            // already have `Replace` applied, so the ordinary arm is a `memcpy` and nothing else.
+            let table = &spm.table;
+            for &id in ids {
+                let (flags, token) = table.get(id);
+                if flags & SpmDecodeTable::BYTE_FALLBACK != 0 {
+                    if let Some(&byte) = token.first() {
+                        run.push(byte);
+                    }
+                    continue;
+                }
+                FusedSpmDecoder::flush_run(&mut run, out);
+                if skip_special_tokens && flags & SpmDecodeTable::SPECIAL != 0 {
+                    continue;
+                }
+                out.extend_from_slice(token);
+            }
+            FusedSpmDecoder::flush_run(&mut run, out);
+
+            let mut bytes: &[u8] = out;
+            if let Some((byte, start, stop)) = spm.strip {
+                let mut n = 0;
+                while n < start && bytes.first() == Some(&byte) {
+                    bytes = &bytes[1..];
+                    n += 1;
+                }
+                let mut n = 0;
+                while n < stop && bytes.last() == Some(&byte) {
+                    bytes = &bytes[..bytes.len() - 1];
+                    n += 1;
+                }
+            }
+            String::from_utf8_lossy(bytes).into_owned()
+        })
+    }
+
+    /// Two phases: gather every token's bytes, then stream them out.
+    ///
+    /// Interleaving the random index probe with the append makes each copy wait behind its own
+    /// lookup. Split, phase 1 issues only independent loads with no output cursor to serialise
+    /// on, and it yields the exact output length, retiring the `ids.len() * 4` guess.
+    ///
+    /// Falls back to the one-pass walk as soon as an added token appears: those produce an owned
+    /// `String` rather than a borrow into the vocabulary, so they cannot be gathered as slices.
     fn decode_byte_level(
+        &self,
+        bpe: &PipelineBPE,
+        ids: &[u32],
+        skip_special_tokens: bool,
+    ) -> String {
+        DECODE_PARTS.with_borrow_mut(|parts| {
+            parts.clear();
+            let mut total = 0usize;
+            for (i, &id) in ids.iter().enumerate() {
+                if id >= self.inner.added_id_min {
+                    let mut out =
+                        self.decode_byte_level_one_pass(bpe, &ids[..i], skip_special_tokens);
+                    out.push_str(&self.decode_byte_level_one_pass(
+                        bpe,
+                        &ids[i..],
+                        skip_special_tokens,
+                    ));
+                    return out;
+                }
+                let bytes = bpe.id_to_token_bytes_for_decode(id);
+                total += bytes.len();
+                parts.push((bytes.as_ptr(), bytes.len()));
+            }
+
+            // `extend_from_slice` per token would re-check the capacity and update the length
+            // every time. Phase 1 already computed the exact total, so those checks can only ever
+            // pass: write straight through the pointer and set the length once.
+            let mut out: Vec<u8> = Vec::with_capacity(total);
+            let mut dst = out.as_mut_ptr();
+            for &(src, len) in parts.iter() {
+                // SAFETY: `src`/`len` came from a slice borrowed out of the vocabulary slab during
+                // this same call, and `&self` keeps that alive throughout; `parts` was cleared
+                // above so nothing older is in it. `total` is the exact sum of these lengths and
+                // is the allocated capacity, so the cursor stays inside `out`, which is fresh and
+                // cannot overlap the slab.
+                unsafe {
+                    std::ptr::copy_nonoverlapping(src, dst, len);
+                    dst = dst.add(len);
+                }
+            }
+            // SAFETY: exactly `total` initialised bytes were just written.
+            unsafe { out.set_len(total) };
+            match String::from_utf8(out) {
+                Ok(decoded) => decoded,
+                Err(invalid) => String::from_utf8_lossy(invalid.as_bytes()).into_owned(),
+            }
+        })
+    }
+
+    /// The original interleaved probe-and-append walk. Still the path for any sequence holding an
+    /// added token, and the reference [`Self::decode_byte_level`] is checked against.
+    fn decode_byte_level_one_pass(
         &self,
         bpe: &PipelineBPE,
         ids: &[u32],
@@ -822,9 +1187,9 @@ impl PipelineTokenizer {
                 }
                 continue;
             }
-            if let Some(bytes) = bpe.id_to_token_bytes(id) {
-                out.extend_from_slice(bytes);
-            }
+            // Empty slice for an id the vocabulary does not hold, which appends nothing -- the
+            // same outcome the `Option` route reached, without the branch or the pointer chase.
+            out.extend_from_slice(bpe.id_to_token_bytes_for_decode(id));
         }
         match String::from_utf8(out) {
             Ok(decoded) => decoded,
