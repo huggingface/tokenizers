@@ -813,7 +813,15 @@ impl PipelineTokenizer {
     ) -> String {
         // Byte-level tokens average ~4 bytes
         let mut out: Vec<u8> = Vec::with_capacity(ids.len() * 4);
-        for &id in ids {
+        // How far ahead to warm the decode index. The loop's cost is one random access per token
+        // into a table indexed by id, so the ids that are already in hand are free latency to
+        // hide. 8 is enough to cover an L2 hit at this loop's ~9 ns/token without running so far
+        // ahead that the line is evicted before use.
+        const PREFETCH_AHEAD: usize = 8;
+        for (i, &id) in ids.iter().enumerate() {
+            if let Some(&ahead) = ids.get(i + PREFETCH_AHEAD) {
+                bpe.prefetch_for_decode(ahead);
+            }
             if id >= self.inner.added_id_min
                 && let Some(token) = self.inner.added_vocabulary.simple_id_to_token(id)
             {

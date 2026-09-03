@@ -415,6 +415,42 @@ impl BucketVocabStore {
         self.bytes.get(start..start + sp.len as usize)
     }
 
+    /// Start the load of `id`'s offsets without waiting for it.
+    ///
+    /// Decode's remaining cost is one random access into [`Self::decode_off`], which is indexed by
+    /// a token id and so has no spatial locality to exploit -- measured at ~9 ns per token on
+    /// llama-3/english against 4.08 ns with the table hot in L1. A decoder knows every id it is
+    /// about to need, so it can issue that load some tokens ahead of using it.
+    ///
+    /// A hint, never a correctness requirement: `prfm`/`prefetchnta` cannot fault, an out-of-range
+    /// id is filtered here anyway, and the whole thing compiles to nothing on an architecture
+    /// without a prefetch instruction.
+    #[inline]
+    pub fn prefetch_for_decode(&self, id: u32) {
+        let i = id as usize;
+        if i + 1 >= self.decode_off.len() {
+            return;
+        }
+        // SAFETY: `i + 1 < len`, so `add(i)` is in bounds and does not wrap.
+        let p = unsafe { self.decode_off.as_ptr().add(i) }.cast::<u8>();
+        #[cfg(target_arch = "aarch64")]
+        // SAFETY: `prfm` has no memory effects and cannot fault; it only warms a cache line.
+        unsafe {
+            core::arch::asm!(
+                "prfm pldl1keep, [{p}]",
+                p = in(reg) p,
+                options(nostack, readonly, preserves_flags)
+            );
+        }
+        #[cfg(target_arch = "x86_64")]
+        // SAFETY: `_mm_prefetch` has no memory effects and cannot fault.
+        unsafe {
+            core::arch::x86_64::_mm_prefetch(p.cast::<i8>(), core::arch::x86_64::_MM_HINT_T0);
+        }
+        #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+        let _ = p;
+    }
+
     /// `id -> token bytes` for the decode path, through [`Self::decode_off`].
     ///
     /// One load of an adjacent `u32` pair, then the slice — against

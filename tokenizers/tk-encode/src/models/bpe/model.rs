@@ -90,6 +90,13 @@ impl PipelineBPE {
         self.vocab.id_to_token_bytes_for_decode(id)
     }
 
+    /// Warm the decode index for an id a few tokens ahead of where it is needed.
+    /// See `BucketVocabStore::prefetch_for_decode`.
+    #[inline]
+    pub(crate) fn prefetch_for_decode(&self, id: u32) {
+        self.vocab.prefetch_for_decode(id);
+    }
+
     /// A token as a `String`, for the decoder-chain route. Only meaningful when the entries are
     /// the token strings as written, i.e. when [`Self::is_byte_level`] is false; a byte-level
     /// model decodes through [`Self::id_to_token_bytes_for_decode`] instead.
