@@ -137,10 +137,9 @@ impl<'de> Deserialize<'de> for NormalizerWrapper {
                     ),
                     EnumType::Precompiled => NormalizerWrapper::Precompiled(
                         serde_json::from_str(
-                            &serde_json::to_string(&values).expect("Can reserialize precompiled"),
+                            &serde_json::to_string(&values).map_err(serde::de::Error::custom)?,
                         )
-                        // .map_err(serde::de::Error::custom)
-                        .expect("Precompiled"),
+                        .map_err(serde::de::Error::custom)?,
                     ),
                     EnumType::Replace => NormalizerWrapper::Replace(
                         serde_json::from_value(values).map_err(serde::de::Error::custom)?,
@@ -220,6 +219,16 @@ impl_enum_from!(ByteLevel, NormalizerWrapper, ByteLevel);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_precompiled_charsmap_is_rejected() {
+        // A crafted config with an invalid `precompiled_charsmap` used to
+        // `.expect()` and panic; like every other normalizer it must now
+        // surface a serde error.
+        let json = r#"{"type":"Precompiled","precompiled_charsmap":"!!!not-base64!!!"}"#;
+        assert!(serde_json::from_str::<NormalizerWrapper>(json).is_err());
+    }
+
     #[test]
     fn post_processor_deserialization_no_type() {
         let json = r#"{"strip_left":false, "strip_right":true}"#;

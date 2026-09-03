@@ -334,7 +334,7 @@ impl From<AHashMap<String, SpecialToken>> for Tokens {
 /// ```
 ///
 #[derive(Debug, Clone, PartialEq, Builder, Serialize, Deserialize, Eq)]
-#[serde(tag = "type", from = "TemplateProcessingDeserializer")]
+#[serde(tag = "type", try_from = "TemplateProcessingDeserializer")]
 #[builder(build_fn(validate = "Self::validate"))]
 pub struct TemplateProcessing {
     #[builder(try_setter, default = "\"$0\".try_into().unwrap()")]
@@ -425,17 +425,21 @@ struct TemplateProcessingDeserializer {
     pair: Template,
     special_tokens: Tokens,
 }
-impl From<TemplateProcessingDeserializer> for TemplateProcessing {
-    fn from(t: TemplateProcessingDeserializer) -> Self {
-        let added_single = count_added(&t.single, Some(&t.special_tokens));
-        let added_pair = count_added(&t.pair, Some(&t.special_tokens));
-        Self {
-            single: t.single,
-            pair: t.pair,
-            added_single,
-            added_pair,
-            special_tokens: t.special_tokens,
-        }
+impl TryFrom<TemplateProcessingDeserializer> for TemplateProcessing {
+    type Error = String;
+
+    // Build through the builder so `validate` runs: this rejects a template that
+    // references a special token missing from `special_tokens` (or a `pair`
+    // template that doesn't use both sequences). Constructing directly bypassed
+    // that check, so such a deserialized processor panicked at
+    // `self.special_tokens.0[id]` during `apply_template`.
+    fn try_from(t: TemplateProcessingDeserializer) -> std::result::Result<Self, Self::Error> {
+        TemplateProcessingBuilder::default()
+            .single(t.single)
+            .pair(t.pair)
+            .special_tokens(t.special_tokens)
+            .build()
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -883,6 +887,26 @@ mod tests {
         let err_a = Err("Missing SpecialToken(s) with id(s) `[SEP], [CLS]`".into());
         let err_b = Err("Missing SpecialToken(s) with id(s) `[CLS], [SEP]`".into());
         assert!(processor == err_a || processor == err_b);
+    }
+
+    #[test]
+    fn deserialize_missing_special_tokens_is_rejected() {
+        // Deserialization used to bypass `validate`, so a template referencing a
+        // special token absent from `special_tokens` deserialized fine and then
+        // panicked at `self.special_tokens.0[id]` during `apply_template`. It must
+        // now be rejected at deserialization time instead.
+        let template_s = "{\
+            \"type\":\"TemplateProcessing\",\
+            \"single\":[\
+                {\"SpecialToken\":{\"id\":\"[CLS]\",\"type_id\":0}},\
+                {\"Sequence\":{\"id\":\"A\",\"type_id\":0}}\
+            ],\
+            \"pair\":[\
+                {\"Sequence\":{\"id\":\"A\",\"type_id\":0}},\
+                {\"Sequence\":{\"id\":\"B\",\"type_id\":1}}\
+            ],\
+            \"special_tokens\":{}}";
+        assert!(serde_json::from_str::<TemplateProcessing>(template_s).is_err());
     }
 
     #[test]
