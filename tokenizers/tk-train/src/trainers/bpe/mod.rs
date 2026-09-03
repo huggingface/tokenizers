@@ -564,8 +564,22 @@ impl BpeTrainer {
                 break;
             };
 
-            if top.count != pair_counts[&top.pair] as u64 {
-                top.count = pair_counts[&top.pair] as u64;
+            // Staleness check: the heap entry may be outdated because pair_counts
+            // was updated after the entry was pushed. Re-push with the current count
+            // so the max-heap can re-sort it.
+            //
+            // Guard: pair_counts is i32 and can go negative when max_token_length
+            // rejects the +1 side of a neighbour delta while the -1 side applies
+            // (issue #2320). A negative count sign-extends to u64::MAX when cast,
+            // winning the max-heap ahead of every legitimate pair. Drop spent entries
+            // before the cast to prevent phantom merges.
+            let live = pair_counts[&top.pair];
+            if live <= 0 {
+                // Pair has been exhausted or invalidated; discard and move on.
+                continue;
+            }
+            if top.count != live as u64 {
+                top.count = live as u64;
                 queue.push(top);
                 continue;
             }
@@ -730,7 +744,8 @@ impl Trainer for BpeTrainer {
 
 #[cfg(test)]
 mod tests {
-    use super::{BpeTrainer, Merges};
+    use super::BpeTrainer;
+    use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
     use ahash::AHashMap;
     use compact_str::CompactString;
 
@@ -909,5 +924,63 @@ mod tests {
         .map(|(k, v)| (k.to_string(), v))
         .collect();
         assert_eq!(trained_vocab, expected_vocab)
+    }
+
+    /// Regression test for <https://github.com/huggingface/tokenizers/issues/2320>.
+    ///
+    /// When `continuing_subword_prefix` and `max_token_length` are both set, the
+    /// length guard can reject the `+1` neighbour delta for a pair while the `-1`
+    /// side still applies, driving `pair_counts[pair]` negative.  The staleness
+    /// re-check on the heap entry reads that negative `i32` value through `as u64`,
+    /// sign-extending it to `u64::MAX`, which then wins the max-heap and causes the
+    /// trainer to emit a merge for a pair that occurs zero times in the corpus
+    /// (a "phantom merge").
+    ///
+    /// The fix drops any heap entry whose live count is ≤ 0 before the cast.
+    #[test]
+    fn bpe_no_phantom_merge_with_prefix_and_max_token_length() {
+        // Minimal reproducer from issue #2320: 8-word corpus that reliably triggers
+        // the sign-extension on at least one run when prefix + max_token_length = 4.
+        let word_counts: AHashMap<CompactString, u64> = [
+            ("##c", 1),
+            ("##cac#", 1),
+            ("#ab", 1),
+            ("c#", 1),
+            ("####", 1),
+            ("accc#a#a#b", 1),
+            ("a", 1),
+            ("cb", 1),
+        ]
+        .iter()
+        .map(|(k, v)| (CompactString::from(*k), *v))
+        .collect();
+
+        let trainer = BpeTrainer::builder()
+            .show_progress(false)
+            .continuing_subword_prefix("##".to_string())
+            .max_token_length(Some(4))
+            .vocab_size(244)
+            .special_tokens(vec![
+                AddedToken::from("a".to_string(), true),
+                AddedToken::from("<unk>".to_string(), true),
+            ])
+            .build();
+
+        let (vocab, merges, _) = trainer.do_train(&word_counts).unwrap();
+
+        // Verify: every merge (left, right) must reference tokens present in the
+        // vocabulary produced by training.  A phantom merge — one fired when
+        // pair_count ≤ 0 due to the sign-extension bug — would reference a token
+        // that was never added to the vocabulary by the training loop.
+        for (left, right) in &merges {
+            assert!(
+                vocab.contains_key(left.as_str()),
+                "phantom merge: left token '{left}' not in vocab"
+            );
+            assert!(
+                vocab.contains_key(right.as_str()),
+                "phantom merge: right token '{right}' not in vocab"
+            );
+        }
     }
 }
