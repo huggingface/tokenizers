@@ -3,8 +3,9 @@ DATA_DIR = data
 dir_guard=@mkdir -p $(@D)
 
 SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2-merges.txt $(DATA_DIR)/gpt2.json $(DATA_DIR)/bert-base-uncased-vocab.txt $(DATA_DIR)/big.txt $(DATA_DIR)/small.txt $(DATA_DIR)/albert-base-v1-tokenizer.json  $(DATA_DIR)/llama-3-tokenizer.json
-# Exactly what tk-serialize/benches/{encode,decode}.rs read: big.txt and llama-3 come from
-# SHARED_RESOURCES, plus the Japanese corpus decode uses and the config encode profiles.
+# Exactly what tk-serialize/benches/{encode,decode,scratch_scaling}.rs read: big.txt and llama-3
+# come from SHARED_RESOURCES, plus the Japanese corpus decode uses and the config the other two
+# profile.
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/deepseek-v4.json
 TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json $(DATA_DIR)/fixtures/modalities/agentic-traces.txt
 
@@ -116,7 +117,7 @@ slimest-size : slimest
 	@b=target/$(HOST_TRIPLE)/slimest/examples/binsize_pipeline; \
 	  gzip -9 -c $$b | wc -c | tr -d ' ' | xargs printf 'slimest tk-encode: %s bytes gzipped\n'
 
-# The two benches live in tk-serialize, which is the only crate that can build a
+# The benches live in tk-serialize, which is the only crate that can build a
 # `PipelineTokenizer`. The big cross-engine benchmarks live in huggingface/tokbench.
 .PHONY : bench
 bench : $(BENCHMARK_RESOURCES)
