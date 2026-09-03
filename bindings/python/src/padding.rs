@@ -2,12 +2,11 @@ use std::convert::Infallible;
 
 use pyo3::inspect::{PyStaticConstant, PyStaticExpr};
 use pyo3::prelude::*;
-use pyo3::types::PyString;
+use pyo3::types::{PyString, PyType};
 use pyo3::{Borrowed, type_hint_identifier, type_hint_subscript};
 use tk_encode::{PaddingDirection, PaddingParams, PaddingStrategy};
 
 use crate::error::err;
-use crate::pickle::{self, Reduced};
 
 /// Padding parameters for Tokenizer.encode
 #[pyclass(frozen, eq, hash, module = "tokenizers")]
@@ -65,8 +64,8 @@ impl<'py> IntoPyObject<'py> for Direction {
     }
 }
 
-/// What `Padding.__reduce__` hands pickle: every argument of its constructor.
-type Arguments = (Direction, u32, u32, String, Option<usize>, Option<usize>);
+/// What `Padding.__reduce__` gives pickle: every argument of the constructor, in its order.
+type UnpickleArguments = (Direction, u32, u32, String, Option<usize>, Option<usize>);
 
 #[pymethods]
 impl Padding {
@@ -145,7 +144,8 @@ impl Padding {
         self.0.pad_to_multiple_of
     }
 
-    fn __reduce__(&self, py: Python<'_>) -> Reduced<Arguments> {
+    /// Pickle rebuilds a `Padding` by calling the class with these constructor arguments.
+    fn __reduce__<'py>(&self, py: Python<'py>) -> (Bound<'py, PyType>, UnpickleArguments) {
         let arguments = (
             self.direction(),
             self.pad_id(),
@@ -154,7 +154,7 @@ impl Padding {
             self.length(),
             self.pad_to_multiple_of(),
         );
-        (pickle::class::<Self>(py), arguments)
+        (py.get_type::<Self>(), arguments)
     }
 
     pub(crate) fn __repr__(&self) -> String {

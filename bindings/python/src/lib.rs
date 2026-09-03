@@ -4,7 +4,6 @@
 mod encoding;
 mod error;
 mod padding;
-mod pickle;
 mod repr;
 mod tokenizer;
 mod type_hints;
@@ -16,9 +15,9 @@ mod tokenizers {
     const __version__: &str = env!("CARGO_PKG_VERSION");
 
     #[pymodule_export]
-    use crate::encoding::{_unpickle_encoding, Encoding};
+    use crate::encoding::Encoding;
     #[pymodule_export]
     use crate::padding::Padding;
     #[pymodule_export]
-    use crate::tokenizer::{_unpickle_tokenizer, Tokenizer};
+    use crate::tokenizer::Tokenizer;
 }

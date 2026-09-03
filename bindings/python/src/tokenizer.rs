@@ -8,7 +8,6 @@ use tk_encode::pipeline::PipelineTokenizer as Pipeline;
 use crate::encoding::Encoding;
 use crate::error::{convert_err, err, poison_err};
 use crate::padding::Padding;
-use crate::pickle::{self, Reduced};
 use crate::repr;
 use crate::type_hints::TokenIds;
 
@@ -27,9 +26,8 @@ impl Tokenizer {
     }
 }
 
-/// What `Tokenizer.__reduce__` hands pickle: the `tokenizer.json` the pipeline writes, and
-/// the padding in force, which that file does not carry.
-type Arguments = (String, Option<Padding>);
+/// What `Tokenizer.__reduce__` gives pickle
+type UnpickleArguments = (String, Option<Padding>);
 
 #[pymethods]
 impl Tokenizer {
@@ -146,10 +144,23 @@ impl Tokenizer {
             .map_err(err)
     }
 
-    fn __reduce__(&self, py: Python<'_>) -> PyResult<Reduced<Arguments>> {
+    /// Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
+    fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<(Bound<'py, PyAny>, UnpickleArguments)> {
         let json = tk_serialize::to_json(&self.pipeline).map_err(err)?;
-        let arguments = (json, self.padding()?);
-        Ok((pickle::rebuilder(py, "_unpickle_tokenizer")?, arguments))
+        Ok((
+            py.get_type::<Self>().getattr("_unpickle")?,
+            (json, self.padding()?),
+        ))
+    }
+
+    /// Unpickles a `Tokenizer`
+    #[staticmethod]
+    fn _unpickle(json: &str, padding: Option<PyRef<'_, Padding>>) -> PyResult<Self> {
+        let pipeline: Pipeline = tk_serialize::from_json(json).map_err(err)?;
+        Ok(Self {
+            pipeline,
+            padding: Mutex::new(padding.map(|padding| padding.params().clone())),
+        })
     }
 
     fn __repr__(&self) -> PyResult<String> {
@@ -161,21 +172,4 @@ impl Tokenizer {
             .map_or_else(|| "None".to_owned(), |padding| padding.__repr__());
         Ok(repr::tokenizer(&file, &padding))
     }
-}
-
-/// Rebuilds the `Tokenizer` that `Tokenizer.__reduce__` took apart. Private, because reading a
-/// `tokenizer.json` from a string is not public API yet.
-///
-/// `__reduce__` writes the canonical `tokenizer.json` the pipeline holds, so unlike
-/// `Tokenizer.from_file` this skips the conversion pass for older files.
-#[pyfunction]
-pub(crate) fn _unpickle_tokenizer(
-    json: &str,
-    padding: Option<PyRef<'_, Padding>>,
-) -> PyResult<Tokenizer> {
-    let pipeline: Pipeline = tk_serialize::from_json(json).map_err(err)?;
-    Ok(Tokenizer {
-        pipeline,
-        padding: Mutex::new(padding.map(|padding| padding.params().clone())),
-    })
 }

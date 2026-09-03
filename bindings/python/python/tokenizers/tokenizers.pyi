@@ -17,8 +17,16 @@ class Encoding:
         The number of tokens in the encoding
         """
     def __ne__(self, value: object, /) -> bool: ...
-    def __reduce__(self, /) -> tuple[Any, tuple[list[int], list[int], list[int]]]: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[list[int], list[int], list[int]]]:
+        """
+        Pickle rebuilds an `Encoding` by calling `_unpickle` with these arguments.
+        """
     def __repr__(self, /) -> str: ...
+    @staticmethod
+    def _unpickle(ids: Sequence[int], type_ids: Sequence[int], attention_mask: Sequence[int]) -> Encoding:
+        """
+        Unpickles an `Encoding`
+        """
     @property
     def attention_mask(self, /) -> list[int]:
         """
@@ -89,7 +97,10 @@ class Padding:
             pad_to_multiple_of: int (optional)
                 Rounds the padded length up to a multiple of this.
         """
-    def __reduce__(self, /) -> tuple[Any, tuple[Literal["left", "right"], int, int, str, int | None, int | None]]: ...
+    def __reduce__(self, /) -> tuple[type, tuple[Literal["left", "right"], int, int, str, int | None, int | None]]:
+        """
+        Pickle rebuilds a `Padding` by calling the class with these constructor arguments.
+        """
     def __repr__(self, /) -> str: ...
     @property
     def direction(self, /) -> Literal["left", "right"]:
@@ -128,8 +139,16 @@ class Tokenizer:
     """
     A tokenizer. Encodes text into token ids, and decodes token ids back into text.
     """
-    def __reduce__(self, /) -> tuple[Any, tuple[str, Padding | None]]: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[str, Padding | None]]:
+        """
+        Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
+        """
     def __repr__(self, /) -> str: ...
+    @staticmethod
+    def _unpickle(json: str, padding: Padding | None) -> Tokenizer:
+        """
+        Unpickles a `Tokenizer`
+        """
     def decode(self, /, ids: Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = True) -> str:
         """
         Decodes token ids back into text
@@ -190,18 +209,3 @@ class Tokenizer:
         """
     @padding.setter
     def padding(self, /, padding: Padding | None) -> None: ...
-
-def _unpickle_encoding(ids: Sequence[int], type_ids: Sequence[int], attention_mask: Sequence[int]) -> Encoding:
-    """
-    Rebuilds the `Encoding` that `Encoding.__reduce__` took apart. Private, because an `Encoding`
-    comes out of `Tokenizer.encode` and is not built by hand.
-    """
-
-def _unpickle_tokenizer(json: str, padding: Padding | None) -> Tokenizer:
-    """
-    Rebuilds the `Tokenizer` that `Tokenizer.__reduce__` took apart. Private, because reading a
-    `tokenizer.json` from a string is not public API yet.
-
-    `__reduce__` writes the canonical `tokenizer.json` the pipeline holds, so unlike
-    `Tokenizer.from_file` this skips the conversion pass for older files.
-    """

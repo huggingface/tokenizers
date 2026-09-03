@@ -49,7 +49,24 @@ tokenizer.padding = None
 Tokenizer.from_file("tokenizer.json", padding=Padding(length=16))
 ```
 
-Run `examples/` with `make examples` runs them.
+`examples/` holds a runnable script for each of these; `make examples` runs them all.
+
+## Worker processes
+
+Every class here can be pickled, so a tokenizer can be sent to a worker process and its encodings
+sent back: `multiprocessing`, a PyTorch `DataLoader`, `datasets.map(num_proc=...)`.
+
+```python
+def encode(tokenizer, texts):
+    return tokenizer.encode_batch(texts)
+
+
+with multiprocessing.get_context("spawn").Pool(4) as pool:
+    encoded = pool.starmap(encode, [(tokenizer, chunk) for chunk in chunks])
+```
+
+The tokenizer is pickled again with every task it is sent with, so give each worker one big chunk
+of texts rather than many small tasks. `examples/multiprocessing_workers.py` is the whole script.
 
 ## Day to day
 
@@ -61,8 +78,3 @@ Run `examples/` with `make examples` runs them.
 - `make style` / `make check-style` regenerate the stub, then format/lint the Rust and
   Python sides and type-check with `ty`. CI runs `make check-style` and fails if the
   regenerated stub differs from the committed one.
-
-
-## Caveats / Known issues
-
-- Multiprocessing is not supported at the moment: Tokenizer cannot be pickled

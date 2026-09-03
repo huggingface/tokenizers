@@ -3,7 +3,6 @@ use numpy::{PyArray1, PyArrayMethods};
 use pyo3::prelude::*;
 use tk_encode::pipeline::Encoding as PipelineEncoding;
 
-use crate::pickle::{self, Reduced};
 use crate::type_hints::U32Array;
 
 /// Text encoded to token ids by a tokenizer.
@@ -35,8 +34,8 @@ fn widen(bytes: &[u8]) -> Vec<u32> {
     bytes.iter().map(|&b| u32::from(b)).collect()
 }
 
-/// What `Encoding.__reduce__` hands pickle: `ids`, `type_ids` and `attention_mask`.
-type Arguments = (Vec<u32>, Vec<u32>, Vec<u32>);
+/// What `Encoding.__reduce__` gives pickle: `ids`, `type_ids` and `attention_mask`.
+type UnpickleArguments = (Vec<u32>, Vec<u32>, Vec<u32>);
 
 #[pymethods]
 impl Encoding {
@@ -85,13 +84,24 @@ impl Encoding {
         self.ids.len()
     }
 
-    fn __reduce__(&self, py: Python<'_>) -> PyResult<Reduced<Arguments>> {
+    /// Pickle rebuilds an `Encoding` by calling `_unpickle` with these arguments.
+    fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<(Bound<'py, PyAny>, UnpickleArguments)> {
         let arguments = (
             self.ids.clone(),
             self.type_ids.clone(),
             self.attention_mask.clone(),
         );
-        Ok((pickle::rebuilder(py, "_unpickle_encoding")?, arguments))
+        Ok((py.get_type::<Self>().getattr("_unpickle")?, arguments))
+    }
+
+    /// Unpickles an `Encoding`
+    #[staticmethod]
+    fn _unpickle(ids: Vec<u32>, type_ids: Vec<u32>, attention_mask: Vec<u32>) -> Self {
+        Self {
+            ids,
+            type_ids,
+            attention_mask,
+        }
     }
 
     fn __repr__(&self) -> String {
@@ -111,19 +121,4 @@ fn view<'py>(encoding: &Bound<'py, Encoding>, data: &[u32]) -> U32Array<'py> {
     };
     array.readwrite().make_nonwriteable();
     U32Array(array)
-}
-
-/// Rebuilds the `Encoding` that `Encoding.__reduce__` took apart. Private, because an `Encoding`
-/// comes out of `Tokenizer.encode` and is not built by hand.
-#[pyfunction]
-pub(crate) fn _unpickle_encoding(
-    ids: Vec<u32>,
-    type_ids: Vec<u32>,
-    attention_mask: Vec<u32>,
-) -> Encoding {
-    Encoding {
-        ids,
-        type_ids,
-        attention_mask,
-    }
 }
