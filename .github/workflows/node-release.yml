@@ -224,3 +224,5 @@ jobs:
       - name: Publish
         working-directory: ./bindings/node
         run: npm publish --access public --provenance
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
