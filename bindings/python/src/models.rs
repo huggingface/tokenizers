@@ -9,16 +9,16 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
-use tk::models::bpe::{BpeBuilder, Merges, BPE};
-use tk::models::unigram::Unigram;
-use tk::models::wordlevel::WordLevel;
-use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
 use tk::models::ModelWrapper;
+use tk::models::bpe::{BPE, BpeBuilder, Merges};
+use tk::models::unigram::Unigram;
+use tk::models::wordlevel::{self, WordLevel};
+use tk::models::wordpiece::{self, WordPiece, WordPieceBuilder};
 use tk::tokenizer::PreTokenizedString;
-use tk::{Model, Token};
+use tk::{Model, Token, Trainable};
 use tokenizers as tk;
 
-use super::error::{deprecation_warning, ToPyResult};
+use super::error::{ToPyResult, deprecation_warning};
 
 /// Base class for all models
 ///
@@ -46,8 +46,6 @@ impl PyModel {
 }
 
 impl Model for PyModel {
-    type Trainer = PyTrainer;
-
     fn tokenize(&self, tokens: &str) -> tk::Result<Vec<Token>> {
         self.model.read().unwrap().tokenize(tokens)
     }
@@ -88,6 +86,10 @@ impl Model for PyModel {
     fn save(&self, folder: &Path, name: Option<&str>) -> tk::Result<Vec<PathBuf>> {
         self.model.read().unwrap().save(folder, name)
     }
+}
+
+impl Trainable for PyModel {
+    type Trainer = PyTrainer;
 
     fn get_trainer(&self) -> Self::Trainer {
         self.model.read().unwrap().get_trainer().into()
@@ -698,7 +700,13 @@ impl PyWordPiece {
                     builder = builder.vocab(vocab);
                 }
                 PyVocab::Filename(vocab_filename) => {
-                    builder = builder.files(vocab_filename.to_string());
+                    builder = builder.vocab(
+                        wordpiece::read_file(vocab_filename.as_str()).map_err(|e| {
+                            exceptions::PyException::new_err(format!(
+                                "Error while reading WordPiece file: {e}"
+                            ))
+                        })?,
+                    );
                 }
             }
         }
@@ -722,7 +730,7 @@ impl PyWordPiece {
     #[staticmethod]
     #[pyo3(text_signature = "(vocab)")]
     fn read_file(vocab: &str) -> PyResult<HashMap<String, u32>> {
-        let vocab = WordPiece::read_file(vocab).map_err(|e| {
+        let vocab = wordpiece::read_file(vocab).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading WordPiece file: {e}"))
         })?;
         Ok(vocab.into_iter().collect())
@@ -754,7 +762,7 @@ impl PyWordPiece {
         vocab: &str,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<Self>> {
-        let vocab = WordPiece::read_file(vocab).map_err(|e| {
+        let vocab = wordpiece::read_file(vocab).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading WordPiece file: {e}"))
         })?;
         let vocab = vocab.into_iter().collect();
@@ -770,7 +778,7 @@ impl PyWordPiece {
 /// Most simple tokenizer model based on mapping tokens to their corresponding id.
 ///
 /// Args:
-///     vocab (:obj:`str`, `optional`):
+///     vocab (:obj:`Dict[str, int]`, `optional`):
 ///         A dictionary of string keys and their ids :obj:`{"am": 0,...}`
 ///
 ///     unk_token (:obj:`str`, `optional`):
@@ -819,7 +827,13 @@ impl PyWordLevel {
                     builder = builder.vocab(vocab);
                 }
                 PyVocab::Filename(vocab_filename) => {
-                    builder = builder.files(vocab_filename.to_string());
+                    builder = builder.vocab(
+                        wordlevel::read_file(vocab_filename.as_str()).map_err(|e| {
+                            exceptions::PyException::new_err(format!(
+                                "Error while reading WordLevel file: {e}"
+                            ))
+                        })?,
+                    );
                 }
             };
         }
@@ -850,7 +864,7 @@ impl PyWordLevel {
     #[staticmethod]
     #[pyo3(text_signature = "(vocab)")]
     fn read_file(vocab: &str) -> PyResult<HashMap<String, u32>> {
-        let vocab = WordLevel::read_file(vocab).map_err(|e| {
+        let vocab = wordlevel::read_file(vocab).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading WordLevel file: {e}"))
         })?;
         let vocab: HashMap<_, _> = vocab.into_iter().collect();
@@ -883,7 +897,7 @@ impl PyWordLevel {
         vocab: &str,
         unk_token: Option<String>,
     ) -> PyResult<Py<Self>> {
-        let vocab = WordLevel::read_file(vocab).map_err(|e| {
+        let vocab = wordlevel::read_file(vocab).map_err(|e| {
             exceptions::PyException::new_err(format!("Error while reading WordLevel file: {e}"))
         })?;
         let vocab = vocab.into_iter().collect();
@@ -1034,8 +1048,8 @@ pub mod models {
 mod test {
     use crate::models::PyModel;
     use pyo3::prelude::*;
-    use tk::models::bpe::BPE;
     use tk::models::ModelWrapper;
+    use tk::models::bpe::BPE;
 
     #[test]
     fn get_subtype() {

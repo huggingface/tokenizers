@@ -8,17 +8,16 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use tk::normalizer::SplitDelimiterBehavior;
+use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::pre_tokenizers::bert::BertPreTokenizer;
 use tk::pre_tokenizers::byte_level::ByteLevel;
 use tk::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk::pre_tokenizers::digits::Digits;
 use tk::pre_tokenizers::fixed_length::FixedLength;
-use tk::pre_tokenizers::metaspace::{Metaspace, PrependScheme};
 use tk::pre_tokenizers::punctuation::Punctuation;
 use tk::pre_tokenizers::split::Split;
 use tk::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use tk::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
-use tk::pre_tokenizers::PreTokenizerWrapper;
 use tk::tokenizer::Offsets;
 use tk::{PreTokenizedString, PreTokenizer};
 use tokenizers as tk;
@@ -73,8 +72,6 @@ impl PyPreTokenizer {
                                 .into_any()
                         }
                         PreTokenizerWrapper::Sequence(_) => Py::new(py, (PySequence {}, base))?
-                            .into_any(),
-                        PreTokenizerWrapper::Metaspace(_) => Py::new(py, (PyMetaspace {}, base))?
                             .into_any(),
                         PreTokenizerWrapper::Delimiter(_) => {
                             Py::new(py, (PyCharDelimiterSplit {}, base))?
@@ -465,7 +462,7 @@ impl PySplit {
                 return Err(exceptions::PyValueError::new_err(
                     "Wrong value for SplitDelimiterBehavior, expected one of: \
                 `removed, isolated, merged_with_previous, merged_with_next, contiguous`",
-                ))
+                ));
             }
         };
         setter!(self_, Split, behavior, behavior);
@@ -600,7 +597,7 @@ impl PyPunctuation {
                 return Err(exceptions::PyValueError::new_err(
                     "Wrong value for SplitDelimiterBehavior, expected one of: \
                 `removed, isolated, merged_with_previous, merged_with_next, contiguous`",
-                ))
+                ));
             }
         };
         setter!(self_, Punctuation, behavior, behavior);
@@ -688,105 +685,14 @@ impl PySequence {
                 _ => {
                     return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
                         "Index not found",
-                    ))
+                    ));
                 }
             },
             PyPreTokenizerTypeWrapper::Single(_) => {
-                return Err(PyException::new_err("pre tokenizer is not a sequence"))
+                return Err(PyException::new_err("pre tokenizer is not a sequence"));
             }
         };
         Ok(())
-    }
-}
-
-pub(crate) fn from_string(string: String) -> Result<PrependScheme, PyErr> {
-    let scheme = match string.as_str() {
-        "first" => PrependScheme::First,
-        "never" => PrependScheme::Never,
-        "always" => PrependScheme::Always,
-        _ => {
-            return Err(exceptions::PyValueError::new_err(format!(
-                "{string} is an unknown variant, should be one of ['first', 'never', 'always']"
-            )));
-        }
-    };
-    Ok(scheme)
-}
-
-/// Metaspace pre-tokenizer
-///
-/// This pre-tokenizer replaces any whitespace by the provided replacement character.
-/// It then tries to split on these spaces.
-///
-/// Args:
-///     replacement (:obj:`str`, `optional`, defaults to :obj:`▁`):
-///         The replacement character. Must be exactly one character. By default we
-///         use the `▁` (U+2581) meta symbol (Same as in SentencePiece).
-///
-///     prepend_scheme (:obj:`str`, `optional`, defaults to :obj:`"always"`):
-///         Whether to add a space to the first word if there isn't already one. This
-///         lets us treat `hello` exactly like `say hello`.
-///         Choices: "always", "never", "first". First means the space is only added on the first
-///         token (relevant when special tokens are used or other pre_tokenizer are used).
-///
-/// Example::
-///
-///     >>> from tokenizers.pre_tokenizers import Metaspace
-///     >>> pre_tokenizer = Metaspace()
-///     >>> pre_tokenizer.pre_tokenize_str("Hello my friend")
-///     [('▁Hello', (0, 5)), ('▁my', (6, 8)), ('▁friend', (9, 15))]
-///
-#[pyclass(extends=PyPreTokenizer, module = "tokenizers.pre_tokenizers", name = "Metaspace")]
-pub struct PyMetaspace {}
-#[pymethods]
-impl PyMetaspace {
-    #[getter]
-    fn get_replacement(self_: PyRef<Self>) -> String {
-        getter!(self_, Metaspace, get_replacement().to_string())
-    }
-
-    #[setter]
-    fn set_replacement(self_: PyRef<Self>, replacement: char) {
-        setter!(self_, Metaspace, @set_replacement, replacement);
-    }
-
-    #[getter]
-    fn get_split(self_: PyRef<Self>) -> bool {
-        getter!(self_, Metaspace, get_split())
-    }
-
-    #[setter]
-    fn set_split(self_: PyRef<Self>, split: bool) {
-        setter!(self_, Metaspace, @set_split, split);
-    }
-
-    #[getter]
-    fn get_prepend_scheme(self_: PyRef<Self>) -> String {
-        // Assuming Metaspace has a method to get the prepend_scheme as a string
-        getter!(self_, Metaspace, get_prepend_scheme()).to_string()
-    }
-
-    #[setter]
-    fn set_prepend_scheme(self_: PyRef<Self>, prepend_scheme: String) -> PyResult<()> {
-        let scheme = from_string(prepend_scheme)?;
-        setter!(self_, Metaspace, @set_prepend_scheme, scheme);
-        Ok(())
-    }
-
-    #[new]
-    #[pyo3(signature = (replacement = '▁', prepend_scheme=String::from("always"), split=true), text_signature = "(self, replacement=\"_\", prepend_scheme=\"always\", split=True)")]
-    fn new(
-        replacement: char,
-        prepend_scheme: String,
-        split: bool,
-    ) -> PyResult<PyClassInitializer<Self>> {
-        // Create a new Metaspace instance
-        let prepend_scheme = from_string(prepend_scheme)?;
-        let new_instance: Metaspace = Metaspace::new(replacement, prepend_scheme, split);
-        Ok(
-            PyClassInitializer::<PyPreTokenizer>::from(PyPreTokenizer::from(new_instance))
-                .add_subclass(PyMetaspace {}),
-        )
     }
 }
 
@@ -1063,7 +969,6 @@ pub mod pre_tokenizers {
     #[pymodule_export]
     pub use super::PyFixedLength;
     #[pymodule_export]
-    pub use super::PyMetaspace;
     #[pymodule_export]
     pub use super::PyPreTokenizer;
     #[pymodule_export]
@@ -1083,9 +988,9 @@ pub mod pre_tokenizers {
 #[cfg(test)]
 mod test {
     use pyo3::prelude::*;
+    use tk::pre_tokenizers::PreTokenizerWrapper;
     use tk::pre_tokenizers::sequence::Sequence;
     use tk::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
-    use tk::pre_tokenizers::PreTokenizerWrapper;
 
     use crate::pre_tokenizers::{
         CustomPreTokenizer, PyPreTokenizer, PyPreTokenizerTypeWrapper, PyPreTokenizerWrapper,

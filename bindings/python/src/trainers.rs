@@ -8,9 +8,9 @@ use pyo3::exceptions;
 use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
+use tk::Trainer;
 use tk::models::TrainerWrapper;
 use tk::utils::ProgressFormat;
-use tk::Trainer;
 use tokenizers as tk;
 
 /// Base class for all trainers
@@ -1351,14 +1351,14 @@ impl PyParityBpeTrainer {
             ));
         }
         let num_langs = train_iterators.len();
-        if let Some(ref dev) = dev_iterators {
-            if dev.len() != num_langs {
-                return Err(exceptions::PyValueError::new_err(format!(
-                    "dev_iterators length ({}) must match train_iterators length ({})",
-                    dev.len(),
-                    num_langs
-                )));
-            }
+        if let Some(ref dev) = dev_iterators
+            && dev.len() != num_langs
+        {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "dev_iterators length ({}) must match train_iterators length ({})",
+                dev.len(),
+                num_langs
+            )));
         }
 
         let has_dev = dev_iterators.as_ref().is_some_and(|d| !d.is_empty());

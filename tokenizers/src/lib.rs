@@ -1,160 +1,61 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![warn(clippy::all)]
-#![allow(clippy::upper_case_acronyms)]
 #![doc(html_favicon_url = "https://huggingface.co/favicon.ico")]
 #![doc(html_logo_url = "https://huggingface.co/landing/assets/huggingface_logo.svg")]
 
-//! The core of `tokenizers`, written in Rust.
-//! Provides an implementation of today's most used tokenizers, with a focus on performance and
-//! versatility.
+//! The 🤗 Tokenizers library.
 //!
-//! # What is a Tokenizer
+//! The implementation is split across crates (each built on internal engines — `tk_encode` on the
+//! `bitsplit` SIMD pre-tokenizer, and the shared `bitmap_gen` tables):
 //!
-//! A Tokenizer works as a pipeline, it processes some raw text as input and outputs an `Encoding`.
-//! The various steps of the pipeline are:
+//! - [`tk_encode`] — inference: the model engines and the full pipeline components
+//!   ([`Normalizer`], [`PreTokenizer`], [`Model`], [`PostProcessor`], [`Decoder`]).
+//! - `tk_serialize` — the reader: `from_json_file` turns a canonical `tokenizer.json` into a
+//!   [`pipeline::PipelineTokenizer`], with no serde anywhere.
+//! - [`tk_convert`] — the upgrade pass: [`canonicalize_file`] rewrites a `tokenizer.json` written by
+//!   an older version into the canonical form that reader accepts.
 //!
-//! 1. The `Normalizer`: in charge of normalizing the text. Common examples of normalization are
-//!    the [unicode normalization standards](https://unicode.org/reports/tr15/#Norm_Forms), such as `NFD` or `NFKC`.
-//!    More details about how to use the `Normalizers` are available on the
-//!    [Hugging Face blog](https://huggingface.co/docs/tokenizers/components#normalizers)
-//! 2. The `PreTokenizer`: in charge of creating initial words splits in the text. The most common way of
-//!    splitting text is simply on whitespace.
-//! 3. The `Model`: in charge of doing the actual tokenization. An example of a `Model` would be
-//!    `BPE` or `WordPiece`.
-//! 4. The `PostProcessor`: in charge of post-processing the `Encoding` to add anything relevant
-//!    that, for example, a language model would need, such as special tokens.
+//! This `tokenizers` crate is a thin umbrella that re-exports them so existing `tokenizers::…`
+//! paths keep working.
 //!
-//! ## Loading a pretrained tokenizer from the Hub
-//! ```
-//! use tokenizers::tokenizer::{Result, Tokenizer};
+//! ## What rc0 does not have
 //!
-//! fn main() -> Result<()> {
-//!     # #[cfg(feature = "http")]
-//!     # {
-//!     // needs http feature enabled
-//!     let tokenizer = Tokenizer::from_pretrained("bert-base-cased", None)?;
+//! The `Tokenizer` object model — `Tokenizer::new`, the component setters, `add_tokens`,
+//! `save`, `from_pretrained`, truncation and padding — and the trainers are **not** in this
+//! release. [`pipeline::PipelineTokenizer`] is read-only: it encodes and decodes what a
+//! `tokenizer.json` describes and has no way to be built up or written back out. See
+//! `REQUIRED_FOR_V1.md` at the repository root for the full list and why each one is deferred.
 //!
-//!     let encoding = tokenizer.encode("Hey there!", false)?;
-//!     println!("{:?}", encoding.get_tokens());
-//!     # }
-//!     Ok(())
-//! }
-//! ```
+//! ## Tokenization example
 //!
-//! ## Deserialization and tokenization example
-//!
-//! ```no_run
-//! use tokenizers::tokenizer::{Result, Tokenizer, EncodeInput};
-//! use tokenizers::models::bpe::BPE;
-//!
-//! fn main() -> Result<()> {
-//!     let bpe_builder = BPE::from_file("./path/to/vocab.json", "./path/to/merges.txt");
-//!     let bpe = bpe_builder
-//!         .dropout(0.1)
-//!         .unk_token("[UNK]".into())
-//!         .build()?;
-//!
-//!     let mut tokenizer = Tokenizer::new(bpe);
-//!
-//!     let encoding = tokenizer.encode("Hey there!", false)?;
-//!     println!("{:?}", encoding.get_tokens());
-//!
-//!     Ok(())
-//! }
-//! ```
-//!
-//! ## Training and serialization example
-//!
-//! ```no_run
-//! use tokenizers::decoders::DecoderWrapper;
-//! use tokenizers::models::bpe::{BpeTrainerBuilder, BPE};
-//! use tokenizers::normalizers::{strip::Strip, unicode::NFC, utils::Sequence, NormalizerWrapper};
-//! use tokenizers::pre_tokenizers::byte_level::ByteLevel;
-//! use tokenizers::pre_tokenizers::PreTokenizerWrapper;
-//! use tokenizers::processors::PostProcessorWrapper;
-//! use tokenizers::{AddedToken, Model, Result, TokenizerBuilder};
-//!
-//! use std::path::Path;
-//!
-//! fn main() -> Result<()> {
-//!     let vocab_size: usize = 100;
-//!
-//!     let mut trainer = BpeTrainerBuilder::new()
-//!         .show_progress(true)
-//!         .vocab_size(vocab_size)
-//!         .min_frequency(0)
-//!         .special_tokens(vec![
-//!             AddedToken::from(String::from("<s>"), true),
-//!             AddedToken::from(String::from("<pad>"), true),
-//!             AddedToken::from(String::from("</s>"), true),
-//!             AddedToken::from(String::from("<unk>"), true),
-//!             AddedToken::from(String::from("<mask>"), true),
-//!         ])
-//!         .build();
-//!
-//!     let mut tokenizer = TokenizerBuilder::new()
-//!         .with_model(BPE::default())
-//!         .with_normalizer(Some(Sequence::new(vec![
-//!             Strip::new(true, true).into(),
-//!             NFC.into(),
-//!         ])))
-//!         .with_pre_tokenizer(Some(ByteLevel::default()))
-//!         .with_post_processor(Some(ByteLevel::default()))
-//!         .with_decoder(Some(ByteLevel::default()))
-//!         .build()?;
-//!
-//!     let pretty = false;
-//!     tokenizer
-//!         .train_from_files(
-//!             &mut trainer,
-//!             vec!["path/to/vocab.txt".to_string()],
-//!         )?
-//!         .save("tokenizer.json", pretty)?;
-//!
-//!     Ok(())
-//! }
-//! ```
-//!
-//! # Additional information
-//!
-//! - tokenizers is designed to leverage CPU parallelism when possible. The level of parallelism is determined
-//!   by the total number of core/threads your CPU provides but this can be tuned by setting the `RAYON_RS_NUM_THREADS`
-//!   environment variable. As an example setting `RAYON_RS_NUM_THREADS=4` will allocate a maximum of 4 threads.
-//!   **_Please note this behavior may evolve in the future_**
-//!
-//! # Features
-//!
-//! - **progressbar**: The progress bar visualization is enabled by default. It might be disabled if
-//!   compilation for certain targets is not supported by the [termios](https://crates.io/crates/termios)
-//!   dependency of the [indicatif](https://crates.io/crates/indicatif) progress bar.
-//!
-//! - **http**: This feature enables downloading the tokenizer via HTTP. It is disabled by default.
-//!   With this feature enabled, `Tokenizer::from_pretrained` becomes accessible.
+//! Read a config and encode with it. The example lives in `tk-serialize`, which is the only crate
+//! that can compile it.
 
-#[macro_use]
-extern crate log;
+// ---------------------------------------------------------------------------
+// Inference — re-exported from `tk-encode`.
+// ---------------------------------------------------------------------------
+pub use tk_encode::{
+    decoders, models, normalizers, pipeline, pre_tokenizers, processors, tokenizer, utils, vocab,
+};
 
-#[macro_use]
-extern crate derive_builder;
+// Mirror the v1 top-level re-exports (`pub use tokenizer::*;` etc.).
+pub use tk_encode::tokenizer::*;
+pub use tk_encode::utils::ProgressFormat;
+pub use tk_encode::utils::parallelism;
 
-#[macro_use]
-pub mod utils;
-pub mod decoders;
-pub mod models;
-pub mod normalizers;
-pub mod pre_tokenizers;
-pub mod processors;
-pub mod tokenizer;
-
-// Re-export from tokenizer
-pub use tokenizer::*;
-
-// Re-export also parallelism utils
-pub use utils::parallelism;
-
-// Re-export ProgressFormat for trainer configuration
-pub use utils::ProgressFormat;
-
-// Re-export for from_pretrained
 #[cfg(feature = "http")]
-pub use utils::from_pretrained::FromPretrainedParameters;
+pub use tk_encode::FromPretrainedParameters;
+
+// ---------------------------------------------------------------------------
+// The reader and the writer — re-exported from `tk-serialize`.
+// ---------------------------------------------------------------------------
+pub use tk_serialize::{
+    from_json, from_json_file, post_processor_from_json, post_processor_to_json, to_json,
+};
+
+// ---------------------------------------------------------------------------
+// The legacy-config upgrade pass — all that is left of the config layer.
+// ---------------------------------------------------------------------------
+pub use tk_convert::{
+    ConvertError, canonicalize_file, canonicalize_post_processor, canonicalize_str,
+    canonicalize_value, convert,
+};

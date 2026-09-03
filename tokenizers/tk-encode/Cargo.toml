@@ -1,0 +1,89 @@
+[package]
+name = "tk-encode"
+version = "1.0.0-rc.0"
+edition = "2024"
+authors = [
+  "Anthony MOI <m.anthony.moi@gmail.com>",
+  "Nicolas Patry <patry.nicolas@protonmail.com>",
+  "Arthur Zucker <arthur@huggingface.co",
+  "Luc Georges <luc@huggingface.co",
+]
+homepage = "https://github.com/huggingface/tokenizers"
+repository = "https://github.com/huggingface/tokenizers"
+documentation = "https://docs.rs/tokenizers/"
+license = "Apache-2.0"
+keywords = ["tokenizer", "NLP", "huggingface", "BPE", "WordPiece"]
+description = """
+Inference (encode/decode) half of the 🤗 Tokenizers library: model engines,
+the full pipeline components, and the `Tokenizer` orchestration — without any
+training code.
+"""
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lib]
+name = "tk_encode"
+path = "src/lib.rs"
+
+[dependencies]
+############ Required dependencies ###############################
+bitsplit = { path = "../bitsplit" }
+rand = "0.10"
+ptr_hash = { version = "2.0.2", default-features = false }
+unicode_categories = "0.1"
+itertools = "0.15"
+log = "0.4"
+paste = "1.0.15"
+thiserror = "2"
+ahash = "0.8.12"
+dary_heap = "0.3.9"
+memchr = "2.8.3"
+wide = "1.6.1"
+########### Optional dependencies ############################
+rayon = { version = "1.12", optional = true }
+rayon-cond = { version = "0.4", optional = true }
+unicode-normalization-alignments = { version = "0.1", optional = true }
+# Only `normalizers/precompiled.rs` reaches it, which is `normalizers`-gated.
+unicode-segmentation = { version = "1.13", optional = true }
+indicatif = { version = "0.18", optional = true }
+spm_precompiled = { version = "0.1.4", optional = true }
+hf-hub = { version = "1.0.0", features = [
+  "blocking",
+  "rustls-tls",
+], default-features = false, optional = true }
+fancy-regex = { version = "0.19", optional = true }
+unicode-normalization = { version = "0.1.25", optional = true }
+yada = { version = "0.7.0", optional = true }
+# One `#[cfg(unix)]` `pthread_atfork` call in `utils/parallelism.rs`, which is `parallelism`-gated.
+libc = { version = "0.2", optional = true }
+
+[features]
+default = ["bpe"]
+bpe = []
+unigram = []
+wordpiece = ["dep:yada"]
+wordlevel = []
+normalizers = [
+  "dep:unicode-normalization",
+  "dep:unicode-normalization-alignments",
+  "dep:spm_precompiled",
+  "dep:unicode-segmentation",
+]
+unicode-scripts = []
+progressbar = ["indicatif"]
+http = ["hf-hub"]
+unstable_wasm = ["fancy-regex"]
+parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
+
+[dev-dependencies]
+# Test-only: one `#[cfg(test)]` cross-check in `vocab/buckets.rs`.
+daachorse = "5.0.0"
+# The unit tests build `regex::Regex` values directly, in every feature rung, so the tests need
+# it even when the library itself does not link it.
+regex = "1.13"
+tempfile = "3.27"
+assert_approx_eq = "1.1"
+tracing = "0.1"
+tracing-subscriber = "0.3.23"
+serde_json = "1.0"

@@ -1,6 +1,5 @@
 use std::sync::{Arc, RwLock};
 
-use crate::pre_tokenizers::from_string;
 use crate::tokenizer::PyTokenizer;
 use crate::utils::PyPattern;
 use pyo3::exceptions;
@@ -8,18 +7,22 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use tk::Decoder;
+use tk::decoders::DecoderWrapper;
 use tk::decoders::bpe::BPEDecoder;
 use tk::decoders::byte_fallback::ByteFallback;
-use tk::decoders::byte_level::ByteLevel;
 use tk::decoders::ctc::CTC;
 use tk::decoders::fuse::Fuse;
-use tk::decoders::metaspace::{Metaspace, PrependScheme};
 use tk::decoders::sequence::Sequence;
 use tk::decoders::strip::Strip;
 use tk::decoders::wordpiece::WordPiece;
-use tk::decoders::DecoderWrapper;
-use tk::normalizers::replace::Replace;
-use tk::Decoder;
+// `ByteLevel`, `Metaspace` and `Replace` are decoder types of their own now, rather than being
+// borrowed from `pre_tokenizers`/`normalizers` -- one type can no longer sit in three wrappers at
+// once. Aliased back to their Python-facing names so the rest of this file, and the whole `Decoder`
+// class surface, is unchanged.
+use tk::decoders::byte_level::ByteLevelDecoder as ByteLevel;
+use tk::decoders::metaspace::{MetaspaceDecoder as Metaspace, PrependScheme};
+use tk::decoders::replace::ReplaceDecoder as Replace;
 use tokenizers as tk;
 
 use super::error::ToPyResult;
@@ -399,6 +402,22 @@ impl PyStrip {
     }
 }
 
+/// The `prepend_scheme` spelling used by the `Metaspace` decoder. There is no `Metaspace`
+/// pre-tokenizer any more, so this lives with its only caller.
+pub(crate) fn from_string(string: String) -> Result<PrependScheme, PyErr> {
+    let scheme = match string.as_str() {
+        "first" => PrependScheme::First,
+        "never" => PrependScheme::Never,
+        "always" => PrependScheme::Always,
+        _ => {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "{string} is an unknown variant, should be one of ['first', 'never', 'always']"
+            )));
+        }
+    };
+    Ok(scheme)
+}
+
 /// Metaspace Decoder
 ///
 /// Args:
@@ -433,20 +452,21 @@ impl PyMetaspaceDec {
         setter!(self_, Metaspace, @set_replacement, replacement);
     }
 
+    // `split` and `prepend_scheme` are plain public fields on the decoder (only `replacement` is
+    // behind a getter), so these go through the field form of the macros rather than the method one.
     #[getter]
     fn get_split(self_: PyRef<Self>) -> bool {
-        getter!(self_, Metaspace, get_split())
+        getter!(self_, Metaspace, split)
     }
 
     #[setter]
     fn set_split(self_: PyRef<Self>, split: bool) {
-        setter!(self_, Metaspace, @set_split, split);
+        setter!(self_, Metaspace, split, split);
     }
 
     #[getter]
     fn get_prepend_scheme(self_: PyRef<Self>) -> String {
-        // Assuming Metaspace has a method to get the prepend_scheme as a string
-        let scheme: PrependScheme = getter!(self_, Metaspace, get_prepend_scheme());
+        let scheme: PrependScheme = getter!(self_, Metaspace, prepend_scheme);
         match scheme {
             PrependScheme::First => "first",
             PrependScheme::Never => "never",
@@ -458,7 +478,7 @@ impl PyMetaspaceDec {
     #[setter]
     fn set_prepend_scheme(self_: PyRef<Self>, prepend_scheme: String) -> PyResult<()> {
         let scheme = from_string(prepend_scheme)?;
-        setter!(self_, Metaspace, @set_prepend_scheme, scheme);
+        setter!(self_, Metaspace, prepend_scheme, scheme);
         Ok(())
     }
 
@@ -893,8 +913,8 @@ mod test {
     use std::sync::{Arc, RwLock};
 
     use pyo3::prelude::*;
-    use tk::decoders::metaspace::Metaspace;
     use tk::decoders::DecoderWrapper;
+    use tk::decoders::metaspace::MetaspaceDecoder as Metaspace;
 
     use crate::decoders::{CustomDecoder, PyDecoder, PyDecoderWrapper};
 
