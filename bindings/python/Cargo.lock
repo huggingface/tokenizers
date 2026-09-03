@@ -1172,7 +1172,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers"
-version = "0.23.2-rc0"
+version = "0.23.2"
 dependencies = [
  "ahash",
  "compact_str",
@@ -1204,7 +1204,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers-python"
-version = "0.23.2-rc0"
+version = "0.23.2"
 dependencies = [
  "ahash",
  "env_logger",
