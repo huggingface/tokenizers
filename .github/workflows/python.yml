@@ -7,12 +7,6 @@ on:
     paths-ignore:
       - bindings/node/**
   pull_request:
-    # The bindings do not build against the v1 integration branch yet: `PipelineTokenizer` is
-    # read-only and the trainers left the umbrella crate, so a PR into `feat/train_encode_split`
-    # fails here for the reasons REQUIRED_FOR_V1.md §2 already tracks -- 195 references to wrapper
-    # types that no longer exist. Drop this filter together with the mutable pipeline builder.
-    branches-ignore:
-      - feat/train_encode_split
     paths-ignore:
       - bindings/node/**
 
@@ -20,12 +14,6 @@ jobs:
   build_win_32:
     name: Check it builds for Windows 32-bit
     runs-on: windows-latest
-    strategy:
-      matrix:
-        # The cdylib is built with `abi3-py310`, so a single binary covers
-        # 3.10–3.14. Free-threaded 3.14t is the only interpreter that needs
-        # its own build (no abi3 / limited API).
-        python: ["3.14", "3.14t"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -35,10 +23,11 @@ jobs:
         with:
           targets: i686-pc-windows-msvc
 
+      # pyo3 configures the build from the interpreter on PATH, so it has to be a 32-bit one.
       - name: Install Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
-          python-version: ${{ matrix.python }}
+          python-version: "3.14"
           architecture: x86
 
       - name: Build
@@ -51,7 +40,12 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python: ["3.14", "3.14t"]
+        # The extension is built with `abi3-py310`, so one binary covers 3.10 through 3.14.
+        # Test the oldest and the newest.
+        python: ["3.10", "3.14"]
+    defaults:
+      run:
+        working-directory: bindings/python
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -62,74 +56,46 @@ jobs:
       - name: Cache cargo registry / git / target
         uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
-          workspaces: bindings/python
+          workspaces: |
+            bindings/python
+            bindings/python/tools/stub-gen
           shared-key: python
-          # Skip caching ~/.cargo/bin — earlier runs left a stale
-          # rustup-init binary masquerading as `cargo`, breaking clippy
-          # on macOS. The cargo toolchain is reinstalled by dtolnay/
-          # rust-toolchain each run anyway, so caching it adds risk
-          # without speedup.
+          # Not ~/.cargo/bin: a cached run once left a stale rustup-init binary in place of
+          # `cargo`, which broke the macOS job. dtolnay/rust-toolchain reinstalls it every run.
           cache-bin: false
 
-      - name: Install Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+      # Also provides `uvx`, which runs the huggingface_hub CLI that fetches the test fixtures
+      # (see the Makefile) without a separate install step.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python }}
-          architecture: "x64"
 
+      # The dev dependency group only; `make test` builds and installs the extension itself.
       - name: Install
-        working-directory: ./bindings/python
-        run: |
-          python -m venv .env
-          source .env/bin/activate
-          pip install -U pip
-          pip install pytest pytest-asyncio huggingface_hub setuptools_rust numpy pyarrow datasets ruff==0.15.22 ty maturin
-          # Build via maturin so we can drop the abi3 cargo feature on
-          # free-threaded Python (3.14t can't load abi3 extensions).
-          # `pip install -e .` would build through maturin's PEP 660 path
-          # which keeps abi3 enabled regardless of the interpreter.
-          # `parity-aware-bpe` must be re-listed explicitly on the 3.14t
-          # branch — `--no-default-features` strips it otherwise, and the
-          # Python shim unconditionally imports `ParityBpeTrainer`.
-          if python -c 'import sys; sys.exit(0 if sys._is_gil_enabled() else 1)' 2>/dev/null; then
-            maturin develop --release
-          else
-            maturin develop --release --no-default-features --features ext-module,parity-aware-bpe
-          fi
+        run: uv sync --no-install-project
 
-
-      # Test fixtures are immutable — cache them (plus the huggingface_hub /
-      # datasets cache used by the test suite at runtime) so CI doesn't
-      # re-download from the Hub (and get rate-limited) on every run.
+      # Test fixtures are immutable, so cache them: the Hub rate-limits a fresh download per run.
       - name: Cache HF test data
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
-          path: |
-            bindings/python/data
-            bindings/python/tests/data
-            ~/.cache/huggingface
-          key: hf-test-data-${{ runner.os }}-${{ hashFiles('bindings/python/Makefile', 'bindings/python/tests/utils.py') }}
-          restore-keys: hf-test-data-${{ runner.os }}-
+          path: bindings/python/data
+          key: hf-test-data-python-${{ hashFiles('bindings/python/Makefile') }}
+          restore-keys: hf-test-data-python-
 
       - name: Run tests
-        working-directory: ./bindings/python
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          source .env/bin/activate
-          # `make test` also runs `cargo test --no-default-features` which
-          # links libpython via pyo3's `auto-initialize`. On free-threaded
-          # Python the macOS runner doesn't ship libpython3.14t in the
-          # framework path, so on 3.14t we run only the python half.
-          if python -c 'import sys; sys.exit(0 if sys._is_gil_enabled() else 1)' 2>/dev/null; then
-            make test
-          else
-            make test-py
-          fi
+          source .venv/bin/activate
+          make test HF="uvx --from huggingface_hub hf"
 
   quality:
     name: Lint & format
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/python
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -142,42 +108,41 @@ jobs:
       - name: Cache cargo registry / git / target
         uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
-          workspaces: bindings/python
+          workspaces: |
+            bindings/python
+            bindings/python/tools/stub-gen
           shared-key: python
 
-      - name: Lint with RustFmt
-        run: cargo fmt --manifest-path ./bindings/python/Cargo.toml -- --check
-
       - name: Lint with Clippy
-        run: cargo clippy --manifest-path ./bindings/python/Cargo.toml --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Install Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.14"
-          architecture: "x64"
 
-      # check-style builds the abi3 cdylib and imports it, which only works
-      # under a GIL interpreter — hence pinned to 3.14, not free-threaded 3.14t.
       - name: Install
-        working-directory: ./bindings/python
-        run: |
-          python -m venv .env
-          source .env/bin/activate
-          pip install -U pip
-          # ruff pinned: 0.16 re-lints the whole tree (637 errors); bump it together with a dedicated style pass
-          pip install pytest pytest-asyncio requests setuptools_rust numpy pyarrow datasets ruff==0.15.22 ty maturin
-          maturin develop --release
+        run: uv sync --no-install-project
 
+      # `ty` resolves `import tokenizers` through the editable install `make develop` leaves in
+      # the venv; `make check-style` then regenerates the stub and lints both languages.
       - name: Check style
-        working-directory: ./bindings/python
         run: |
-          source .env/bin/activate
+          source .venv/bin/activate
+          make develop
           make check-style
+
+      # `make check-style` rewrote python/tokenizers/tokenizers.pyi from the Rust sources. A
+      # diff here means the committed stub was hand-edited or not regenerated.
+      - name: Committed stub matches the sources
+        run: git diff --exit-code
 
   audit:
     name: Audit dependencies
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/python
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -195,4 +160,4 @@ jobs:
         run: cargo install cargo-audit
 
       - name: Run Audit
-        run: cargo audit -D warnings -f ./bindings/python/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119 --ignore RUSTSEC-2026-0204 --ignore RUSTSEC-2025-0057
+        run: cargo audit -D warnings --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0057
