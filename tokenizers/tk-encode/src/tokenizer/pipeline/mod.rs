@@ -238,10 +238,21 @@ thread_local! {
 /// `Replace` per token occurrence; this applies it once per vocabulary *entry* instead.
 ///
 /// A byte-fallback entry cannot be pre-transformed -- it has to rejoin a run at decode time -- and
-/// its length does not identify it, since plenty of ordinary tokens are also one byte. The flag
-/// therefore lives in **bit 31 of the start offset**, so the single adjacent-pair load a decoder
-/// already does yields the span and the flag together, with no second array and no second cache
-/// line. Slabs are far below 2 GB, so 31 bits of offset is not a constraint.
+/// its length does not identify it, since plenty of ordinary tokens are also one byte. That flag,
+/// and two more, therefore live in the **high bits of the start offset**, so the single
+/// adjacent-pair load a decoder already does answers every question about the token: is it a byte
+/// run member, is it an added token, is it special. No second array, no second probe, no branchy
+/// membership test.
+///
+/// That last part is the point of carrying `added` and `special` here. Profiling gemma showed the
+/// decode loop at 12.59 ns/token against a byte-level model's ~8.7, and the token mix explained
+/// why: byte-fallback tokens are 0% of english and 1.6% of japanese, added tokens 0% of both --
+/// so the run machinery was never the cost. The cost was a binary search over the added ids run
+/// on *every* token, 1.53M times for one pass over big.txt, always returning false.
+///
+/// Offsets keep the low 29 bits, capping a slab at 512 MB. Vocabulary slabs are three orders of
+/// magnitude below that.
+#[derive(Default)]
 struct SpmDecodeTable {
     /// `bytes[off[id] & MASK .. off[id + 1] & MASK]`, with `FLAG` set on a byte-fallback entry.
     off: Box<[u32]>,
@@ -249,61 +260,84 @@ struct SpmDecodeTable {
 }
 
 impl SpmDecodeTable {
-    const FLAG: u32 = 1 << 31;
-    const MASK: u32 = Self::FLAG - 1;
+    /// Member of a byte-fallback run: contributes its one raw byte to the run, not to the output.
+    const BYTE_FALLBACK: u32 = 1 << 31;
+    /// Dropped when `skip_special_tokens`. Set from `is_special_token`, which tests the token
+    /// *string*, so an ordinary vocabulary entry that happens to spell a special token is flagged
+    /// exactly as the generic route would have treated it.
+    const SPECIAL: u32 = 1 << 30;
+    const MASK: u32 = (1 << 29) - 1;
 
-    /// `(is_byte_fallback, bytes)`. An id the vocabulary does not hold yields an empty slice,
-    /// which contributes nothing -- the same as the generic route's `filter_map` dropping it.
+    /// `(flags, bytes)`. An id the vocabulary does not hold yields an empty slice, which
+    /// contributes nothing -- the same as the generic route's `filter_map` dropping it.
     #[inline]
-    fn get(&self, id: u32) -> (bool, &[u8]) {
+    fn get(&self, id: u32) -> (u32, &[u8]) {
         let i = id as usize;
         let Some(pair) = self.off.get(i..i + 2) else {
-            return (false, &[]);
+            return (0, &[]);
         };
         let start = (pair[0] & Self::MASK) as usize;
         let end = (pair[1] & Self::MASK) as usize;
-        let bytes = self.bytes.get(start..end).unwrap_or_default();
-        (pair[0] & Self::FLAG != 0, bytes)
+        (pair[0], self.bytes.get(start..end).unwrap_or_default())
     }
 
-    fn build(spm: &FusedSpmDecoder, pairs: Vec<(String, u32)>) -> Self {
-        let Some(max_id) = pairs.iter().map(|(_, id)| *id).max() else {
+    fn build(
+        spm: &FusedSpmDecoder,
+        added: &BucketAddedVocabulary,
+        model_vocab: Vec<(String, u32)>,
+    ) -> Self {
+        // The added vocabulary is authoritative for its own ids, and may hold ids past the end of
+        // the model's, so it is layered over the model's entries rather than appended.
+        let mut by_id: BTreeMap<u32, String> =
+            model_vocab.into_iter().map(|(t, i)| (i, t)).collect();
+        for (id, token) in added.get_added_tokens_decoder() {
+            by_id.insert(id, token.content);
+        }
+        let Some(&max_id) = by_id.keys().next_back() else {
             return Self {
                 off: Box::new([0, 0]),
                 bytes: Box::new([]),
             };
         };
-        // Transform once per entry, in ascending id order so the offsets a decoder reads are an
-        // adjacent pair.
-        let mut sorted = pairs;
-        sorted.sort_unstable_by_key(|(_, id)| *id);
-        let mut entries: Vec<(Vec<u8>, u32, bool)> = Vec::with_capacity(sorted.len());
-        for (token, id) in sorted {
-            if let Some(byte) = byte_fallback_byte(token.as_bytes()) {
-                entries.push((vec![byte], id, true));
+
+        let mut len_of = vec![0u32; max_id as usize + 1];
+        let mut flag_of = vec![0u32; max_id as usize + 1];
+        // `BTreeMap` iterates in ascending id order, which is the order the slab needs so a
+        // decoder's two offsets are adjacent.
+        let mut decoded: Vec<Vec<u8>> = Vec::with_capacity(by_id.len());
+        for (id, token) in &by_id {
+            let mut flags = 0;
+            if added.is_special_token(token) {
+                flags |= Self::SPECIAL;
+            }
+            let buf = if let Some(byte) = byte_fallback_byte(token.as_bytes()) {
+                flags |= Self::BYTE_FALLBACK;
+                vec![byte]
             } else {
                 let mut buf = Vec::with_capacity(token.len());
                 spm.push_replaced(token.as_bytes(), &mut buf);
-                entries.push((buf, id, false));
-            }
+                buf
+            };
+            len_of[*id as usize] = buf.len() as u32;
+            flag_of[*id as usize] = flags;
+            decoded.push(buf);
         }
-        let total: usize = entries.iter().map(|(b, _, _)| b.len()).sum();
-        let mut bytes = Vec::with_capacity(total);
+
+        let total: usize = decoded.iter().map(Vec::len).sum();
+        assert!(
+            total <= Self::MASK as usize,
+            "decode slab exceeds the 29-bit offset field"
+        );
         let mut off = vec![0u32; max_id as usize + 2];
-        let mut len_of = vec![0u32; max_id as usize + 1];
-        let mut flag_of = vec![false; max_id as usize + 1];
-        for (b, id, bf) in &entries {
-            len_of[*id as usize] = b.len() as u32;
-            flag_of[*id as usize] = *bf;
-        }
         let mut cursor = 0u32;
         for id in 0..=max_id as usize {
-            off[id] = cursor | if flag_of[id] { Self::FLAG } else { 0 };
+            off[id] = cursor | flag_of[id];
             cursor += len_of[id];
         }
         off[max_id as usize + 1] = cursor;
-        for (b, _, _) in &entries {
-            bytes.extend_from_slice(b);
+        let mut bytes = Vec::with_capacity(total);
+        for buf in &decoded {
+            bytes.extend_from_slice(buf);
         }
         debug_assert_eq!(cursor as usize, bytes.len());
         Self {
@@ -336,19 +370,18 @@ struct FusedSpmDecoder {
     /// A trailing `Strip`, which runs *after* `Fuse` and so applies to the whole output, not to
     /// each token: `(byte, leading, trailing)`.
     strip: Option<(u8, usize, usize)>,
-    /// The load-time transformed vocabulary. See [`SpmDecodeTable`].
-    table: Option<SpmDecodeTable>,
-    /// Added-token ids, sorted, for a membership test that allocates nothing.
-    ///
-    /// `added_id_min` cannot serve here: gemma's `<pad>` is id 0, so `id >= added_id_min` is true
-    /// for every token and the short-circuit never fires. See the note on
-    /// [tokenizers#2178](https://github.com/huggingface/tokenizers/pull/2178).
-    added_ids: Box<[u32]>,
+    /// The load-time transformed vocabulary, which also carries the per-id flags. See
+    /// [`SpmDecodeTable`].
+    table: SpmDecodeTable,
 }
 
 impl FusedSpmDecoder {
     /// Recognise the chain, or decline. Declining is always safe: the generic route stays.
-    fn recognise(decoder: &DecoderRuntime, added_ids: Box<[u32]>) -> Option<Self> {
+    fn recognise(
+        decoder: &DecoderRuntime,
+        model: &PipelineModel,
+        added: &BucketAddedVocabulary,
+    ) -> Option<Self> {
         let DecoderRuntime::Sequence(chain) = decoder else {
             return None;
         };
@@ -375,18 +408,21 @@ impl FusedSpmDecoder {
         if pattern.is_empty() {
             return None;
         }
-        Some(Self {
+        // Only BPE exposes its vocabulary for the load-time transform, and without that table
+        // this path has no advantage over the generic route, so decline rather than carry a
+        // second, slower implementation of the same semantics.
+        #[allow(irrefutable_let_patterns)]
+        let PipelineModel::BPE(bpe) = model else {
+            return None;
+        };
+        let mut me = Self {
             from: pattern.as_bytes().into(),
             to: rep.content().as_bytes().into(),
             strip,
-            table: None,
-            added_ids,
-        })
-    }
-
-    #[inline]
-    fn is_added(&self, id: u32) -> bool {
-        self.added_ids.binary_search(&id).is_ok()
+            table: SpmDecodeTable::default(),
+        };
+        me.table = SpmDecodeTable::build(&me, added, bpe.content());
+        Some(me)
     }
 
     /// `ByteFallback`'s end-of-run rule: the run as UTF-8 if it is valid, else one replacement
@@ -488,22 +524,10 @@ impl PipelineTokenizer {
         role_to_token: BTreeMap<String, String>,
         padding: Option<PaddingParams>,
     ) -> Self {
-        let mut sorted_added: Vec<u32> = added_vocabulary
-            .get_added_tokens_decoder()
-            .keys()
-            .copied()
-            .collect();
-        sorted_added.sort_unstable();
-        let mut fused_spm = decoder
+        // The vocabulary is transformed once here, not once per token occurrence at decode.
+        let fused_spm = decoder
             .as_ref()
-            .and_then(|d| FusedSpmDecoder::recognise(d, sorted_added.into_boxed_slice()));
-        // Transform the vocabulary once here rather than once per token occurrence at decode.
-        #[allow(irrefutable_let_patterns)]
-        if let Some(spm) = fused_spm.as_mut()
-            && let PipelineModel::BPE(bpe) = &model
-        {
-            spm.table = Some(SpmDecodeTable::build(spm, bpe.content()));
-        }
+            .and_then(|d| FusedSpmDecoder::recognise(d, &model, &added_vocabulary));
         let added_id_min = added_vocabulary
             .get_added_tokens_decoder()
             .keys()
@@ -1044,10 +1068,8 @@ impl PipelineTokenizer {
         }
         // A recognised SPM chain, fused into one allocation-free pass. See `FusedSpmDecoder`.
         #[allow(irrefutable_let_patterns)]
-        if let Some(spm) = &self.inner.fused_spm
-            && let PipelineModel::BPE(bpe) = &self.inner.model
-        {
-            return Ok(self.decode_fused_spm(spm, bpe, ids, skip_special_tokens));
+        if let Some(spm) = &self.inner.fused_spm {
+            return Ok(self.decode_fused_spm(spm, ids, skip_special_tokens));
         }
         let tokens = ids
             .iter()
@@ -1109,48 +1131,28 @@ impl PipelineTokenizer {
     fn decode_fused_spm(
         &self,
         spm: &FusedSpmDecoder,
-        bpe: &PipelineBPE,
         ids: &[u32],
         skip_special_tokens: bool,
     ) -> String {
         DECODE_OUT.with_borrow_mut(|out| {
             out.clear();
             let mut run: Vec<u8> = Vec::new();
+            // One adjacent-pair load per token gives the span and every flag, and the bytes
+            // already have `Replace` applied, so the ordinary arm is a `memcpy` and nothing else.
+            let table = &spm.table;
             for &id in ids {
-                // An added token resolves through the added vocabulary and may be filtered. The
-                // membership test is a binary search over a handful of ids, not a lookup that
-                // builds a `String` for every token in the stream.
-                if spm.is_added(id) {
-                    FusedSpmDecoder::flush_run(&mut run, out);
-                    if let Some(token) = self.inner.added_vocabulary.simple_id_to_token(id)
-                        && (!skip_special_tokens
-                            || !self.inner.added_vocabulary.is_special_token(&token))
-                    {
-                        spm.push_replaced(token.as_bytes(), out);
-                    }
-                    continue;
-                }
-                // One adjacent-pair load gives the span and the byte-fallback flag; the bytes
-                // already have `Replace` applied, so this arm is a `memcpy` and nothing else.
-                let (is_byte_fallback, token) = match &spm.table {
-                    Some(table) => table.get(id),
-                    None => {
-                        let raw = bpe.id_to_token_bytes_for_decode(id);
-                        (byte_fallback_byte(raw).is_some(), raw)
-                    }
-                };
-                if is_byte_fallback {
+                let (flags, token) = table.get(id);
+                if flags & SpmDecodeTable::BYTE_FALLBACK != 0 {
                     if let Some(&byte) = token.first() {
                         run.push(byte);
                     }
                     continue;
                 }
                 FusedSpmDecoder::flush_run(&mut run, out);
-                if spm.table.is_some() {
-                    out.extend_from_slice(token);
-                } else {
-                    spm.push_replaced(token, out);
+                if skip_special_tokens && flags & SpmDecodeTable::SPECIAL != 0 {
+                    continue;
                 }
+                out.extend_from_slice(token);
             }
             FusedSpmDecoder::flush_run(&mut run, out);
 
