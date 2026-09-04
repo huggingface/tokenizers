@@ -1,1 +1,10 @@
-data
+/target
+/build
+/dist
+*.so
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+/data

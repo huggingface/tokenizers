@@ -1,42 +1,23 @@
-use pyo3::exceptions;
-use pyo3::prelude::*;
-use pyo3::type_object::PyTypeInfo;
-use std::ffi::CString;
-use std::fmt::{Display, Formatter, Result as FmtResult};
-use tokenizers::tokenizer::Result;
+use std::sync::PoisonError;
 
-#[derive(Debug)]
-pub struct PyError(pub String);
-impl PyError {
-    #[allow(dead_code)]
-    pub fn from(s: &str) -> Self {
-        PyError(String::from(s))
-    }
-    pub fn into_pyerr<T: PyTypeInfo>(self) -> PyErr {
-        PyErr::new::<T, _>(format!("{self}"))
-    }
-}
-impl Display for PyError {
-    fn fmt(&self, fmt: &mut Formatter) -> FmtResult {
-        write!(fmt, "{}", self.0)
-    }
-}
-impl std::error::Error for PyError {}
+use pyo3::PyErr;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use tk_convert::ConvertError;
 
-pub struct ToPyResult<T>(pub Result<T>);
-impl<T> From<ToPyResult<T>> for PyResult<T> {
-    fn from(v: ToPyResult<T>) -> Self {
-        v.0.map_err(|e| exceptions::PyException::new_err(format!("{e}")))
-    }
-}
-impl<T> ToPyResult<T> {
-    pub fn into_py(self) -> PyResult<T> {
-        self.into()
-    }
+/// Convert a rust error to a Python ValueError
+pub(crate) fn err<E: std::fmt::Display>(e: E) -> PyErr {
+    PyValueError::new_err(e.to_string())
 }
 
-pub(crate) fn deprecation_warning(py: Python<'_>, version: &str, message: &str) -> PyResult<()> {
-    let deprecation_warning = py.import("builtins")?.getattr("DeprecationWarning")?;
-    let full_message = format!("Deprecated in {version}: {message}");
-    pyo3::PyErr::warn(py, &deprecation_warning, &CString::new(full_message)?, 0)
+/// Convert a poisoned lock to a Python RuntimeError
+pub(crate) fn poison_err<T>(_: PoisonError<T>) -> PyErr {
+    PyRuntimeError::new_err("a previous access panicked while holding this lock")
+}
+
+/// Map IO error to the right Python types (FileNotFoundError, ...)
+pub(crate) fn convert_err(e: ConvertError) -> PyErr {
+    match &e {
+        ConvertError::Io { source, .. } => std::io::Error::new(source.kind(), e.to_string()).into(),
+        _ => err(e),
+    }
 }
