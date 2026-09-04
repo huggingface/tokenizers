@@ -5,5 +5,9 @@ edition = "2024"
 publish = false
 description = "Generates the tokenizers module's .pyi stub from the built cdylib"
 
+[[bin]]
+name = "stub-gen"
+path = "src/main.rs"
+
 [dependencies]
 pyo3-introspection = "0.29"
