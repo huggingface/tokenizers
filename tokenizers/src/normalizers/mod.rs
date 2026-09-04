@@ -6,6 +6,7 @@ pub mod replace;
 pub mod strip;
 pub mod unicode;
 pub mod utils;
+pub mod cyrillic; 
 pub use crate::normalizers::bert::BertNormalizer;
 pub use crate::normalizers::byte_level::ByteLevel;
 pub use crate::normalizers::precompiled::Precompiled;
@@ -14,6 +15,7 @@ pub use crate::normalizers::replace::Replace;
 pub use crate::normalizers::strip::{Strip, StripAccents};
 pub use crate::normalizers::unicode::{Nmt, NFC, NFD, NFKC, NFKD};
 pub use crate::normalizers::utils::{Lowercase, Sequence};
+pub use crate::normalizers::cyrillic::CyrillicNormalizer;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{NormalizedString, Normalizer};
