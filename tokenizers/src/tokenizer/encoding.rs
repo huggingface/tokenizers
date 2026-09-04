@@ -119,6 +119,7 @@ impl Encoding {
 
     /// Set the given sequence id for the whole range of tokens contained in this Encoding
     pub fn set_sequence_id(&mut self, sequence_id: usize) {
+        self.sequence_ranges.clear();
         self.sequence_ranges.insert(sequence_id, 0..self.len());
     }
 
@@ -135,11 +136,13 @@ impl Encoding {
     }
 
     pub fn get_sequence_ids(&self) -> Vec<Option<usize>> {
+        if self.sequence_ranges.is_empty() {
+            return vec![Some(0); self.len()];
+        }
+
         let mut sequences = vec![None; self.len()];
-        for seq_id in 0..self.n_sequences() {
-            let range = self.sequence_range(seq_id);
-            let seq_len = range.len();
-            sequences.splice(range, std::iter::repeat_n(Some(seq_id), seq_len));
+        for (seq_id, range) in &self.sequence_ranges {
+            sequences[range.clone()].fill(Some(*seq_id));
         }
         sequences
     }
@@ -201,11 +204,12 @@ impl Encoding {
 
     /// Returns the range to target to retrieve something (word_id, offsets, ..) related to the
     /// given sequence id
-    fn sequence_range(&self, sequence_id: usize) -> Range<usize> {
-        self.sequence_ranges
-            .get(&sequence_id)
-            .cloned()
-            .unwrap_or(0..self.len())
+    fn sequence_range(&self, sequence_id: usize) -> Option<Range<usize>> {
+        if self.sequence_ranges.is_empty() {
+            (sequence_id == 0).then(|| 0..self.len())
+        } else {
+            self.sequence_ranges.get(&sequence_id).cloned()
+        }
     }
 
     /// Returns the index of the sequence containing the given token
@@ -229,7 +233,7 @@ impl Encoding {
     /// with the form (start_token, end_token + 1)
     pub fn word_to_tokens(&self, word: u32, sequence_id: usize) -> Option<(usize, usize)> {
         let (mut start, mut end) = (None, None);
-        let sequence_range = self.sequence_range(sequence_id);
+        let sequence_range = self.sequence_range(sequence_id)?;
 
         self.words
             .get(sequence_range.clone())?
@@ -283,7 +287,7 @@ impl Encoding {
 
     /// Get the token that contains the given char.
     pub fn char_to_token(&self, pos: usize, sequence_id: usize) -> Option<usize> {
-        let sequence_range = self.sequence_range(sequence_id);
+        let sequence_range = self.sequence_range(sequence_id)?;
 
         self.offsets
             .get(sequence_range.clone())?
@@ -603,6 +607,43 @@ mod tests {
                 ..Default::default()
             }
         );
+    }
+
+    #[test]
+    fn mapping_rejects_invalid_sequence_ids() {
+        let encoding = Encoding {
+            ids: vec![1],
+            tokens: vec![String::from("Hello")],
+            words: vec![Some(0)],
+            offsets: vec![(0, 5)],
+            ..Default::default()
+        };
+
+        assert_eq!(encoding.word_to_tokens(0, 0), Some((0, 1)));
+        assert_eq!(encoding.word_to_chars(0, 0), Some((0, 5)));
+        assert_eq!(encoding.char_to_token(0, 0), Some(0));
+        assert_eq!(encoding.char_to_word(0, 0), Some(0));
+
+        assert_eq!(encoding.word_to_tokens(0, 1), None);
+        assert_eq!(encoding.word_to_chars(0, 1), None);
+        assert_eq!(encoding.char_to_token(0, 1), None);
+        assert_eq!(encoding.char_to_word(0, 1), None);
+    }
+
+    #[test]
+    fn set_sequence_id_replaces_previous_id() {
+        let mut encoding = Encoding {
+            ids: vec![1, 2],
+            ..Default::default()
+        };
+        encoding.set_sequence_id(5);
+        encoding.set_sequence_id(6);
+
+        assert_eq!(encoding.n_sequences(), 1);
+        assert_eq!(encoding.sequence_range(5), None);
+        assert_eq!(encoding.sequence_range(6), Some(0..2));
+        assert_eq!(encoding.token_to_sequence(0), Some(6));
+        assert_eq!(encoding.get_sequence_ids(), vec![Some(6), Some(6)]);
     }
 
     #[test]

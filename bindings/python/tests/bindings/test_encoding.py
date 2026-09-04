@@ -1,8 +1,24 @@
 import pytest
 
-from tokenizers import BertWordPieceTokenizer
+from tokenizers import BertWordPieceTokenizer, Tokenizer
+from tokenizers.models import WordLevel
+from tokenizers.pre_tokenizers import Whitespace
 
 from ..utils import bert_files, data_dir
+
+
+def test_set_sequence_id_replaces_previous_id():
+    tokenizer = Tokenizer(WordLevel({"[UNK]": 0, "a": 1, "b": 2}, unk_token="[UNK]"))
+    tokenizer.pre_tokenizer = Whitespace()
+    encoding = tokenizer.encode("a b")
+    encoding.set_sequence_id(5)
+    encoding.set_sequence_id(6)
+
+    assert encoding.n_sequences == 1
+    assert encoding.token_to_sequence(0) == 6
+    assert encoding.word_to_tokens(0, 5) is None
+    assert encoding.word_to_tokens(0, 6) == (0, 1)
+    assert encoding.sequence_ids == [6, 6]
 
 
 @pytest.mark.network
@@ -47,6 +63,7 @@ class TestEncoding:
         assert pair.word_to_tokens(0, 0) == (1, 2)
         assert pair.word_to_tokens(6, 0) == None
         assert pair.word_to_tokens(0, 1) == (6, 7)
+        assert single.word_to_tokens(0, 1) == None
 
     def test_word_to_chars(self, encodings):
         single, pair = encodings
@@ -55,6 +72,7 @@ class TestEncoding:
         assert pair.word_to_chars(2) == (7, 18)
         assert pair.word_to_chars(2, 0) == (7, 18)
         assert pair.word_to_chars(2, 1) == (6, 7)
+        assert single.word_to_chars(2, 1) == None
 
     def test_token_to_sequence(self, encodings):
         single, pair = encodings
@@ -98,6 +116,7 @@ class TestEncoding:
         assert pair.char_to_token(1, 0) == None
         assert pair.char_to_token(0, 1) == 6
         assert pair.char_to_token(2, 1) == None
+        assert single.char_to_token(0, 1) == None
 
     def test_char_to_word(self, encodings):
         single, pair = encodings
@@ -108,6 +127,7 @@ class TestEncoding:
         assert pair.char_to_word(2, 0) == 1
         assert pair.char_to_word(2, 1) == None
         assert pair.char_to_word(3, 1) == 1
+        assert single.char_to_word(0, 1) == None
 
     def test_truncation(self, encodings):
         single, _ = encodings
