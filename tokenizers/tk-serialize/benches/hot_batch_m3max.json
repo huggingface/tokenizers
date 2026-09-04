@@ -1,0 +1,744 @@
+{
+  "metadata": {
+    "date": "2026-09-04",
+    "hardware": "Apple M3 Max (10 performance + 4 efficiency cores)",
+    "rustc": "1.97.0 (2d8144b78 2026-07-07)",
+    "base_commit": "1f1602d090a289dc64784c77cf8f2c58f7a4e588",
+    "profile": {
+      "opt_level": 3,
+      "lto": "fat",
+      "codegen_units": 1,
+      "debug": 1
+    },
+    "unit": "MiB/s",
+    "protocol": "100 warmup batches, 5 samples of 50 identical batches; 3 interleaved process repeats per case. Same 100 UTF-8 chunks (~10 KiB each), full encoding produced and token IDs copied on worker. Complete encoding equality checked outside timing; hashes match established Hugging Face oracle. No CPU affinity set.",
+    "files": {
+      "deepseek-v4/tokenizer.json": "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf",
+      "gpt2/tokenizer.json": "8414cab924d8b9b33013f0d221c5862f365ee9be39c5c2bfae8a5a9e970478a6",
+      "english.txt": "dc2e95bb6adaaa6a8b1008b0175bdcd40435ff8af871f22412aaa6d68378d196",
+      "chinese.txt": "bb23e89d06cd374d3c2d912a6bcd251ee0ab3aaf25817cc67b8c90691b152318"
+    }
+  },
+  "results": [
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 0,
+      "ids_hash": "09e00f374e91bcd0",
+      "mib_s": 358.85355505745844,
+      "samples_seconds": [
+        0.132234834,
+        0.134863667,
+        0.136080416,
+        0.14046025,
+        0.136772583
+      ],
+      "threads": 1,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "chinese",
+      "process_repeat": 0
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 0,
+      "ids_hash": "09e00f374e91bcd0",
+      "mib_s": 2431.5409606472026,
+      "samples_seconds": [
+        0.020063208,
+        0.020242833,
+        0.020283375,
+        0.020083125,
+        0.019705459
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "chinese",
+      "process_repeat": 0
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 200,
+      "ids_hash": "09e00f374e91bcd0",
+      "mib_s": 3714.9322957886216,
+      "samples_seconds": [
+        0.013849625,
+        0.013495958,
+        0.013014333,
+        0.013103791,
+        0.013145042
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "chinese",
+      "process_repeat": 0
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 0,
+      "ids_hash": "ca025a6ad4b36f2b",
+      "mib_s": 546.0875801539836,
+      "samples_seconds": [
+        0.089647584,
+        0.0893015,
+        0.089414458,
+        0.08943125,
+        0.0890395
+      ],
+      "threads": 1,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "english",
+      "process_repeat": 0
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 0,
+      "ids_hash": "ca025a6ad4b36f2b",
+      "mib_s": 3639.7251562819947,
+      "samples_seconds": [
+        0.013642291,
+        0.01355575,
+        0.013302042,
+        0.013186,
+        0.013415333
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "english",
+      "process_repeat": 0
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 200,
+      "ids_hash": "ca025a6ad4b36f2b",
+      "mib_s": 4732.649323097572,
+      "samples_seconds": [
+        0.010548,
+        0.01033175,
+        0.010044625,
+        0.010028333,
+        0.010317292
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "english",
+      "process_repeat": 0
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 0,
+      "ids_hash": "4f4eab89e79b8f07",
+      "mib_s": 402.3013004621519,
+      "samples_seconds": [
+        0.121520333,
+        0.121384,
+        0.121187167,
+        0.121449042,
+        0.121001625
+      ],
+      "threads": 1,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "chinese",
+      "process_repeat": 0
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 0,
+      "ids_hash": "4f4eab89e79b8f07",
+      "mib_s": 2495.5457245463585,
+      "samples_seconds": [
+        0.019288708,
+        0.019587458,
+        0.019561375,
+        0.019568041,
+        0.019586958
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "chinese",
+      "process_repeat": 0
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 200,
+      "ids_hash": "4f4eab89e79b8f07",
+      "mib_s": 3827.5828381379433,
+      "samples_seconds": [
+        0.013700875,
+        0.013789417,
+        0.012758167,
+        0.0116065,
+        0.011941042
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "chinese",
+      "process_repeat": 0
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 0,
+      "ids_hash": "d37f43f0013b8c3b",
+      "mib_s": 610.2002862215421,
+      "samples_seconds": [
+        0.080285125,
+        0.080019833,
+        0.080115709,
+        0.080004208,
+        0.079860417
+      ],
+      "threads": 1,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "english",
+      "process_repeat": 0
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 0,
+      "ids_hash": "d37f43f0013b8c3b",
+      "mib_s": 3892.2636953277574,
+      "samples_seconds": [
+        0.012491166,
+        0.012789334,
+        0.012544917,
+        0.012663625,
+        0.012514084
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "english",
+      "process_repeat": 0
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 200,
+      "ids_hash": "d37f43f0013b8c3b",
+      "mib_s": 5356.359102435883,
+      "samples_seconds": [
+        0.009155959,
+        0.009128166,
+        0.009021042,
+        0.008873375,
+        0.009115917
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "english",
+      "process_repeat": 0
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 0,
+      "ids_hash": "09e00f374e91bcd0",
+      "mib_s": 367.8913011792135,
+      "samples_seconds": [
+        0.132737417,
+        0.131719583,
+        0.131232667,
+        0.134083958,
+        0.137825958
+      ],
+      "threads": 1,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "chinese",
+      "process_repeat": 1
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 0,
+      "ids_hash": "09e00f374e91bcd0",
+      "mib_s": 2436.201047134077,
+      "samples_seconds": [
+        0.020639833,
+        0.019854959,
+        0.020130209,
+        0.019858792,
+        0.020044709
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "chinese",
+      "process_repeat": 1
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 200,
+      "ids_hash": "09e00f374e91bcd0",
+      "mib_s": 3532.496946255884,
+      "samples_seconds": [
+        0.013823916,
+        0.014085709,
+        0.013379667,
+        0.013843666,
+        0.013094
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "chinese",
+      "process_repeat": 1
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 0,
+      "ids_hash": "ca025a6ad4b36f2b",
+      "mib_s": 548.9580375225372,
+      "samples_seconds": [
+        0.08988475,
+        0.088946917,
+        0.089483083,
+        0.088096666,
+        0.087099875
+      ],
+      "threads": 1,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "english",
+      "process_repeat": 1
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 0,
+      "ids_hash": "ca025a6ad4b36f2b",
+      "mib_s": 3505.2494615936826,
+      "samples_seconds": [
+        0.013370084,
+        0.01393,
+        0.01428125,
+        0.014013583,
+        0.013700416
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "english",
+      "process_repeat": 1
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 200,
+      "ids_hash": "ca025a6ad4b36f2b",
+      "mib_s": 4540.356138270916,
+      "samples_seconds": [
+        0.010206583,
+        0.01050575,
+        0.0107845,
+        0.01075425,
+        0.010953542
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "english",
+      "process_repeat": 1
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 0,
+      "ids_hash": "4f4eab89e79b8f07",
+      "mib_s": 401.7302619305188,
+      "samples_seconds": [
+        0.123238958,
+        0.121654667,
+        0.121556541,
+        0.121118792,
+        0.121305625
+      ],
+      "threads": 1,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "chinese",
+      "process_repeat": 1
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 0,
+      "ids_hash": "4f4eab89e79b8f07",
+      "mib_s": 2537.8692222867444,
+      "samples_seconds": [
+        0.019241709,
+        0.019091541,
+        0.019160541,
+        0.019691875,
+        0.019296625
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "chinese",
+      "process_repeat": 1
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 200,
+      "ids_hash": "4f4eab89e79b8f07",
+      "mib_s": 3914.778022711067,
+      "samples_seconds": [
+        0.012474,
+        0.011587083,
+        0.013119208,
+        0.013717834,
+        0.012471542
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "chinese",
+      "process_repeat": 1
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 0,
+      "ids_hash": "d37f43f0013b8c3b",
+      "mib_s": 612.1270523184259,
+      "samples_seconds": [
+        0.079767958,
+        0.079858417,
+        0.079750333,
+        0.079599875,
+        0.079771125
+      ],
+      "threads": 1,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "english",
+      "process_repeat": 1
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 0,
+      "ids_hash": "d37f43f0013b8c3b",
+      "mib_s": 4042.216918672655,
+      "samples_seconds": [
+        0.012484333,
+        0.01226625,
+        0.011820709,
+        0.011961708,
+        0.012079541
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "english",
+      "process_repeat": 1
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 200,
+      "ids_hash": "d37f43f0013b8c3b",
+      "mib_s": 5218.93375322976,
+      "samples_seconds": [
+        0.009481625,
+        0.009321333,
+        0.009522042,
+        0.009340167,
+        0.009355958
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "english",
+      "process_repeat": 1
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 0,
+      "ids_hash": "09e00f374e91bcd0",
+      "mib_s": 378.4182909650449,
+      "samples_seconds": [
+        0.129482541,
+        0.1291975,
+        0.128874167,
+        0.129044875,
+        0.128921583
+      ],
+      "threads": 1,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "chinese",
+      "process_repeat": 2
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 0,
+      "ids_hash": "09e00f374e91bcd0",
+      "mib_s": 2341.3635262319694,
+      "samples_seconds": [
+        0.0206505,
+        0.021881584,
+        0.020856625,
+        0.02164625,
+        0.020435333
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "chinese",
+      "process_repeat": 2
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 200,
+      "ids_hash": "09e00f374e91bcd0",
+      "mib_s": 3611.3475309460714,
+      "samples_seconds": [
+        0.013072208,
+        0.014008042,
+        0.013522083,
+        0.013741584,
+        0.013321625
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "chinese",
+      "process_repeat": 2
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 0,
+      "ids_hash": "ca025a6ad4b36f2b",
+      "mib_s": 532.4731974291342,
+      "samples_seconds": [
+        0.091726667,
+        0.091700625,
+        0.091568917,
+        0.093838291,
+        0.088860708
+      ],
+      "threads": 1,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "english",
+      "process_repeat": 2
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 0,
+      "ids_hash": "ca025a6ad4b36f2b",
+      "mib_s": 3678.259139578232,
+      "samples_seconds": [
+        0.013274792,
+        0.013441791,
+        0.013254042,
+        0.013522667,
+        0.013083125
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "english",
+      "process_repeat": 2
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 200,
+      "ids_hash": "ca025a6ad4b36f2b",
+      "mib_s": 5064.282452401644,
+      "samples_seconds": [
+        0.010031459,
+        0.00992375,
+        0.009641667,
+        0.009560083,
+        0.009505792
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "deepseek-v4",
+      "language": "english",
+      "process_repeat": 2
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 0,
+      "ids_hash": "4f4eab89e79b8f07",
+      "mib_s": 394.334387253324,
+      "samples_seconds": [
+        0.127661917,
+        0.126467417,
+        0.123836375,
+        0.120869625,
+        0.120928042
+      ],
+      "threads": 1,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "chinese",
+      "process_repeat": 2
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 0,
+      "ids_hash": "4f4eab89e79b8f07",
+      "mib_s": 2505.313327705201,
+      "samples_seconds": [
+        0.019439375,
+        0.019184125,
+        0.019604292,
+        0.01949175,
+        0.019732083
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "chinese",
+      "process_repeat": 2
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024101,
+      "idle_spin_micros": 200,
+      "ids_hash": "4f4eab89e79b8f07",
+      "mib_s": 4159.918760418687,
+      "samples_seconds": [
+        0.011970959,
+        0.011352041,
+        0.011738917,
+        0.012093334,
+        0.011108875
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "chinese",
+      "process_repeat": 2
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 0,
+      "ids_hash": "d37f43f0013b8c3b",
+      "mib_s": 580.7680855932073,
+      "samples_seconds": [
+        0.084633833,
+        0.084075083,
+        0.083960167,
+        0.084023125,
+        0.08409075
+      ],
+      "threads": 1,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "english",
+      "process_repeat": 2
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 0,
+      "ids_hash": "d37f43f0013b8c3b",
+      "mib_s": 4023.881578790141,
+      "samples_seconds": [
+        0.012189958,
+        0.012145083,
+        0.012065708,
+        0.012134583,
+        0.0119055
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "english",
+      "process_repeat": 2
+    },
+    {
+      "batches_per_sample": 50,
+      "chunks": 100,
+      "corpus_bytes": 1024000,
+      "idle_spin_micros": 200,
+      "ids_hash": "d37f43f0013b8c3b",
+      "mib_s": 5447.92037764475,
+      "samples_seconds": [
+        0.008911625,
+        0.008962709,
+        0.008979042,
+        0.008793,
+        0.009268833
+      ],
+      "threads": 8,
+      "warmup_batches": 100,
+      "model": "gpt2",
+      "language": "english",
+      "process_repeat": 2
+    }
+  ]
+}

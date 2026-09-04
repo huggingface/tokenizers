@@ -17,6 +17,7 @@ pub(crate) struct EncodeScratch {
     pub(crate) model: PipelineModelScratch,
     pub(crate) split: PreTokenizerScratch,
     pub(crate) pre_tokens: Vec<Span>,
+    pub(crate) output: Vec<crate::pipeline::PipelineToken>,
 }
 
 /// How many independent sub-pools the scratch pool keeps.
@@ -59,6 +60,7 @@ impl ScratchPool {
             model: model.init_scratch(),
             split: PreTokenizerScratch::default(),
             pre_tokens: Vec::new(),
+            output: Vec::new(),
         })
     }
 

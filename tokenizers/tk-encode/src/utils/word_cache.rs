@@ -6,7 +6,7 @@
 //! - the top byte is a **tag**, stored in a separate table ([`WordCache::quick_lookup`])
 //!
 //! A lookup walks a 16 byte window in [`WordCache::quick_lookup`] to find a matching tag, if the tag
-//! matches the slot's 128 bit key ([`LookupKey`]) confirms whether it's a match or not.
+//! matches the slot's 64 bit key ([`LookupKey`]) confirms whether it's a match or not.
 //!
 //! On miss, we return where the cache should insert ([`WordCache::insert`]) the ids;
 //! Either the slot already holding a stale copy of the word ([`WordCacheSlot::is_stale`]),
@@ -32,10 +32,15 @@
 //!
 //! # Note
 //!
-//! A cache hit for a word of 15 bytes or shorter is guaranteed to return correct ids.
-//! For longer words, the cache hit relies on equality of 127 bits of hash of the word's bytes.
-//! Two long words can in principle share the same 127 bit hash (a collision) which could make the
+//! A cache hit for a word of `INLINE_KEY_BYTES` bytes or shorter is guaranteed to return correct
+//! ids: the key holds those bytes verbatim, so a key comparison *is* a byte comparison.
+//! For longer words, the cache hit relies on equality of the 64 bit hash of the word's bytes.
+//! Two long words can in principle share the same 64 bit hash (a collision) which could make the
 //! cache return incorrect ids for one of them, even though the collision is extremely unlikely.
+//!
+//! Widening [`LookupKey`] to a `u128` would raise the exact-comparison bound to 15 bytes and cost
+//! no extra memory -- a slot has 11 unused bytes today -- but it is not what the code does. See
+//! [`WordCacheSlot`].
 //!
 //! # Where the ideas come from
 //!
@@ -53,6 +58,7 @@
 use std::fmt::Debug;
 
 use std::iter::Iterator;
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
 use wide::i8x16;
 
 #[cfg(test)]
@@ -138,11 +144,24 @@ impl<'a> WordCache {
     /// the room has to be there even when fewer ids end up counting.
     #[inline]
     pub unsafe fn probe_emit_keyed(&'a self, key: u64, hash: u64, dst: *mut u32) -> ProbeEmit<'a> {
-        let placement = placement_from(LookupKey(key), hash, self.placement_mask);
-        // SAFETY: `index` is masked with `placement_mask` (`next_pow2 - 1`), and the table is
-        let slot = unsafe { *self.cached_words.as_ptr().add(placement.index) };
-        if slot.key == placement.key && !slot.is_spilled() {
+        // The home slot and the key are all the fast path needs; `tag` is only read by
+        // `lookup_placed`. Building the whole `InsertPlacement` up front put it on the stack before
+        // the hit was even tested, because it is 24 bytes and AAPCS passes anything over 16
+        // indirectly -- three stores on every hit for a value only the miss path consumes:
+        //
+        //   stp x8, x0, [sp, #160]   <- on every hit
+        //   strb w9, [sp, #176]      <- on every hit
+        //   ldr  x9, [x8] ; cmp x9, x0 ; b.ne <miss>
+        //
+        // Splitting the placement so the cold half is built in the cold branch moves them there.
+        let home = home_index(hash, self.placement_mask);
+        let key = LookupKey(key);
+        // SAFETY: `home` is masked with `placement_mask` (`next_pow2 - 1`), and the table holds
+        // `next_pow2 + WINDOW_SIZE` slots, so it is in bounds.
+        let slot = unsafe { *self.cached_words.as_ptr().add(home) };
+        if slot.key == key && !slot.is_spilled() {
             // SAFETY: the caller guarantees room for `MAX_INLINE_IDS`. Lanes past `ids_len` are
+            // written with whatever the slot holds, which the contract allows.
             unsafe {
                 for lane in 0..MAX_INLINE_IDS {
                     dst.add(lane).write(slot.payload[lane]);
@@ -150,6 +169,11 @@ impl<'a> WordCache {
             }
             return ProbeEmit::Wrote(slot.ids_len as usize);
         }
+        let placement = InsertPlacement {
+            key,
+            index: home,
+            tag: tag_of(hash),
+        };
         match self.lookup_placed(placement) {
             Lookup::Hit(ids) => ProbeEmit::Hit(ids),
             Lookup::Miss(at) => ProbeEmit::Miss(at),
@@ -262,11 +286,11 @@ impl<'a> WordCache {
 ///
 /// The token ids are encoded inline in the cache slot:
 /// ```text
-/// ┌────────────────────────┬────────────┬────────────┬────────────┬─────────┬─────────┐
-/// │          key           │   id[0]    │   id[1]    │   id[2]    │ ids_len │   _pad  │
-/// │       LookupKey        │    u32     │    u32     │    u32     │    u8   │ [u8; 3] │
-/// └────────────────────────┴────────────┴────────────┴────────────┴─────────┴─────────┘
-/// 0                        16           20           24           28        29        32 bytes
+/// ┌────────────┬────────────┬────────────┬────────────┬─────────┬─────────┬──────────────┐
+/// │    key     │   id[0]    │   id[1]    │   id[2]    │ ids_len │  _pad   │   (padding)  │
+/// │ LookupKey  │    u32     │    u32     │    u32     │   u8    │ [u8; 3] │              │
+/// └────────────┴────────────┴────────────┴────────────┴─────────┴─────────┴──────────────┘
+/// 0            8            12           16           20        21        24            32
 /// ```
 ///
 /// ## spilled: more than 3 ids to cache
@@ -274,12 +298,16 @@ impl<'a> WordCache {
 /// The token ids are stored in [`WordCache::spilled_buffer`].
 /// The slot holds offsets in that buffer.
 /// ```text
-/// ┌────────────────────────┬────────────┬────────────┬────────────┬─────────┬─────────┐
-/// │          key           │   start    │    end     │ generation │ SPILLED │   _pad  │
-/// │       LookupKey        │    u32     │    u32     │    u32     │    u8   │ [u8; 3] │
-/// └────────────────────────┴────────────┴────────────┴────────────┴─────────┴─────────┘
-/// 0                        16           20           24           28        29        32 bytes
+/// ┌────────────┬────────────┬────────────┬────────────┬─────────┬─────────┬──────────────┐
+/// │    key     │   start    │    end     │ generation │ SPILLED │  _pad   │   (padding)  │
+/// │ LookupKey  │    u32     │    u32     │    u32     │   u8    │ [u8; 3] │              │
+/// └────────────┴────────────┴────────────┴────────────┴─────────┴─────────┴──────────────┘
+/// 0            8            12           16           20        21        24            32
 /// ```
+///
+/// The trailing 8 bytes are alignment padding and the 3 in `_pad` are explicit, so 11 of the 32
+/// bytes carry nothing. That is what a `u128` key would consume if [`LookupKey`] were widened; the
+/// slot is sized for it already.
 #[repr(C, align(32))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct WordCacheSlot {
@@ -376,34 +404,36 @@ impl<'a> SelfContained<'a> {
     }
 }
 
-/// The lookup key, packed in a u128
+/// The lookup key, packed in a `u64`.
 ///
-/// There are two variants depending on the word's length in bytes:
+/// It is exactly what [`key_and_hash`] returns as its first element, and there are two variants
+/// depending on the word's length in bytes. Unlike a `u128` key, the two are *not* discriminated by
+/// a tag bit -- the length in the top byte does it, and a hashed key is simply one whose top byte
+/// happens not to be a length it could have come from.
 ///
-/// ## inline: the word is 15 bytes or shorter
+/// ## inline: the word is `INLINE_KEY_BYTES` bytes or shorter
 ///
-/// The key holds the word's bytes as is, plus the word's length in the top byte.
+/// The key holds the word's bytes as is, plus the word's length in the top byte, so comparing keys
+/// compares the words themselves and a hit cannot be a false positive.
 ///
-/// bit 127 = 0, inline: the word is its own key (len <= 15)
 /// ```text
-/// ┌───┬──────────────┬───────────────────────────────────────────────────────────────────────┐
-/// │ 0 │    length    │                 word bytes, little-endian, zero padded                │
-/// │   │    7 bits    │                                120 bits                               │
-/// └───┴──────────────┴───────────────────────────────────────────────────────────────────────┘
-///  127 126        120 119                                                                   0
+/// ┌──────────────┬────────────────────────────────────────────────────────┐
+/// │    length    │        word bytes, little-endian, zero padded         │
+/// │    8 bits    │                       56 bits                         │
+/// └──────────────┴────────────────────────────────────────────────────────┘
+///  63          56 55                                                    0
 /// ```
 ///
-/// ## hashed: the word is longer than 15 bytes
+/// ## hashed: the word is longer than `INLINE_KEY_BYTES`
 ///
-/// the key holds 127 bits of hash of the word's bytes
+/// The key is the full 64 bit ahash of the word's bytes, and the placement hash is the same value
+/// (see `key_and_hash_long`). Two such words can collide; the module docs say what that costs.
 ///
-/// bit 127 = 1, hashed: longer words compare by hash
 /// ```text
-/// ┌───┬───────────────────────────────────────────┬────────────────────────────────────────────┐
-/// │ 1 │             discriminant hash             │               placement hash               │
-/// │   │                  63 bits                  │                  64 bits                   │
-/// └───┴───────────────────────────────────────────┴────────────────────────────────────────────┘
-///  127 126                                      64 63                                         0
+/// ┌────────────────────────────────────────────────────────────────────────┐
+/// │                       64 bit hash of the bytes                        │
+/// └────────────────────────────────────────────────────────────────────────┘
+///  63                                                                    0
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[repr(transparent)]
@@ -418,13 +448,25 @@ fn make_lookup_key(word: &[u8], placement_mask: u64) -> InsertPlacement {
     placement_from(LookupKey(key), hash, placement_mask)
 }
 
+/// The window's first slot: the bottom bits of the hash.
+#[inline]
+fn home_index(hash: u64, placement_mask: u64) -> usize {
+    (hash & placement_mask) as usize
+}
+
+/// The slot's one-byte tag: the top byte of the hash, floored at `0x01` so it can never be
+/// mistaken for an `EMPTY` slot.
+#[inline]
+fn tag_of(hash: u64) -> u8 {
+    ((hash >> (64 - 8)) as u8).max(WordCache::EMPTY + 1)
+}
+
 #[inline]
 fn placement_from(key: LookupKey, hash: u64, placement_mask: u64) -> InsertPlacement {
     InsertPlacement {
         key,
-        index: (hash & placement_mask) as usize,
-        tag: ((hash >> (64 - 8)) as u8).max(WordCache::EMPTY + 1),
-        // ^ must be at least 0x01, otherwise can be mistaken for an EMPTY slot
+        index: home_index(hash, placement_mask),
+        tag: tag_of(hash),
     }
 }
 
@@ -476,28 +518,108 @@ impl Window {
 
     /// Finds all candidates in the window that match the needle, and the leftmost 0x00 (empty slot)
     fn find_matches_and_first_empty(&self, needle: u8) -> (SlotSet, Option<usize>) {
-        let window = i8x16::from(self.window.map(|byte| byte as i8));
-        let matches_bitmask = window.simd_eq(i8x16::from([needle as i8; 16])).to_bitmask() as u16;
-        let empty_bitmask = window
-            .simd_eq(i8x16::from([WordCache::EMPTY as i8; 16]))
-            .to_bitmask() as u16;
+        let (matches, empty) = lane_masks(&self.window, needle);
 
-        // a trick to truncate matches to before the first empty
-        let before_first_empty = !empty_bitmask & empty_bitmask.wrapping_sub(1);
+        // A trick to truncate matches to before the first empty. It reads the same for one bit per
+        // lane and for four: `empty - 1` fills every lane below the lowest set one, and `!empty`
+        // drops the lanes at or above it.
+        let before_first_empty = !empty & empty.wrapping_sub(1);
 
         let candidates = SlotSet {
-            mask: matches_bitmask & before_first_empty,
+            mask: matches & before_first_empty,
             offset: self.offset,
         };
         let first_empty =
-            (empty_bitmask != 0).then(|| self.offset + empty_bitmask.trailing_zeros() as usize);
+            (empty != 0).then(|| self.offset + (empty.trailing_zeros() / LANE_BITS) as usize);
         (candidates, first_empty)
     }
 }
 
+// ---------------------------------------------------------------------------
+// Per-lane comparison masks.
+//
+// The representation differs by architecture because the cheap way to get a vector comparison into
+// a general register does. x86 has `pmovmskb`: one bit per lane, one instruction. NEON has no
+// equivalent, and `wide`'s emulation of one costs a constant load, an `and`, a `tbl`, a cross-lane
+// `addv` and a SIMD->GPR `fmov` -- and a lookup needs two of them:
+//
+//   cmlt v1, v0, #0 ; and v1, v1, v2 ; tbl v1, {v1}, v3 ; addv h1, v1 ; fmov w9, s1
+//
+// `shrn` narrows 16 lanes of 0x00/0xFF to 16 *nibbles* of 0x0/0xF in one instruction, with no
+// cross-lane reduction and no constants, so the mask is a `u64` of nibbles and a lane index is
+// `trailing_zeros() / 4`. Every consumer goes through `LANE_BITS` and `pop_lowest_lane`, so the two
+// representations are interchangeable.
+// ---------------------------------------------------------------------------
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+type LaneMask = u64;
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+const LANE_BITS: u32 = 4;
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+const LANE_FULL: LaneMask = 0xF;
+
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+type LaneMask = u16;
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+const LANE_BITS: u32 = 1;
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+const LANE_FULL: LaneMask = 0x1;
+
+/// Clear the lowest set lane. For one bit per lane this is the usual `mask & (mask - 1)`; for four
+/// it has to clear the whole nibble, which `LANE_FULL` scaled to the lane's position does.
+#[inline]
+fn pop_lowest_lane(mask: LaneMask) -> LaneMask {
+    let lowest = mask & mask.wrapping_neg();
+    mask & !(lowest * LANE_FULL)
+}
+
+/// `(matches, empty)`, one lane each, for the 16 tags in `window`.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline]
+fn lane_masks(window: &[u8; WordCache::WINDOW_SIZE], needle: u8) -> (LaneMask, LaneMask) {
+    use core::arch::aarch64::{vceqq_u8, vdupq_n_u8, vld1q_u8};
+    // SAFETY: `window` is exactly 16 bytes, which is what `vld1q_u8` reads; NEON is a compile-time
+    // guarantee on this target via the `target_feature` gate above.
+    unsafe {
+        let w = vld1q_u8(window.as_ptr());
+        let matches = nibble_mask(vceqq_u8(w, vdupq_n_u8(needle)));
+        let empty = nibble_mask(vceqq_u8(w, vdupq_n_u8(WordCache::EMPTY)));
+        (matches, empty)
+    }
+}
+
+/// 16 lanes of `0x00`/`0xFF` to 16 nibbles of `0x0`/`0xF`, in a `shrn` and a `fmov`.
+///
+/// Each 16-bit lane holds two byte results; shifting right by four and narrowing to eight bits
+/// keeps the top nibble of the low byte and the bottom nibble of the high one, so nibble `j` of the
+/// result is lane `j`.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline]
+unsafe fn nibble_mask(cmp: core::arch::aarch64::uint8x16_t) -> u64 {
+    use core::arch::aarch64::{
+        vget_lane_u64, vreinterpret_u64_u8, vreinterpretq_u16_u8, vshrn_n_u16,
+    };
+    unsafe {
+        vget_lane_u64::<0>(vreinterpret_u64_u8(vshrn_n_u16::<4>(vreinterpretq_u16_u8(
+            cmp,
+        ))))
+    }
+}
+
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+#[inline]
+fn lane_masks(window: &[u8; WordCache::WINDOW_SIZE], needle: u8) -> (LaneMask, LaneMask) {
+    let w = i8x16::from(window.map(|byte| byte as i8));
+    let matches = w.simd_eq(i8x16::from([needle as i8; 16])).to_bitmask() as LaneMask;
+    let empty = w
+        .simd_eq(i8x16::from([WordCache::EMPTY as i8; 16]))
+        .to_bitmask() as LaneMask;
+    (matches, empty)
+}
+
 #[derive(Clone, Copy)]
 struct SlotSet {
-    mask: u16,
+    mask: LaneMask,
     offset: usize,
 }
 
@@ -508,8 +630,8 @@ impl Iterator for SlotSet {
         if self.mask == 0 {
             return None;
         }
-        let slot = self.mask.trailing_zeros() as usize;
-        self.mask &= self.mask - 1;
+        let slot = (self.mask.trailing_zeros() / LANE_BITS) as usize;
+        self.mask = pop_lowest_lane(self.mask);
         Some(slot + self.offset)
     }
 }

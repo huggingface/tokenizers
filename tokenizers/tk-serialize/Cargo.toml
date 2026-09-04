@@ -100,3 +100,7 @@ required-features = ["deserialize"]
 name = "scratch_scaling"
 harness = false
 required-features = ["deserialize"]
+
+[[example]]
+name = "hot_batch"
+required-features = ["deserialize", "parallelism"]

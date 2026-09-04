@@ -61,6 +61,7 @@ struct Slot {
     pool: Arc<rayon::ThreadPool>,
     version: usize,
     pid: u32,
+    idle_workers: Arc<[AtomicBool]>,
 }
 
 static CELL: Mutex<Option<Slot>> = Mutex::new(None);
@@ -83,6 +84,7 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
         && let Some(slot) = guard.as_ref()
         && generation == slot.version
     {
+        keep_workers_warm(slot);
         return Some(slot.pool.clone());
     }
 
@@ -97,6 +99,9 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
             .build()
             .ok()?;
         let slot = Slot {
+            idle_workers: (0..pool.current_num_threads())
+                .map(|_| AtomicBool::new(false))
+                .collect(),
             pool: Arc::new(pool),
             version: generation,
             pid: std::process::id(),
@@ -116,7 +121,10 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
         std::mem::forget(old.pool);
     }
 
-    slot.map(|slot| slot.pool.clone())
+    slot.map(|slot| {
+        keep_workers_warm(&slot);
+        slot.pool.clone()
+    })
 }
 
 pub fn num_threads() -> usize {
@@ -395,5 +403,105 @@ mod tests {
 
         let chunks: Vec<_> = v.maybe_par_chunks(2).collect();
         assert_eq!(chunks, vec![&[1, 2][..], &[3, 4], &[5]]);
+    }
+}
+
+static IDLE_SPIN_MICROS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Keep encoding workers polling for work briefly between consecutive batches.
+///
+/// The default is zero: workers use Rayon's normal idle policy. A nonzero timeout
+/// can improve throughput for repeated short batches by avoiding OS yields and
+/// wakeups. It consumes CPU while idle for up to this duration after the last job.
+/// The setting applies to this crate's pools, and takes effect on subsequent work.
+/// Sub-microsecond durations are rounded down. Setting zero disables polling.
+pub fn set_idle_spin_timeout(timeout: std::time::Duration) {
+    IDLE_SPIN_MICROS.store(
+        timeout.as_micros().min(u64::MAX as u128) as u64,
+        Ordering::Relaxed,
+    );
+}
+
+fn keep_workers_warm(slot: &Slot) {
+    if IDLE_SPIN_MICROS.load(Ordering::Relaxed) == 0
+        || slot
+            .idle_workers
+            .iter()
+            .all(|active| active.load(Ordering::Acquire))
+    {
+        return;
+    }
+    let workers = Arc::clone(&slot.idle_workers);
+    slot.pool.spawn_broadcast(move |ctx| {
+        let active = &workers[ctx.index()];
+        if active.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        struct Reset<'a>(&'a AtomicBool);
+        impl Drop for Reset<'_> {
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::Release);
+            }
+        }
+        let _reset = Reset(active);
+        let mut idle_since = std::time::Instant::now();
+        loop {
+            let timeout = IDLE_SPIN_MICROS.load(Ordering::Relaxed);
+            if timeout == 0 || idle_since.elapsed().as_micros() >= u128::from(timeout) {
+                break;
+            }
+            // Cooperatively execute queued work without yielding the OS thread.
+            // The per-worker flag prevents recursive polling loops when another
+            // batch requests warm workers while this task is executing its jobs.
+            if matches!(rayon::yield_now(), Some(rayon::Yield::Executed)) {
+                idle_since = std::time::Instant::now();
+            } else {
+                std::hint::spin_loop();
+            }
+        }
+    });
+}
+
+#[cfg(test)]
+mod idle_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn cooperative_idle_executes_work_and_expires() {
+        let saved = IDLE_SPIN_MICROS.swap(200, Ordering::Relaxed);
+        struct Restore(u64);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                IDLE_SPIN_MICROS.store(self.0, Ordering::Relaxed);
+            }
+        }
+        let _restore = Restore(saved);
+        let slot = Slot {
+            pool: Arc::new(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(4)
+                    .build()
+                    .unwrap(),
+            ),
+            version: 0,
+            pid: std::process::id(),
+            idle_workers: (0..4).map(|_| AtomicBool::new(false)).collect(),
+        };
+        for _ in 0..100 {
+            keep_workers_warm(&slot);
+            let completed = slot.pool.broadcast(|ctx| ctx.index());
+            assert_eq!(completed, vec![0, 1, 2, 3]);
+        }
+        let workers = Arc::clone(&slot.idle_workers);
+        // A final broadcast is behind all posted idle jobs, so every idle job
+        // has either entered its loop or returned before shutdown is checked.
+        slot.pool.broadcast(|_| {});
+        drop(slot);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while workers.iter().any(|active| active.load(Ordering::Acquire)) {
+            assert!(Instant::now() < deadline, "idle work did not expire");
+            std::thread::yield_now();
+        }
     }
 }

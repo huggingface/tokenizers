@@ -108,3 +108,48 @@ Worth pairing with `--remap-path-prefix` — not for size (~175 bytes compressed
 shipped binary should not contain a developer's home directory.
 
 License: Apache-2.0
+
+### Repeated borrowed batches
+
+`PipelineTokenizer::encode_batch_into` accepts `&[&str]` and reuses a caller-owned
+`Vec<pipeline::Encoding>`. It returns rows in input order and applies configured
+padding. `encode_batch_for_each` instead visits each full encoding on its worker,
+allowing the consumer to process results without materializing the entire batch.
+Callbacks receive the input index, may run concurrently and out of order, and must
+copy anything they retain. Configured padding requires temporary batch storage
+and is applied before callbacks. Both methods accept single-sequence inputs;
+use `encode` for sequence pairs or an asynchronous handle.
+
+With the `parallelism` feature, repeated short batches can benefit from keeping
+workers active briefly between calls:
+
+```rust
+# #[cfg(feature = "parallelism")]
+# {
+use std::time::Duration;
+use tk_encode::utils::parallelism;
+
+parallelism::set_num_threads(8);
+parallelism::set_idle_spin_timeout(Duration::from_micros(200));
+# }
+```
+
+Idle spinning is opt-in and defaults to zero. While active, workers execute queued
+Rayon work cooperatively; after the timeout without work, they return to Rayon's
+normal scheduling. This trades idle CPU consumption after a burst for fewer OS
+yields and wakeups. The appropriate timeout depends on workload and hardware;
+set `Duration::ZERO` to disable it. It does not change the software word cache or
+promise a particular scaling factor.
+
+The `tk-serialize` example `hot_batch` measures repeated, warmed batches while
+copying every result's token IDs on the worker. It verifies complete encodings
+against `encode(...).wait()` outside timing and emits an output hash:
+
+```sh
+cargo run --release -p tk-serialize --example hot_batch \
+  --features 'deserialize parallelism bpe fancy-regex normalizers' -- \
+  /path/to/tokenizer.json /path/to/corpus.txt 8 200
+```
+
+Run with `1 0` and `8 0` as controls. This example deliberately measures hot
+repetition of the same 100 UTF-8 chunks, rather than first-time encoding.

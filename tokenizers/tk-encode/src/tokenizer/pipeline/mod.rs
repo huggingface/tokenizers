@@ -578,6 +578,153 @@ impl PipelineTokenizer {
         parallel::encode(self, inputs, add_special_tokens)
     }
 
+    /// Encode a borrowed batch, reusing the caller's per-document output buffers.
+    ///
+    /// This synchronous entry point returns the same encodings as `encode(...).wait()`.
+    /// The output is replaced, including configured padding. On error it may contain
+    /// partially encoded rows; callers must not consume it as a successful batch.
+    pub fn encode_batch_into(
+        &self,
+        inputs: &[&str],
+        add_special_tokens: bool,
+        output: &mut Vec<Encoding>,
+    ) -> Result<()> {
+        self.encode_batch_into_with(inputs, add_special_tokens, output, |_, _| {})
+    }
+
+    /// Encode a batch and consume each completed encoding on its encoding worker.
+    ///
+    /// `visit` can execute concurrently and out of order. Its index identifies the
+    /// input row. Encodings remain in input order in `output`. Configured padding
+    /// is applied before visits. An error can leave partial output and visits.
+    pub fn encode_batch_into_with<F>(
+        &self,
+        inputs: &[&str],
+        add_special_tokens: bool,
+        output: &mut Vec<Encoding>,
+        visit: F,
+    ) -> Result<()>
+    where
+        F: Fn(usize, &Encoding) + Sync,
+    {
+        output.resize_with(inputs.len(), Encoding::empty);
+        let padding = self.inner.padding.as_ref();
+        let encode_rows = |start: usize, texts: &[&str], rows: &mut [Encoding]| -> Result<()> {
+            if texts.is_empty() {
+                return Ok(());
+            }
+            let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
+            for (i, (text, row)) in texts.iter().zip(rows).enumerate() {
+                let mut ids = std::mem::take(&mut row.ids);
+                ids.clear();
+                if let Err(error) = self.encode_sequence_into(text, &mut scratch, &mut ids) {
+                    row.ids = ids;
+                    return Err(error);
+                }
+                *row = self.post_process(ids, None, add_special_tokens)?;
+                if padding.is_none() {
+                    visit(start + i, row);
+                }
+            }
+            Ok(())
+        };
+        #[cfg(feature = "parallelism")]
+        let parallel = if inputs.len() > 1 && crate::utils::parallelism::get_parallelism() {
+            crate::utils::parallelism::pool()
+        } else {
+            None
+        };
+        #[cfg(feature = "parallelism")]
+        if let Some(pool) = parallel {
+            // A job belongs to a pool worker, so a repeated batch uses that worker's
+            // cached model scratch. Each mutex protects one disjoint output slice and
+            // is acquired exactly once by its designated worker, without contention.
+            let count = pool.current_num_threads();
+            let mut remaining = output.as_mut_slice();
+            let mut jobs = Vec::with_capacity(count);
+            for i in 0..count {
+                let start = i * inputs.len() / count;
+                let end = (i + 1) * inputs.len() / count;
+                let (rows, rest) = remaining.split_at_mut(end - start);
+                remaining = rest;
+                jobs.push(std::sync::Mutex::new((start, &inputs[start..end], rows)));
+            }
+            let results = pool.broadcast(|ctx| {
+                let mut job = jobs[ctx.index()]
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let (start, texts, rows) = &mut *job;
+                encode_rows(*start, texts, rows)
+            });
+            for result in results {
+                result?;
+            }
+        } else {
+            encode_rows(0, inputs, output)?;
+        }
+        #[cfg(not(feature = "parallelism"))]
+        encode_rows(0, inputs, output)?;
+        if let Some(params) = padding {
+            pad_encodings(output, params)?;
+            for (i, row) in output.iter().enumerate() {
+                visit(i, row);
+            }
+        }
+        Ok(())
+    }
+
+    /// Encode borrowed single-sequence inputs and visit each result.
+    ///
+    /// Visits may run concurrently and out of input order. Each visit receives its
+    /// input index, and its encoding is valid only for the duration of the visit.
+    /// Copy any data that must outlive the callback. An error or panic can leave
+    /// some inputs visited; successful return guarantees exactly one visit per input.
+    /// Configured padding is applied before callbacks, requiring batch storage.
+    pub fn encode_batch_for_each<F>(
+        &self,
+        inputs: &[&str],
+        add_special_tokens: bool,
+        visit: F,
+    ) -> Result<()>
+    where
+        F: Fn(usize, &Encoding) + Sync,
+    {
+        if self.inner.padding.is_some() {
+            return self.encode_batch_into_with(inputs, add_special_tokens, &mut Vec::new(), visit);
+        }
+        let encode_rows = |start: usize, texts: &[&str]| -> Result<()> {
+            if texts.is_empty() {
+                return Ok(());
+            }
+            let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
+            let mut row = Encoding::new(std::mem::take(&mut scratch.output), None);
+            for (i, text) in texts.iter().enumerate() {
+                let mut ids = std::mem::take(&mut row.ids);
+                ids.clear();
+                self.encode_sequence_into(text, &mut scratch, &mut ids)?;
+                row = self.post_process(ids, None, add_special_tokens)?;
+                visit(start + i, &row);
+            }
+            scratch.output = row.ids;
+            Ok(())
+        };
+        #[cfg(feature = "parallelism")]
+        if inputs.len() > 1
+            && crate::utils::parallelism::get_parallelism()
+            && let Some(pool) = crate::utils::parallelism::pool()
+        {
+            for result in pool.broadcast(|ctx| {
+                let start = ctx.index() * inputs.len() / ctx.num_threads();
+                let end = (ctx.index() + 1) * inputs.len() / ctx.num_threads();
+                encode_rows(start, &inputs[start..end])
+            }) {
+                result?;
+            }
+            return Ok(());
+        }
+        encode_rows(0, inputs)
+    }
+
     fn encode_serial(&self, inputs: Inputs, add_special_tokens: bool) -> Vec<Result<Encoding>> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         match inputs {
@@ -679,6 +826,7 @@ impl PipelineTokenizer {
                                     model: model_scratch,
                                     pre_tokens,
                                     split: pre_tokenizer_scratch,
+                                    ..
                                 } = &mut *scratch;
                                 pre_tokens.clear();
                                 self.inner.pre_tokenizer.pre_tokenize(
@@ -1182,6 +1330,149 @@ mod tests {
 
         assert_eq!(encodings[0].len(), 2);
         assert_eq!(encodings[1].len(), 1);
+    }
+
+    #[test]
+    fn borrowed_batches_match_owned_encodings_and_reuse_rows() {
+        use super::post_processor::Template;
+        use crate::PaddingDirection;
+        for padding in [
+            None,
+            Some(PaddingParams::default()),
+            Some(PaddingParams {
+                direction: PaddingDirection::Left,
+                strategy: PaddingStrategy::Fixed(8),
+                pad_id: 42,
+                pad_type_id: 3,
+                ..PaddingParams::default()
+            }),
+        ] {
+            let pipeline = PipelineTokenizer::from_parts(
+                BucketAddedVocabulary::new(),
+                Vec::new(),
+                PipelinePreTokenizer::None,
+                PipelineModel::BPE(hello_bpe()),
+                PipelinePostProcessor {
+                    single: Template {
+                        prefix: vec![(PipelineToken::from(99), 1)].into_boxed_slice(),
+                        suffix: vec![(PipelineToken::from(98), 2)].into_boxed_slice(),
+                        a_type_id: 4,
+                        ..Template::default()
+                    },
+                    ..PipelinePostProcessor::default()
+                },
+                None,
+                Default::default(),
+                padding,
+            );
+            let mut output = Vec::new();
+            for specials in [false, true] {
+                for texts in [&["hello", "he", "", "hellohello"][..], &["h"][..], &[][..]] {
+                    let expected = pipeline.encode(texts, specials).wait().unwrap();
+                    pipeline
+                        .encode_batch_into(texts, specials, &mut output)
+                        .unwrap();
+                    assert_eq!(output, expected);
+                    for retain in [false, true] {
+                        let seen = std::sync::Mutex::new(vec![None; texts.len()]);
+                        let visit = |i: usize, row: &Encoding| {
+                            let mut seen = seen.lock().unwrap();
+                            assert!(seen[i].replace(row.clone()).is_none());
+                        };
+                        if retain {
+                            pipeline
+                                .encode_batch_into_with(texts, specials, &mut output, visit)
+                                .unwrap();
+                            assert_eq!(output, expected);
+                        } else {
+                            pipeline
+                                .encode_batch_for_each(texts, specials, visit)
+                                .unwrap();
+                        }
+                        let actual: Vec<_> = seen
+                            .into_inner()
+                            .unwrap()
+                            .into_iter()
+                            .map(Option::unwrap)
+                            .collect();
+                        assert_eq!(actual, expected);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn borrowed_callbacks_can_nest_and_recover_after_panic() {
+        #[cfg(feature = "parallelism")]
+        let _idle = {
+            use crate::utils::parallelism::set_idle_spin_timeout;
+            set_idle_spin_timeout(std::time::Duration::from_micros(200));
+            struct Disable;
+            impl Drop for Disable {
+                fn drop(&mut self) {
+                    set_idle_spin_timeout(std::time::Duration::ZERO);
+                }
+            }
+            Disable
+        };
+        let pipeline = hello_pipeline();
+        let inputs = ["hello", "he"];
+        let expected = pipeline.encode(inputs.as_slice(), false).wait().unwrap();
+        pipeline
+            .encode_batch_for_each(&inputs, false, |_, _| {
+                let mut nested = Vec::new();
+                pipeline
+                    .encode_batch_into(&inputs, false, &mut nested)
+                    .unwrap();
+                assert_eq!(nested, expected);
+            })
+            .unwrap();
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            pipeline
+                .encode_batch_for_each(&inputs, false, |_, _| panic!("callback failed"))
+                .unwrap();
+        }));
+        assert!(panic.is_err());
+        let mut after = Vec::new();
+        pipeline
+            .encode_batch_into(&inputs, false, &mut after)
+            .unwrap();
+        assert_eq!(after, expected);
+    }
+
+    #[test]
+    #[cfg(feature = "wordlevel")]
+    fn borrowed_batches_return_model_errors_and_remain_usable() {
+        let pipeline = PipelineTokenizer::from_parts(
+            BucketAddedVocabulary::new(),
+            Vec::new(),
+            PipelinePreTokenizer::None,
+            PipelineModel::WordLevel(
+                WordLevel::builder()
+                    .vocab([("hello".to_owned(), 7)].into_iter().collect())
+                    .build()
+                    .unwrap(),
+            ),
+            PipelinePostProcessor::default(),
+            None,
+            Default::default(),
+            None,
+        );
+        let mut output = Vec::new();
+        for retain in [false, true] {
+            let bad = ["hello", "missing"];
+            let result = if retain {
+                pipeline.encode_batch_into(&bad, false, &mut output)
+            } else {
+                pipeline.encode_batch_for_each(&bad, false, |_, _| {})
+            };
+            assert!(result.is_err());
+            pipeline
+                .encode_batch_into(&["hello"], false, &mut output)
+                .unwrap();
+            assert_eq!(output[0].ids(), &[PipelineToken::from(7)]);
+        }
     }
 
     fn hello_bpe() -> PipelineBPE {
