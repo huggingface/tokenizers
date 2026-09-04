@@ -18,6 +18,7 @@ pub mod iter;
 pub mod padding;
 pub mod parallelism;
 pub(crate) mod progress;
+pub mod simd;
 pub mod truncation;
 
 // Re-export ProgressFormat for public API
