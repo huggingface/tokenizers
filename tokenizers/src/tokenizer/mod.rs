@@ -465,15 +465,28 @@ impl Tokenizer {
     > {
         self.0
     }
+    /// Instantiate a new [`Tokenizer`] from the JSON file at `file`.
     pub fn from_file<P: AsRef<Path>>(file: P) -> Result<Self> {
         let content = read_to_string(file)?;
         let tokenizer = serde_json::from_str(&content)?;
         Ok(tokenizer)
     }
+
+    /// Instantiate a new [`Tokenizer`] from a byte slice containing JSON.
+    ///
+    /// This is the in-memory equivalent of [`Tokenizer::from_file`], useful when
+    /// the tokenizer definition is already held in a buffer.
     pub fn from_bytes<P: AsRef<[u8]>>(bytes: P) -> Result<Self> {
         let tokenizer = serde_json::from_slice(bytes.as_ref())?;
         Ok(tokenizer)
     }
+
+    /// Instantiate a new [`Tokenizer`] by downloading it from the Hugging Face Hub.
+    ///
+    /// `identifier` is a Hub model ID such as `"bert-base-uncased"` or
+    /// `"org/model"`. `params` controls the revision, authentication token, and
+    /// user-agent headers sent to the Hub; pass `None` to use the defaults
+    /// (`"main"` revision, no token).
     #[cfg(feature = "http")]
     #[cfg_attr(docsrs, doc(cfg(feature = "http")))]
     pub fn from_pretrained<S: AsRef<str>>(
