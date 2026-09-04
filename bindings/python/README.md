@@ -16,6 +16,9 @@ uv sync
 from tokenizers import Padding, Tokenizer
 
 tokenizer = Tokenizer.from_file("tokenizer.json")
+# Or the `tokenizer.json` of a model repo on the Hub. `huggingface_hub` downloads and caches it,
+# with the same cache, login token and offline switch as transformers.
+tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", revision="main")
 
 encoding = tokenizer.encode("Hello there, how are you?")
 encoding.ids             # [101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102]
@@ -74,7 +77,8 @@ of texts rather than many small tasks. `examples/multiprocessing_workers.py` is 
   in editable mode.
 - `make test` does the above, then runs `tests/` with pytest.
 - `make examples` does the above, then runs every script in `examples/`.
-- `make stubs` regenerates `python/tokenizers/tokenizers.pyi`
+- `make stubs` regenerates `python/tokenizers/tokenizers.pyi`, including the members
+  `python/tokenizers/__init__.py` attaches to the Rust classes.
 - `make style` / `make check-style` regenerate the stub, then format/lint the Rust and
   Python sides and type-check with `ty`. CI runs `make check-style` and fails if the
   regenerated stub differs from the committed one.

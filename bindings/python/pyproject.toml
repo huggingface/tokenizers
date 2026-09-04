@@ -4,11 +4,10 @@ dynamic = ["version"]
 requires-python = ">=3.10"
 readme = "README.md"
 description = "Reworked tokenizers Python bindings, over the pipeline encode path (not for release yet)"
-dependencies = ["numpy"]
+dependencies = ["huggingface_hub>=0.16.4,<2.0", "numpy"]
 
 [dependency-groups]
 dev = [
-    "ipython>=8.39.0",
     "maturin>=1.0,<2.0",
     "pytest",
     "ruff",
@@ -24,6 +23,11 @@ python-source = "python"
 module-name = "tokenizers.tokenizers"
 bindings = "pyo3"
 
+[tool.pytest.ini_options]
+markers = ["network: talks to the Hugging Face Hub"]
+
 [tool.ruff]
 line-length = 119
-lint.select = ["E4", "E7", "E9", "F"]
+# `tokenizers` and the tests' `conftest` are first-party for import sorting.
+src = ["python", "tests"]
+lint.select = ["E4", "E7", "E9", "F", "I"]

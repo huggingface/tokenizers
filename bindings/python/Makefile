@@ -11,6 +11,8 @@ develop: stubs
 
 stubs:
 	cargo run --manifest-path ./tools/stub-gen/Cargo.toml
+	python tools/stub-gen/python_members.py
+	ruff check --fix --select I python/tokenizers/tokenizers.pyi
 	ruff format python/tokenizers/tokenizers.pyi
 
 test: develop $(TESTS_RESOURCES)
@@ -25,12 +27,12 @@ $(DATA_DIR)/%:
 
 style: stubs
 	cargo fmt
-	ruff format python tests examples
-	ruff check python tests examples --fix
-	ty check python tests examples
+	ruff format python tests examples tools
+	ruff check python tests examples tools --fix
+	ty check python tests examples tools
 
 check-style: stubs
 	cargo fmt --check
-	ruff format --check python tests examples
-	ruff check python tests examples
-	ty check python tests examples
+	ruff format --check python tests examples tools
+	ruff check python tests examples tools
+	ty check python tests examples tools
