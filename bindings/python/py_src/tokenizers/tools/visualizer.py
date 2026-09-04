@@ -219,7 +219,7 @@ class EncodingVisualizer:
             stoken = encoding.tokens[first.token_ix]
             # special tokens are represented as empty spans. We use the data attribute and css
             # magic to display it
-            return f'<span class="special-token" data-stoken={stoken}></span>'
+            return f'<span class="special-token" data-stoken="{html.escape(stoken, quote=True)}"></span>'
         # We're not in a special token so this group has a start and end.
         last = consecutive_chars_list[-1]
         assert first.char_ix is not None
@@ -255,7 +255,7 @@ class EncodingVisualizer:
         css = f'''class="{" ".join(css_classes)}"'''
         data = ""
         for key, val in data_items.items():
-            data += f' data-{key}="{val}"'
+            data += f' data-{key}="{html.escape(str(val), quote=True)}"'
         span_text = html.escape(span_text)
         return f"<span {css} {data} >{span_text}</span>"
 
@@ -272,7 +272,7 @@ class EncodingVisualizer:
             anno = annotations[cur_anno_ix]
             label = anno.label
             color = label_colors_dict[label]
-            spans.append(f'<span class="annotation" style="color:{color}" data-label="{label}">')
+            spans.append(f'<span class="annotation" style="color:{color}" data-label="{html.escape(label, quote=True)}">')
 
         for cs in char_states[1:]:
             cur_anno_ix = cs.anno_ix
@@ -296,7 +296,7 @@ class EncodingVisualizer:
                     anno = annotations[cur_anno_ix]
                     label = anno.label
                     color = label_colors_dict[label]
-                    spans.append(f'<span class="annotation" style="color:{color}" data-label="{label}">')
+                    spans.append(f'<span class="annotation" style="color:{color}" data-label="{html.escape(label, quote=True)}">')
             prev_anno_ix = cur_anno_ix
 
             if cs.partition_key() == current_consecutive_chars[0].partition_key():
