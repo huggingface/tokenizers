@@ -155,9 +155,13 @@ impl Decoder for Metaspace {
             .map(|(i, token)| {
                 token
                     .chars()
-                    .flat_map(|c| {
+                    .enumerate()
+                    .filter_map(|(j, c)| {
                         if c == self.replacement {
-                            if i == 0 && self.prepend_scheme != PrependScheme::Never {
+                            // Only strip the single replacement char that was
+                            // prepended during pre-tokenization; any other
+                            // occurrence is a real word boundary.
+                            if i == 0 && j == 0 && self.prepend_scheme != PrependScheme::Never {
                                 None
                             } else {
                                 Some(' ')
@@ -366,5 +370,28 @@ mod tests {
             .decode_chain(vec!["▁Hey".into(), "▁friend!".into()])
             .unwrap();
         assert_eq!(res, vec![" Hey", " friend!"]);
+    }
+
+    #[test]
+    fn decode_first_token_with_internal_replacement() {
+        // Only the single prepended replacement char should be stripped from
+        // the first token; internal ones are real word boundaries.
+        let decoder = Metaspace::new('▁', PrependScheme::Always, true);
+        let res = decoder
+            .decode_chain(vec!["▁in▁the".into(), "▁house".into()])
+            .unwrap();
+        assert_eq!(res, vec!["in the", " house"]);
+
+        // Same thing without splitting (single multi-word token).
+        let decoder = Metaspace::new('▁', PrependScheme::Always, false);
+        let res = decoder.decode_chain(vec!["▁Hey▁friend".into()]).unwrap();
+        assert_eq!(res, vec!["Hey friend"]);
+
+        // With `Never`, nothing was prepended so nothing should be stripped.
+        let decoder = Metaspace::new('▁', PrependScheme::Never, true);
+        let res = decoder
+            .decode_chain(vec!["▁in▁the".into(), "▁house".into()])
+            .unwrap();
+        assert_eq!(res, vec![" in the", " house"]);
     }
 }
