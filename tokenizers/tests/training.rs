@@ -52,9 +52,19 @@ fn bpe_continuing_subword_prefix_error() {
     tokenizer
         .train_from_files(&mut trainer, vec!["./data/small.txt".to_string()])
         .unwrap();
+    // The prefix set on the model is used during training and survives it
+    assert_eq!(
+        tokenizer.get_model().continuing_subword_prefix,
+        Some("##".to_string())
+    );
+    assert!(tokenizer
+        .get_vocab(false)
+        .keys()
+        .any(|t| t.starts_with("##")));
+    let vocab_size = tokenizer.get_vocab_size(false);
     tokenizer.save("tokenizer.json", true).unwrap();
     let tokenizer = Tokenizer::from_file("tokenizer.json").unwrap();
-    assert_eq!(tokenizer.get_vocab_size(false), 1526);
+    assert_eq!(tokenizer.get_vocab_size(false), vocab_size);
 
     std::fs::remove_file("tokenizer.json").unwrap();
 }
