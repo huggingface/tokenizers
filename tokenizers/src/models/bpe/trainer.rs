@@ -371,7 +371,15 @@ impl BpeTrainer {
         let mut words: Vec<Word> = Vec::with_capacity(wc.len());
         let mut counts: Vec<u64> = Vec::with_capacity(wc.len());
 
-        for (word, count) in wc {
+        // Iterate over the words in a deterministic order. `wc` is a hash map, so
+        // iterating it directly would visit the words in an arbitrary order that
+        // changes from run to run. Since the ids of the subword tokens created
+        // below are assigned in iteration order, that would make the resulting
+        // vocabulary (and therefore the trained tokenizer) non-deterministic.
+        let mut sorted_words = wc.iter().collect::<Vec<_>>();
+        sorted_words.sort_unstable_by(|a, b| a.0.cmp(b.0));
+
+        for (word, count) in sorted_words {
             let mut current_word = Word::new();
             counts.push(*count);
 
@@ -864,5 +872,95 @@ mod tests {
         .map(|(k, v)| (k.to_string(), v))
         .collect();
         assert_eq!(trained_vocab, expected_vocab)
+    }
+
+    #[test]
+    fn test_train_is_deterministic() {
+        // Training on the same data must always produce the exact same
+        // vocabulary. The continuing-subword tokens (here prefixed with `##`)
+        // are created on the fly while iterating over the word counts. Iterating
+        // the word counts in a non-deterministic (hash map) order used to assign
+        // those tokens different ids from one run to the next, which made the
+        // trained tokenizer non-deterministic. See #1794.
+        let word_counts: AHashMap<CompactString, u64> = [
+            ("Wel".into(), 1),
+            ("come".into(), 1),
+            ("to".into(), 1),
+            ("the".into(), 1),
+            ("Tok".into(), 1),
+            ("en".into(), 1),
+            ("izers".into(), 1),
+            ("libr".into(), 1),
+            ("ary".into(), 1),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+        let trainer = BpeTrainer::builder()
+            .show_progress(false)
+            .continuing_subword_prefix("##".into())
+            .build();
+        let mut model = BPE::default();
+        trainer.do_train(&word_counts, &mut model).unwrap();
+        let trained_vocab: AHashMap<String, u32> = model.get_vocab().into_iter().collect();
+
+        let expected_vocab: AHashMap<String, u32> = [
+            ("T", 0),
+            ("W", 1),
+            ("a", 2),
+            ("b", 3),
+            ("c", 4),
+            ("e", 5),
+            ("h", 6),
+            ("i", 7),
+            ("k", 8),
+            ("l", 9),
+            ("m", 10),
+            ("n", 11),
+            ("o", 12),
+            ("r", 13),
+            ("s", 14),
+            ("t", 15),
+            ("y", 16),
+            ("z", 17),
+            ("##o", 18),
+            ("##k", 19),
+            ("##e", 20),
+            ("##l", 21),
+            ("##r", 22),
+            ("##y", 23),
+            ("##m", 24),
+            ("##n", 25),
+            ("##z", 26),
+            ("##s", 27),
+            ("##i", 28),
+            ("##b", 29),
+            ("##h", 30),
+            ("To", 31),
+            ("We", 32),
+            ("ar", 33),
+            ("co", 34),
+            ("en", 35),
+            ("iz", 36),
+            ("li", 37),
+            ("to", 38),
+            ("th", 39),
+            ("##er", 40),
+            ("##me", 41),
+            ("##br", 42),
+            ("Tok", 43),
+            ("Wel", 44),
+            ("ary", 45),
+            ("come", 46),
+            ("izer", 47),
+            ("libr", 48),
+            ("the", 49),
+            ("izers", 50),
+        ]
+        .iter()
+        .cloned()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+        assert_eq!(trained_vocab, expected_vocab);
     }
 }
