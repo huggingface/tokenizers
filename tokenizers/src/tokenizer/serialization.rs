@@ -24,7 +24,9 @@ where
     where
         S: Serializer,
     {
-        let mut tokenizer = serializer.serialize_struct("Tokenizer", 9)?;
+        let encode_special_tokens = self.added_vocabulary.get_encode_special_tokens();
+        let num_fields = if encode_special_tokens { 10 } else { 9 };
+        let mut tokenizer = serializer.serialize_struct("Tokenizer", num_fields)?;
 
         // Start by adding the current version
         tokenizer.serialize_field("version", SERIALIZATION_VERSION)?;
@@ -35,6 +37,13 @@ where
 
         // Added tokens
         tokenizer.serialize_field("added_tokens", &self.added_vocabulary)?;
+        // Only serialized when explicitly enabled, so that previously saved
+        // tokenizers keep an identical serialized representation
+        if encode_special_tokens {
+            tokenizer.serialize_field("encode_special_tokens", &encode_special_tokens)?;
+        } else {
+            tokenizer.skip_field("encode_special_tokens")?;
+        }
 
         // Then add our parts
         tokenizer.serialize_field("normalizer", &self.normalizer)?;
@@ -66,6 +75,7 @@ where
                 "truncation",
                 "padding",
                 "added_tokens",
+                "encode_special_tokens",
                 "normalizer",
                 "pre_tokenizer",
                 "post_processor",
@@ -111,6 +121,7 @@ where
     {
         let mut builder = TokenizerBuilder::new();
         let mut tokens: Vec<AddedTokenWithId> = vec![];
+        let mut encode_special_tokens = false;
         while let Some(key) = map.next_key::<String>()? {
             match key.as_ref() {
                 "version" => {
@@ -127,6 +138,9 @@ where
                 }
                 "added_tokens" => {
                     tokens = map.next_value()?;
+                }
+                "encode_special_tokens" => {
+                    encode_special_tokens = map.next_value()?;
                 }
                 "normalizer" => {
                     builder = builder.with_normalizer(map.next_value()?);
@@ -165,6 +179,7 @@ where
         tokenizer
             .add_tokens(tokens.into_iter().map(|t| t.token))
             .map_err(|e| V::Error::custom(e.to_string()))?;
+        tokenizer.set_encode_special_tokens(encode_special_tokens);
 
         Ok(tokenizer)
     }
@@ -227,6 +242,40 @@ mod tests {
         let tok_str = serde_json::to_string_pretty(&tokenizer).unwrap();
         // It should be exactly the same as above
         assert_eq!(tok_str, tok_json);
+    }
+
+    #[test]
+    fn test_encode_special_tokens_roundtrip() {
+        let tok_json = r#"{
+  "version": "1.0",
+  "truncation": null,
+  "padding": null,
+  "added_tokens": [],
+  "normalizer": null,
+  "pre_tokenizer": null,
+  "post_processor": null,
+  "decoder": null,
+  "model": {
+    "type": "WordPiece",
+    "unk_token": "[UNK]",
+    "continuing_subword_prefix": "",
+    "max_input_chars_per_word": 100,
+    "vocab": {}
+  }
+}"#;
+        // By default the flag is not set, and the key is not serialized
+        let tokenizer = Tokenizer::from_str(tok_json).unwrap();
+        assert!(!tokenizer.get_encode_special_tokens());
+        let tok_str = serde_json::to_string(&tokenizer).unwrap();
+        assert!(!tok_str.contains("encode_special_tokens"));
+
+        // Once set, the flag is serialized and survives a roundtrip
+        let mut tokenizer = Tokenizer::from_str(tok_json).unwrap();
+        tokenizer.set_encode_special_tokens(true);
+        let tok_str = serde_json::to_string(&tokenizer).unwrap();
+        assert!(tok_str.contains("\"encode_special_tokens\":true"));
+        let reloaded = Tokenizer::from_str(&tok_str).unwrap();
+        assert!(reloaded.get_encode_special_tokens());
     }
 
     #[cfg(feature = "http")]
