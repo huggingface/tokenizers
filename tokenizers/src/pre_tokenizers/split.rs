@@ -81,7 +81,11 @@ impl Split {
         let pattern: SplitPattern = pattern.into();
         let regex = match &pattern {
             SplitPattern::String(s) => SysRegex::new(&regex::escape(s))?,
-            SplitPattern::Regex(r) => SysRegex::new(r)?,
+            SplitPattern::Regex(r) => {
+                crate::utils::check_redos_risk(r)
+                    .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e))?;
+                SysRegex::new(r)?
+            }
         };
 
         Ok(Self {

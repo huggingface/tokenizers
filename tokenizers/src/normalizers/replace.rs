@@ -68,7 +68,11 @@ impl Replace {
         let pattern: ReplacePattern = pattern.into();
         let regex = match &pattern {
             ReplacePattern::String(s) => SysRegex::new(&regex::escape(s))?,
-            ReplacePattern::Regex(r) => SysRegex::new(r)?,
+            ReplacePattern::Regex(r) => {
+                crate::utils::check_redos_risk(r)
+                    .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e))?;
+                SysRegex::new(r)?
+            }
         };
 
         Ok(Self {
