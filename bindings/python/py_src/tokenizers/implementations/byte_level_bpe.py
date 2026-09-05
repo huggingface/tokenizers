@@ -72,7 +72,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         super().__init__(tokenizer, parameters)
 
     @staticmethod
-    def from_file(vocab_filename: str, merges_filename: str, **kwargs):
+    def from_file(vocab_filename: str, merges_filename: str, **kwargs) -> "ByteLevelBPETokenizer":
         vocab, merges = BPE.read_file(vocab_filename, merges_filename)
         return ByteLevelBPETokenizer(vocab, merges, **kwargs)
 
@@ -83,7 +83,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         min_frequency: int = 2,
         show_progress: bool = True,
         special_tokens: List[Union[str, AddedToken]] = [],
-    ):
+    ) -> None:
         """Train the model using the given files"""
 
         trainer = trainers.BpeTrainer(
@@ -105,7 +105,7 @@ class ByteLevelBPETokenizer(BaseTokenizer):
         show_progress: bool = True,
         special_tokens: List[Union[str, AddedToken]] = [],
         length: Optional[int] = None,
-    ):
+    ) -> None:
         """Train the model using the given iterator"""
 
         trainer = trainers.BpeTrainer(
