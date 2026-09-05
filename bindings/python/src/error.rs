@@ -40,3 +40,8 @@ pub(crate) fn deprecation_warning(py: Python<'_>, version: &str, message: &str) 
     let full_message = format!("Deprecated in {version}: {message}");
     pyo3::PyErr::warn(py, &deprecation_warning, &CString::new(full_message)?, 0)
 }
+
+pub(crate) fn user_warning(py: Python<'_>, message: &str) -> PyResult<()> {
+    let user_warning = py.import("builtins")?.getattr("UserWarning")?;
+    pyo3::PyErr::warn(py, &user_warning, &CString::new(message)?, 0)
+}

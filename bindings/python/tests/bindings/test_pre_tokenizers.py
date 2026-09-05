@@ -64,6 +64,39 @@ class TestSplit:
         assert isinstance(pre_tokenizer_with_invert, Split)
         assert isinstance(pickle.loads(pickle.dumps(Split(" ", "removed", True))), Split)
 
+    def test_warn_str_pattern_no_match(self):
+        from tokenizers import Regex
+        import warnings
+
+        # String pattern that looks like regex → no matches → warning fires
+        pre_tokenizer = Split(pattern="[a-z]+", behavior="isolated")
+        with pytest.warns(UserWarning, match="returned the entire input as a single piece"):
+            pre_tokenizer.pre_tokenize_str("hello world")
+
+        # Regex pattern with the same expression → matches fine → no warning
+        pre_tokenizer_regex = Split(pattern=Regex("[a-z]+"), behavior="isolated")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            pre_tokenizer_regex.pre_tokenize_str("hello world")
+
+        # String pattern that genuinely matches (space) → no warning
+        pre_tokenizer_space = Split(pattern=" ", behavior="removed")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = pre_tokenizer_space.pre_tokenize_str("hello world")
+            assert len(result) == 2
+
+        # Single-char input → guarded by len > 1 → no warning
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            pre_tokenizer.pre_tokenize_str("a")
+
+        # Empty input → no warning
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            pre_tokenizer.pre_tokenize_str("")
+
+
 
 class TestWhitespace:
     def test_instantiate(self):
