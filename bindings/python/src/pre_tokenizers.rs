@@ -334,9 +334,9 @@ impl PyByteLevel {
     }
 }
 
-/// This pre-tokenizer splits on word boundaries according to the ``\w+|[^\w\s]+``
-/// regex pattern. It splits on word characters or characters that aren't words or
-/// whitespaces (punctuation such as hyphens, apostrophes, commas, etc.).
+/// This pre-tokenizer splits on word boundaries. It splits on word characters
+/// or characters that aren't words or whitespaces (punctuation such as hyphens,
+/// apostrophes, commas, etc.).
 ///
 /// Example::
 ///
