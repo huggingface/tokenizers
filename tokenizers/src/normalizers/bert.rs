@@ -96,6 +96,10 @@ impl BertNormalizer {
     }
 
     fn do_handle_chinese_chars(&self, normalized: &mut NormalizedString) {
+        if !normalized.get().chars().any(is_chinese_char) {
+            return;
+        }
+
         let mut new_chars: Vec<(char, isize)> = vec![];
         normalized.for_each(|c| {
             if is_chinese_char(c) {
