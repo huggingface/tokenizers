@@ -2,7 +2,7 @@ import pickle
 
 import pytest
 
-from tokenizers import NormalizedString
+from tokenizers import NormalizedString, Regex
 from tokenizers.normalizers import (
     BertNormalizer,
     Lowercase,
@@ -199,6 +199,23 @@ class TestPrepend:
         # Modify these
         normalizer.prepend = "-"
         assert normalizer.prepend == "-"
+
+
+class TestReplace:
+    def test_replace_with_groups(self):
+        normalizer = Replace(Regex(r"(l)(e)"), r"$1 $2")
+        result = normalizer.normalize_str("le travail")
+        assert result == "l e travail"
+
+    def test_replace_with_group_zero(self):
+        normalizer = Replace(Regex(r"(\w+)"), r"[$0]")
+        result = normalizer.normalize_str("hello world")
+        assert result == "[hello] [world]"
+
+    def test_replace_no_capture_unchanged(self):
+        normalizer = Replace(Regex(r"\s+"), " ")
+        result = normalizer.normalize_str("hello   world")
+        assert result == "hello world"
 
 
 class TestCustomNormalizer:

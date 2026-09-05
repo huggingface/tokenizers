@@ -49,6 +49,8 @@ pub struct Replace {
     pub content: String,
     #[serde(skip)]
     regex: SysRegex,
+    #[serde(skip)]
+    expansion_re: Option<regex::Regex>,
 }
 
 impl Clone for Replace {
@@ -70,38 +72,48 @@ impl Replace {
             ReplacePattern::String(s) => SysRegex::new(&regex::escape(s))?,
             ReplacePattern::Regex(r) => SysRegex::new(r)?,
         };
+        let expansion_re = match &pattern {
+            ReplacePattern::String(_) => None,
+            ReplacePattern::Regex(r) => regex::Regex::new(r).ok(),
+        };
 
         Ok(Self {
             pattern,
             content: content.into(),
             regex,
+            expansion_re,
         })
     }
 }
 
 impl Normalizer for Replace {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()> {
-        normalized.replace(&self.regex, &self.content)
+        normalized.replace_regex(&self.regex, self.expansion_re.as_ref(), &self.content)
     }
 }
 
 impl Decoder for Replace {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
-        tokens
-            .into_iter()
-            .map(|token| -> Result<String> {
-                let mut new_token = "".to_string();
-
-                for ((start, stop), is_match) in (&self.regex).find_matches(&token)? {
-                    if is_match {
-                        new_token.push_str(&self.content);
-                    } else {
-                        new_token.push_str(&token[start..stop]);
+        match &self.expansion_re {
+            Some(re) => tokens
+                .into_iter()
+                .map(|token| Ok(re.replace_all(&token, &self.content).to_string()))
+                .collect(),
+            None => tokens
+                .into_iter()
+                .map(|token| {
+                    let mut new_token = String::new();
+                    for ((start, stop), is_match) in (&self.regex).find_matches(&token)? {
+                        if is_match {
+                            new_token.push_str(&self.content);
+                        } else {
+                            new_token.push_str(&token[start..stop]);
+                        }
                     }
-                }
-                Ok(new_token)
-            })
-            .collect()
+                    Ok(new_token)
+                })
+                .collect(),
+        }
     }
 }
 
@@ -154,6 +166,30 @@ mod tests {
         assert_eq!(
             replace.decode_chain(original).unwrap(),
             vec!["hello", " hello"]
+        );
+    }
+
+    #[test]
+    fn test_replace_regex_groups_dollar() {
+        let original = "le travail";
+        let expected = "l e travail";
+
+        let mut n = NormalizedString::from(original);
+        Replace::new(ReplacePattern::Regex(r"(l)(e)".into()), r"$1 $2")
+            .unwrap()
+            .normalize(&mut n)
+            .unwrap();
+
+        assert_eq!(&n.get(), &expected);
+    }
+
+    #[test]
+    fn test_replace_regex_groups_decode() {
+        let tokens = vec!["le".to_string(), "test".to_string()];
+        let replace = Replace::new(ReplacePattern::Regex(r"(l)(e)".into()), r"$1 $2").unwrap();
+        assert_eq!(
+            replace.decode_chain(tokens).unwrap(),
+            vec!["l e", "test"]
         );
     }
 }
