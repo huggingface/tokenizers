@@ -97,7 +97,7 @@ thiserror = "2"
 fancy-regex = { version = "0.17", optional = true }
 getrandom = { version = "0.3" }
 esaxx-rs = { version = "0.1.10", default-features = false, features = [] }
-monostate = "0.1.12"
+monostate = "1.0.0"
 ahash = { version = "0.8.11", features = ["serde"] }
 dary_heap = { version = "0.3.6", features = ["serde"] }
 compact_str = { version = "0.9", features = ["serde"] }
