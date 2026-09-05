@@ -6,8 +6,8 @@ import numpy as np
 import asyncio
 from tokenizers import AddedToken, Encoding, Tokenizer, decoders
 from tokenizers.implementations import BertWordPieceTokenizer
-from tokenizers.models import BPE, Model, Unigram
-from tokenizers.pre_tokenizers import ByteLevel, Metaspace
+from tokenizers.models import BPE, Model, Unigram, WordLevel
+from tokenizers.pre_tokenizers import ByteLevel, Metaspace, Whitespace
 from tokenizers.processors import RobertaProcessing, TemplateProcessing
 from tokenizers.normalizers import Strip, Lowercase, Sequence
 from tokenizers.normalizers import ByteLevel as NormalizerByteLevel
@@ -368,6 +368,23 @@ class TestTokenizer:
 
         output = tokenizer.encode("my name is john", "pair")
         assert output.tokens == ["john", "pair"]
+
+    def test_truncation_populates_overflowing(self):
+        # https://github.com/huggingface/tokenizers/issues/2091
+        vocab = {"[UNK]": 0, **{str(i): i + 1 for i in range(50)}}
+        tokenizer = Tokenizer(WordLevel(vocab=vocab, unk_token="[UNK]"))
+        tokenizer.pre_tokenizer = Whitespace()
+        tokenizer.enable_truncation(max_length=10, stride=2)
+
+        output = tokenizer.encode(" ".join(str(i) for i in range(50)))
+        assert output.ids == [vocab[str(i)] for i in range(10)]
+
+        # The truncated tokens must remain available through `overflowing`,
+        # with consecutive pieces overlapping by `stride` tokens
+        assert len(output.overflowing) == 5
+        assert [piece.ids for piece in output.overflowing] == [
+            [vocab[str(i)] for i in range(start, start + 10)] for start in (8, 16, 24, 32, 40)
+        ]
 
     def test_padding(self):
         tokenizer = Tokenizer(BPE())
