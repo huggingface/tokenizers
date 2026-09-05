@@ -10,6 +10,45 @@
 
 [[autodoc]] tokenizers.pre_tokenizers.ByteLevel
 
+### Encoding Raw Bytes
+
+`ByteLevel` works on strings, so arbitrary bytes should not be decoded as
+Latin-1 and then passed through this pre-tokenizer. To encode bytes directly
+with a byte-level BPE tokenizer, map each byte to the byte-level visible
+character yourself, then skip normalization and pre-tokenization so the mapped
+string is not re-encoded as UTF-8.
+
+```python
+from tokenizers import Tokenizer
+
+
+def bytes_to_unicode() -> dict[int, str]:
+    bs = (
+        list(range(ord("!"), ord("~") + 1))
+        + list(range(0xA1, 0xAD))
+        + list(range(0xAE, 0x100))
+    )
+    cs = bs[:]
+    n = 0
+    for byte in range(256):
+        if byte not in bs:
+            bs.append(byte)
+            cs.append(256 + n)
+            n += 1
+    return dict(zip(bs, map(chr, cs)))
+
+
+tokenizer = Tokenizer.from_pretrained("gpt2")
+tokenizer.normalizer = None
+tokenizer.pre_tokenizer = None
+
+byte_encoder = bytes_to_unicode()
+raw_bytes = bytes([65, 66, 233])
+pseudo_text = "".join(byte_encoder[byte] for byte in raw_bytes)
+
+encoding = tokenizer.encode(pseudo_text, add_special_tokens=False)
+```
+
 ## CharDelimiterSplit
 
 [[autodoc]] tokenizers.pre_tokenizers.CharDelimiterSplit
