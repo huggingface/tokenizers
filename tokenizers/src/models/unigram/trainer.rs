@@ -396,10 +396,10 @@ impl UnigramTrainer {
 
                 // After removing the sentencepiece[i], its frequency freq[i] is
                 // re-assigned to alternatives.
-                // new_sum = current_sum - freq[i] + freq[i] * alternatives.size()
-                //         = current_sum + freq[i] (alternatives - 1)
+                // new_sum = current_sum - freq[i] + freq[i] * alternatives[i].size()
+                //         = current_sum + freq[i] (alternatives[i].size() - 1)
 
-                let logsum_alt = (sum + freq[id] * (alternatives.len() - 1) as f64).ln();
+                let logsum_alt = (sum + freq[id] * (alternatives[id].len() - 1) as f64).ln();
 
                 // The frequencies of alternatives are increased by freq[i].
                 let mut logprob_alt = 0.0;
@@ -821,5 +821,65 @@ mod tests {
         assert_approx_eq!(scores[0], -1.098, 0.01);
         // ln(2) - ln(3)
         assert_approx_eq!(scores[1], -0.405, 0.01);
+    }
+
+    #[test]
+    fn test_prune_sentence_pieces_uses_per_piece_alternatives_len() {
+        // Regression test for a bug where the prune loss computation used
+        // `alternatives.len()` (the size of the *whole* vocabulary) instead of
+        // `alternatives[id].len()` (the number of resegmentation alternatives for
+        // the one piece being scored). See GH issue about
+        // `prune_sentence_pieces` diverging from the SentencePiece reference.
+        //
+        // Vocabulary: unk, the singles "a".."f", the piece "abcdef" (freq 50,
+        // whose only alternative resegmentation is the 6 singles a..f), the
+        // singles "x","y","z", and the piece "xyz" (freq 110, whose only
+        // alternative resegmentation is the 3 singles x,y,z). 12 pieces total.
+        //
+        // With the correct formula, "abcdef" (fewer occurrences but *twice* as
+        // many alternatives) has a strictly higher prune loss than "xyz", so it
+        // is the one kept when only a single slot remains. With the buggy
+        // formula (which substitutes the total piece count, 12, for each
+        // piece's own alternative count) the higher-frequency "xyz" wins
+        // instead, and "abcdef" gets pruned. We size the trainer so exactly one
+        // of the two survives, which lets the test distinguish the two
+        // formulas.
+        let mut vocab: Vec<(String, f64)> = vec![("<unk>".to_string(), 0.0)];
+        for c in ["a", "b", "c", "d", "e", "f"] {
+            vocab.push((c.to_string(), -1.0));
+        }
+        vocab.push(("abcdef".to_string(), -0.1));
+        for c in ["x", "y", "z"] {
+            vocab.push((c.to_string(), -1.0));
+        }
+        vocab.push(("xyz".to_string(), -0.1));
+        assert_eq!(vocab.len(), 12);
+
+        let model = Unigram::from(vocab.clone(), Some(0), false).unwrap();
+
+        // desired_vocab_size = (10 * 11) / 10 = 11; pieces.len() * 0.75 = 9;
+        // pruned_size = max(11, 9) = 11. There are 10 pieces that are always
+        // kept outright (unk + the 9 single-char pieces), so exactly one of
+        // {"abcdef", "xyz"} can be added from the loss-ranked candidates.
+        let trainer = UnigramTrainerBuilder::default()
+            .show_progress(false)
+            .vocab_size(10)
+            .build()
+            .unwrap();
+
+        let sentences: Vec<Sentence> =
+            vec![("abcdef".to_string(), 50), ("xyz".to_string(), 110)];
+
+        let pruned = trainer.prune_sentence_pieces(&model, &vocab, &sentences);
+        let kept: Vec<&str> = pruned.iter().map(|(t, _)| t.as_str()).collect();
+
+        assert!(
+            kept.contains(&"abcdef"),
+            "expected the piece with more resegmentation alternatives to be kept, got: {kept:?}"
+        );
+        assert!(
+            !kept.contains(&"xyz"),
+            "expected the piece with fewer resegmentation alternatives to be pruned, got: {kept:?}"
+        );
     }
 }
