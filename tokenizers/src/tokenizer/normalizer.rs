@@ -174,14 +174,6 @@ impl NormalizedString {
             return None;
         }
 
-        // If we target 0..0 on an empty string, we want to expand to the entire equivalent
-        if original && self.original.is_empty() && target == (0..0) {
-            return Some(0..len_normalized);
-        }
-        if !original && self.normalized.is_empty() && target == (0..0) {
-            return Some(0..len_original);
-        }
-
         if original {
             let (mut start, mut end) = (None, None);
             self.alignments
