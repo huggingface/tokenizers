@@ -445,6 +445,21 @@ impl NormalizedString {
         self.transform_range(Range::Original(..), dest, initial_offset)
     }
 
+    /// Single-pass fast path for a pure per-byte char substitution (e.g. `ByteLevel`): replaces
+    /// each byte by `map[byte]`. Each output char inherits its source byte's alignment, so the
+    /// result is byte-identical to the equivalent [`Self::transform`] but skips its bookkeeping.
+    pub fn apply_byte_map(&mut self, map: &[char; 256]) {
+        let mut normalized = String::with_capacity(self.normalized.len());
+        let mut alignments = Vec::with_capacity(self.alignments.len());
+        for (&byte, &align) in self.normalized.as_bytes().iter().zip(&self.alignments) {
+            let c = map[byte as usize];
+            normalized.push(c);
+            alignments.extend(std::iter::repeat_n(align, c.len_utf8()));
+        }
+        self.normalized = normalized;
+        self.alignments = alignments;
+    }
+
     /// Applies NFD normalization
     pub fn nfd(&mut self) -> &mut Self {
         self.transform(self.get().to_owned().nfd(), 0);

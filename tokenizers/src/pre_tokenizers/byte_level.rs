@@ -38,13 +38,22 @@ pub(crate) fn bytes_char() -> AHashMap<u8, char> {
         .collect()
 }
 
+/// `bytes_char()` as a dense `[char; 256]` lookup table (O(1) index, no hashing).
+pub(crate) fn bytes_char_array() -> [char; 256] {
+    let mut table = ['\0'; 256];
+    for (b, c) in bytes_char() {
+        table[b as usize] = c;
+    }
+    table
+}
+
 /// Regex that matches exactly one token.
 /// See https://github.com/openai/gpt-2/blob/master/src/encoder.py#L98
 static RE: LazyLock<SysRegex> = LazyLock::new(|| {
     SysRegex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
         .unwrap()
 });
-static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
+static BYTES_CHAR: LazyLock<[char; 256]> = LazyLock::new(bytes_char_array);
 static CHAR_BYTES: LazyLock<AHashMap<char, u8>> =
     LazyLock::new(|| bytes_char().into_iter().map(|(c, b)| (b, c)).collect());
 
@@ -91,7 +100,7 @@ impl ByteLevel {
     }
 
     pub fn alphabet() -> AHashSet<char> {
-        BYTES_CHAR.values().copied().collect()
+        BYTES_CHAR.iter().copied().collect()
     }
 
     #[must_use]
@@ -130,18 +139,7 @@ impl PreTokenizer for ByteLevel {
             }
         })?;
         pretokenized.normalize(|normalized| {
-            let s = normalized.get();
-            let mut transformations: Vec<(char, isize)> = Vec::with_capacity(s.len());
-            for (i, cur_char) in s.char_indices() {
-                let size = cur_char.len_utf8();
-                transformations.extend(
-                    s.as_bytes()[i..i + size]
-                        .iter()
-                        .enumerate()
-                        .map(|(i, b)| (BYTES_CHAR[b], isize::from(i > 0))),
-                );
-            }
-            normalized.transform(transformations, 0);
+            normalized.apply_byte_map(&BYTES_CHAR);
             Ok(())
         })
     }
@@ -203,12 +201,12 @@ pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
     encoding.process_tokens_with_offsets_mut(|(i, (token, offsets))| {
         let mut leading_spaces = token
             .chars()
-            .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())
+            .take_while(|c| *c == BYTES_CHAR[b' ' as usize] || c.is_whitespace())
             .count();
         let trailing_spaces = token
             .chars()
             .rev()
-            .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())
+            .take_while(|c| *c == BYTES_CHAR[b' ' as usize] || c.is_whitespace())
             .count();
 
         if leading_spaces > 0 || trailing_spaces > 0 {
