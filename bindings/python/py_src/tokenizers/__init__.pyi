@@ -739,7 +739,7 @@ class Tokenizer:
             :obj:`List[str]`: A list of decoded strings
         """
     def async_encode(
-        self, /, sequence: Any, pair: Any | None = None, is_pretokenized: bool = False, add_special_tokens: bool = True
+        self, /, sequence: Any, pair: Any | None = None, is_pretokenized: bool = False, add_special_tokens: bool = True, structured_special_tokens: bool = False
     ) -> Any:
         """
         Asynchronously encode the given input with character offsets.
@@ -768,11 +768,14 @@ class Tokenizer:
             add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
                 Whether to add the special tokens
 
+            structured_special_tokens (:obj:`bool`, defaults to :obj:`False`):
+                Interpret ``sequence`` as a structured special-token JSON object or JSON string
+
         Returns:
             :class:`~tokenizers.Encoding`: The encoded result
         """
     def async_encode_batch(
-        self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True
+        self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True, structured_special_tokens: bool = False
     ) -> Any:
         """
         Asynchronously encode the given batch of inputs with character offsets.
@@ -804,11 +807,14 @@ class Tokenizer:
             add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
                 Whether to add the special tokens
 
+            structured_special_tokens (:obj:`bool`, defaults to :obj:`False`):
+                Interpret every batch item as a structured special-token JSON object or JSON string
+
         Returns:
             A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
         """
     def async_encode_batch_fast(
-        self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True
+        self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True, structured_special_tokens: bool = False
     ) -> Any:
         """
         Asynchronously encode the given batch of inputs without tracking character offsets.
@@ -839,6 +845,9 @@ class Tokenizer:
 
             add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
                 Whether to add the special tokens
+
+            structured_special_tokens (:obj:`bool`, defaults to :obj:`False`):
+                Interpret every batch item as a structured special-token JSON object or JSON string
 
         Returns:
             A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
@@ -929,7 +938,7 @@ class Tokenizer:
                 Truncate direction
         """
     def encode(
-        self, /, sequence: Any, pair: Any | None = None, is_pretokenized: bool = False, add_special_tokens: bool = True
+        self, /, sequence: Any, pair: Any | None = None, is_pretokenized: bool = False, add_special_tokens: bool = True, structured_special_tokens: bool = False
     ) -> "Encoding":
         """
         Encode the given sequence and pair. This method can process raw text sequences
@@ -963,11 +972,14 @@ class Tokenizer:
             add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
                 Whether to add the special tokens
 
+            structured_special_tokens (:obj:`bool`, defaults to :obj:`False`):
+                Interpret ``sequence`` as a structured special-token JSON object or JSON string
+
         Returns:
             :class:`~tokenizers.Encoding`: The encoded result
         """
     def encode_batch(
-        self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True
+        self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True, structured_special_tokens: bool = False
     ) -> "list[Encoding]":
         """
         Encode the given batch of inputs. This method accept both raw text sequences
@@ -1000,11 +1012,14 @@ class Tokenizer:
             add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
                 Whether to add the special tokens
 
+            structured_special_tokens (:obj:`bool`, defaults to :obj:`False`):
+                Interpret every batch item as a structured special-token JSON object or JSON string
+
         Returns:
             A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
         """
     def encode_batch_fast(
-        self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True
+        self, /, input: Sequence[Any], is_pretokenized: bool = False, add_special_tokens: bool = True, structured_special_tokens: bool = False
     ) -> "list[Encoding]":
         """
         Encode the given batch of inputs. This method is faster than `encode_batch`
@@ -1034,6 +1049,9 @@ class Tokenizer:
 
             add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
                 Whether to add the special tokens
+
+            structured_special_tokens (:obj:`bool`, defaults to :obj:`False`):
+                Interpret every batch item as a structured special-token JSON object or JSON string
 
         Returns:
             A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch

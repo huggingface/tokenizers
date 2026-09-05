@@ -1,4 +1,4 @@
-use serde::{ser::Error as SerError, Serialize, Serializer};
+use serde::{ser::Error as SerError, Deserialize, Serialize, Serializer};
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -478,6 +478,30 @@ impl<'s> From<PreTokenizedEncodeInput<'s>> for tk::tokenizer::EncodeInput<'s> {
 
 type Tokenizer = TokenizerImpl<PyModel, PyNormalizer, PyPreTokenizer, PyPostProcessor, PyDecoder>;
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StructuredSegmentsPayload {
+    version: u32,
+    #[serde(rename = "type")]
+    kind: String,
+    segments: Vec<StructuredSegmentPayload>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StructuredSegmentPayload {
+    content: String,
+    special: StructuredSpecialFlag,
+}
+
+#[derive(Deserialize)]
+enum StructuredSpecialFlag {
+    #[serde(rename = "yes")]
+    Yes,
+    #[serde(rename = "no")]
+    No,
+}
+
 /// A :obj:`Tokenizer` works as a pipeline. It processes some raw text as input
 /// and outputs an :class:`~tokenizers.Encoding`.
 ///
@@ -567,6 +591,73 @@ impl PyTokenizer {
 
     fn from_model(model: PyModel) -> Self {
         PyTokenizer::new(TokenizerImpl::new(model))
+    }
+
+    fn parse_structured_segments(input: &Bound<'_, PyAny>) -> PyResult<Vec<tk::EncodeSegment>> {
+        let input = if let Ok(input) = input.extract::<String>() {
+            input
+        } else if let Ok(input) = input.cast::<PyDict>() {
+            let py = input.py();
+            PyModule::import(py, intern!(py, "json"))?
+                .call_method1(intern!(py, "dumps"), (input,))?
+                .extract::<String>()?
+        } else {
+            return Err(exceptions::PyTypeError::new_err(
+                "structured_special_tokens=True requires a JSON object (dict) or JSON string input",
+            ));
+        };
+        let payload: StructuredSegmentsPayload = serde_json::from_str(&input).map_err(|error| {
+            exceptions::PyValueError::new_err(format!(
+                "Invalid structured special-token JSON: {error}"
+            ))
+        })?;
+
+        if payload.version != 1 {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Unsupported structured special-token JSON version: {}",
+                payload.version
+            )));
+        }
+        if payload.kind != "jinja_render_segments" {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Unsupported structured special-token JSON type: {:?}",
+                payload.kind
+            )));
+        }
+
+        Ok(payload
+            .segments
+            .into_iter()
+            .map(|segment| tk::EncodeSegment {
+                content: segment.content,
+                special: matches!(segment.special, StructuredSpecialFlag::Yes),
+            })
+            .collect())
+    }
+
+    fn validate_structured_options(
+        pair: Option<&Bound<'_, PyAny>>,
+        is_pretokenized: bool,
+    ) -> PyResult<()> {
+        if is_pretokenized {
+            return Err(exceptions::PyValueError::new_err(
+                "structured_special_tokens=True is incompatible with is_pretokenized=True",
+            ));
+        }
+        if pair.is_some() {
+            return Err(exceptions::PyValueError::new_err(
+                "structured_special_tokens=True does not support pair inputs",
+            ));
+        }
+        Ok(())
+    }
+
+    fn parse_structured_batch(
+        input: &[Bound<'_, PyAny>],
+        is_pretokenized: bool,
+    ) -> PyResult<Vec<Vec<tk::EncodeSegment>>> {
+        Self::validate_structured_options(None, is_pretokenized)?;
+        input.iter().map(Self::parse_structured_segments).collect()
     }
 
     // Extract a pretokenized sequence into an owned Vec<String>
@@ -1172,12 +1263,15 @@ impl PyTokenizer {
     ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether to add the special tokens
     ///
+    ///     structured_special_tokens (:obj:`bool`, defaults to :obj:`False`):
+    ///         Interpret ``sequence`` as a structured special-token JSON object or JSON string
+    ///
     /// Returns:
     ///     :class:`~tokenizers.Encoding`: The encoded result
     ///
-    #[pyo3(signature = (sequence, pair = None, is_pretokenized = false, add_special_tokens = true) -> "Encoding")]
+    #[pyo3(signature = (sequence, pair = None, is_pretokenized = false, add_special_tokens = true, structured_special_tokens = false) -> "Encoding")]
     #[pyo3(
-        text_signature = "(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True)"
+        text_signature = "(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True, structured_special_tokens=False)"
     )]
     fn encode(
         &self,
@@ -1185,7 +1279,19 @@ impl PyTokenizer {
         pair: Option<&Bound<'_, PyAny>>,
         is_pretokenized: bool,
         add_special_tokens: bool,
+        structured_special_tokens: bool,
     ) -> PyResult<PyEncoding> {
+        if structured_special_tokens {
+            Self::validate_structured_options(pair, is_pretokenized)?;
+            let segments = Self::parse_structured_segments(sequence)?;
+            return ToPyResult(
+                self.read_inner()?
+                    .encode_segments_char_offsets(&segments, add_special_tokens)
+                    .map(PyEncoding::from),
+            )
+            .into();
+        }
+
         let sequence: tk::InputSequence = if is_pretokenized {
             sequence.extract::<PreTokenizedInputSequence>()?.into()
         } else {
@@ -1239,12 +1345,15 @@ impl PyTokenizer {
     ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether to add the special tokens
     ///
+    ///     structured_special_tokens (:obj:`bool`, defaults to :obj:`False`):
+    ///         Interpret ``sequence`` as a structured special-token JSON object or JSON string
+    ///
     /// Returns:
     ///     :class:`~tokenizers.Encoding`: The encoded result
     ///
-    #[pyo3(signature = (sequence, pair = None, is_pretokenized = false, add_special_tokens = true))]
+    #[pyo3(signature = (sequence, pair = None, is_pretokenized = false, add_special_tokens = true, structured_special_tokens = false))]
     #[pyo3(
-        text_signature = "(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True)"
+        text_signature = "(self, sequence, pair=None, is_pretokenized=False, add_special_tokens=True, structured_special_tokens=False)"
     )]
     fn async_encode<'py>(
         &self,
@@ -1253,18 +1362,33 @@ impl PyTokenizer {
         pair: Option<&Bound<'_, PyAny>>,
         is_pretokenized: bool,
         add_special_tokens: bool,
+        structured_special_tokens: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         // Extract and fully own the inputs before leaving the GIL/thread
-        let input = Self::build_single_owned_encode_input(sequence, pair, is_pretokenized)?;
+        let segments = structured_special_tokens
+            .then(|| {
+                Self::validate_structured_options(pair, is_pretokenized)?;
+                Self::parse_structured_segments(sequence)
+            })
+            .transpose()?;
+        let input = (!structured_special_tokens)
+            .then(|| Self::build_single_owned_encode_input(sequence, pair, is_pretokenized))
+            .transpose()?;
 
         let tokenizer = self.read_inner()?.clone();
         let rt = crate::TOKIO_RUNTIME.clone();
 
         let fut = py.detach(|| async move {
             rt.spawn_blocking(move || {
-                tokenizer
-                    .encode(input, add_special_tokens)
-                    .map(PyEncoding::from)
+                if let Some(segments) = segments {
+                    tokenizer
+                        .encode_segments_char_offsets(&segments, add_special_tokens)
+                        .map(PyEncoding::from)
+                } else {
+                    tokenizer
+                        .encode(input.unwrap(), add_special_tokens)
+                        .map(PyEncoding::from)
+                }
             })
             .await
             .unwrap()
@@ -1304,18 +1428,36 @@ impl PyTokenizer {
     ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether to add the special tokens
     ///
+    ///     structured_special_tokens (:obj:`bool`, defaults to :obj:`False`):
+    ///         Interpret every batch item as a structured special-token JSON object or JSON string
+    ///
     /// Returns:
     ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
     ///
-    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true) -> "list[Encoding]")]
-    #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
+    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true, structured_special_tokens = false) -> "list[Encoding]")]
+    #[pyo3(
+        text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True, structured_special_tokens=False)"
+    )]
     fn encode_batch(
         &self,
         py: Python<'_>,
         input: Vec<Bound<'_, PyAny>>,
         is_pretokenized: bool,
         add_special_tokens: bool,
+        structured_special_tokens: bool,
     ) -> PyResult<Vec<PyEncoding>> {
+        if structured_special_tokens {
+            let items = Self::parse_structured_batch(&input, is_pretokenized)?;
+            return py.detach(|| {
+                ToPyResult(
+                    self.read_inner()?
+                        .encode_batch_segments_char_offsets(items, add_special_tokens)
+                        .map(|encodings| encodings.into_iter().map(Into::into).collect()),
+                )
+                .into()
+            });
+        }
+
         let mut items = Vec::<tk::EncodeInput>::with_capacity(input.len());
         for item in &input {
             let item: tk::EncodeInput = if is_pretokenized {
@@ -1365,29 +1507,46 @@ impl PyTokenizer {
     ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether to add the special tokens
     ///
+    ///     structured_special_tokens (:obj:`bool`, defaults to :obj:`False`):
+    ///         Interpret every batch item as a structured special-token JSON object or JSON string
+    ///
     /// Returns:
     ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
     ///
-    #[pyo3(name = "async_encode_batch", signature = (input, is_pretokenized = false, add_special_tokens = true))]
-    #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
+    #[pyo3(name = "async_encode_batch", signature = (input, is_pretokenized = false, add_special_tokens = true, structured_special_tokens = false))]
+    #[pyo3(
+        text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True, structured_special_tokens=False)"
+    )]
     fn async_encode_batch<'py>(
         &self,
         py: Python<'py>,
         input: Vec<Bound<'_, PyAny>>,
         is_pretokenized: bool,
         add_special_tokens: bool,
+        structured_special_tokens: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         // Fully own the inputs before leaving the GIL/thread
-        let owned_items = Self::build_owned_encode_inputs(&input, is_pretokenized)?;
+        let structured_items = structured_special_tokens
+            .then(|| Self::parse_structured_batch(&input, is_pretokenized))
+            .transpose()?;
+        let owned_items = (!structured_special_tokens)
+            .then(|| Self::build_owned_encode_inputs(&input, is_pretokenized))
+            .transpose()?;
 
         let tokenizer = self.read_inner()?.clone();
         let rt = crate::TOKIO_RUNTIME.clone();
 
         let fut = py.detach(|| async move {
             rt.spawn_blocking(move || {
-                tokenizer
-                    .encode_batch_char_offsets(owned_items, add_special_tokens)
-                    .map(|encs| encs.into_iter().map(PyEncoding::from).collect::<Vec<_>>())
+                if let Some(items) = structured_items {
+                    tokenizer
+                        .encode_batch_segments_char_offsets(items, add_special_tokens)
+                        .map(|encs| encs.into_iter().map(PyEncoding::from).collect::<Vec<_>>())
+                } else {
+                    tokenizer
+                        .encode_batch_char_offsets(owned_items.unwrap(), add_special_tokens)
+                        .map(|encs| encs.into_iter().map(PyEncoding::from).collect::<Vec<_>>())
+                }
             })
             .await
             .unwrap()
@@ -1425,18 +1584,36 @@ impl PyTokenizer {
     ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether to add the special tokens
     ///
+    ///     structured_special_tokens (:obj:`bool`, defaults to :obj:`False`):
+    ///         Interpret every batch item as a structured special-token JSON object or JSON string
+    ///
     /// Returns:
     ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
     ///
-    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true) -> "list[Encoding]")]
-    #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
+    #[pyo3(signature = (input, is_pretokenized = false, add_special_tokens = true, structured_special_tokens = false) -> "list[Encoding]")]
+    #[pyo3(
+        text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True, structured_special_tokens=False)"
+    )]
     fn encode_batch_fast(
         &self,
         py: Python<'_>,
         input: Vec<Bound<'_, PyAny>>,
         is_pretokenized: bool,
         add_special_tokens: bool,
+        structured_special_tokens: bool,
     ) -> PyResult<Vec<PyEncoding>> {
+        if structured_special_tokens {
+            let items = Self::parse_structured_batch(&input, is_pretokenized)?;
+            return py.detach(|| {
+                ToPyResult(
+                    self.read_inner()?
+                        .encode_batch_segments_fast(items, add_special_tokens)
+                        .map(|encodings| encodings.into_iter().map(Into::into).collect()),
+                )
+                .into()
+            });
+        }
+
         let mut items = Vec::<tk::EncodeInput>::with_capacity(input.len());
         for item in &input {
             let item: tk::EncodeInput = if is_pretokenized {
@@ -1487,28 +1664,45 @@ impl PyTokenizer {
     ///     add_special_tokens (:obj:`bool`, defaults to :obj:`True`):
     ///         Whether to add the special tokens
     ///
+    ///     structured_special_tokens (:obj:`bool`, defaults to :obj:`False`):
+    ///         Interpret every batch item as a structured special-token JSON object or JSON string
+    ///
     /// Returns:
     ///     A :obj:`List` of :class:`~tokenizers.Encoding`: The encoded batch
     ///
-    #[pyo3(name = "async_encode_batch_fast", signature = (input, is_pretokenized = false, add_special_tokens = true))]
-    #[pyo3(text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True)")]
+    #[pyo3(name = "async_encode_batch_fast", signature = (input, is_pretokenized = false, add_special_tokens = true, structured_special_tokens = false))]
+    #[pyo3(
+        text_signature = "(self, input, is_pretokenized=False, add_special_tokens=True, structured_special_tokens=False)"
+    )]
     fn async_encode_batch_fast<'py>(
         &self,
         py: Python<'py>,
         input: Vec<Bound<'_, PyAny>>,
         is_pretokenized: bool,
         add_special_tokens: bool,
+        structured_special_tokens: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let owned_items = Self::build_owned_encode_inputs(&input, is_pretokenized)?;
+        let structured_items = structured_special_tokens
+            .then(|| Self::parse_structured_batch(&input, is_pretokenized))
+            .transpose()?;
+        let owned_items = (!structured_special_tokens)
+            .then(|| Self::build_owned_encode_inputs(&input, is_pretokenized))
+            .transpose()?;
 
         let tokenizer = self.read_inner()?.clone();
         let rt = crate::TOKIO_RUNTIME.clone();
         let fut = py.detach(|| async move {
             let result = rt
                 .spawn_blocking(move || {
-                    tokenizer
-                        .encode_batch_fast(owned_items, add_special_tokens)
-                        .map(|encs| encs.into_iter().map(PyEncoding::from).collect::<Vec<_>>())
+                    if let Some(items) = structured_items {
+                        tokenizer
+                            .encode_batch_segments_fast(items, add_special_tokens)
+                            .map(|encs| encs.into_iter().map(PyEncoding::from).collect::<Vec<_>>())
+                    } else {
+                        tokenizer
+                            .encode_batch_fast(owned_items.unwrap(), add_special_tokens)
+                            .map(|encs| encs.into_iter().map(PyEncoding::from).collect::<Vec<_>>())
+                    }
                 })
                 .await
                 .unwrap();
