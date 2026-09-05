@@ -4,7 +4,7 @@ import concurrent.futures
 import pytest
 import numpy as np
 import asyncio
-from tokenizers import AddedToken, Encoding, Tokenizer, decoders
+from tokenizers import AddedToken, Encoding, Tokenizer, decoders, pre_tokenizers
 from tokenizers.implementations import BertWordPieceTokenizer
 from tokenizers.models import BPE, Model, Unigram
 from tokenizers.pre_tokenizers import ByteLevel, Metaspace
@@ -188,6 +188,12 @@ class TestTokenizer:
         # Can encode a single pre-tokenized sequence
         output = tokenizer.encode(["my", "name", "is", "john"], is_pretokenized=True)
         assert output.tokens == ["my", "name", "is", "john"]
+
+        # is_pretokenized should skip the pre-tokenizer (issue #1695)
+        tokenizer.add_tokens(["<eos>"])
+        tokenizer.pre_tokenizer = pre_tokenizers.Split("", "isolated")
+        output = tokenizer.encode(["<eos>"], is_pretokenized=True)
+        assert output.tokens == ["<eos>"]
 
         # Can encode a batch with both a single sequence and a pair of sequences
         output = tokenizer.encode_batch(["my name is john", ("my name is john", "pair")])
