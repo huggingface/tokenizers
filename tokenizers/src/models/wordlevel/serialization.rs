@@ -111,6 +111,23 @@ mod tests {
     }
 
     #[test]
+    fn sparse_large_vocab_id_serializes_without_walking_holes() {
+        let vocab: Vocab = [("<unk>".into(), 0), ("far".into(), u32::MAX)]
+            .iter()
+            .cloned()
+            .collect();
+        let wordlevel = WordLevelBuilder::default()
+            .vocab(vocab)
+            .unk_token("<unk>".to_string())
+            .build()
+            .unwrap();
+
+        let wl_s =
+            r#"{"type":"WordLevel","vocab":{"<unk>":0,"far":4294967295},"unk_token":"<unk>"}"#;
+        assert_eq!(serde_json::to_string(&wordlevel).unwrap(), wl_s);
+    }
+
+    #[test]
     fn deserialization_should_fail() {
         let missing_unk = r#"{"type":"WordLevel","vocab":{}}"#;
         assert!(serde_json::from_str::<WordLevel>(missing_unk)
