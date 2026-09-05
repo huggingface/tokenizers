@@ -210,7 +210,7 @@ impl Encoding {
 
     /// Returns the index of the sequence containing the given token
     pub fn token_to_sequence(&self, token: usize) -> Option<usize> {
-        if token > self.len() {
+        if token >= self.len() {
             None
         } else if self.sequence_ranges.is_empty() {
             Some(0)
@@ -565,6 +565,20 @@ impl std::iter::FromIterator<(u32, String, (usize, usize), Option<u32>, u32)> fo
 mod tests {
     use super::*;
     use std::iter::FromIterator;
+
+    #[test]
+    fn token_to_sequence_out_of_bounds() {
+        // An unprocessed encoding has no `sequence_ranges`, so every in-range token
+        // maps to sequence 0. Out-of-range indices (>= len) must return `None`, like
+        // the sibling accessors `token_to_chars`/`token_to_word` do via `.get(token)`.
+        let encoding = Encoding {
+            ids: vec![1, 2, 3],
+            ..Default::default()
+        };
+        assert_eq!(encoding.token_to_sequence(2), Some(0)); // last valid index
+        assert_eq!(encoding.token_to_sequence(3), None); // == len, out of bounds
+        assert_eq!(encoding.token_to_sequence(4), None); // > len, out of bounds
+    }
 
     #[test]
     fn merge_encodings() {
