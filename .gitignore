@@ -19,6 +19,8 @@ pip-wheel-metadata
 *.so
 /bindings/python/build
 /bindings/python/dist
+.venv
+venv
 
 .vscode
 *.code-workspace
