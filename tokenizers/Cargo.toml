@@ -94,7 +94,7 @@ daachorse = "3.0.0"
 paste = "1.0.14"
 macro_rules_attribute = "0.2.0"
 thiserror = "2"
-fancy-regex = { version = "0.17", optional = true }
+fancy-regex = { version = "0.18", optional = true }
 getrandom = { version = "0.3" }
 esaxx-rs = { version = "0.1.10", default-features = false, features = [] }
 monostate = "0.1.12"
