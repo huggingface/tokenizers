@@ -7,7 +7,7 @@ from docutils.parsers.rst import Directive
 import sphinx
 from sphinx.locale import _
 from sphinx.util.docutils import SphinxDirective
-from sphinx.errors import ExtensionError
+from sphinx.errors import ExtensionError, NoUri
 
 from conf import languages as LANGUAGES
 
@@ -84,7 +84,7 @@ class AllEntities:
 
             name, _ = node.children
             if name.tagname != "field_name":
-                raise Exception(f"Expected a field name here, found {name_node.tagname}")
+                raise Exception(f"Expected a field name here, found {name.tagname}")
 
             if str(name.children[0]) == "global":
                 return True
