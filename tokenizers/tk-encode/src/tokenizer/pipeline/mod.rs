@@ -439,7 +439,9 @@ impl EncodeHandle {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Encoding {
     pub(crate) ids: Vec<PipelineToken>,
+    /// `None` if every token has type id 0
     pub(crate) type_ids: Option<Vec<u8>>,
+    /// `None` if the encoding is not padded (mask is all ones)
     pub(crate) attention_mask: Option<Vec<u8>>,
 }
 
