@@ -77,35 +77,33 @@ fn pad_one(encoding: &mut Encoding, target_length: usize, params: &PaddingParams
     }
     let pad_length = target_length - original_len;
     let pad_id = PipelineToken::from(params.pad_id);
+    let pad_type_id = params.pad_type_id as u8;
 
     let mut ids = std::mem::take(&mut encoding.ids);
-    let mut type_ids = std::mem::take(&mut encoding.type_ids);
+    let mut type_ids =
+        std::mem::take(&mut encoding.type_ids).unwrap_or_else(|| vec![0; original_len]);
     let mut attention_mask =
         std::mem::take(&mut encoding.attention_mask).unwrap_or_else(|| vec![1; original_len]);
 
     match params.direction {
         PaddingDirection::Left => {
             ids = (0..pad_length).map(|_| pad_id).chain(ids).collect();
-            type_ids = type_ids.map(|type_ids| {
-                (0..pad_length)
-                    .map(|_| params.pad_type_id as u8)
-                    .chain(type_ids)
-                    .collect()
-            });
+            type_ids = (0..pad_length)
+                .map(|_| pad_type_id)
+                .chain(type_ids)
+                .collect();
             attention_mask = (0..pad_length).map(|_| 0).chain(attention_mask).collect();
         }
         PaddingDirection::Right => {
             ids.extend((0..pad_length).map(|_| pad_id));
-            if let Some(type_ids) = type_ids.as_mut() {
-                type_ids.extend((0..pad_length).map(|_| params.pad_type_id as u8));
-            }
+            type_ids.extend((0..pad_length).map(|_| pad_type_id));
             attention_mask.extend((0..pad_length).map(|_| 0));
         }
     }
 
     *encoding = Encoding {
         ids,
-        type_ids,
+        type_ids: Some(type_ids),
         attention_mask: Some(attention_mask),
     };
 }
@@ -223,15 +221,36 @@ mod tests {
     }
 
     #[test]
-    fn pad_leaves_type_ids_absent_when_the_encoding_never_carried_them() {
-        let mut encodings = [make_encoding(0..3)];
+    fn pad_left_prepends_pad_type_id_to_type_ids() {
+        let mut encodings = [Encoding {
+            ids: make_tokens(0..3),
+            type_ids: Some(vec![1, 1, 1]),
+            attention_mask: None,
+        }];
         let params = PaddingParams {
             strategy: PaddingStrategy::Fixed(5),
+            direction: PaddingDirection::Left,
+            pad_type_id: 7,
             ..PaddingParams::default()
         };
 
         pad_encodings(&mut encodings, &params).unwrap();
 
-        assert!(encodings[0].type_ids().is_none());
+        assert_eq!(encodings[0].type_ids().unwrap(), [7, 7, 1, 1, 1]);
+    }
+
+    #[test]
+    fn pad_fills_type_ids_with_pad_type_id_when_the_encoding_never_carried_them() {
+        let mut encodings = [make_encoding(0..3)];
+        let params = PaddingParams {
+            strategy: PaddingStrategy::Fixed(5),
+            direction: PaddingDirection::Right,
+            pad_type_id: 7,
+            ..PaddingParams::default()
+        };
+
+        pad_encodings(&mut encodings, &params).unwrap();
+
+        assert_eq!(encodings[0].type_ids().unwrap(), [0, 0, 0, 7, 7]);
     }
 }
