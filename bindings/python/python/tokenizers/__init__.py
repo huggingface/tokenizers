@@ -88,4 +88,4 @@ def from_pretrained(
     return Tokenizer.from_file(path, padding=padding)
 
 
-Tokenizer.from_pretrained = staticmethod(from_pretrained)
+Tokenizer.from_pretrained = staticmethod(from_pretrained)  # ty: ignore[invalid-assignment]
