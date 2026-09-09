@@ -266,10 +266,8 @@ impl AddedVocabulary {
 
     /// Check if a token is a special token
     pub fn is_special_token(&self, token: &str) -> bool {
-        if let Some(tok) = self.vocab.token_to_id(token) {
-            return self.token_metadata[tok as usize].special;
-        }
-        false
+        self.token_to_id(token)
+            .is_some_and(|id| self.token_metadata[id as usize].special)
     }
 
     /// Add some special tokens to the vocabulary
@@ -644,6 +642,25 @@ mod tests {
 
         assert_eq!(vocab.simple_id_to_token(0).unwrap(), "hello");
         assert_eq!(vocab.simple_id_to_token(1).unwrap(), "[CLS]");
+    }
+
+    #[test]
+    fn a_normalized_special_token_is_still_special() {
+        // gpt2 ships `<|endoftext|>` as `special: true, normalized: true`, so it lives in the
+        // normalized bucket. `decode(skip_special_tokens: true)` relies on this answer to skip it.
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+
+        vocab
+            .add_tokens(
+                [AddedToken::from("<|endoftext|>", true).normalized(true)],
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
+                None::<&Lowercase>,
+            )
+            .unwrap();
+
+        assert!(vocab.is_special_token("<|endoftext|>"));
     }
 
     /// Drive the real `SpecialSegmentIterator` over an `AddedVocabulary`, mapping each
