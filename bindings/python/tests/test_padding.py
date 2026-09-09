@@ -61,6 +61,16 @@ def test_pad_type_id(bert):
     assert encoding.attention_mask == [1, 1, 1, 0, 0, 0, 0, 0]
 
 
+def test_pad_type_id_left(bert):
+    bert.padding = Padding(direction="left", length=8, pad_id=3, pad_type_id=1)
+
+    encoding = bert.encode("Hello")
+
+    assert encoding.ids == [3, 3, 3, 3, 3, 1, 27462, 2]
+    assert encoding.type_ids == [1, 1, 1, 1, 1, 0, 0, 0]
+    assert encoding.attention_mask == [0, 0, 0, 0, 0, 1, 1, 1]
+
+
 def test_padding_from_file(padded_wiki):
     tokenizer = Tokenizer.from_file(padded_wiki)
 
