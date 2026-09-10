@@ -41,14 +41,14 @@ fn post_process(c: &mut Criterion) {
         group.bench_function(format!("single/specials=true/len={len}"), |b| {
             b.iter_batched(
                 || s1.clone(),
-                |s1| black_box(single.post_process(s1, None)),
+                |s1| black_box(single.post_process::<true>(s1, None)),
                 BatchSize::SmallInput,
             )
         });
         group.bench_function(format!("single/specials=false/len={len}"), |b| {
             b.iter_batched(
                 || s1.clone(),
-                |s1| black_box(single.post_process_no_specials(s1, None)),
+                |s1| black_box(single.post_process::<false>(s1, None)),
                 BatchSize::SmallInput,
             )
         });
@@ -58,14 +58,14 @@ fn post_process(c: &mut Criterion) {
         group.bench_function(format!("pair/specials=true/len={len}"), |b| {
             b.iter_batched(
                 || (s1.clone(), Some(s2.clone())),
-                |(a, b2)| black_box(pair.post_process(a, b2)),
+                |(a, b2)| black_box(pair.post_process::<true>(a, b2)),
                 BatchSize::SmallInput,
             )
         });
         group.bench_function(format!("pair/specials=false/len={len}"), |b| {
             b.iter_batched(
                 || (s1.clone(), Some(s2.clone())),
-                |(a, b2)| black_box(pair.post_process_no_specials(a, b2)),
+                |(a, b2)| black_box(pair.post_process::<false>(a, b2)),
                 BatchSize::SmallInput,
             )
         });
