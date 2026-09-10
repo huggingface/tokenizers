@@ -125,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn pad_to_multiple() {
+    fn test_multiple_of() {
         fn get_encodings() -> [Encoding; 2] {
             [make_encoding(0..5), make_encoding(0..3)]
         }
@@ -156,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn pad_is_a_no_op_once_already_long_enough() {
+    fn test_noop() {
         let mut encodings = [make_encoding(0..5)];
         let params = PaddingParams {
             strategy: PaddingStrategy::Fixed(5),
@@ -170,7 +170,7 @@ mod tests {
     }
 
     #[test]
-    fn pad_right_appends_pad_id_and_marks_it_in_the_attention_mask() {
+    fn test_pad_right() {
         let mut encodings = [make_encoding(0..3)];
         let params = PaddingParams {
             strategy: PaddingStrategy::Fixed(5),
@@ -186,7 +186,7 @@ mod tests {
     }
 
     #[test]
-    fn pad_left_prepends_pad_id_and_marks_it_in_the_attention_mask() {
+    fn test_pad_left() {
         let mut encodings = [make_encoding(0..3)];
         let params = PaddingParams {
             strategy: PaddingStrategy::Fixed(5),
@@ -202,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn pad_extends_type_ids_when_the_encoding_carries_them() {
+    fn test_type_ids_right() {
         let mut encodings = [Encoding {
             ids: make_tokens(0..3),
             type_ids: Some(vec![1, 1, 1]),
@@ -221,7 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn pad_left_prepends_pad_type_id_to_type_ids() {
+    fn test_type_ids_left() {
         let mut encodings = [Encoding {
             ids: make_tokens(0..3),
             type_ids: Some(vec![1, 1, 1]),
@@ -240,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn pad_fills_type_ids_with_pad_type_id_when_the_encoding_never_carried_them() {
+    fn test_type_ids_missing() {
         let mut encodings = [make_encoding(0..3)];
         let params = PaddingParams {
             strategy: PaddingStrategy::Fixed(5),
