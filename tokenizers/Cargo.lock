@@ -3164,6 +3164,7 @@ dependencies = [
  "ahash",
  "assert_approx_eq",
  "bitsplit",
+ "criterion 0.8.2",
  "daachorse 5.0.0",
  "dary_heap",
  "fancy-regex",
