@@ -201,6 +201,39 @@ class Tokenizer:
         Returns:
             List[Encoding]
         """
+    def encode_batch_arrow(
+        self,
+        /,
+        input: Any,
+        *,
+        add_special_tokens: bool = True,
+        padding: Padding | None = ...,
+        null_handling: "Literal['error', 'empty', 'skip']" = "error",
+    ) -> list[Encoding]:
+        """
+        Encodes an Arrow string or large_string array without creating Python strings.
+
+        Accepts an exporter implementing ``__arrow_c_array__``. Slices and empty
+        arrays are supported. Chunked, dictionary, and non-string arrays are rejected.
+        The pipeline copies the imported text into Rust-owned inputs before encoding.
+
+        Args:
+            input: An Arrow string array exporter implementing ``__arrow_c_array__``.
+            add_special_tokens: bool
+                Whether the post-processor adds its special tokens.
+            padding: `Padding` or `None`
+                Padding options. Pass `None` to disable padding. When omitted,
+                defaults to the padding options configured on the tokenizer.
+            null_handling: ``"error"``, ``"empty"``, or ``"skip"``
+                ``"error"`` rejects nulls, ``"empty"`` encodes them as empty strings,
+                and ``"skip"`` omits them. Empty strings still receive configured
+                special tokens and padding. Skipping preserves retained row order,
+                with padding computed over those rows. No placeholders or original
+                row indices are returned; an all-null batch with ``"skip"`` returns ``[]``.
+
+        Returns:
+            List[Encoding]
+        """
     @staticmethod
     def from_file(path: str | PathLike[str]) -> Tokenizer:
         """

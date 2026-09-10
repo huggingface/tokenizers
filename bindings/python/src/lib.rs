@@ -1,6 +1,7 @@
 //! Python bindings for Hugging Face's Tokenizers rust library
 //!
 //! Encode text to token ids and decode token ids back to text
+mod arrow;
 mod encoding;
 mod error;
 mod padding;
