@@ -69,7 +69,7 @@ impl std::convert::AsRef<str> for TruncationStrategy {
 pub fn truncate_pair(
     mut s1: Vec<PipelineToken>,
     maybe_s2: Option<Vec<PipelineToken>>,
-    truncation: &Option<TruncationParams>,
+    truncation: Option<&TruncationParams>,
     num_added_special_tokens: usize,
 ) -> Result<(Vec<PipelineToken>, Option<Vec<PipelineToken>>)> {
     let seq_len = s1.len() + maybe_s2.as_ref().map_or(0, Vec::len);
@@ -215,7 +215,7 @@ mod tests {
         n1: usize,
         n2: usize,
     ) {
-        let (t1, t2) = truncate_pair(s1, Some(s2), truncation, 0).unwrap();
+        let (t1, t2) = truncate_pair(s1, Some(s2), truncation.as_ref(), 0).unwrap();
         assert_eq!(t1.len(), n1);
         assert_eq!(t2.expect("the pair is kept").len(), n2);
     }
@@ -255,7 +255,7 @@ mod tests {
         let (t1, t2) = truncate_pair(
             long(),
             None,
-            &params(3, TruncationStrategy::LongestFirst),
+            params(3, TruncationStrategy::LongestFirst).as_ref(),
             0,
         )
         .unwrap();
@@ -270,10 +270,10 @@ mod tests {
     fn test_specials() {
         let params = params(8, TruncationStrategy::LongestFirst);
 
-        let (untouched, _) = truncate_pair(long(), None, &params, 0).unwrap();
+        let (untouched, _) = truncate_pair(long(), None, params.as_ref(), 0).unwrap();
         assert_eq!(untouched, long());
 
-        let (shortened, _) = truncate_pair(long(), None, &params, 2).unwrap();
+        let (shortened, _) = truncate_pair(long(), None, params.as_ref(), 2).unwrap();
         assert_eq!(shortened, make_tokens(7..13));
     }
 
@@ -282,7 +282,7 @@ mod tests {
         let (t1, t2) = truncate_pair(
             long(),
             Some(short()),
-            &params(7, TruncationStrategy::OnlyFirst),
+            params(7, TruncationStrategy::OnlyFirst).as_ref(),
             0,
         )
         .unwrap();
@@ -296,7 +296,7 @@ mod tests {
         let (t1, t2) = truncate_pair(
             short(),
             Some(long()),
-            &params(7, TruncationStrategy::OnlySecond),
+            params(7, TruncationStrategy::OnlySecond).as_ref(),
             0,
         )
         .unwrap();
@@ -309,9 +309,14 @@ mod tests {
     // falling back to the first sequence would truncate what the caller asked us to keep.
     #[test]
     fn test_only_second_no_pair() {
-        let err = truncate_pair(long(), None, &params(7, TruncationStrategy::OnlySecond), 0)
-            .err()
-            .unwrap();
+        let err = truncate_pair(
+            long(),
+            None,
+            params(7, TruncationStrategy::OnlySecond).as_ref(),
+            0,
+        )
+        .err()
+        .unwrap();
 
         assert!(matches!(
             err.downcast_ref::<TruncationError>(),
@@ -326,7 +331,7 @@ mod tests {
         let err = truncate_pair(
             short(),
             Some(long()),
-            &params(1, TruncationStrategy::OnlyFirst),
+            params(1, TruncationStrategy::OnlyFirst).as_ref(),
             0,
         )
         .err()
@@ -426,7 +431,7 @@ mod tests {
         expected1: &[u32],
         expected2: Option<&[u32]>,
     ) {
-        let (t1, t2) = truncate_pair(s1, s2, &Some(truncation), num_special_tokens).unwrap();
+        let (t1, t2) = truncate_pair(s1, s2, Some(&truncation), num_special_tokens).unwrap();
 
         assert_eq!(t1, make_tokens(expected1.iter().copied()));
         assert_eq!(t2, expected2.map(|ids| make_tokens(ids.iter().copied())));

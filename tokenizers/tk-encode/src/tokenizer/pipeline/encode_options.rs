@@ -1,11 +1,10 @@
-use crate::PaddingParams;
+use crate::{PaddingParams, TruncationParams};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncodeOptions {
     pub add_special_tokens: bool,
     pub padding: Override<PaddingParams>,
-    // TODO: truncation
-    // pub truncation: Override<TruncationParams>,
+    pub truncation: Override<TruncationParams>,
 }
 
 impl Default for EncodeOptions {
@@ -13,8 +12,7 @@ impl Default for EncodeOptions {
         Self {
             add_special_tokens: true,
             padding: Override::InheritConfig,
-            // TODO: truncation
-            // truncation: Override::InheritConfig,
+            truncation: Override::InheritConfig,
         }
     }
 }

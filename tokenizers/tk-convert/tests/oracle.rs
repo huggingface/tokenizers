@@ -189,7 +189,6 @@ fn llama_3_2_1b() {
 }
 
 #[test]
-#[ignore] // TODO: un-skip this once we ship truncation
 fn all_minilm_l6_v2() {
     assert_matches_released(
         "sentence-transformers/all-MiniLM-L6-v2",
@@ -198,7 +197,6 @@ fn all_minilm_l6_v2() {
 }
 
 #[test]
-#[ignore] // TODO: un-skip this once we ship truncation
 fn all_mpnet_base_v2() {
     assert_matches_released(
         "sentence-transformers/all-mpnet-base-v2",

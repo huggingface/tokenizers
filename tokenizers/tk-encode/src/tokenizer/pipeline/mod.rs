@@ -9,6 +9,8 @@ use crate::models::unigram::{Unigram, UnigramScratch};
 use crate::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
+pub use crate::pipeline::encode_options::EncodeOptions;
+use crate::pipeline::encode_options::Override;
 use crate::utils::truncation::truncate_pair;
 use crate::{
     DecoderRuntime, PaddingParams, TruncationParams,
@@ -25,6 +27,7 @@ use parallel::StreamingIter;
 
 use super::Result;
 
+pub mod encode_options;
 #[cfg(feature = "parallelism")]
 mod parallel;
 mod scratch_pool;
@@ -32,8 +35,6 @@ mod scratch_pool;
 pub use scratch_pool::ModelScratch;
 
 pub use bitsplit::Span;
-pub mod encode_options;
-pub use encode_options::{EncodeOptions, Override};
 
 mod normalizer;
 mod post_processor;
@@ -211,9 +212,9 @@ struct TokenizerInner {
     /// the special-token metadata that used to need a separate `tokenizer_config.json`. Empty
     /// when the config declares none. `BTreeMap` so the writer emits a stable key order.
     role_to_token: BTreeMap<String, String>,
-    /// Padding configuration. [`EncodeOptions::padding`] overrides it per call.
+    /// Padding configuration, overridden per call by [`EncodeOptions::padding`].
     padding: Option<PaddingParams>,
-    /// Truncation configuration, can be overridden at runtime with [`TODO`].
+    /// Truncation configuration, overridden per call by [`EncodeOptions::truncation`].
     truncation: Option<TruncationParams>,
     /// Pool of scratch buffers. Scratch buffers hold intermediate state (cache, intermediate buffers, etc) required by the tokenization algorithms.
     scratch_pool: ScratchPool,
@@ -279,6 +280,17 @@ impl PipelineTokenizer {
     ) -> Option<&'a PaddingParams> {
         match padding_override {
             Override::InheritConfig => self.inner.padding.as_ref(),
+            Override::Off => None,
+            Override::With(params) => Some(params),
+        }
+    }
+
+    pub fn resolve_truncation<'a>(
+        &'a self,
+        truncation_override: &'a Override<TruncationParams>,
+    ) -> Option<&'a TruncationParams> {
+        match truncation_override {
+            Override::InheritConfig => self.inner.truncation.as_ref(),
             Override::Off => None,
             Override::With(params) => Some(params),
         }
@@ -432,7 +444,6 @@ impl EncodeHandle {
     /// Returns in input order
     pub fn wait(mut self) -> Result<Vec<Encoding>> {
         let padding = self.padding.take();
-
         // XXX: `Vec::new` does not allocate anything when capacity == 0, so creating empty
         // Encodings should not allocate anything either
         let mut out = vec![Encoding::empty(); self.len()];
@@ -646,7 +657,8 @@ impl PipelineTokenizer {
         } else {
             0
         };
-        let (s1, s2) = truncate_pair(s1, s2, &self.inner.truncation, num_added_specials)?;
+        let truncation = self.resolve_truncation(&options.truncation);
+        let (s1, s2) = truncate_pair(s1, s2, truncation, num_added_specials)?;
         Ok(if options.add_special_tokens {
             template.post_process::<true>(s1, s2)
         } else {
@@ -775,7 +787,7 @@ impl PipelineTokenizer {
     ) -> Result<()> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         let template = &self.inner.post_processor.single;
-        let reproduces_sequence = self.inner.truncation.is_none()
+        let reproduces_sequence = self.resolve_truncation(&options.truncation).is_none()
             && !template.has_type_ids()
             && (!options.add_special_tokens || template.n_special() == 0);
         if reproduces_sequence {
