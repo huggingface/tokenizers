@@ -25,9 +25,9 @@ $(DATA_DIR)/% :
 	$(HF) download $(HF_TEST_REPO) $* --repo-type dataset --revision $(HF_REVISION) --local-dir $(DATA_DIR)
 
 SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2.json $(DATA_DIR)/big.txt $(DATA_DIR)/albert-base-v1-tokenizer.json $(DATA_DIR)/llama-3-tokenizer.json
-# Exactly what tk-serialize/benches/{encode,decode}.rs read: big.txt and llama-3 come from
-# SHARED_RESOURCES, plus the Japanese corpus decode uses and the config encode profiles.
-BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/deepseek-v4.json
+# Exactly what tk-serialize/benches read: big.txt and llama-3 come from SHARED_RESOURCES, plus the
+# Japanese corpus decode uses, the config encode profiles and the second template encode_shapes runs.
+BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/deepseek-v4.json $(DATA_DIR)/roberta.json
 TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json
 # tk-convert/tests/oracle.rs's seven models, named directly rather than built from
 # SHARED_RESOURCES: `make oracle` should fetch only what oracle.rs reads.
@@ -165,7 +165,7 @@ slimest-size : slimest
 
 # ---- bench ----
 
-# The two benches live in tk-serialize, which is the only crate that can build a
+# The benches live in tk-serialize, which is the only crate that can build a
 # `PipelineTokenizer`. The big cross-engine benchmarks live in huggingface/tokbench.
 .PHONY : bench
 bench : $(BENCHMARK_RESOURCES)

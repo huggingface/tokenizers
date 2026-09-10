@@ -92,6 +92,11 @@ harness = false
 required-features = ["deserialize"]
 
 [[bench]]
+name = "encode_shapes"
+harness = false
+required-features = ["deserialize"]
+
+[[bench]]
 name = "decode"
 harness = false
 required-features = ["deserialize"]
