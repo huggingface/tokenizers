@@ -59,38 +59,39 @@ impl Template {
                 .any(|run| run.iter().any(|&(_, id)| id != 0))
     }
 
-    pub fn post_process<const SPECIALS: bool>(
+    pub fn post_process(
         &self,
         s1: Vec<PipelineToken>,
         s2: Option<Vec<PipelineToken>>,
+        add_special_tokens: bool,
     ) -> Encoding {
         let (a_len, b_len) = (s1.len(), s2.as_ref().map_or(0, Vec::len));
 
         let type_ids = self.has_type_ids().then(|| {
             let mut out = Vec::with_capacity(self.n_special() + a_len + b_len);
-            if SPECIALS {
+            if add_special_tokens {
                 push_type_ids(&self.prefix, &mut out);
             }
             out.resize(out.len() + a_len, self.a_type_id);
-            if SPECIALS {
+            if add_special_tokens {
                 push_type_ids(&self.infix, &mut out);
             }
             if let Some(id) = self.b_type_id {
                 out.resize(out.len() + b_len, id);
             }
-            if SPECIALS {
+            if add_special_tokens {
                 push_type_ids(&self.suffix, &mut out);
             }
             out
         });
 
         let ids = match s2 {
-            Some(b) => self.wrap_pair::<SPECIALS>(s1, b),
+            Some(b) => self.wrap_pair(s1, b, add_special_tokens),
             None => {
                 // A's buffer already holds the front of the answer, so keep it.
                 debug_assert!(self.infix.is_empty(), "[BUG] single template with an infix");
                 let mut ids = s1;
-                if SPECIALS {
+                if add_special_tokens {
                     ids.reserve(self.n_special());
                     push_ids(&self.suffix, &mut ids);
                     if !self.prefix.is_empty() {
@@ -104,21 +105,22 @@ impl Template {
     }
 
     #[inline(never)]
-    fn wrap_pair<const SPECIALS: bool>(
+    fn wrap_pair(
         &self,
         a: Vec<PipelineToken>,
         b: Vec<PipelineToken>,
+        add_special_tokens: bool,
     ) -> Vec<PipelineToken> {
         let mut ids = Vec::with_capacity(self.n_special() + a.len() + b.len());
-        if SPECIALS {
+        if add_special_tokens {
             push_ids(&self.prefix, &mut ids);
         }
         ids.extend(a);
-        if SPECIALS {
+        if add_special_tokens {
             push_ids(&self.infix, &mut ids);
         }
         ids.extend(b);
-        if SPECIALS {
+        if add_special_tokens {
             push_ids(&self.suffix, &mut ids);
         }
         ids

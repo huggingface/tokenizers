@@ -624,11 +624,7 @@ impl PipelineTokenizer {
     ) -> Result<Encoding> {
         let pp = &self.inner.post_processor;
         let template = if s2.is_some() { &pp.pair } else { &pp.single };
-        Ok(if add_special_tokens {
-            template.post_process::<true>(s1, s2)
-        } else {
-            template.post_process::<false>(s1, s2)
-        })
+        Ok(template.post_process(s1, s2, add_special_tokens))
     }
 
     /// Encode one sequence, appending its ids to `output`.
