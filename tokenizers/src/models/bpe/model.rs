@@ -9,7 +9,6 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use std::collections::HashMap;
-use std::str::from_utf8_unchecked;
 use std::{
     fs::File,
     io::prelude::*,
@@ -243,12 +242,8 @@ impl BpeBuilder {
         };
 
         let vocab = self.config.vocab;
-        let prefix_len = if let Some(prefix) = &self.config.continuing_subword_prefix {
-            prefix.len()
-        } else {
-            0
-        };
-        let mut buffer: Vec<u8> = vec![0; max_len];
+        let prefix = self.config.continuing_subword_prefix.as_deref();
+        let mut buffer = String::with_capacity(max_len);
         let merge_map: MergeMap = self
             .config
             .merges
@@ -261,15 +256,19 @@ impl BpeBuilder {
                 let b_id = vocab
                     .get(&b)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
-                buffer[0..a.len()].copy_from_slice(a.as_bytes());
-                let b_len = b.len() - prefix_len;
-                let merge_len = a.len() + b_len;
-                buffer[a.len()..merge_len].copy_from_slice(&b.as_bytes()[prefix_len..]);
-                // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8, even considering prefix_len
-                let new_token = unsafe { from_utf8_unchecked(&buffer[..merge_len]) };
+                // Only strip the continuing subword prefix when `b` actually carries
+                // it. Slicing at `prefix.len()` unconditionally can cut inside a
+                // multi-byte character, or past the end of `b` entirely.
+                let b_stripped = match prefix {
+                    Some(prefix) => b.strip_prefix(prefix).unwrap_or(b.as_str()),
+                    None => b.as_str(),
+                };
+                buffer.clear();
+                buffer.push_str(&a);
+                buffer.push_str(b_stripped);
                 let new_id = vocab
-                    .get(new_token)
-                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(new_token.to_owned()))?;
+                    .get(buffer.as_str())
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(buffer.clone()))?;
                 Ok(((*a_id, *b_id), (i as u32, *new_id)))
             })
             .collect::<Result<MergeMap>>()?;
@@ -923,6 +922,60 @@ mod tests {
         assert_eq!(bpe.vocab.get("b").unwrap(), &1u32);
         assert_eq!(bpe.vocab.get("c").unwrap(), &2u32);
         assert_eq!(bpe.vocab.get("ab").unwrap(), &3u32);
+    }
+
+    #[test]
+    // A merge whose right side does not carry the continuing subword prefix must
+    // not be sliced at `prefix.len()`: that offset can land inside a multi-byte
+    // character, which used to build a `str` from invalid UTF-8.
+    fn test_bpe_prefix_not_present_on_merge() {
+        let vocab: Vocab = vec![("x".to_string(), 0), ("\u{65e5}".to_string(), 1)]
+            .into_iter()
+            .collect();
+        let merges = vec![("x".to_string(), "\u{65e5}".to_string())];
+
+        // "\u{65e5}" is E6 97 A5 and does not start with "ab", so nothing is
+        // stripped and the merged token is the whole concatenation.
+        let err = BPE::builder()
+            .vocab_and_merges(vocab, merges)
+            .continuing_subword_prefix("ab".to_string())
+            .build()
+            .unwrap_err();
+        assert!(err.to_string().contains("x\u{65e5}"), "{}", err);
+    }
+
+    #[test]
+    // The prefix can be longer than the token it is stripped from. That used to
+    // underflow `b.len() - prefix_len`.
+    fn test_bpe_prefix_longer_than_token() {
+        let vocab: Vocab = vec![("x".to_string(), 0), ("y".to_string(), 1)]
+            .into_iter()
+            .collect();
+        let merges = vec![("x".to_string(), "y".to_string())];
+
+        let err = BPE::builder()
+            .vocab_and_merges(vocab, merges)
+            .continuing_subword_prefix("aaaa".to_string())
+            .build()
+            .unwrap_err();
+        assert!(err.to_string().contains("xy"), "{}", err);
+    }
+
+    #[test]
+    // The merged token is not necessarily in the vocabulary, so it can be longer
+    // than the longest vocabulary entry. That used to run off the scratch buffer.
+    fn test_bpe_merged_token_longer_than_longest_vocab_entry() {
+        let vocab: Vocab = vec![("x".to_string(), 0), ("\u{65e5}".to_string(), 1)]
+            .into_iter()
+            .collect();
+        let merges = vec![("x".to_string(), "\u{65e5}".to_string())];
+
+        // Longest vocabulary entry is 3 bytes; the merged token needs 4.
+        let err = BPE::builder()
+            .vocab_and_merges(vocab, merges)
+            .build()
+            .unwrap_err();
+        assert!(err.to_string().contains("x\u{65e5}"), "{}", err);
     }
 
     #[test]
