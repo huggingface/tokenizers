@@ -6,6 +6,7 @@ use super::*;
 use crate::from_json::from_json;
 use crate::json::Json;
 use crate::vendored::f64_from_literal;
+use tk_encode::pipeline::EncodeOptions;
 
 const BPE_MODEL: &str = r#"{"type": "BPE", "byte_level": false,
     "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3}, "merges": [["a", "b"], ["ab", "ab"]]}"#;
@@ -53,9 +54,9 @@ fn json(text: &str) -> serde_json::Value {
     serde_json::from_str(text).expect("a test expectation is valid JSON")
 }
 
-fn ids(tokenizer: &PipelineTokenizer, text: &str, specials: bool) -> Vec<u32> {
+fn ids(tokenizer: &PipelineTokenizer, text: &str, options: &EncodeOptions) -> Vec<u32> {
     let encoded = tokenizer
-        .encode(text, specials)
+        .encode(text, options)
         .wait()
         .expect("encoding a text");
     encoded
@@ -117,11 +118,12 @@ fn round_trip_preserves_ids_on_every_real_config() {
             .unwrap_or_else(|e| panic!("{name}: its own reader refuses the output: {e}"));
         configs += 1;
         for text in TEXTS {
-            for specials in [false, true] {
+            for options in [EncodeOptions::no_specials(), EncodeOptions::default()] {
                 assert_eq!(
-                    ids(&before, text, specials),
-                    ids(&after, text, specials),
-                    "{name}: ids moved across a round trip (specials={specials}) on {text:?}"
+                    ids(&before, text, &options),
+                    ids(&after, text, &options),
+                    "{name}: ids moved across a round trip (add_special_tokens={}) on {text:?}",
+                    options.add_special_tokens
                 );
             }
         }
@@ -153,9 +155,12 @@ fn reversing_the_written_merges_moves_ids() {
     let perturbed = from_json(&parsed.to_string()).expect("the perturbed config still reads");
 
     // `a+b` outranks `b+c`, so `abc` is `ab` + `c`. Reversed, `b+c` wins: `a` + `bc`.
-    assert_eq!(ids(&tokenizer, "abc", false), vec![3, 2]);
     assert_eq!(
-        ids(&perturbed, "abc", false),
+        ids(&tokenizer, "abc", &EncodeOptions::no_specials()),
+        vec![3, 2]
+    );
+    assert_eq!(
+        ids(&perturbed, "abc", &EncodeOptions::no_specials()),
         vec![0, 4],
         "reversing the merge order left the ids alone, so the gate compares nothing"
     );
@@ -164,7 +169,11 @@ fn reversing_the_written_merges_moves_ids() {
     // merge, and reversing a *chain*. Both look exactly like a dead gate.
     let chained = from_json(&config(&[])).expect("the chain config reads");
     let text = to_json(&chained).expect("and writes");
-    assert_eq!(ids(&chained, "abab", false), vec![3], "`abab` merges up");
+    assert_eq!(
+        ids(&chained, "abab", &EncodeOptions::no_specials()),
+        vec![3],
+        "`abab` merges up"
+    );
     for pop in [true, false] {
         let mut parsed: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
         let merges = parsed["model"]["merges"].as_array_mut().expect("merges");
@@ -175,7 +184,7 @@ fn reversing_the_written_merges_moves_ids() {
         }
         let weak = from_json(&parsed.to_string()).expect("a weak perturbation still reads");
         assert_eq!(
-            ids(&weak, "abab", false),
+            ids(&weak, "abab", &EncodeOptions::no_specials()),
             vec![3],
             "pop={pop} moved an id after all"
         );
