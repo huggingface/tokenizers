@@ -120,7 +120,9 @@ fn assert_matches_released(repo: &str, file: &str) {
     for text in &cases() {
         let text = text.as_str();
         for options in [EncodeOptions::no_specials(), EncodeOptions::default()] {
-            let want = released.encode_fast(text, options.add_special_tokens).unwrap();
+            let want = released
+                .encode_fast(text, options.add_special_tokens)
+                .unwrap();
             let ids = want.get_ids().to_vec();
             let encodings = pipeline.encode(text, &options).wait().unwrap();
             let encoding = &encodings[0];

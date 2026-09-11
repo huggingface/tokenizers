@@ -14,7 +14,8 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use tk_encode::pipeline::{
-    EncodeOptions, Model, PipelineModel, PipelineTokenizer, PreTokenizer, PreTokenizerScratch, Span, SpecialSegmentIterator, normalize_all,
+    EncodeOptions, Model, PipelineModel, PipelineTokenizer, PreTokenizer, PreTokenizerScratch,
+    Span, SpecialSegmentIterator, normalize_all,
 };
 
 const BATCH_SIZE: usize = 1_000;
@@ -59,14 +60,24 @@ pub fn encode(c: &mut Criterion) {
         group.bench_function("fused", |b| {
             b.iter(|| {
                 for line in &lines {
-                    black_box(tokenizer.encode(*line, &EncodeOptions::no_specials()).wait().unwrap());
+                    black_box(
+                        tokenizer
+                            .encode(*line, &EncodeOptions::no_specials())
+                            .wait()
+                            .unwrap(),
+                    );
                 }
             })
         });
         group.bench_function("fused-batch", |b| {
             b.iter(|| {
                 for batch in &batches {
-                    black_box(tokenizer.encode(batch.as_slice(), &EncodeOptions::no_specials()).wait().unwrap());
+                    black_box(
+                        tokenizer
+                            .encode(batch.as_slice(), &EncodeOptions::no_specials())
+                            .wait()
+                            .unwrap(),
+                    );
                 }
             })
         });
