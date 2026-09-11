@@ -73,6 +73,8 @@ criterion = "0.8"
 # The benches load real configs from `../data`, which are all still version 1.0, so they have to
 # run the upgrade pass before the reader sees them. Not a cycle: tk-convert does not depend on us.
 tk-convert = { path = "../tk-convert" }
+# for metaspace tests
+tk-encode = { path = "../tk-encode", features = ["parallelism"] }
 # The reader is tested *against* `serde_json`: number parsing has to be bit-identical,
 # and every real config in `data/` has to parse to the same tree. A dev-dependency only, so the
 # library itself still links no serde.
