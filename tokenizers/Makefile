@@ -10,27 +10,16 @@ HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
 # retry/backoff on rate limits, and caching for us. CI overrides HF with
 # `uvx --from huggingface_hub hf` to avoid a separate install step.
 HF ?= hf
-# Pinned, not `main`. `json_oracle`'s recorded digests are only meaningful against a fixed fixture
-# set, and the `$(DATA_DIR)/%` rule below is existence-based -- it never re-downloads a file you
-# already have. Together those two facts silently pinned one developer's digests to a stale
-# `llama-2.json` and produced four spurious drifts on any fresh checkout. Bump this deliberately,
-# and re-record the digests in the same commit.
-#
-# Bumped for fixtures/models/all-minilm-l6-v2.json and all-mpnet-base-v2.json
-# (hf-internal-testing/tokenizers-test-data#11), the oracle's two configs with truncation and padding.
-HF_REVISION ?= 943303b56d866d79222ab2e69357e0033e7c2291
+
+HF_REVISION ?= a6c4e9fcdc6e18f7ae3ef21253a28443e538c714
 
 $(DATA_DIR)/% :
 	$(dir_guard)
 	$(HF) download $(HF_TEST_REPO) $* --repo-type dataset --revision $(HF_REVISION) --local-dir $(DATA_DIR)
 
 SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2.json $(DATA_DIR)/big.txt $(DATA_DIR)/albert-base-v1-tokenizer.json $(DATA_DIR)/llama-3-tokenizer.json
-# Exactly what tk-serialize/benches/{encode,decode}.rs read: big.txt and llama-3 come from
-# SHARED_RESOURCES, plus the Japanese corpus decode uses and the config encode profiles.
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/deepseek-v4.json
 TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json
-# tk-convert/tests/oracle.rs's nine models, named directly rather than built from
-# SHARED_RESOURCES: `make oracle` should fetch only what oracle.rs reads.
 ORACLE_RESOURCES = $(DATA_DIR)/gpt2.json $(DATA_DIR)/bert-base-uncased.json $(DATA_DIR)/t5-base.json $(DATA_DIR)/albert-base-v1-tokenizer.json $(DATA_DIR)/fixtures/models/llama-3.2-1b.json $(DATA_DIR)/fixtures/models/all-minilm-l6-v2.json $(DATA_DIR)/fixtures/models/all-mpnet-base-v2.json $(DATA_DIR)/fixtures/models/siglip-base-patch16-224.json $(DATA_DIR)/fixtures/models/mistral-7b-v0.1.json
 
 # Every file the tests and benches read: corpora, vocabs, tokenizer configs.
