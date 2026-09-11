@@ -193,13 +193,38 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
     assert_eq!(
         v["normalizer"],
         serde_json::json!({"type": "MetaspaceNormalizer", "replacement": "▁",
-                           "prepend": true, "drop_whitespace": false})
+                           "prepend": "always", "drop_whitespace": false})
     );
     assert_eq!(
         v["pre_tokenizer"],
         serde_json::json!({"type": "Split", "pattern": {"String": "▁"},
                            "behavior": "MergedWithNext", "invert": false})
     );
+
+    // All three schemes carry through by name.
+    for scheme in ["always", "first", "never"] {
+        let v = done(
+            BPE,
+            &format!(
+                r#", "pre_tokenizer": {{"type": "Metaspace", "replacement": "▁",
+                     "prepend_scheme": "{scheme}"}}"#
+            ),
+        );
+        assert_eq!(v["normalizer"]["prepend"], scheme);
+    }
+
+    // `split: false`: the normalizer stays, the pre-tokenizer slot is empty.
+    let v = done(
+        BPE,
+        r#", "pre_tokenizer": {"type": "Metaspace", "replacement": "▁",
+             "prepend_scheme": "first", "split": false}"#,
+    );
+    assert_eq!(
+        v["normalizer"],
+        serde_json::json!({"type": "MetaspaceNormalizer", "replacement": "▁",
+                           "prepend": "first", "drop_whitespace": false})
+    );
+    assert_eq!(v["pre_tokenizer"], serde_json::Value::Null);
 
     // The t5/albert pair: the `WhitespaceSplit` was never a component, it was `drop_whitespace`.
     let v = done(
@@ -209,6 +234,31 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
     );
     assert_eq!(v["normalizer"]["drop_whitespace"], true);
     assert_eq!(v["pre_tokenizer"]["type"], "Split");
+
+    // That pair only works under `always`. With the whitespace gone, the delimiter is the only
+    // cut left, so the words would run together into one span.
+    for scheme in ["first", "never"] {
+        let e = err(
+            BPE,
+            &format!(
+                r#", "pre_tokenizer": {{"type": "Sequence", "pretokenizers": [
+                     {{"type": "WhitespaceSplit"}},
+                     {{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "{scheme}"}}]}}"#
+            ),
+        );
+        assert!(
+            e.contains(&format!("with `prepend_scheme: {scheme}` is not supported")),
+            "{scheme}: {e}"
+        );
+    }
+    // Nor under `split: false`. Upstream keeps one span per word.
+    let e = err(
+        BPE,
+        r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
+             {"type": "WhitespaceSplit"},
+             {"type": "Metaspace", "replacement": "▁", "split": false}]}"#,
+    );
+    assert!(e.contains("with `split: false` is not supported"), "{e}");
 
     // The delimiter half lands *after* a declared normalizer -- the order the old reader applied,
     // and the one the added-token matcher depends on.
@@ -221,14 +271,15 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
     assert_eq!(chain[0]["type"], "NFKC");
     assert_eq!(chain[1]["type"], "MetaspaceNormalizer");
 
-    // `split: false` wrote delimiters but never cut, and the pair has no way to say that.
-    assert!(
-        err(
-            BPE,
-            r#", "pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "split": false}"#
-        )
-        .contains("split: false")
+    // The delimiter half still lands after a declared normalizer under `split: false`.
+    let v = done(
+        BPE,
+        r#", "normalizer": {"type": "NFKC"}
+           , "pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "split": false}"#,
     );
+    let chain = &v["normalizer"]["normalizers"];
+    assert_eq!(chain[1]["type"], "MetaspaceNormalizer");
+    assert_eq!(v["pre_tokenizer"], serde_json::Value::Null);
 }
 
 // ---- ByteLevel ------------------------------------------------------------------------------
