@@ -25,6 +25,7 @@
 #![cfg(feature = "bench-baseline")]
 
 use tk_convert::ConvertError;
+use tk_encode::pipeline::EncodeOptions;
 use tokenizers_release::Tokenizer as Released;
 
 const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data");
@@ -118,14 +119,16 @@ fn assert_matches_released(repo: &str, file: &str) {
     let mut diverged = Vec::new();
     for text in &cases() {
         let text = text.as_str();
-        for special in [false, true] {
-            let want = released.encode_fast(text, special).unwrap();
+        for options in [EncodeOptions::no_specials(), EncodeOptions::default()] {
+            let want = released
+                .encode_fast(text, options.add_special_tokens)
+                .unwrap();
             let ids = want.get_ids().to_vec();
-            let encodings = pipeline.encode(text, special).wait().unwrap();
+            let encodings = pipeline.encode(text, &options).wait().unwrap();
             let encoding = &encodings[0];
             let got: Vec<u32> = encoding.ids().iter().map(|t| t.id()).collect();
             if ids != got {
-                diverged.push(format!("encode special={special} {text:?}"));
+                diverged.push(format!("encode options={options:?} {text:?}"));
                 continue; // decoding ids we already disagree about says nothing
             }
             let mask: Vec<u32> = match encoding.attention_mask() {
@@ -133,14 +136,14 @@ fn assert_matches_released(repo: &str, file: &str) {
                 None => vec![1; got.len()],
             };
             if mask != want.get_attention_mask() {
-                diverged.push(format!("attention_mask special={special} {text:?}"));
+                diverged.push(format!("attention_mask options={options:?} {text:?}"));
             }
             let type_ids: Vec<u32> = match encoding.type_ids() {
                 Some(type_ids) => type_ids.iter().copied().map(u32::from).collect(),
                 None => vec![0; got.len()],
             };
             if type_ids != want.get_type_ids() {
-                diverged.push(format!("type_ids special={special} {text:?}"));
+                diverged.push(format!("type_ids options={options:?} {text:?}"));
             }
             for skip in [false, true] {
                 let decoded = released.decode(&ids, skip).unwrap();

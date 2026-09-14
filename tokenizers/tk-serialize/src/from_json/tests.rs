@@ -3,6 +3,7 @@
 
 use super::decoders::read_one_decoder;
 use super::*;
+use tk_encode::pipeline::EncodeOptions;
 use tk_encode::tokenizer::{PaddingDirection, PaddingStrategy};
 
 /// A minimal BPE that needs no data files: two merges over a four-token vocab.
@@ -43,7 +44,7 @@ fn read_err(text: &str) -> String {
 fn ids(text: &str, input: &str) -> Vec<u32> {
     from_json(text)
         .expect("the config reads")
-        .encode(input, true)
+        .encode(input, &EncodeOptions::default())
         .wait()
         .unwrap()
         .iter()

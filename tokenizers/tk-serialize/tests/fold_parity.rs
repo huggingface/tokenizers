@@ -7,7 +7,7 @@
 //!
 //! Run `make data/gpt2.json` first -- the fixture is fetched, not committed.
 
-use tk_encode::pipeline::PipelineTokenizer;
+use tk_encode::pipeline::{EncodeOptions, PipelineTokenizer};
 
 /// `data/gpt2.json` is still version `1.0`, so run the upgrade pass first -- the reader only
 /// accepts canonical `2.0`. Same as `benches/encode.rs`.
@@ -55,7 +55,7 @@ const CASES: &[(&str, &[u32])] = &[
 ];
 
 fn ids(pipe: &PipelineTokenizer, text: &str) -> Vec<u32> {
-    pipe.encode(text, false)
+    pipe.encode(text, &EncodeOptions::no_specials())
         .wait()
         .unwrap()
         .remove(0)
