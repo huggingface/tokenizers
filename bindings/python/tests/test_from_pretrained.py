@@ -5,7 +5,7 @@ import huggingface_hub
 import pytest
 
 from conftest import WIKI
-from tokenizers import Padding, Tokenizer, __version__, from_pretrained
+from tokenizers import Tokenizer, __version__, from_pretrained
 
 TEXT = "Hello there"
 
