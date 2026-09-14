@@ -27,11 +27,17 @@ class TestBertNormalizer:
         output = normalizer.normalize_str("Héllò")
         assert output == "Hello"
 
-    def test_handle_chinese_chars(self):
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            ("你好", " 你  好 "),
+            ("a\U0002b820\U0002b91fb", "a \U0002b820  \U0002b91f b"),
+        ],
+    )
+    def test_handle_chinese_chars(self, text, expected):
         normalizer = BertNormalizer(strip_accents=False, lowercase=False, handle_chinese_chars=True, clean_text=False)
 
-        output = normalizer.normalize_str("你好")
-        assert output == " 你  好 "
+        assert normalizer.normalize_str(text) == expected
 
     def test_clean_text(self):
         normalizer = BertNormalizer(strip_accents=False, lowercase=False, handle_chinese_chars=False, clean_text=True)
