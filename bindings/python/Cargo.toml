@@ -37,5 +37,6 @@ pyo3 = { version = "0.29", features = ["auto-initialize", "experimental-inspect"
 [features]
 default = ["ext-module", "abi3", "parity-aware-bpe"]
 ext-module = ["pyo3/extension-module"]
+pcre2 = ["tokenizers/pcre2"]
 abi3 = ["pyo3/abi3", "pyo3/abi3-py310"]
 parity-aware-bpe = ["tokenizers/parity-aware-bpe"]
