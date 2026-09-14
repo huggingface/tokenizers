@@ -22,7 +22,6 @@ def from_pretrained(
     force_download: bool = False,
     local_files_only: bool = False,
     subfolder: str | None = None,
-    padding: Padding | None = None,
 ) -> Tokenizer:
     """
     Instantiate a new `Tokenizer` from an existing file on the Hugging Face Hub.
@@ -51,8 +50,6 @@ def from_pretrained(
         subfolder (`str`, *optional*):
             In case `tokenizer.json` is located inside a subfolder of the model repo on huggingface.co,
             specify it here.
-        padding (`Padding`, *optional*):
-            Replaces the padding configuration the file declares. `None` keeps the file's.
 
     Returns:
         `Tokenizer`: The tokenizer the file describes.
@@ -85,7 +82,7 @@ def from_pretrained(
         library_name="tokenizers",
         library_version=__version__,
     )
-    return Tokenizer.from_file(path, padding=padding)
+    return Tokenizer.from_file(path)
 
 
 Tokenizer.from_pretrained = staticmethod(from_pretrained)  # ty: ignore[invalid-assignment]

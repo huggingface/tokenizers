@@ -3,11 +3,11 @@ use std::sync::Mutex;
 
 use pyo3::prelude::*;
 use tk_encode::PaddingParams;
-use tk_encode::pipeline::PipelineTokenizer as Pipeline;
+use tk_encode::pipeline::{EncodeOptions, Override, PipelineTokenizer as Pipeline};
 
 use crate::encoding::Encoding;
 use crate::error::{convert_err, err, poison_err};
-use crate::padding::Padding;
+use crate::padding::{Padding, PaddingArg};
 use crate::repr;
 use crate::type_hints::TokenIds;
 
@@ -21,12 +21,30 @@ pub struct Tokenizer {
 }
 
 impl Tokenizer {
-    fn clone_padding_params(&self) -> PyResult<Option<PaddingParams>> {
+    fn make_options(
+        &self,
+        add_special_tokens: bool,
+        padding: PaddingArg,
+    ) -> PyResult<EncodeOptions> {
+        let padding = match padding {
+            PaddingArg::InheritConfig => {
+                self.clone_padding()?.map_or(Override::Off, Override::With)
+            }
+            PaddingArg::Off => Override::Off,
+            PaddingArg::With(params) => Override::With(params),
+        };
+        Ok(EncodeOptions {
+            add_special_tokens,
+            padding,
+        })
+    }
+
+    fn clone_padding(&self) -> PyResult<Option<PaddingParams>> {
         Ok(self.padding.lock().map_err(poison_err)?.clone())
     }
 }
 
-/// What `Tokenizer.__reduce__` gives pickle
+/// What `Tokenizer.__reduce__` gives to pickle
 type UnpickleArguments = (String, Option<Padding>);
 
 #[pymethods]
@@ -36,18 +54,12 @@ impl Tokenizer {
     /// Args:
     ///     path:
     ///         The file to read.
-    ///     padding:
-    ///         Replaces the padding configuration the file declares.
-    ///         None` means use the file's padding configuration.
     #[staticmethod]
-    #[pyo3(signature = (path, padding=None))]
-    fn from_file(path: PathBuf, padding: Option<PyRef<'_, Padding>>) -> PyResult<Self> {
+    #[pyo3(signature = (path))]
+    fn from_file(path: PathBuf) -> PyResult<Self> {
         let canonical = tk_convert::canonicalize_file(path).map_err(convert_err)?;
         let pipeline: Pipeline = tk_serialize::from_json(&canonical).map_err(err)?;
-        let padding = match padding {
-            Some(padding) => Some(padding.params().clone()),
-            None => pipeline.get_padding().cloned(),
-        };
+        let padding = pipeline.get_padding().cloned();
         Ok(Self {
             pipeline,
             padding: Mutex::new(padding),
@@ -58,7 +70,7 @@ impl Tokenizer {
     /// Assign `None` to switch padding off.
     #[getter]
     fn padding(&self) -> PyResult<Option<Padding>> {
-        Ok(self.clone_padding_params()?.map(Padding::from))
+        Ok(self.clone_padding()?.map(Padding::from))
     }
 
     #[setter]
@@ -74,19 +86,24 @@ impl Tokenizer {
     ///         The text to encode.
     ///     add_special_tokens: bool
     ///          Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+    ///     padding: `Padding` or `None`
+    ///         Padding options. Pass `None` to disable padding.
+    ///         When omitted, defaults to the padding options configured on the tokenizer.
     ///
     /// Returns:
     ///     Encoding
-    #[pyo3(signature = (text, add_special_tokens=true))]
-    fn encode(&self, py: Python<'_>, text: String, add_special_tokens: bool) -> PyResult<Encoding> {
-        let padding = self.clone_padding_params()?;
+    #[pyo3(signature = (text, *, add_special_tokens=true, padding=PaddingArg::InheritConfig))]
+    fn encode(
+        &self,
+        py: Python<'_>,
+        text: String,
+        add_special_tokens: bool,
+        padding: PaddingArg,
+    ) -> PyResult<Encoding> {
+        let options = self.make_options(add_special_tokens, padding)?;
         // py.detach releases the GIL while encode runs on Rust side
         let encodings = py
-            .detach(|| {
-                self.pipeline
-                    .encode(text, add_special_tokens)
-                    .wait_with_padding(padding.as_ref())
-            })
+            .detach(|| self.pipeline.encode(text, &options).wait())
             .map_err(err)?;
         Ok(Encoding::from(&encodings[0]))
     }
@@ -99,24 +116,24 @@ impl Tokenizer {
     ///         The batch of text to encode.
     ///     add_special_tokens: bool
     ///         Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+    ///     padding: `Padding` or `None`
+    ///         Padding options. Pass `None` to disable padding.
+    ///         When omitted, defaults to the padding options configured on the tokenizer.
     ///
     /// Returns:
     ///     List[Encoding]
-    #[pyo3(signature = (texts, add_special_tokens=true))]
+    #[pyo3(signature = (texts, *, add_special_tokens=true, padding=PaddingArg::InheritConfig))]
     fn encode_batch(
         &self,
         py: Python<'_>,
         texts: Vec<String>,
         add_special_tokens: bool,
+        padding: PaddingArg,
     ) -> PyResult<Vec<Encoding>> {
-        let padding = self.clone_padding_params()?;
+        let options = self.make_options(add_special_tokens, padding)?;
         // py.detach releases the GIL while encode runs on Rust side
         let encodings = py
-            .detach(|| {
-                self.pipeline
-                    .encode(texts, add_special_tokens)
-                    .wait_with_padding(padding.as_ref())
-            })
+            .detach(|| self.pipeline.encode(texts, &options).wait())
             .map_err(err)?;
         Ok(encodings.iter().map(Encoding::from).collect())
     }

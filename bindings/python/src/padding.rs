@@ -8,20 +8,41 @@ use tk_encode::{PaddingDirection, PaddingParams, PaddingStrategy};
 
 use crate::error::err;
 
-/// Padding parameters for Tokenizer.encode
 #[pyclass(frozen, eq, hash, module = "tokenizers")]
-#[derive(PartialEq, Hash)]
+#[derive(Debug, PartialEq, Hash)]
+/// Padding options
 pub struct Padding(PaddingParams);
 
 impl Padding {
     pub(crate) fn params(&self) -> &PaddingParams {
         &self.0
     }
+
+    pub(crate) fn from(params: PaddingParams) -> Self {
+        Self(params)
+    }
 }
 
-impl From<PaddingParams> for Padding {
-    fn from(params: PaddingParams) -> Self {
-        Self(params)
+/// Sentinel type used to differentiate tok.encode(text, padding=None) from tok.encode(text)
+/// (explicit None = disabled vs omitted = default)
+#[derive(PartialEq, Hash)]
+pub enum PaddingArg {
+    InheritConfig,
+    Off,
+    With(PaddingParams),
+}
+
+impl FromPyObject<'_, '_> for PaddingArg {
+    type Error = PyErr;
+
+    const INPUT_TYPE: PyStaticExpr =
+        <Option<PyRef<'static, Padding>> as FromPyObject<'static, 'static>>::INPUT_TYPE;
+
+    fn extract(obj: Borrowed<'_, '_, PyAny>) -> Result<Self, Self::Error> {
+        Ok(match obj.extract::<Option<PyRef<'_, Padding>>>()? {
+            None => Self::Off,
+            Some(padding) => Self::With(padding.params().clone()),
+        })
     }
 }
 

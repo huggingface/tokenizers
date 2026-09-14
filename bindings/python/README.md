@@ -48,8 +48,9 @@ tokenizer.padding = Padding(length=16)            # every encoding is exactly 16
 tokenizer.padding = Padding(pad_to_multiple_of=8)
 tokenizer.padding = None
 
-# Or fix it at construction.
-Tokenizer.from_file("tokenizer.json", padding=Padding(length=16))
+# Or for one call only, leaving the attribute as it is. `None` switches it off for that call.
+tokenizer.encode_batch(["Hello", "Hello there"], padding=Padding(length=16))
+tokenizer.encode("Hello", padding=None)
 ```
 
 `examples/` holds a runnable script for each of these; `make examples` runs them all.

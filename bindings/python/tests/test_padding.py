@@ -80,13 +80,6 @@ def test_padding_from_file(padded_wiki):
     assert short.ids[-1] == 3
 
 
-def test_from_file_padding_override(padded_wiki):
-    tokenizer = Tokenizer.from_file(padded_wiki, padding=Padding(direction="left", pad_id=3))
-
-    assert tokenizer.padding == Padding(direction="left", pad_id=3)
-    assert tokenizer.encode_batch(SHORT_AND_LONG)[0].ids[0] == 3
-
-
 def test_set_padding(padded_wiki):
     tokenizer = Tokenizer.from_file(padded_wiki)
 

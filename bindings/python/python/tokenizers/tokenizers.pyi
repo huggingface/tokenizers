@@ -67,7 +67,7 @@ class Encoding:
 @final
 class Padding:
     """
-    Padding parameters for Tokenizer.encode
+    Padding options
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...
@@ -164,7 +164,7 @@ class Tokenizer:
         Returns:
             str
         """
-    def encode(self, /, text: str, add_special_tokens: bool = True) -> Encoding:
+    def encode(self, /, text: str, *, add_special_tokens: bool = True, padding: Padding | None = ...) -> Encoding:
         """
         Encodes the given text to token ids.
 
@@ -173,11 +173,16 @@ class Tokenizer:
                 The text to encode.
             add_special_tokens: bool
                  Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+            padding: `Padding` or `None`
+                Padding options. Pass `None` to disable padding.
+                When omitted, defaults to the padding options configured on the tokenizer.
 
         Returns:
             Encoding
         """
-    def encode_batch(self, /, texts: Sequence[str], add_special_tokens: bool = True) -> list[Encoding]:
+    def encode_batch(
+        self, /, texts: Sequence[str], *, add_special_tokens: bool = True, padding: Padding | None = ...
+    ) -> list[Encoding]:
         """
         Encodes a batch of text.
         The encodings come back in input order.
@@ -187,21 +192,21 @@ class Tokenizer:
                 The batch of text to encode.
             add_special_tokens: bool
                 Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+            padding: `Padding` or `None`
+                Padding options. Pass `None` to disable padding.
+                When omitted, defaults to the padding options configured on the tokenizer.
 
         Returns:
             List[Encoding]
         """
     @staticmethod
-    def from_file(path: str | PathLike[str], padding: Padding | None = None) -> Tokenizer:
+    def from_file(path: str | PathLike[str]) -> Tokenizer:
         """
         Loads a `tokenizer.json`.
 
         Args:
             path:
                 The file to read.
-            padding:
-                Replaces the padding configuration the file declares.
-                None` means use the file's padding configuration.
         """
     @property
     def padding(self, /) -> Padding | None:
@@ -221,7 +226,6 @@ class Tokenizer:
         force_download: bool = False,
         local_files_only: bool = False,
         subfolder: str | None = None,
-        padding: Padding | None = None,
     ) -> Tokenizer:
         """
         Instantiate a new `Tokenizer` from an existing file on the Hugging Face Hub.
@@ -250,8 +254,6 @@ class Tokenizer:
             subfolder (`str`, *optional*):
                 In case `tokenizer.json` is located inside a subfolder of the model repo on huggingface.co,
                 specify it here.
-            padding (`Padding`, *optional*):
-                Replaces the padding configuration the file declares. `None` keeps the file's.
 
         Returns:
             `Tokenizer`: The tokenizer the file describes.

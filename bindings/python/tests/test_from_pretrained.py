@@ -66,12 +66,6 @@ def test_forwards_every_download_option(recorded_download, tmp_path, token):
     assert recorded_download["subfolder"] == "tokenizer"
 
 
-def test_takes_a_padding_like_from_file(recorded_download):
-    tokenizer = from_pretrained("some-org/some-model", padding=Padding(length=8))
-
-    assert tokenizer.padding == Padding(length=8)
-
-
 def test_reads_the_hub_cache_without_network(tmp_path, wiki):
     # The cache layout `hf_hub_download` documents: `refs/<branch>` names a commit, the file
     # sits under `snapshots/<commit>/`.
