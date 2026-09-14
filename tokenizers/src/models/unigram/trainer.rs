@@ -396,10 +396,10 @@ impl UnigramTrainer {
 
                 // After removing the sentencepiece[i], its frequency freq[i] is
                 // re-assigned to alternatives.
-                // new_sum = current_sum - freq[i] + freq[i] * alternatives.size()
-                //         = current_sum + freq[i] (alternatives - 1)
+                // new_sum = current_sum - freq[i] + freq[i] * alternatives[id].size()
+                //         = current_sum + freq[i] (alternatives[id] - 1)
 
-                let logsum_alt = (sum + freq[id] * (alternatives.len() - 1) as f64).ln();
+                let logsum_alt = (sum + freq[id] * (alternatives[id].len() - 1) as f64).ln();
 
                 // The frequencies of alternatives are increased by freq[i].
                 let mut logprob_alt = 0.0;
