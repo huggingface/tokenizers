@@ -215,7 +215,7 @@ def check_encode(args):
     else:
         vocab = [(sp.id_to_piece(i), sp.get_score(i)) for i in range(sp.piece_size())]
         unk_id = sp.unk_id()
-        tok = tokenizers.SentencePieceUnigramTokenizer(vocab, unk_id)
+        tok = tokenizers.SentencePieceUnigramTokenizer(vocab, unk_id=unk_id)
 
     perfect = 0
     imperfect = 0

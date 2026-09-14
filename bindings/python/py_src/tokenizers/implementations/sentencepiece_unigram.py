@@ -12,6 +12,8 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
     """SentencePiece Unigram Tokenizer
 
     Represents the Unigram algorithm, with the pretokenization used by SentencePiece
+
+    For a custom vocabulary, unk_id specifies the index of its unknown token.
     """
 
     def __init__(
@@ -19,12 +21,9 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
         vocab: Optional[List[Tuple[str, float]]] = None,
         replacement: str = "▁",
         add_prefix_space: bool = True,
+        unk_id: Optional[int] = None,
     ):
-        if vocab is not None:
-            # Let Unigram(..) fail if only one of them is None
-            tokenizer = Tokenizer(Unigram(vocab))
-        else:
-            tokenizer = Tokenizer(Unigram())
+        tokenizer = Tokenizer(Unigram(vocab, unk_id=unk_id))
 
         tokenizer.normalizer = normalizers.Sequence(
             [normalizers.Nmt(), normalizers.NFKC(), normalizers.Replace(Regex(" {2,}"), " ")]
@@ -37,6 +36,7 @@ class SentencePieceUnigramTokenizer(BaseTokenizer):
             "model": "SentencePieceUnigram",
             "replacement": replacement,
             "add_prefix_space": add_prefix_space,
+            "unk_id": unk_id,
         }
 
         super().__init__(tokenizer, parameters)
