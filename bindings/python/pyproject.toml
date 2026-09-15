@@ -10,6 +10,7 @@ dependencies = ["huggingface_hub>=0.16.4,<2.0", "numpy"]
 dev = [
     "maturin>=1.0,<2.0",
     "pytest",
+    "pyarrow",
     "ruff",
     "ty",
 ]

@@ -215,6 +215,49 @@ impl Tokenizer {
         Ok(encodings.iter().map(Encoding::from).collect())
     }
 
+    /// Encodes an Arrow string or large_string array without creating Python strings.
+    ///
+    /// Accepts an exporter implementing ``__arrow_c_array__``. Slices and empty
+    /// arrays are supported. Chunked, dictionary, and non-string arrays are rejected.
+    /// The pipeline copies the imported text into Rust-owned inputs before encoding.
+    ///
+    /// Args:
+    ///     input: An Arrow string array exporter implementing ``__arrow_c_array__``.
+    ///     add_special_tokens: bool
+    ///         Whether the post-processor adds its special tokens.
+    ///     padding: `Padding` or `None`
+    ///         Padding options. Pass `None` to disable padding. When omitted,
+    ///         defaults to the padding options configured on the tokenizer.
+    ///     null_handling: ``"error"``, ``"empty"``, or ``"skip"``
+    ///         ``"error"`` rejects nulls, ``"empty"`` encodes them as empty strings,
+    ///         and ``"skip"`` omits them. Empty strings still receive configured
+    ///         special tokens and padding. Skipping preserves retained row order,
+    ///         with padding computed over those rows. No placeholders or original
+    ///         row indices are returned; an all-null batch with ``"skip"`` returns ``[]``.
+    ///
+    /// Returns:
+    ///     List[Encoding]
+    #[pyo3(signature = (input, *, add_special_tokens=true, padding=PaddingArg::InheritConfig, null_handling: "Literal['error', 'empty', 'skip']" = "error"))]
+    fn encode_batch_arrow(
+        &self,
+        py: Python<'_>,
+        input: &Bound<'_, PyAny>,
+        add_special_tokens: bool,
+        padding: PaddingArg,
+        null_handling: &str,
+    ) -> PyResult<Vec<Encoding>> {
+        let null_handling = crate::arrow::NullHandling::try_from(null_handling)?;
+        let options = self.make_options(add_special_tokens, padding)?;
+        let array = crate::arrow::ArrowStrings::from_python(input)?;
+        let texts = array.texts(null_handling)?;
+        // Keep the Arrow owner here so the producer's release callback runs after
+        // reattaching to Python, including when encoding fails.
+        let encodings = py
+            .detach(|| self.pipeline.encode(texts, &options).wait())
+            .map_err(err)?;
+        Ok(encodings.iter().map(Encoding::from).collect())
+    }
+
     /// Decodes token ids back into text
     ///
     /// Args:

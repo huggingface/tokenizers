@@ -9,6 +9,8 @@ name = "tokenizers"
 crate-type = ["cdylib"]
 
 [dependencies]
+arrow-array = { version = "59", default-features = false, features = ["ffi"] }
+arrow-schema = { version = "59", default-features = false, features = ["ffi"] }
 pyo3 = { version = "=0.29", default-features = false, features = [
   "macros",
   "extension-module",
