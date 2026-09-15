@@ -509,6 +509,9 @@ impl NormalizedString {
                 .chain(std::iter::once((next, 1)));
 
             self.transform_range(Range::Normalized(0..next.len_utf8()), transformations, 0);
+        } else {
+            let transformations = s.chars().map(|c| (c, 1));
+            self.transform_range(Range::Normalized(..), transformations, 0);
         }
         self
     }
@@ -2307,5 +2310,25 @@ mod tests {
         assert_eq!(n.get_range_original(Range::Normalized(0..6)), Some(""));
 
         assert_eq!(n.get_range(Range::Normalized(0..6)), Some(" World"));
+    }
+
+    #[test]
+    fn test_prepend_after_clear() {
+        let mut n = NormalizedString::from("Hello");
+        assert_eq!(n.get(), "Hello");
+
+        n.clear();
+        assert_eq!(n.get(), "");
+
+        n.prepend("World ");
+        assert_eq!(n.get(), "World ");
+
+        assert_eq!(n.len_original(), 5);
+        assert_eq!(n.len(), 6);
+
+        assert_eq!(n.get_range_original(Range::Original(0..5)), Some("Hello"));
+        assert_eq!(n.get_range_original(Range::Normalized(0..6)), Some(""));
+
+        assert_eq!(n.get_range(Range::Normalized(0..6)), Some("World "));
     }
 }
