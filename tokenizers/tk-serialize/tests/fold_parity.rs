@@ -7,7 +7,8 @@
 //!
 //! Run `make data/gpt2.json` first -- the fixture is fetched, not committed.
 
-use tk_encode::pipeline::{EncodeOptions, PipelineTokenizer};
+use tk_encode::pipeline::EncodeOptions;
+use tk_encode::pipeline::PipelineTokenizer;
 
 /// `data/gpt2.json` is still version `1.0`, so run the upgrade pass first -- the reader only
 /// accepts canonical `2.0`. Same as `benches/encode.rs`.

@@ -22,7 +22,8 @@ use std::time::{Duration, Instant};
 use criterion::{
     BenchmarkId, Criterion, SamplingMode, Throughput, criterion_group, criterion_main,
 };
-use tk_encode::pipeline::{EncodeOptions, PipelineTokenizer};
+use tk_encode::pipeline::EncodeOptions;
+use tk_encode::pipeline::PipelineTokenizer;
 
 /// Roughly the prompt size the sharded pool was measured at in #2365.
 const PROMPT_BYTES: usize = 12_000;

@@ -9,8 +9,11 @@ use crate::models::unigram::{Unigram, UnigramScratch};
 use crate::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
+pub use crate::pipeline::encode_options::EncodeOptions;
+pub use crate::pipeline::encode_options::Override;
+use crate::utils::truncation::truncate_pair;
 use crate::{
-    DecoderRuntime, PaddingParams,
+    DecoderRuntime, PaddingParams, TruncationParams,
     models::bpe::{BpeScratch, PipelineBPE},
     pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
@@ -24,6 +27,7 @@ use parallel::StreamingIter;
 
 use super::Result;
 
+pub mod encode_options;
 #[cfg(feature = "parallelism")]
 mod parallel;
 mod scratch_pool;
@@ -31,8 +35,6 @@ mod scratch_pool;
 pub use scratch_pool::ModelScratch;
 
 pub use bitsplit::Span;
-pub mod encode_options;
-pub use encode_options::{EncodeOptions, Override};
 
 mod normalizer;
 mod post_processor;
@@ -210,8 +212,11 @@ struct TokenizerInner {
     /// the special-token metadata that used to need a separate `tokenizer_config.json`. Empty
     /// when the config declares none. `BTreeMap` so the writer emits a stable key order.
     role_to_token: BTreeMap<String, String>,
-    /// Padding configuration. [`EncodeOptions::padding`] overrides it per call.
+    /// Padding configuration, overridden per call by [`EncodeOptions::padding`].
     padding: Option<PaddingParams>,
+    /// Truncation configuration, overridden per call by [`EncodeOptions::truncation`].
+    truncation: Option<TruncationParams>,
+    /// Pool of scratch buffers. Scratch buffers hold intermediate state (cache, intermediate buffers, etc) required by the tokenization algorithms.
     scratch_pool: ScratchPool,
 }
 
@@ -244,6 +249,7 @@ impl PipelineTokenizer {
         decoder: Option<DecoderRuntime>,
         role_to_token: BTreeMap<String, String>,
         padding: Option<PaddingParams>,
+        truncation: Option<TruncationParams>,
     ) -> Self {
         let added_id_min = added_vocabulary
             .get_added_tokens_decoder()
@@ -262,6 +268,7 @@ impl PipelineTokenizer {
                 added_id_min,
                 role_to_token,
                 padding,
+                truncation,
                 scratch_pool: ScratchPool::new(),
             }),
         }
@@ -277,7 +284,17 @@ impl PipelineTokenizer {
             Override::With(params) => Some(params),
         }
     }
-    // TODO: resolve_truncation
+
+    pub fn resolve_truncation<'a>(
+        &'a self,
+        truncation_override: &'a Override<TruncationParams>,
+    ) -> Option<&'a TruncationParams> {
+        match truncation_override {
+            Override::InheritConfig => self.inner.truncation.as_ref(),
+            Override::Off => None,
+            Override::With(params) => Some(params),
+        }
+    }
 }
 #[derive(Clone)]
 pub enum Input {
@@ -426,7 +443,6 @@ impl EncodeHandle {
     /// Returns in input order
     pub fn wait(mut self) -> Result<Vec<Encoding>> {
         let padding = self.padding.take();
-
         // XXX: `Vec::new` does not allocate anything when capacity == 0, so creating empty
         // Encodings should not allocate anything either
         let mut out = vec![Encoding::empty(); self.len()];
@@ -560,6 +576,10 @@ impl PipelineTokenizer {
         self.inner.padding.as_ref()
     }
 
+    pub fn get_truncation(&self) -> Option<&TruncationParams> {
+        self.inner.truncation.as_ref()
+    }
+
     /// Encode `input` into token ids.
     ///
     /// Special tokens are matched in two passes:
@@ -631,6 +651,13 @@ impl PipelineTokenizer {
     ) -> Result<Encoding> {
         let pp = &self.inner.post_processor;
         let template = if s2.is_some() { &pp.pair } else { &pp.single };
+        let num_added_specials = if options.add_special_tokens {
+            template.n_special()
+        } else {
+            0
+        };
+        let truncation = self.resolve_truncation(&options.truncation);
+        let (s1, s2) = truncate_pair(s1, s2, truncation, num_added_specials)?;
         Ok(if options.add_special_tokens {
             template.post_process::<true>(s1, s2)
         } else {
@@ -759,10 +786,11 @@ impl PipelineTokenizer {
     ) -> Result<()> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         let template = &self.inner.post_processor.single;
-        // Would the template just reproduce the sequence? Nothing to add, nothing to tag.
-        let reproduces_sequence =
-            !template.has_type_ids() && (!options.add_special_tokens || template.n_special() == 0);
+        let reproduces_sequence = self.resolve_truncation(&options.truncation).is_none()
+            && !template.has_type_ids()
+            && (!options.add_special_tokens || template.n_special() == 0);
         if reproduces_sequence {
+            // fast path: no truncation, no templating, no specials
             return self.encode_sequence_into(input, 0, &mut scratch, out);
         }
         let encoding = self.encode_one(Input::Single(input.to_owned()), options, &mut scratch)?;
@@ -1073,6 +1101,8 @@ impl ModelScratch for PipelineModelScratch {}
 mod tests {
     use super::*;
     use crate::PaddingStrategy;
+    use crate::tokenizer::{TruncationDirection, TruncationStrategy};
+    use crate::utils::truncation::TruncationError;
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
     impl PipelinePatternMatcher for FixedMatcher {
@@ -1204,6 +1234,471 @@ mod tests {
         assert_eq!(encodings[1].len(), 1);
     }
 
+    // "hhhhhhello" encodes to five lone `h` and one `hello`: six ids, enough for a cut at 2 and a
+    // pad to 8 to each leave a visible trace.
+    const SIX_TOKENS: &str = "hhhhhhello";
+    const PAD: u32 = 9;
+
+    fn truncate_to(max_length: usize) -> TruncationParams {
+        TruncationParams {
+            max_length,
+            ..TruncationParams::default()
+        }
+    }
+
+    fn pad_to(length: usize) -> PaddingParams {
+        PaddingParams {
+            strategy: PaddingStrategy::Fixed(length),
+            pad_id: PAD,
+            ..PaddingParams::default()
+        }
+    }
+
+    fn encode_six_tokens(pipeline: &PipelineTokenizer, options: &EncodeOptions) -> Encoding {
+        pipeline
+            .encode(SIX_TOKENS, options)
+            .wait()
+            .unwrap()
+            .remove(0)
+    }
+
+    #[test]
+    fn override_with_replaces_the_tokenizers_configured_truncation() {
+        let pipeline = hello_pipeline_with_truncation(truncate_to(5));
+        let options = EncodeOptions {
+            truncation: Override::With(truncate_to(2)),
+            ..EncodeOptions::default()
+        };
+
+        assert_eq!(ids(&encode_six_tokens(&pipeline, &options)), [0, 0]);
+    }
+
+    #[test]
+    fn override_off_turns_off_the_tokenizers_configured_truncation() {
+        let pipeline = hello_pipeline_with_truncation(truncate_to(2));
+        let options = EncodeOptions {
+            truncation: Override::Off,
+            ..EncodeOptions::default()
+        };
+
+        assert_eq!(
+            ids(&encode_six_tokens(&pipeline, &options)),
+            [0, 0, 0, 0, 0, 7]
+        );
+    }
+
+    // Truncating to 2 and then padding to 8 gives [h, h] and six pads. Padding first would leave the
+    // six ids alone, and the cut would then give [h, h] and nothing else.
+    const TRUNCATED_THEN_PADDED: [u32; 8] = [0, 0, PAD, PAD, PAD, PAD, PAD, PAD];
+
+    #[test]
+    fn configured_truncation_runs_before_configured_padding() {
+        let pipeline = hello_pipeline_with(
+            PipelinePostProcessor::default(),
+            Some(pad_to(8)),
+            Some(truncate_to(2)),
+        );
+
+        let encoding = encode_six_tokens(&pipeline, &EncodeOptions::default());
+
+        assert_eq!(ids(&encoding), TRUNCATED_THEN_PADDED);
+        assert_eq!(
+            encoding.attention_mask().unwrap(),
+            [1u8, 1, 0, 0, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn overridden_truncation_runs_before_overridden_padding() {
+        let pipeline = hello_pipeline();
+        let options = EncodeOptions {
+            padding: Override::With(pad_to(8)),
+            truncation: Override::With(truncate_to(2)),
+            ..EncodeOptions::default()
+        };
+
+        let encoding = encode_six_tokens(&pipeline, &options);
+
+        assert_eq!(ids(&encoding), TRUNCATED_THEN_PADDED);
+        assert_eq!(
+            encoding.attention_mask().unwrap(),
+            [1u8, 1, 0, 0, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn overridden_truncation_keeps_the_configured_padding() {
+        let pipeline = hello_pipeline_with_padding(pad_to(8));
+        let options = EncodeOptions {
+            truncation: Override::With(truncate_to(2)),
+            ..EncodeOptions::default()
+        };
+
+        assert_eq!(
+            ids(&encode_six_tokens(&pipeline, &options)),
+            TRUNCATED_THEN_PADDED
+        );
+    }
+
+    #[test]
+    fn overridden_padding_keeps_the_configured_truncation() {
+        let pipeline = hello_pipeline_with_truncation(truncate_to(2));
+        let options = EncodeOptions {
+            padding: Override::With(pad_to(8)),
+            ..EncodeOptions::default()
+        };
+
+        assert_eq!(
+            ids(&encode_six_tokens(&pipeline, &options)),
+            TRUNCATED_THEN_PADDED
+        );
+    }
+
+    #[test]
+    fn padding_off_keeps_the_configured_truncation() {
+        let pipeline = hello_pipeline_with(
+            PipelinePostProcessor::default(),
+            Some(pad_to(8)),
+            Some(truncate_to(2)),
+        );
+        let options = EncodeOptions {
+            padding: Override::Off,
+            ..EncodeOptions::default()
+        };
+
+        assert_eq!(ids(&encode_six_tokens(&pipeline, &options)), [0, 0]);
+    }
+
+    #[test]
+    fn truncation_off_keeps_the_configured_padding() {
+        let pipeline = hello_pipeline_with(
+            PipelinePostProcessor::default(),
+            Some(pad_to(8)),
+            Some(truncate_to(2)),
+        );
+        let options = EncodeOptions {
+            truncation: Override::Off,
+            ..EncodeOptions::default()
+        };
+
+        assert_eq!(
+            ids(&encode_six_tokens(&pipeline, &options)),
+            [0, 0, 0, 0, 0, 7, PAD, PAD]
+        );
+    }
+
+    #[test]
+    fn test_truncate_with_specials() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(5, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::default())
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 1, 2, 3, SEP]);
+    }
+
+    // Released 0.23.1 subtracts the specials from `max_length` only when it is about to add them
+    // (`add_special_tokens && n_added_tokens > 0`, tokenizer/mod.rs:1243), so a caller that asks
+    // for no specials gets a full `max_length` of sequence tokens.
+    #[test]
+    fn test_no_specials_added() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(5, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::no_specials())
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_fits() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(5, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=3), None, &EncodeOptions::default())
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 1, 2, 3, SEP]);
+    }
+
+    #[test]
+    fn test_no_truncation() {
+        let pipeline = pipeline_with(bert_post_processor(), None);
+
+        let encoding = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::default())
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 1, 2, 3, 4, 5, 6, 7, 8, SEP]);
+    }
+
+    #[test]
+    fn test_truncate_left() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            Some(TruncationParams {
+                max_length: 5,
+                direction: TruncationDirection::Left,
+                ..TruncationParams::default()
+            }),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::default())
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 6, 7, 8, SEP]);
+    }
+
+    #[test]
+    fn test_pair_specials() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(8, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(
+                tokens(1..=4),
+                Some(tokens(11..=14)),
+                &EncodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 1, 2, SEP, 11, 12, 13, SEP]);
+        assert_eq!(encoding.type_ids().unwrap(), [0, 0, 0, 0, 1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn test_only_second() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(8, TruncationStrategy::OnlySecond),
+        );
+
+        let encoding = pipeline
+            .post_process(
+                tokens(1..=4),
+                Some(tokens(11..=14)),
+                &EncodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 1, 2, 3, 4, SEP, 11, SEP]);
+        assert_eq!(encoding.type_ids().unwrap(), [0, 0, 0, 0, 0, 0, 1, 1]);
+    }
+
+    // `OnlySecond` names the sequence to cut, so a lone sequence has nothing to cut. The error has
+    // to come back out of `post_process` rather than the first sequence being cut instead.
+    #[test]
+    fn test_only_second_no_pair() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(5, TruncationStrategy::OnlySecond),
+        );
+
+        let err = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::default())
+            .err()
+            .unwrap();
+
+        assert!(matches!(
+            err.downcast_ref::<TruncationError>(),
+            Some(TruncationError::SecondSequenceNotProvided)
+        ));
+    }
+
+    // `max_length` 1 cannot hold `[CLS] [SEP]`. The sequence goes and the specials stay, so the
+    // encoding comes back longer than `max_length`. There is no upstream behaviour to match:
+    // released 0.23.1 computes `max_length - n_added_tokens` unguarded (tokenizer/mod.rs:1245).
+    #[test]
+    fn test_max_length_below_specials() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(1, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::default())
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, SEP]);
+    }
+
+    // Same case for a pair: the pair template places sequence B, so an emptied B still has to be
+    // there for the template to lay out.
+    #[test]
+    fn test_max_length_below_specials_pair() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(1, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(
+                tokens(1..=4),
+                Some(tokens(11..=14)),
+                &EncodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, SEP, SEP]);
+        assert_eq!(encoding.type_ids().unwrap(), [0, 0, 1]);
+    }
+
+    // A template that adds nothing takes the fast path, which hands the sequence buffer straight
+    // back. It has to be the truncated buffer.
+    #[test]
+    fn test_empty_template() {
+        let pipeline = pipeline_with(
+            PipelinePostProcessor::default(),
+            truncation(3, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::default())
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [1, 2, 3]);
+    }
+
+    // A single template that retags its sequence carries type ids, which rules out the fast path.
+    // This is truncation reaching the template with no specials in the way.
+    #[test]
+    fn test_template_type_ids() {
+        let pipeline = pipeline_with(
+            PipelinePostProcessor {
+                single: Template {
+                    a_type_id: 1,
+                    ..Template::default()
+                },
+                pair: Template {
+                    b_type_id: Some(1),
+                    ..Template::default()
+                },
+            },
+            truncation(3, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::default())
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [1, 2, 3]);
+        assert_eq!(encoding.type_ids().unwrap(), [1, 1, 1]);
+    }
+
+    // The fast path returns the sequence buffer itself. A copy would be a silent regression that
+    // no assertion on the ids can catch.
+    #[test]
+    fn test_fast_path_buffer() {
+        let pipeline = pipeline_with(PipelinePostProcessor::default(), None);
+        let sequence = tokens(1..=8);
+        let address = sequence.as_ptr();
+
+        let encoding = pipeline
+            .post_process(sequence, None, &EncodeOptions::default())
+            .unwrap();
+
+        assert_eq!(encoding.ids().as_ptr(), address);
+    }
+
+    // `encode_into` has a shortcut of its own for a template that adds nothing, and it skips
+    // `post_process`, which is where truncation happens. Whatever route it takes, it has to agree
+    // with `encode`.
+    #[test]
+    fn test_encode_into() {
+        let pipeline = pipeline_with(
+            PipelinePostProcessor::default(),
+            truncation(2, TruncationStrategy::LongestFirst),
+        );
+        let mut out = Vec::new();
+
+        pipeline
+            .encode_into("hhello hhello", &EncodeOptions::default(), &mut out)
+            .unwrap();
+
+        let encoded = pipeline
+            .encode(vec!["hhello hhello"], &EncodeOptions::default())
+            .wait()
+            .unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out, encoded[0].ids());
+    }
+
+    const CLS: u32 = 101;
+    const SEP: u32 = 102;
+
+    fn tokens(sequence_ids: impl IntoIterator<Item = u32>) -> Vec<PipelineToken> {
+        sequence_ids.into_iter().map(PipelineToken::from).collect()
+    }
+
+    fn ids(encoding: &Encoding) -> Vec<u32> {
+        encoding.ids().iter().copied().map(u32::from).collect()
+    }
+
+    /// `[CLS] $A [SEP]` and `[CLS] $A [SEP] $B:1 [SEP]:1`, the arrangement BERT's config declares.
+    fn bert_post_processor() -> PipelinePostProcessor {
+        PipelinePostProcessor {
+            single: Template {
+                prefix: Box::new([(CLS.into(), 0)]),
+                suffix: Box::new([(SEP.into(), 0)]),
+                ..Template::default()
+            },
+            pair: Template {
+                prefix: Box::new([(CLS.into(), 0)]),
+                infix: Box::new([(SEP.into(), 0)]),
+                suffix: Box::new([(SEP.into(), 1)]),
+                b_type_id: Some(1),
+                ..Template::default()
+            },
+        }
+    }
+
+    fn truncation(max_length: usize, strategy: TruncationStrategy) -> Option<TruncationParams> {
+        Some(TruncationParams {
+            max_length,
+            strategy,
+            ..TruncationParams::default()
+        })
+    }
+
+    fn pipeline_with(
+        post_processor: PipelinePostProcessor,
+        truncation: Option<TruncationParams>,
+    ) -> PipelineTokenizer {
+        hello_pipeline_with(post_processor, None, truncation)
+    }
+
+    fn hello_pipeline_with(
+        post_processor: PipelinePostProcessor,
+        padding: Option<PaddingParams>,
+        truncation: Option<TruncationParams>,
+    ) -> PipelineTokenizer {
+        PipelineTokenizer::from_parts(
+            BucketAddedVocabulary::new(),
+            Vec::new(),
+            PipelinePreTokenizer::None,
+            PipelineModel::BPE(hello_bpe()),
+            post_processor,
+            None,
+            Default::default(),
+            padding,
+            truncation,
+        )
+    }
+
     fn hello_bpe() -> PipelineBPE {
         use crate::models::bpe::{BpeConfig, Merges, Vocab};
 
@@ -1235,28 +1730,14 @@ mod tests {
     }
 
     fn hello_pipeline() -> PipelineTokenizer {
-        PipelineTokenizer::from_parts(
-            BucketAddedVocabulary::new(),
-            Vec::new(),
-            PipelinePreTokenizer::None,
-            PipelineModel::BPE(hello_bpe()),
-            PipelinePostProcessor::default(),
-            None,
-            Default::default(),
-            None,
-        )
+        hello_pipeline_with(PipelinePostProcessor::default(), None, None)
     }
 
     fn hello_pipeline_with_padding(padding: PaddingParams) -> PipelineTokenizer {
-        PipelineTokenizer::from_parts(
-            BucketAddedVocabulary::new(),
-            Vec::new(),
-            PipelinePreTokenizer::None,
-            PipelineModel::BPE(hello_bpe()),
-            PipelinePostProcessor::default(),
-            None,
-            Default::default(),
-            Some(padding),
-        )
+        hello_pipeline_with(PipelinePostProcessor::default(), Some(padding), None)
+    }
+
+    fn hello_pipeline_with_truncation(truncation: TruncationParams) -> PipelineTokenizer {
+        hello_pipeline_with(PipelinePostProcessor::default(), None, Some(truncation))
     }
 }
