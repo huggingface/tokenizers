@@ -218,6 +218,38 @@ impl Token {
     }
 }
 
+/// A piece of structured input whose tokenization policy is explicit.
+///
+/// Special segments must exactly match a registered special token. Ordinary segments are encoded
+/// as text even when their contents contain the spelling of a registered special token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncodeSegment {
+    pub content: String,
+    pub special: bool,
+}
+
+impl EncodeSegment {
+    pub fn ordinary(content: impl Into<String>) -> Self {
+        Self {
+            content: content.into(),
+            special: false,
+        }
+    }
+
+    pub fn special(content: impl Into<String>) -> Self {
+        Self {
+            content: content.into(),
+            special: true,
+        }
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum EncodeSegmentsError {
+    #[error("Structured special segment is not a registered special token: {0:?}")]
+    UnknownSpecialToken(String),
+}
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -804,6 +836,115 @@ where
         }
     }
 
+    /// Encode a sequence of ordinary and special segments without changing tokenizer-wide state.
+    fn encode_segmented_sequence(
+        &self,
+        segments: &[EncodeSegment],
+        type_id: u32,
+        offsets_type: OffsetType,
+    ) -> Result<Encoding> {
+        // A producer may split ordinary content for its own convenience. Coalescing adjacent
+        // ordinary pieces preserves model merges across those producer-defined boundaries.
+        let mut coalesced = Vec::<EncodeSegment>::with_capacity(segments.len());
+        for segment in segments {
+            if !segment.special {
+                if let Some(previous) = coalesced.last_mut().filter(|item| !item.special) {
+                    previous.content.push_str(&segment.content);
+                    continue;
+                }
+            }
+            coalesced.push(segment.clone());
+        }
+
+        let mut encoding = Encoding::default();
+        let mut cursor = 0;
+
+        for segment in coalesced {
+            let segment_len = match offsets_type {
+                OffsetType::Byte => segment.content.len(),
+                OffsetType::Char => segment.content.chars().count(),
+                OffsetType::None => 0,
+            };
+
+            let mut segment_encoding = if segment.special {
+                if !self.added_vocabulary.is_special_token(&segment.content) {
+                    return Err(Box::new(EncodeSegmentsError::UnknownSpecialToken(
+                        segment.content,
+                    )));
+                }
+                let id = self.token_to_id(&segment.content).ok_or_else(|| {
+                    Box::new(EncodeSegmentsError::UnknownSpecialToken(
+                        segment.content.clone(),
+                    )) as Error
+                })?;
+                Encoding::from_tokens(
+                    vec![Token::new(id, segment.content, (0, segment_len))],
+                    type_id,
+                )
+            } else {
+                // `true` means registered special-token spellings are sent through the ordinary
+                // model path for this segment only. Non-special AddedTokens still work normally.
+                let normalized = self
+                    .added_vocabulary
+                    .extract_and_normalize_with_special_tokens(
+                        self.normalizer.as_ref(),
+                        &segment.content,
+                        true,
+                    );
+                let pre_tokenized = self.do_pre_tokenize(normalized)?;
+                self.do_tokenize_with_limit(pre_tokenized, type_id, None, offsets_type, None)?
+            };
+
+            if offsets_type != OffsetType::None {
+                for (start, end) in segment_encoding.get_offsets_mut() {
+                    *start += cursor;
+                    *end += cursor;
+                }
+            }
+            encoding.merge_with(segment_encoding, false);
+            cursor += segment_len;
+        }
+
+        Ok(encoding)
+    }
+
+    fn encode_segments_with_offsets(
+        &self,
+        segments: &[EncodeSegment],
+        add_special_tokens: bool,
+        offsets_type: OffsetType,
+    ) -> Result<Encoding> {
+        let encoding = self.encode_segmented_sequence(segments, 0, offsets_type)?;
+        self.post_process(encoding, None, add_special_tokens)
+    }
+
+    /// Encode structured segments and return byte offsets.
+    pub fn encode_segments(
+        &self,
+        segments: &[EncodeSegment],
+        add_special_tokens: bool,
+    ) -> Result<Encoding> {
+        self.encode_segments_with_offsets(segments, add_special_tokens, OffsetType::Byte)
+    }
+
+    /// Encode structured segments and return character offsets.
+    pub fn encode_segments_char_offsets(
+        &self,
+        segments: &[EncodeSegment],
+        add_special_tokens: bool,
+    ) -> Result<Encoding> {
+        self.encode_segments_with_offsets(segments, add_special_tokens, OffsetType::Char)
+    }
+
+    /// Encode structured segments without tracking offsets.
+    pub fn encode_segments_fast(
+        &self,
+        segments: &[EncodeSegment],
+        add_special_tokens: bool,
+    ) -> Result<Encoding> {
+        self.encode_segments_with_offsets(segments, add_special_tokens, OffsetType::None)
+    }
+
     /// Encode the given input. This method accepts both single sequences, as well as pair
     /// sequences. Also, a sequence can be a string, or already pre-tokenized input directly:
     /// Contrarily to `encode`, it does not compute offsets
@@ -1182,7 +1323,6 @@ where
         word_idx: Option<u32>,
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
-        let mut pretokenized: PreTokenizedString = pretokenized.into();
         let truncation = match self.truncation.as_ref() {
             Some(TruncationParams {
                 direction,
@@ -1194,6 +1334,18 @@ where
             }
             _ => None,
         };
+        self.do_tokenize_with_limit(pretokenized, type_id, word_idx, offsets_type, truncation)
+    }
+
+    fn do_tokenize_with_limit<P: Into<PreTokenizedString>>(
+        &self,
+        pretokenized: P,
+        type_id: u32,
+        word_idx: Option<u32>,
+        offsets_type: OffsetType,
+        truncation: Option<(usize, TruncationDirection)>,
+    ) -> Result<Encoding> {
+        let mut pretokenized: PreTokenizedString = pretokenized.into();
         self.model
             .tokenize_in_pretokenized(&mut pretokenized, truncation)?;
         pretokenized.into_encoding(word_idx, type_id, offsets_type)
@@ -1333,6 +1485,52 @@ where
     PP: PostProcessor + Send + Sync,
     D: Decoder + Send + Sync,
 {
+    fn encode_batch_segments_with_offsets(
+        &self,
+        inputs: Vec<Vec<EncodeSegment>>,
+        add_special_tokens: bool,
+        offsets_type: OffsetType,
+    ) -> Result<Vec<Encoding>> {
+        let mut encodings = inputs
+            .into_maybe_par_iter()
+            .map(|segments| {
+                self.encode_segments_with_offsets(&segments, add_special_tokens, offsets_type)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        if let Some(params) = &self.padding {
+            pad_encodings(&mut encodings, params)?;
+        }
+        Ok(encodings)
+    }
+
+    /// Encode batches of structured segments in parallel, using byte offsets.
+    pub fn encode_batch_segments(
+        &self,
+        inputs: Vec<Vec<EncodeSegment>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<Encoding>> {
+        self.encode_batch_segments_with_offsets(inputs, add_special_tokens, OffsetType::Byte)
+    }
+
+    /// Encode batches of structured segments in parallel, using character offsets.
+    pub fn encode_batch_segments_char_offsets(
+        &self,
+        inputs: Vec<Vec<EncodeSegment>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<Encoding>> {
+        self.encode_batch_segments_with_offsets(inputs, add_special_tokens, OffsetType::Char)
+    }
+
+    /// Encode batches of structured segments in parallel without tracking offsets.
+    pub fn encode_batch_segments_fast(
+        &self,
+        inputs: Vec<Vec<EncodeSegment>>,
+        add_special_tokens: bool,
+    ) -> Result<Vec<Encoding>> {
+        self.encode_batch_segments_with_offsets(inputs, add_special_tokens, OffsetType::None)
+    }
+
     /// Encode all the sentences in parallel, using multiple threads
     pub fn encode_batch<'s, E>(
         &self,
@@ -1663,6 +1861,107 @@ mod tests {
         let mut tokenizer = Tokenizer::new(model);
         tokenizer.with_pre_tokenizer(Some(WhitespaceSplit));
         tokenizer
+    }
+
+    fn structured_test_tokenizer() -> Tokenizer {
+        let vocab: AHashMap<String, u32> = vec![
+            ("hello".to_string(), 0),
+            ("world".to_string(), 1),
+            ("<unk>".to_string(), 2),
+        ]
+        .into_iter()
+        .collect();
+        let model = WordLevelBuilder::new()
+            .vocab(vocab)
+            .unk_token("<unk>".to_string())
+            .build()
+            .unwrap();
+        let mut tokenizer = Tokenizer::new(model);
+        tokenizer.with_pre_tokenizer(Some(WhitespaceSplit));
+        tokenizer
+            .add_special_tokens([AddedToken::from("<|s|>", true)])
+            .unwrap();
+        tokenizer
+    }
+
+    #[test]
+    fn structured_segments_protect_only_trusted_special_tokens() {
+        let tokenizer = structured_test_tokenizer();
+        let special_id = tokenizer.token_to_id("<|s|>").unwrap();
+
+        let encoded = tokenizer
+            .encode_segments_char_offsets(
+                &[
+                    EncodeSegment::special("<|s|>"),
+                    EncodeSegment::ordinary("hello <|s|> world"),
+                    EncodeSegment::special("<|s|>"),
+                ],
+                false,
+            )
+            .unwrap();
+
+        assert_eq!(encoded.get_ids(), &[special_id, 0, 2, 1, special_id]);
+        assert_eq!(
+            encoded.get_offsets(),
+            &[(0, 5), (5, 10), (11, 16), (17, 22), (22, 27)]
+        );
+
+        // The existing global option and the legacy path are untouched.
+        assert!(!tokenizer.get_encode_special_tokens());
+        let legacy = tokenizer
+            .encode("<|s|>hello <|s|> world<|s|>", false)
+            .unwrap();
+        assert_eq!(
+            legacy
+                .get_ids()
+                .iter()
+                .filter(|id| **id == special_id)
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn structured_segments_use_full_source_length_for_offsets() {
+        let tokenizer = structured_test_tokenizer();
+        let encoded = tokenizer
+            .encode_segments_char_offsets(
+                &[
+                    EncodeSegment::ordinary("hello  "),
+                    EncodeSegment::special("<|s|>"),
+                ],
+                false,
+            )
+            .unwrap();
+
+        assert_eq!(encoded.get_offsets(), &[(0, 5), (7, 12)]);
+    }
+
+    #[test]
+    fn adjacent_ordinary_segments_do_not_create_tokenization_boundaries() {
+        let tokenizer = structured_test_tokenizer();
+        let encoded = tokenizer
+            .encode_segments(
+                &[
+                    EncodeSegment::ordinary("hel"),
+                    EncodeSegment::ordinary("lo"),
+                ],
+                false,
+            )
+            .unwrap();
+
+        assert_eq!(encoded.get_ids(), &[0]);
+        assert_eq!(encoded.get_offsets(), &[(0, 5)]);
+    }
+
+    #[test]
+    fn structured_segments_reject_unregistered_special_tokens() {
+        let tokenizer = structured_test_tokenizer();
+        let error = tokenizer
+            .encode_segments(&[EncodeSegment::special("<|unknown|>")], false)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("not a registered special token"));
     }
 
     #[test]

@@ -95,6 +95,7 @@ impl std::hash::Hash for AddedToken {
 }
 
 type MatchingSet = Option<DoubleArrayAhoCorasick<u32>>;
+type MatchSplits = Vec<(Option<u32>, Offsets)>;
 
 static STARTS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\w").unwrap());
 static ENDS_WITH_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\w$").unwrap());
@@ -427,7 +428,7 @@ impl AddedVocabulary {
     /// This method returns a list "splits", each of them being a pair of Offsets
     /// and an optional ID if it is an AddedToken.
     /// The list of splits cover the entire input string.
-    fn find_matches(&self, sentence: &str, split_re: &MatchingSet) -> Vec<(Option<u32>, Offsets)> {
+    fn find_matches(&self, sentence: &str, set: &MatchingSet, skip_special: bool) -> MatchSplits {
         if sentence.is_empty() {
             return vec![(None, (0, 0))];
         }
@@ -435,7 +436,7 @@ impl AddedVocabulary {
         let mut start_offset = 0;
         let mut splits = vec![];
 
-        let trie = match split_re {
+        let trie = match set {
             Some(t) => t,
             None => {
                 return vec![(None, (0, sentence.len()))];
@@ -447,8 +448,7 @@ impl AddedVocabulary {
             let id = mat.value();
             let added_token = &self.added_tokens_map_r.get(&id).unwrap();
 
-            if self.encode_special_tokens && self.special_tokens_set.contains(&added_token.content)
-            {
+            if skip_special && self.special_tokens_set.contains(&added_token.content) {
                 continue;
             }
 
@@ -496,8 +496,9 @@ impl AddedVocabulary {
         &self,
         sentence: NormalizedString,
         split_re: &MatchingSet,
+        encode_special_tokens: bool,
     ) -> Vec<(NormalizedString, Option<Vec<Token>>)> {
-        self.find_matches(sentence.get(), split_re)
+        self.find_matches(sentence.get(), split_re, encode_special_tokens)
             .into_iter()
             .map(|(id, byte_offsets)| {
                 let slice = sentence
@@ -525,11 +526,28 @@ impl AddedVocabulary {
         normalizer: Option<&N>,
         sequence: &str,
     ) -> PreTokenizedString {
+        self.extract_and_normalize_with_special_tokens(
+            normalizer,
+            sequence,
+            self.encode_special_tokens,
+        )
+    }
+
+    /// Extract the additional vocabulary while choosing, for this call only, whether registered
+    /// special tokens should be encoded as ordinary text.
+    pub(crate) fn extract_and_normalize_with_special_tokens<N: Normalizer>(
+        &self,
+        normalizer: Option<&N>,
+        sequence: &str,
+        encode_special_tokens: bool,
+    ) -> PreTokenizedString {
         let mut pretokenized: PreTokenizedString = sequence.into();
 
         // 1. We extract all the non-normalized tokens from the non-normalized string
         pretokenized
-            .split(|_, sequence| Ok(self.split_with_indices(sequence, &self.split_trie)))
+            .split(|_, sequence| {
+                Ok(self.split_with_indices(sequence, &self.split_trie, encode_special_tokens))
+            })
             .expect("AddedVocabulary bad split");
 
         // <s> normalized = False
@@ -548,7 +566,11 @@ impl AddedVocabulary {
         pretokenized
             .split(|_, mut sequence| {
                 normalizer.map(|n| n.normalize(&mut sequence));
-                Ok(self.split_with_indices(sequence, &self.split_normalized_trie))
+                Ok(self.split_with_indices(
+                    sequence,
+                    &self.split_normalized_trie,
+                    encode_special_tokens,
+                ))
             })
             .expect("AddedVocabulary bad split");
 
@@ -935,7 +957,7 @@ mod tests {
     #[test]
     fn empty_matches() {
         let vocab = AddedVocabulary::new();
-        let matches = vocab.find_matches("", &vocab.split_trie);
+        let matches = vocab.find_matches("", &vocab.split_trie, false);
         assert_eq!(matches, vec![(None, (0, 0))]);
     }
 

@@ -1,13 +1,14 @@
 import pickle
 import copy
 import concurrent.futures
+import json
 import pytest
 import numpy as np
 import asyncio
 from tokenizers import AddedToken, Encoding, Tokenizer, decoders
 from tokenizers.implementations import BertWordPieceTokenizer
-from tokenizers.models import BPE, Model, Unigram
-from tokenizers.pre_tokenizers import ByteLevel, Metaspace
+from tokenizers.models import BPE, Model, Unigram, WordLevel
+from tokenizers.pre_tokenizers import ByteLevel, Metaspace, WhitespaceSplit
 from tokenizers.processors import RobertaProcessing, TemplateProcessing
 from tokenizers.normalizers import Strip, Lowercase, Sequence
 from tokenizers.normalizers import ByteLevel as NormalizerByteLevel
@@ -853,6 +854,201 @@ class TestTokenizerRepr:
             out
             == 'Tokenizer(version="1.0", truncation=None, padding=None, added_tokens=[], normalizer=Sequence(normalizers=[Lowercase(), Strip(strip_left=True, strip_right=True)]), pre_tokenizer=ByteLevel(add_prefix_space=True, trim_offsets=True, use_regex=True), post_processor=TemplateProcessing(single=[SpecialToken(id="[CLS]", type_id=0), Sequence(id=A, type_id=0), SpecialToken(id="[SEP]", type_id=0)], pair=[SpecialToken(id="[CLS]", type_id=0), Sequence(id=A, type_id=0), SpecialToken(id="[SEP]", type_id=0), Sequence(id=B, type_id=1), SpecialToken(id="[SEP]", type_id=1)], special_tokens={"[CLS]":SpecialToken(id="[CLS]", ids=[1], tokens=["[CLS]"]), "[SEP]":SpecialToken(id="[SEP]", ids=[0], tokens=["[SEP]"])}), decoder=None, model=BPE(dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=False, byte_fallback=False, ignore_merges=False, vocab={}, merges=[]))'
         )
+
+
+def structured_tokenizer():
+    tokenizer = Tokenizer(WordLevel({"hello": 0, "world": 1, "<unk>": 2}, unk_token="<unk>"))
+    tokenizer.pre_tokenizer = WhitespaceSplit()
+    tokenizer.add_special_tokens(["<|s|>"])
+    return tokenizer
+
+
+def structured_json(segments, **overrides):
+    payload = {"version": 1, "type": "jinja_render_segments", "segments": segments}
+    payload.update(overrides)
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def structured_json_object(segments, **overrides):
+    payload = {"version": 1, "type": "jinja_render_segments", "segments": segments}
+    payload.update(overrides)
+    return payload
+
+
+class TestStructuredSpecialTokens:
+    @pytest.mark.parametrize("as_string", [False, True])
+    def test_opt_in_accepts_json_objects_and_strings(self, as_string):
+        tokenizer = structured_tokenizer()
+        special_id = tokenizer.token_to_id("<|s|>")
+        rendered = structured_json_object(
+            [
+                {"content": "<|s|>", "special": "yes"},
+                {"content": "hello <|s|> world", "special": "no"},
+                {"content": "<|s|>", "special": "yes"},
+            ]
+        )
+        if as_string:
+            rendered = json.dumps(rendered)
+
+        encoded = tokenizer.encode(rendered, add_special_tokens=False, structured_special_tokens=True)
+
+        assert encoded.ids == [special_id, 0, 2, 1, special_id]
+        assert encoded.offsets == [(0, 5), (5, 10), (11, 16), (17, 22), (22, 27)]
+        assert encoded.ids.count(special_id) == 2
+        assert tokenizer.encode_special_tokens is False
+
+        legacy = tokenizer.encode("<|s|>hello <|s|> world<|s|>", add_special_tokens=False)
+        assert legacy.ids.count(special_id) == 3
+
+    def test_flag_off_does_not_parse_json(self):
+        tokenizer = structured_tokenizer()
+        assert tokenizer.encode("{not json}", add_special_tokens=False).ids == [2, 2]
+
+    def test_character_offsets_include_unencoded_trailing_space(self):
+        tokenizer = structured_tokenizer()
+        rendered = structured_json(
+            [
+                {"content": "héllo  ", "special": "no"},
+                {"content": "<|s|>", "special": "yes"},
+            ]
+        )
+
+        encoded = tokenizer.encode(rendered, add_special_tokens=False, structured_special_tokens=True)
+        assert encoded.offsets == [(0, 5), (7, 12)]
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "not json",
+            structured_json([], version=2),
+            structured_json([], type="other"),
+            structured_json([{"content": "hello", "special": "true"}]),
+            structured_json([{"content": "hello", "special": "no", "extra": 1}]),
+            json.dumps({"version": 1, "type": "jinja_render_segments", "segments": [], "extra": 1}),
+        ],
+    )
+    def test_schema_is_strict(self, payload):
+        tokenizer = structured_tokenizer()
+        with pytest.raises(ValueError):
+            tokenizer.encode(payload, structured_special_tokens=True)
+
+    def test_unknown_special_and_incompatible_options_are_rejected(self):
+        tokenizer = structured_tokenizer()
+        unknown = structured_json([{"content": "<|unknown|>", "special": "yes"}])
+        valid = structured_json([{"content": "hello", "special": "no"}])
+
+        with pytest.raises(Exception, match="not a registered special token"):
+            tokenizer.encode(unknown, structured_special_tokens=True)
+        with pytest.raises(ValueError, match="pair"):
+            tokenizer.encode(valid, "world", structured_special_tokens=True)
+        with pytest.raises(ValueError, match="is_pretokenized"):
+            tokenizer.encode(valid, is_pretokenized=True, structured_special_tokens=True)
+        with pytest.raises(TypeError, match="JSON object.*or JSON string"):
+            tokenizer.encode(["not", "an", "object"], structured_special_tokens=True)
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            structured_json_object([], version=True),
+            structured_json_object([], version=1.0),
+            structured_json_object([], type=1),
+            {"type": "jinja_render_segments", "segments": []},
+            structured_json_object(["not an object"]),
+            structured_json_object([{"content": 1, "special": "no"}]),
+            structured_json_object([{"content": "hello", "special": True}]),
+            structured_json_object([{"special": "no"}]),
+            structured_json_object([{"content": "hello", "special": "no", "extra": 1}]),
+            {"version": 1, "type": "jinja_render_segments", "segments": [], "extra": 1},
+            {"version": 1, "type": "jinja_render_segments", "segments": [], 1: "invalid key"},
+        ],
+    )
+    def test_json_object_schema_is_strict(self, payload):
+        tokenizer = structured_tokenizer()
+
+        with pytest.raises(ValueError):
+            tokenizer.encode(payload, structured_special_tokens=True)
+
+    def test_batch_fast_and_concurrent_calls_do_not_mutate_global_policy(self):
+        tokenizer = structured_tokenizer()
+        special_id = tokenizer.token_to_id("<|s|>")
+        rendered = structured_json_object(
+            [
+                {"content": "<|s|>", "special": "yes"},
+                {"content": "hello <|s|>", "special": "no"},
+            ]
+        )
+
+        batch = tokenizer.encode_batch([rendered, rendered], add_special_tokens=False, structured_special_tokens=True)
+        fast = tokenizer.encode_batch_fast(
+            [rendered, rendered], add_special_tokens=False, structured_special_tokens=True
+        )
+        assert [encoding.ids for encoding in batch] == [[special_id, 0, 2]] * 2
+        assert [encoding.ids for encoding in fast] == [[special_id, 0, 2]] * 2
+        assert all(offset == (0, 0) for encoding in fast for offset in encoding.offsets)
+
+        def structured_call(_):
+            return tokenizer.encode(rendered, add_special_tokens=False, structured_special_tokens=True).ids
+
+        def legacy_call(_):
+            return tokenizer.encode("<|s|>hello <|s|>", add_special_tokens=False).ids
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            structured_results = list(executor.map(structured_call, range(100)))
+            legacy_results = list(executor.map(legacy_call, range(100)))
+
+        assert structured_results == [[special_id, 0, 2]] * 100
+        assert all(result.count(special_id) == 2 for result in legacy_results)
+        assert tokenizer.encode_special_tokens is False
+
+    def test_existing_truncation_post_processing_and_padding_are_reused(self):
+        tokenizer = structured_tokenizer()
+        cls_id = tokenizer.add_special_tokens(["[CLS]"])
+        assert cls_id == 1
+        cls_id = tokenizer.token_to_id("[CLS]")
+        tokenizer.post_processor = TemplateProcessing(single=["[CLS]", "$A"], special_tokens=[("[CLS]", cls_id)])
+        tokenizer.enable_truncation(max_length=3)
+        rendered = structured_json(
+            [
+                {"content": "hello world", "special": "no"},
+                {"content": "<|s|>", "special": "yes"},
+            ]
+        )
+
+        encoded = tokenizer.encode(rendered, structured_special_tokens=True)
+        assert encoded.ids == [cls_id, 0, 1]
+        assert encoded.special_tokens_mask == [1, 0, 0]
+
+        tokenizer.no_truncation()
+        tokenizer.post_processor = None
+        tokenizer.enable_padding(pad_id=2, pad_token="<unk>")
+        short = structured_json([{"content": "hello", "special": "no"}])
+        padded = tokenizer.encode_batch([short, rendered], add_special_tokens=False, structured_special_tokens=True)
+        assert [len(item.ids) for item in padded] == [3, 3]
+        assert padded[0].attention_mask == [1, 0, 0]
+
+    @pytest.mark.asyncio
+    async def test_async_entry_points(self):
+        tokenizer = structured_tokenizer()
+        rendered = structured_json_object(
+            [
+                {"content": "<|s|>", "special": "yes"},
+                {"content": "hello <|s|>", "special": "no"},
+            ]
+        )
+
+        sync = tokenizer.encode(rendered, add_special_tokens=False, structured_special_tokens=True)
+        async_single = await tokenizer.async_encode(rendered, add_special_tokens=False, structured_special_tokens=True)
+        async_batch = await tokenizer.async_encode_batch(
+            [rendered], add_special_tokens=False, structured_special_tokens=True
+        )
+        async_fast = await tokenizer.async_encode_batch_fast(
+            [rendered], add_special_tokens=False, structured_special_tokens=True
+        )
+
+        assert async_single.ids == sync.ids
+        assert async_single.offsets == sync.offsets
+        assert async_batch[0].ids == sync.ids
+        assert async_fast[0].ids == sync.ids
 
 
 @pytest.mark.network
