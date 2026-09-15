@@ -44,9 +44,13 @@ static RE: LazyLock<SysRegex> = LazyLock::new(|| {
     SysRegex::new(r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
         .unwrap()
 });
-static BYTES_CHAR: LazyLock<AHashMap<u8, char>> = LazyLock::new(bytes_char);
+static BYTES_CHAR: LazyLock<[char; 256]> = LazyLock::new(|| {
+    let map = bytes_char();
+    std::array::from_fn(|i| map[&(i as u8)])
+});
+
 static CHAR_BYTES: LazyLock<AHashMap<char, u8>> =
-    LazyLock::new(|| bytes_char().into_iter().map(|(c, b)| (b, c)).collect());
+    LazyLock::new(|| BYTES_CHAR.iter().enumerate().map(|(b, &c)| (c, b as u8)).collect());
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
@@ -91,7 +95,7 @@ impl ByteLevel {
     }
 
     pub fn alphabet() -> AHashSet<char> {
-        BYTES_CHAR.values().copied().collect()
+        BYTES_CHAR.iter().copied().collect()
     }
 
     #[must_use]
@@ -138,7 +142,7 @@ impl PreTokenizer for ByteLevel {
                     s.as_bytes()[i..i + size]
                         .iter()
                         .enumerate()
-                        .map(|(i, b)| (BYTES_CHAR[b], isize::from(i > 0))),
+                        .map(|(i, b)| (BYTES_CHAR[*b as usize], isize::from(i > 0))),
                 );
             }
             normalized.transform(transformations, 0);
@@ -154,20 +158,23 @@ impl PreTokenizer for ByteLevel {
 /// as String.
 impl Decoder for ByteLevel {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
-        let toks = tokens
-            .into_iter()
-            .flat_map(|t| {
-                t.chars()
-                    .try_fold(vec![], |mut acc, c| {
-                        CHAR_BYTES.get(&c).map(|b| {
-                            acc.push(*b);
-                            acc
-                        })
-                    })
-                    .unwrap_or_else(|| t.as_bytes().to_vec())
-            })
-            .collect::<Vec<u8>>();
-        Ok(vec![String::from_utf8_lossy(&toks).to_string()])
+        let mut bytes = Vec::with_capacity(tokens.iter().map(String::len).sum());
+        for token in &tokens {
+            let start = bytes.len();
+            let decoded = token.chars().all(|c| match CHAR_BYTES.get(&c) {
+                Some(&b) => {
+                    bytes.push(b);
+                    true
+                }
+                None => false,
+            });
+
+            if !decoded {
+                bytes.truncate(start);
+                bytes.extend_from_slice(token.as_bytes());
+            }
+        }
+        Ok(vec![String::from_utf8_lossy(&bytes).into_owned()])
     }
 }
 
@@ -203,12 +210,12 @@ pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
     encoding.process_tokens_with_offsets_mut(|(i, (token, offsets))| {
         let mut leading_spaces = token
             .chars()
-            .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())
+            .take_while(|c| *c == BYTES_CHAR[b' ' as usize] || c.is_whitespace())
             .count();
         let trailing_spaces = token
             .chars()
             .rev()
-            .take_while(|c| *c == BYTES_CHAR[&b' '] || c.is_whitespace())
+            .take_while(|c| *c == BYTES_CHAR[b' ' as usize] || c.is_whitespace())
             .count();
 
         if leading_spaces > 0 || trailing_spaces > 0 {
@@ -566,6 +573,30 @@ mod tests {
                 .unwrap(),
             vec!["Hello there dear friend! [PA D]"]
         );
+    }
+
+    #[test]
+    fn decode_empty_tokens() {
+        let byte_level = ByteLevel::default();
+        assert_eq!(byte_level.decode_chain(vec![]).unwrap(), vec![""]);
+    }
+
+    #[test]
+    fn decode_partial_unknown_token() {
+        let byte_level = ByteLevel::default();
+        assert_eq!(
+            byte_level
+                .decode_chain(vec!["Hello".into(), "Ġworld☺".into()])
+                .unwrap(),
+            vec!["HelloĠworld☺"]
+        );
+    }
+
+    #[test]
+    fn char_bytes_round_trip() {
+        for byte in 0..=u8::MAX {
+            assert_eq!(CHAR_BYTES.get(&BYTES_CHAR[byte as usize]), Some(&byte));
+        }
     }
 
     #[test]
