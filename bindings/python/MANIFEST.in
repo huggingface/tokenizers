@@ -1,7 +1,0 @@
-include Cargo.toml
-include pyproject.toml
-include rust-toolchain
-include ../../LICENSE
-recursive-include src *
-recursive-include tokenizers-lib *
-recursive-exclude tokenizers-lib/target *

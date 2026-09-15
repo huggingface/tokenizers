@@ -1,3 +1,5 @@
+# Not runnable yet: these bindings do not expose training, so `tokenizers.trainers` does not
+# import. The TODO in src/lib.rs tracks binding tk-train.
 """Train a parity-aware BPE tokenizer over several languages at once.
 
 `ParityBpeTrainer` takes one iterator per language and balances merges across them, so a
@@ -18,7 +20,6 @@ import datasets
 
 from tokenizers import Tokenizer, decoders, models, pre_tokenizers
 from tokenizers.trainers import ParityBpeTrainer
-
 
 WIKIPEDIA = "wikimedia/wikipedia"
 FLORES_PLUS = "openlanguagedata/flores_plus"
