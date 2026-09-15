@@ -10,8 +10,12 @@ on:
     paths-ignore:
       - bindings/node/**
 
+permissions: {}
+
 jobs:
   build_win_32:
+    permissions:
+      contents: read
     name: Check it builds for Windows 32-bit
     runs-on: windows-latest
     steps:
@@ -34,6 +38,8 @@ jobs:
         run: cargo build --target i686-pc-windows-msvc --manifest-path ./bindings/python/Cargo.toml
 
   build_and_test:
+    permissions:
+      contents: read
     name: Check everything builds & tests
     runs-on: ${{ matrix.os }}
     strategy:
@@ -91,6 +97,8 @@ jobs:
           make test HF="uvx --from huggingface_hub hf"
 
   quality:
+    permissions:
+      contents: read
     name: Lint & format
     runs-on: ubuntu-latest
     defaults:
@@ -138,6 +146,8 @@ jobs:
         run: git diff --exit-code
 
   audit:
+    permissions:
+      contents: read
     name: Audit dependencies
     runs-on: ubuntu-latest
     defaults:
