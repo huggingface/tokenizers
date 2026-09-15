@@ -52,6 +52,10 @@ default = ["progressbar", "esaxx_fast"]
 esaxx_fast = ["esaxx-rs/cpp"]
 progressbar = ["indicatif", "tk-encode/progressbar"]
 parity-aware-bpe = []
+# Wraps the allocator to count allocations, for `examples/train_bench`. Never enable it while
+# timing: two atomics per allocation taxes allocation-heavy code far more than optimised code, so
+# it flatters any before/after it is used for.
+count-allocs = []
 
 [dev-dependencies]
 tempfile = "3.10"
