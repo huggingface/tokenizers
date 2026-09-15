@@ -117,12 +117,12 @@ impl Truncation {
     /// Args:
     ///     max_length: int
     ///         The maximum number of tokens, including special tokens, to keep.
-	/// 		Encodings with more tokens will get truncated.
+    /// 		Encodings with more tokens will get truncated.
     ///     strategy: `"longest_first"` (the default), `"only_first"` or `"only_second"`
     ///         Which sequence of a pair is truncated.
     ///     direction: `"right"` (the default) or `"left"`
     ///         Whether to truncate tokens at the end of the sequence (`"right"`) or at
-	/// 		the beginning of the sequence (`"left"`).
+    /// 		the beginning of the sequence (`"left"`).
     #[new]
     #[pyo3(signature = (max_length, strategy=Strategy(TruncationStrategy::LongestFirst), direction=Direction(TruncationDirection::Right)))]
     fn new(max_length: usize, strategy: Strategy, direction: Direction) -> Self {
@@ -130,8 +130,8 @@ impl Truncation {
             max_length,
             strategy: strategy.0,
             direction: direction.0,
-			// TODO: Stride is not implemented yet
-			stride: 0,
+            // TODO: Stride is not implemented yet
+            stride: 0,
         })
     }
 
