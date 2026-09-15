@@ -41,10 +41,12 @@ mod tests {
             NormalizedString::new(
                 original.to_string(),
                 normalized.to_string(),
+                // The prepended "▁" (3 bytes) maps to a zero-width span at the
+                // start; the original characters keep their own offsets.
                 vec![
-                    (0, 1),
-                    (0, 1),
-                    (0, 1),
+                    (0, 0),
+                    (0, 0),
+                    (0, 0),
                     (0, 1),
                     (1, 2),
                     (2, 3),
@@ -56,7 +58,7 @@ mod tests {
         );
         assert_eq!(
             n.alignments_original(),
-            vec![(0, 4), (4, 5), (5, 6), (6, 7), (7, 8)]
+            vec![(3, 4), (4, 5), (5, 6), (6, 7), (7, 8)]
         );
     }
 }
