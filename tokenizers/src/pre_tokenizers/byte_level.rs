@@ -113,8 +113,9 @@ impl ByteLevel {
     }
 }
 
-/// As a `PreTokenizer`, `ByteLevel` is in charge of transforming all the unicode characters into
-/// their byte-level counterpart. It also splits the input according to the configured regex.
+/// As a `PreTokenizer`, `ByteLevel` maps each byte of the input UTF-8 string to
+/// its byte-level counterpart. It also splits the input according to the
+/// configured regex. It does not consume arbitrary raw byte sequences directly.
 // TODO: Give the ability to modify this regex
 impl PreTokenizer for ByteLevel {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
