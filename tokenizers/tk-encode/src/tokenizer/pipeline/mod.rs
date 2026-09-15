@@ -1234,6 +1234,159 @@ mod tests {
         assert_eq!(encodings[1].len(), 1);
     }
 
+    // "hhhhhhello" encodes to five lone `h` and one `hello`: six ids, enough for a cut at 2 and a
+    // pad to 8 to each leave a visible trace.
+    const SIX_TOKENS: &str = "hhhhhhello";
+    const PAD: u32 = 9;
+
+    fn truncate_to(max_length: usize) -> TruncationParams {
+        TruncationParams {
+            max_length,
+            ..TruncationParams::default()
+        }
+    }
+
+    fn pad_to(length: usize) -> PaddingParams {
+        PaddingParams {
+            strategy: PaddingStrategy::Fixed(length),
+            pad_id: PAD,
+            ..PaddingParams::default()
+        }
+    }
+
+    fn encode_six_tokens(pipeline: &PipelineTokenizer, options: &EncodeOptions) -> Encoding {
+        pipeline
+            .encode(SIX_TOKENS, options)
+            .wait()
+            .unwrap()
+            .remove(0)
+    }
+
+    #[test]
+    fn override_with_replaces_the_tokenizers_configured_truncation() {
+        let pipeline = hello_pipeline_with_truncation(truncate_to(5));
+        let options = EncodeOptions {
+            truncation: Override::With(truncate_to(2)),
+            ..EncodeOptions::default()
+        };
+
+        assert_eq!(ids(&encode_six_tokens(&pipeline, &options)), [0, 0]);
+    }
+
+    #[test]
+    fn override_off_turns_off_the_tokenizers_configured_truncation() {
+        let pipeline = hello_pipeline_with_truncation(truncate_to(2));
+        let options = EncodeOptions {
+            truncation: Override::Off,
+            ..EncodeOptions::default()
+        };
+
+        assert_eq!(
+            ids(&encode_six_tokens(&pipeline, &options)),
+            [0, 0, 0, 0, 0, 7]
+        );
+    }
+
+    // Truncating to 2 and then padding to 8 gives [h, h] and six pads. Padding first would leave the
+    // six ids alone, and the cut would then give [h, h] and nothing else.
+    const TRUNCATED_THEN_PADDED: [u32; 8] = [0, 0, PAD, PAD, PAD, PAD, PAD, PAD];
+
+    #[test]
+    fn configured_truncation_runs_before_configured_padding() {
+        let pipeline = hello_pipeline_with(
+            PipelinePostProcessor::default(),
+            Some(pad_to(8)),
+            Some(truncate_to(2)),
+        );
+
+        let encoding = encode_six_tokens(&pipeline, &EncodeOptions::default());
+
+        assert_eq!(ids(&encoding), TRUNCATED_THEN_PADDED);
+        assert_eq!(
+            encoding.attention_mask().unwrap(),
+            [1u8, 1, 0, 0, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn overridden_truncation_runs_before_overridden_padding() {
+        let pipeline = hello_pipeline();
+        let options = EncodeOptions {
+            padding: Override::With(pad_to(8)),
+            truncation: Override::With(truncate_to(2)),
+            ..EncodeOptions::default()
+        };
+
+        let encoding = encode_six_tokens(&pipeline, &options);
+
+        assert_eq!(ids(&encoding), TRUNCATED_THEN_PADDED);
+        assert_eq!(
+            encoding.attention_mask().unwrap(),
+            [1u8, 1, 0, 0, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn overridden_truncation_keeps_the_configured_padding() {
+        let pipeline = hello_pipeline_with_padding(pad_to(8));
+        let options = EncodeOptions {
+            truncation: Override::With(truncate_to(2)),
+            ..EncodeOptions::default()
+        };
+
+        assert_eq!(
+            ids(&encode_six_tokens(&pipeline, &options)),
+            TRUNCATED_THEN_PADDED
+        );
+    }
+
+    #[test]
+    fn overridden_padding_keeps_the_configured_truncation() {
+        let pipeline = hello_pipeline_with_truncation(truncate_to(2));
+        let options = EncodeOptions {
+            padding: Override::With(pad_to(8)),
+            ..EncodeOptions::default()
+        };
+
+        assert_eq!(
+            ids(&encode_six_tokens(&pipeline, &options)),
+            TRUNCATED_THEN_PADDED
+        );
+    }
+
+    #[test]
+    fn padding_off_keeps_the_configured_truncation() {
+        let pipeline = hello_pipeline_with(
+            PipelinePostProcessor::default(),
+            Some(pad_to(8)),
+            Some(truncate_to(2)),
+        );
+        let options = EncodeOptions {
+            padding: Override::Off,
+            ..EncodeOptions::default()
+        };
+
+        assert_eq!(ids(&encode_six_tokens(&pipeline, &options)), [0, 0]);
+    }
+
+    #[test]
+    fn truncation_off_keeps_the_configured_padding() {
+        let pipeline = hello_pipeline_with(
+            PipelinePostProcessor::default(),
+            Some(pad_to(8)),
+            Some(truncate_to(2)),
+        );
+        let options = EncodeOptions {
+            truncation: Override::Off,
+            ..EncodeOptions::default()
+        };
+
+        assert_eq!(
+            ids(&encode_six_tokens(&pipeline, &options)),
+            [0, 0, 0, 0, 0, 7, PAD, PAD]
+        );
+    }
+
     #[test]
     fn test_truncate_with_specials() {
         let pipeline = pipeline_with(
@@ -1525,6 +1678,14 @@ mod tests {
         post_processor: PipelinePostProcessor,
         truncation: Option<TruncationParams>,
     ) -> PipelineTokenizer {
+        hello_pipeline_with(post_processor, None, truncation)
+    }
+
+    fn hello_pipeline_with(
+        post_processor: PipelinePostProcessor,
+        padding: Option<PaddingParams>,
+        truncation: Option<TruncationParams>,
+    ) -> PipelineTokenizer {
         PipelineTokenizer::from_parts(
             BucketAddedVocabulary::new(),
             Vec::new(),
@@ -1533,7 +1694,7 @@ mod tests {
             post_processor,
             None,
             Default::default(),
-            None,
+            padding,
             truncation,
         )
     }
@@ -1569,30 +1730,14 @@ mod tests {
     }
 
     fn hello_pipeline() -> PipelineTokenizer {
-        PipelineTokenizer::from_parts(
-            BucketAddedVocabulary::new(),
-            Vec::new(),
-            PipelinePreTokenizer::None,
-            PipelineModel::BPE(hello_bpe()),
-            PipelinePostProcessor::default(),
-            None,
-            Default::default(),
-            None,
-            None,
-        )
+        hello_pipeline_with(PipelinePostProcessor::default(), None, None)
     }
 
     fn hello_pipeline_with_padding(padding: PaddingParams) -> PipelineTokenizer {
-        PipelineTokenizer::from_parts(
-            BucketAddedVocabulary::new(),
-            Vec::new(),
-            PipelinePreTokenizer::None,
-            PipelineModel::BPE(hello_bpe()),
-            PipelinePostProcessor::default(),
-            None,
-            Default::default(),
-            Some(padding),
-            None,
-        )
+        hello_pipeline_with(PipelinePostProcessor::default(), Some(padding), None)
+    }
+
+    fn hello_pipeline_with_truncation(truncation: TruncationParams) -> PipelineTokenizer {
+        hello_pipeline_with(PipelinePostProcessor::default(), None, Some(truncation))
     }
 }
