@@ -31,3 +31,5 @@ line-length = 119
 # `tokenizers` and the tests' `conftest` are first-party for import sorting.
 src = ["python", "tests"]
 lint.select = ["E4", "E7", "E9", "F", "I"]
+# Also covers submodules the bindings do not ship yet, like `tokenizers.trainers`.
+lint.isort.known-first-party = ["tokenizers"]
