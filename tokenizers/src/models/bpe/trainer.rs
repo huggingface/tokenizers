@@ -516,13 +516,21 @@ impl BpeTrainer {
                 break;
             };
 
-            if top.count != pair_counts[&top.pair] as u64 {
-                top.count = pair_counts[&top.pair] as u64;
+            // `pair_counts` is signed and a pair can go below zero once `max_token_length`
+            // starts rejecting the `+1` half of a neighbour update. Compare before casting:
+            // `-1 as u64` sorts to the top of the max-heap and gets merged.
+            let count = pair_counts[&top.pair];
+            if count <= 0 {
+                continue;
+            }
+
+            if top.count != count as u64 {
+                top.count = count as u64;
                 queue.push(top);
                 continue;
             }
 
-            if top.count < 1 || self.min_frequency > top.count {
+            if self.min_frequency > top.count {
                 break;
             }
 
@@ -864,5 +872,75 @@ mod tests {
         .map(|(k, v)| (k.to_string(), v))
         .collect();
         assert_eq!(trained_vocab, expected_vocab)
+    }
+    #[test]
+    fn bpe_test_no_unreachable_merge() {
+        // With a continuing_subword_prefix, max_token_length can reject the `+1` half of a
+        // neighbour update while the matching `-1` still lands, which pushes a pair count
+        // below zero. Every emitted merge must still apply somewhere in the corpus.
+        let word_counts: AHashMap<CompactString, u64> =
+            [("##a##a".into(), 1)].iter().cloned().collect();
+        let trainer = BpeTrainer::builder()
+            .show_progress(false)
+            .continuing_subword_prefix("##".to_string())
+            .max_token_length(Some(4))
+            .min_frequency(0)
+            .build();
+        let mut model = BPE::default();
+        trainer.do_train(&word_counts, &mut model).unwrap();
+
+        let id_to_token: AHashMap<u32, String> = model
+            .vocab
+            .iter()
+            .map(|(token, id)| (*id, token.clone()))
+            .collect();
+        let mut ranked: Vec<(u32, Pair, u32)> = model
+            .merges
+            .iter()
+            .map(|(pair, (rank, new_id))| (*rank, *pair, *new_id))
+            .collect();
+        ranked.sort_unstable_by_key(|(rank, _, _)| *rank);
+
+        // Re-tokenize the corpus and replay the merges in rank order
+        let mut words: Vec<Vec<String>> = word_counts
+            .keys()
+            .map(|word| {
+                word.chars()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        if i == 0 {
+                            c.to_string()
+                        } else {
+                            format!("##{c}")
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+        for (rank, pair, new_id) in ranked {
+            let (first, second) = (&id_to_token[&pair.0], &id_to_token[&pair.1]);
+            let new_token = &id_to_token[&new_id];
+            let mut applied = false;
+            for word in words.iter_mut() {
+                let mut merged = Vec::with_capacity(word.len());
+                let mut i = 0;
+                while i < word.len() {
+                    if i + 1 < word.len() && &word[i] == first && &word[i + 1] == second {
+                        merged.push(new_token.clone());
+                        applied = true;
+                        i += 2;
+                    } else {
+                        merged.push(word[i].clone());
+                        i += 1;
+                    }
+                }
+                *word = merged;
+            }
+            assert!(
+                applied,
+                "merge {} ({}, {}) does not occur in the corpus",
+                rank, first, second
+            );
+        }
     }
 }
