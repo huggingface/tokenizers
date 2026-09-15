@@ -22,25 +22,66 @@ export declare class PipelineTokenizer {
 
 /** Per-call settings. A field left out keeps the tokenizer's own behaviour. */
 export interface EncodeOptions {
-  /** `true` unless set. */
+  /**
+   * Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`. `true`
+   * when left out.
+   */
   addSpecialTokens?: boolean
   /**
-   * `false` turns the tokenizer's configured padding off, a `PaddingOptions` changes it for
-   * this call, `true` or left out keeps it.
+   * Padding for this call, replacing the tokenizer's configured padding. `false` disables
+   * padding. Left out, the configured padding applies.
    */
-  padding?: boolean | PaddingOptions
+  padding?: false | PaddingOptions
+  /**
+   * Truncation for this call, replacing the tokenizer's configured truncation. `false` disables
+   * truncation. Left out, the configured truncation applies.
+   */
+  truncation?: false | TruncationOptions
 }
 
 /**
- * A field left out keeps the tokenizer's configured padding, or the defaults when it configures
- * none: pad to the longest sequence in the batch, on the right, with id 0 and token `[PAD]`.
+ * Padding for one call. It replaces the tokenizer's configured padding as a whole, so a field
+ * left out takes the value noted on the field, not the configured one.
  */
 export interface PaddingOptions {
-  /** Pad every sequence to this many tokens instead of to the longest one in the batch. */
-  length?: number
+  /**
+   * `right` when left out, or `left`: whether padding tokens are appended to the right or
+   * prepended to the left of encoded tokens.
+   */
   direction?: 'left' | 'right'
-  padToMultipleOf?: number
+  /** The id of the padding token. `0` when left out. */
   padId?: number
+  /** The type id of the padding token. `0` when left out. */
   padTypeId?: number
+  /** The text of the padding token. `[PAD]` when left out. */
   padToken?: string
+  /**
+   * Pads every encoding to exactly this many tokens. Left out, pads each batch to its longest
+   * item.
+   */
+  length?: number
+  /** Rounds the padded length up to a multiple of this. */
+  padToMultipleOf?: number
+}
+
+/**
+ * Truncation for one call. It replaces the tokenizer's configured truncation as a whole, so a
+ * field left out takes the value noted on the field, not the configured one.
+ */
+export interface TruncationOptions {
+  /**
+   * The maximum number of tokens, including special tokens, to keep. Encodings with more tokens
+   * get truncated.
+   */
+  maxLength: number
+  /**
+   * `longest_first` when left out, `only_first` or `only_second`: which sequence of a pair is
+   * truncated.
+   */
+  strategy?: 'longest_first' | 'only_first' | 'only_second'
+  /**
+   * `right` when left out, or `left`: whether to truncate tokens at the end of the sequence or
+   * at its beginning.
+   */
+  direction?: 'left' | 'right'
 }

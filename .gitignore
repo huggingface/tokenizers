@@ -9,6 +9,7 @@ target
 /data
 tokenizers/data
 bindings/python/tests/data
+bindings/node/data
 docs/build/
 docs/make.bat
 

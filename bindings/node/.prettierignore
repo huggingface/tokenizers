@@ -1,5 +1,6 @@
 target
 .yarn
+data
 
 # napi regenerates these per-platform stubs; formatting them only creates churn
 npm
