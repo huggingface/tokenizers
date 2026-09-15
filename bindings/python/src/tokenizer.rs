@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use tk_encode::PaddingParams;
 use tk_encode::pipeline::{EncodeOptions, Override, PipelineTokenizer as Pipeline};
 
@@ -9,7 +10,7 @@ use crate::encoding::Encoding;
 use crate::error::{convert_err, err, poison_err};
 use crate::padding::{Padding, PaddingArg};
 use crate::repr;
-use crate::type_hints::TokenIds;
+use crate::type_hints::{Token, TokenIds};
 
 /// A tokenizer. Encodes text into token ids, and decodes token ids back into text.
 #[pyclass(frozen, module = "tokenizers")]
@@ -64,6 +65,81 @@ impl Tokenizer {
             pipeline,
             padding: Mutex::new(padding),
         })
+    }
+
+    /// Instantiate a new `Tokenizer` from an existing file on the Hugging Face Hub.
+    ///
+    /// Defers downloading and caching to `huggingface_hub.hf_hub_download`.
+    ///
+    /// Args:
+    ///     identifier (`str`):
+    ///         The *model id* of a repo hosted on huggingface.co that contains a `tokenizer.json` file,
+    ///         e.g., `"openai-community/gpt2"`.
+    ///     revision (`str`, *optional*, defaults to `"main"`):
+    ///         The specific model version to use. It can be a branch name, a tag name, or a commit id,
+    ///         since we use a git-based system for storing models and other artifacts on huggingface.co,
+    ///         so `revision` can be any identifier allowed by git.
+    ///     token (`str` or `bool`, *optional*):
+    ///         The token to use as HTTP bearer authorization for remote files. If `True`, will use the
+    ///         token generated when running `hf auth login`. If `False`, will send no token. If `None`,
+    ///         will use the stored token when there is one.
+    ///     cache_dir (`str` or `Path`, *optional*):
+    ///         Path to a directory in which the downloaded file should be cached if the standard cache
+    ///         should not be used.
+    ///     force_download (`bool`, *optional*, defaults to `False`):
+    ///         Whether or not to download the file again and override the cached version if it exists.
+    ///     local_files_only (`bool`, *optional*, defaults to `False`):
+    ///         Whether or not to only rely on the cache and not to attempt to download anything.
+    ///     subfolder (`str`, *optional*):
+    ///         In case `tokenizer.json` is located inside a subfolder of the model repo on huggingface.co,
+    ///         specify it here.
+    ///
+    /// Returns:
+    ///     `Tokenizer`: The tokenizer the file describes.
+    ///
+    /// Examples:
+    ///
+    /// ```python
+    /// # Download tokenizer.json from huggingface.co and cache it.
+    /// tokenizer = Tokenizer.from_pretrained("openai-community/gpt2")
+    ///
+    /// # Pin a revision: a branch name, a tag name or a commit id.
+    /// tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", revision="607a30d783dfa663caf39e06633721c8d4cfcd7e")
+    ///
+    /// # A private or gated repo, with the token `hf auth login` stored.
+    /// tokenizer = Tokenizer.from_pretrained("my-org/my-model", token=True)
+    ///
+    /// # Read the cache without contacting the Hub.
+    /// tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", local_files_only=True)
+    /// ```
+    #[staticmethod]
+    #[pyo3(signature = (identifier, revision="main", token=None, *, cache_dir=None, force_download=false, local_files_only=false, subfolder=None))]
+    fn from_pretrained(
+        py: Python<'_>,
+        identifier: &str,
+        revision: &str,
+        token: Option<Token<'_>>,
+        cache_dir: Option<PathBuf>,
+        force_download: bool,
+        local_files_only: bool,
+        subfolder: Option<&str>,
+    ) -> PyResult<Self> {
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("repo_id", identifier)?;
+        kwargs.set_item("filename", "tokenizer.json")?;
+        kwargs.set_item("revision", revision)?;
+        kwargs.set_item("token", token.map(|token| token.0))?;
+        kwargs.set_item("cache_dir", cache_dir)?;
+        kwargs.set_item("force_download", force_download)?;
+        kwargs.set_item("local_files_only", local_files_only)?;
+        kwargs.set_item("subfolder", subfolder)?;
+        kwargs.set_item("library_name", "tokenizers")?;
+        kwargs.set_item("library_version", env!("CARGO_PKG_VERSION"))?;
+        let path: PathBuf = PyModule::import(py, "huggingface_hub")?
+            .getattr("hf_hub_download")?
+            .call((), Some(&kwargs))?
+            .extract()?;
+        Self::from_file(path)
     }
 
     /// The padding applied to every encode, or `None`.

@@ -3,7 +3,6 @@
 
 from collections.abc import Sequence
 from os import PathLike
-from pathlib import Path
 from typing import Any, Final, Literal, final
 
 from numpy import integer, uint32
@@ -211,21 +210,13 @@ class Tokenizer:
             path:
                 The file to read.
         """
-    @property
-    def padding(self, /) -> Padding | None:
-        """
-        The padding applied to every encode, or `None`.
-        Assign `None` to switch padding off.
-        """
-    @padding.setter
-    def padding(self, /, padding: Padding | None) -> None: ...
     @staticmethod
     def from_pretrained(
         identifier: str,
         revision: str = "main",
         token: str | bool | None = None,
         *,
-        cache_dir: str | Path | None = None,
+        cache_dir: str | PathLike[str] | None = None,
         force_download: bool = False,
         local_files_only: bool = False,
         subfolder: str | None = None,
@@ -277,3 +268,11 @@ class Tokenizer:
         tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", local_files_only=True)
         ```
         """
+    @property
+    def padding(self, /) -> Padding | None:
+        """
+        The padding applied to every encode, or `None`.
+        Assign `None` to switch padding off.
+        """
+    @padding.setter
+    def padding(self, /, padding: Padding | None) -> None: ...

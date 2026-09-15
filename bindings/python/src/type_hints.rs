@@ -1,11 +1,13 @@
-//! Helpers for numpy type hints
+//! Argument and return types whose type hints pyo3 cannot derive
 
 use std::convert::Infallible;
 
 use numpy::{PyArray1, PyReadonlyArray1};
+use pyo3::exceptions::PyTypeError;
 use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
-use pyo3::{Borrowed, type_hint_identifier, type_hint_subscript, type_hint_union};
+use pyo3::types::{PyBool, PyString};
+use pyo3::{Borrowed, PyTypeInfo, type_hint_identifier, type_hint_subscript, type_hint_union};
 
 /// New type to implement PyO3 introspection traits on
 pub struct U32Array<'py>(pub Bound<'py, PyArray1<u32>>);
@@ -68,5 +70,26 @@ impl TokenIds<'_> {
             Self::Array(array) => array.as_slice().expect("contiguous, checked in extract"),
             Self::Copied(ids) => ids,
         }
+    }
+}
+
+/// The `token` argument of `Tokenizer.from_pretrained`, typed `str | bool`.
+///
+/// Handed to `huggingface_hub` as is: it reads `True` as the stored token and `False` as no token.
+pub struct Token<'py>(pub Bound<'py, PyAny>);
+
+impl<'py> FromPyObject<'_, 'py> for Token<'py> {
+    type Error = PyErr;
+
+    const INPUT_TYPE: PyStaticExpr = type_hint_union!(PyString::TYPE_HINT, PyBool::TYPE_HINT);
+
+    fn extract(obj: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+        if obj.is_instance_of::<PyString>() || obj.is_instance_of::<PyBool>() {
+            return Ok(Self(obj.to_owned()));
+        }
+        Err(PyTypeError::new_err(format!(
+            "token must be a str or a bool, not {}",
+            obj.get_type().name()?
+        )))
     }
 }

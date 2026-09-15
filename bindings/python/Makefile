@@ -11,7 +11,6 @@ develop: stubs
 
 stubs:
 	cargo run --manifest-path ./tools/stub-gen/Cargo.toml
-	python tools/stub-gen/python_members.py
 	ruff check --fix --select I python/tokenizers/tokenizers.pyi
 	ruff format python/tokenizers/tokenizers.pyi
 

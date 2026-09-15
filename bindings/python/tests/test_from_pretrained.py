@@ -1,11 +1,10 @@
 import shutil
-from pathlib import Path
 
 import huggingface_hub
 import pytest
 
 from conftest import WIKI
-from tokenizers import Tokenizer, __version__, from_pretrained
+from tokenizers import Tokenizer, __version__
 
 TEXT = "Hello there"
 
@@ -23,13 +22,8 @@ def recorded_download(monkeypatch):
     return seen
 
 
-def test_is_also_reachable_as_a_tokenizer_staticmethod():
-    assert Tokenizer.from_pretrained is from_pretrained
-
-
-@pytest.mark.parametrize("load", [from_pretrained, Tokenizer.from_pretrained], ids=["module", "staticmethod"])
-def test_downloads_tokenizer_json_from_the_model_repo(recorded_download, wiki, load):
-    tokenizer = load("some-org/some-model")
+def test_downloads_tokenizer_json_from_the_model_repo(recorded_download, wiki):
+    tokenizer = Tokenizer.from_pretrained("some-org/some-model")
 
     assert tokenizer.encode(TEXT).ids == wiki.encode(TEXT).ids
     assert recorded_download == {
@@ -46,13 +40,13 @@ def test_downloads_tokenizer_json_from_the_model_repo(recorded_download, wiki, l
     }
 
 
-@pytest.mark.parametrize("token", ["hf_abc", True])
+@pytest.mark.parametrize("token", ["hf_abc", True, False])
 def test_forwards_every_download_option(recorded_download, tmp_path, token):
-    from_pretrained(
+    Tokenizer.from_pretrained(
         "some-org/some-model",
         revision="v2",
         token=token,
-        cache_dir=tmp_path,
+        cache_dir=str(tmp_path),
         force_download=True,
         local_files_only=True,
         subfolder="tokenizer",
@@ -60,10 +54,15 @@ def test_forwards_every_download_option(recorded_download, tmp_path, token):
 
     assert recorded_download["revision"] == "v2"
     assert recorded_download["token"] == token
-    assert Path(recorded_download["cache_dir"]) == tmp_path
+    assert recorded_download["cache_dir"] == tmp_path
     assert recorded_download["force_download"] is True
     assert recorded_download["local_files_only"] is True
     assert recorded_download["subfolder"] == "tokenizer"
+
+
+def test_refuses_a_token_that_is_neither_str_nor_bool(recorded_download):
+    with pytest.raises(TypeError):
+        Tokenizer.from_pretrained("some-org/some-model", token=123)  # ty: ignore[invalid-argument-type]
 
 
 def test_reads_the_hub_cache_without_network(tmp_path, wiki):
@@ -76,22 +75,22 @@ def test_reads_the_hub_cache_without_network(tmp_path, wiki):
     (repo / "snapshots" / commit).mkdir(parents=True)
     shutil.copy(WIKI, repo / "snapshots" / commit / "tokenizer.json")
 
-    tokenizer = from_pretrained("some-org/some-model", cache_dir=tmp_path, local_files_only=True)
+    tokenizer = Tokenizer.from_pretrained("some-org/some-model", cache_dir=tmp_path, local_files_only=True)
 
     assert tokenizer.encode(TEXT).ids == wiki.encode(TEXT).ids
 
 
 def test_reports_a_repo_missing_from_the_cache(tmp_path):
     with pytest.raises(FileNotFoundError):
-        from_pretrained("some-org/does-not-exist", cache_dir=tmp_path, local_files_only=True)
+        Tokenizer.from_pretrained("some-org/does-not-exist", cache_dir=tmp_path, local_files_only=True)
 
 
 @pytest.mark.network
 def test_honours_the_revision():
     text = "Hey there dear friend!"
     # `main` is a lowercasing WordPiece tokenizer, the `gpt-2` branch a byte-level BPE.
-    lowercasing = from_pretrained("anthony/tokenizers-test")
-    byte_level = from_pretrained("anthony/tokenizers-test", revision="gpt-2")
+    lowercasing = Tokenizer.from_pretrained("anthony/tokenizers-test")
+    byte_level = Tokenizer.from_pretrained("anthony/tokenizers-test", revision="gpt-2")
 
     assert lowercasing.decode(lowercasing.encode(text).ids) == "hey there dear friend!"
     assert byte_level.decode(byte_level.encode(text).ids) == "Hey there dear friend!"
