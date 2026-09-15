@@ -114,6 +114,7 @@ impl Tokenizer {
     /// ```
     #[staticmethod]
     #[pyo3(signature = (identifier, revision="main", token=None, *, cache_dir=None, force_download=false, local_files_only=false, subfolder=None))]
+    #[allow(clippy::too_many_arguments)]
     fn from_pretrained(
         py: Python<'_>,
         identifier: &str,
