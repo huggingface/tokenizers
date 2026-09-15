@@ -1,18 +1,15 @@
 # Post-processors
 
+Every post-processor is a template. `BertProcessing`, `RobertaProcessing`, `ByteLevel` and a
+`Sequence` of post-processors were spellings of one, so a `tokenizer.json` using any of them is
+rewritten into a `TemplateProcessing` when it is converted, and there is no separate class for
+them.
+
 <tokenizerslangcontent>
 <python>
-## BertProcessing
+## PostProcessor
 
-[[autodoc]] tokenizers.processors.BertProcessing
-
-## ByteLevel
-
-[[autodoc]] tokenizers.processors.ByteLevel
-
-## RobertaProcessing
-
-[[autodoc]] tokenizers.processors.RobertaProcessing
+[[autodoc]] tokenizers.processors.PostProcessor
 
 ## TemplateProcessing
 

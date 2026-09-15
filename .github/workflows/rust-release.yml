@@ -24,6 +24,18 @@ jobs:
           path: ~/.cargo/registry
           key: ubuntu-latest-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
 
+      # bitsplit ships committed classify tables (no build script). Regenerate them here — this
+      # self-validates every codepoint against the reference atom() and fails the release if the
+      # committed table is stale (someone changed the scheme without `cargo run -p bitmap_gen`).
+      # The `--` matters: without it a path that no longer exists is read as a revision, and
+      # `git diff` exits 128 on the argument, which this `||` would report as "is stale".
+      - name: Regenerate & verify classify tables (bitmap_gen)
+        working-directory: ./tokenizers
+        run: |
+          cargo run -p bitmap_gen
+          git diff --exit-code -- bitsplit/src/classify/atom_tables.rs \
+            || { echo "::error::bitsplit/src/classify/atom_tables.rs is stale — run 'cargo run -p bitmap_gen' and commit"; exit 1; }
+
       - name: Publish package rust
         working-directory: ./tokenizers
         if: ${{ !contains(github.ref, 'rc') }}

@@ -7,30 +7,29 @@ on:
   pull_request:
 
 jobs:
-  build:
+  build_and_test:
+    name: Build & test
     runs-on: ${{ matrix.os }}
     env:
       MACOSX_DEPLOYMENT_TARGET: 10.12
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
-
+    defaults:
+      run:
+        working-directory: tokenizers
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
-        with:
-          components: rustfmt, clippy
-
-      # Necessary for now for the cargo cache: https://github.com/actions/cache/issues/133#issuecomment-599102035
-      - if: matrix.os == 'ubuntu-latest'
-        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
 
       - name: Cache cargo registry / git / target
         uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
           workspaces: tokenizers
+          shared-key: rust-build
           # Skip caching ~/.cargo/bin — earlier runs left a stale
           # rustup-init binary masquerading as `cargo`, breaking the
           # build step on macOS. The cargo toolchain is reinstalled by
@@ -38,39 +37,14 @@ jobs:
           # risk without speedup.
           cache-bin: false
 
-      - name: Install cargo-readme for Ubuntu
-        if: matrix.os == 'ubuntu-latest'
-        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
-        with:
-          tool: cargo-readme
-
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
-        with:
-          tool: cargo-audit
-
       - name: Build
-        run: cargo build --all-targets --verbose --manifest-path ./tokenizers/Cargo.toml
-
-      # RustFmt is OS-invariant — gate to the canonical OS.
-      # Clippy and Audit run on every matrix cell so platform-specific
-      # cfg gates and target-specific lints get coverage.
-      - name: Lint with RustFmt
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo fmt --manifest-path ./tokenizers/Cargo.toml -- --check
-
-      - name: Lint Benchmarks with RustFmt
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo fmt --manifest-path ./tokenizers/Cargo.toml -- ./tokenizers/benches/bpe_benchmark.rs --check
-
-      - name: Lint with Clippy
-        run: cargo clippy --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
+        run: cargo build --workspace --all-targets --verbose
 
       # Test fixtures are immutable — cache them so CI doesn't re-download
       # from the Hub (and get rate-limited) on every run.
       - name: Cache HF test data
         if: matrix.os != 'windows-latest'
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
           path: tokenizers/data
           key: hf-test-data-${{ hashFiles('tokenizers/Makefile') }}
@@ -79,38 +53,244 @@ jobs:
       # Provides `uvx`, used to run the huggingface_hub CLI that downloads
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
-        if: matrix.os != 'windows-latest'
-        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+        uses: astral-sh/setup-uv@v6
 
-      - name: Run Tests
+      - name: Run tests
         if: matrix.os != 'windows-latest'
         shell: bash
-        working-directory: ./tokenizers
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make test HF="uvx --from huggingface_hub hf"
 
-      # Skip integration tests for now on Windows
-      - name: Run lib Tests on Windows
-        if: matrix.os == 'windows-latest'
-        run: cargo test --verbose --manifest-path ./tokenizers/Cargo.toml --lib
-
-      - name: Run doc Tests on Windows
-        if: matrix.os == 'windows-latest'
-        run: cargo test --verbose --manifest-path ./tokenizers/Cargo.toml --doc
-
-      - name: Run Audit
-        run: cargo audit -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0119
-
-      # Verify that Readme.md is up to date.
-      - name: Make sure, Readme generated from lib.rs matches actual Readme
+      # The only gate that checks the slim reader against an *independent* implementation: one test
+      # per model encodes/decodes through `tk_serialize::from_json` and compares against the
+      # released `tokenizers` crate. It sits behind `bench-baseline` because that pulls the released
+      # crate in as a dependency, which means `cargo test --workspace` skips it -- so it needs its
+      # own step or the guarantee is not actually being checked. `make oracle` fetches its fixtures
+      # first; the raw `cargo test` this used to run skipped that and only worked because those
+      # fixtures came from a live Hub fetch at the time.
+      - name: Run the release-crate oracle
         if: matrix.os == 'ubuntu-latest'
         shell: bash
-        working-directory: ./tokenizers
-        run: cargo readme > must_match_readme.md && diff must_match_readme.md README.md
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make oracle HF="uvx --from huggingface_hub hf"
+
+      # Windows skips the integration tests and the full fixture set, but the
+      # tk-encode lib tests load these two tokenizer files and fail without
+      # them (on purpose: a missing fixture must not silently skip a test).
+      # The runner has no GNU make, so this fetches them without the Makefile.
+      - name: Download lib-test fixtures on Windows
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision 54d012f11a4911b797aa6ef2dffc0fb67cbc7619 --local-dir data
+
+      # Windows runs lib + doc tests only. bash so the step fails on the first
+      # failing command. The default pwsh only propagates the last command's
+      # exit code, which let a lib-test failure hide behind passing doc tests.
+      - name: Run lib & doc tests on Windows
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          cargo test --workspace --verbose --lib --no-fail-fast
+          cargo test --workspace --verbose --doc --no-fail-fast
+
+  # Matrixed so platform-specific cfg gates and target-specific lints get coverage.
+  clippy:
+    name: Clippy
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+    defaults:
+      run:
+        working-directory: tokenizers
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        with:
+          components: clippy
+
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
+        with:
+          workspaces: tokenizers
+          shared-key: rust-build
+
+      - name: Lint with Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tokenizers
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        with:
+          components: rustfmt
+
+      - name: Lint with RustFmt
+        run: cargo fmt --all -- --check
+
+  readme:
+    name: READMEs up to date
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tokenizers
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
+        with:
+          workspaces: tokenizers
+          shared-key: cargo-readme
+
+      - name: Install cargo-readme
+        run: cargo install cargo-readme
+
+      - name: Make sure every README matches its lib.rs
+        shell: bash
+        run: |
+          for crate in . tk-encode tk-train; do
+            echo "::group::cargo readme check for ${crate}"
+            cargo readme --project-root "${crate}" > "${crate}/must_match_readme.md"
+            diff "${crate}/must_match_readme.md" "${crate}/README.md"
+            echo "::endgroup::"
+          done
+
+  audit:
+    name: Audit dependencies
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tokenizers
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
+        with:
+          workspaces: tokenizers
+          shared-key: cargo-audit
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run Audit
+        run: cargo audit -D warnings --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119 --ignore RUSTSEC-2026-0204 --ignore RUSTSEC-2025-0057
+
+  semver:
+    name: Semver checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tokenizers
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
+        with:
+          workspaces: tokenizers
+          shared-key: cargo-semver-checks
+
+      - name: Install cargo-semver-checks
+        run: cargo install cargo-semver-checks
 
       - name: Check semver
-        if: matrix.os == 'ubuntu-latest'
-        uses: obi1kenobi/cargo-semver-checks-action@5b298c9520f7096a4683c0bd981a7ac5a7e249ae  # v2
+        run: cargo semver-checks --package tokenizers
+
+  # The Clippy job above runs --all-features, which is blind to the failure mode
+  # this job exists for: tk-encode's per-model features (unigram / wordpiece /
+  # wordlevel) and `normalizers` are `cfg` gates on enum variants and match arms,
+  # so a build with only SOME of them can stop compiling while both the default
+  # and the all-features builds stay green. That has already happened twice —
+  # a match that gained an unreachable `_ => ()` arm (a warning, hence a
+  # -D warnings failure, only where every variant is present), and a
+  # `use Model as _` import needed by two of the three model gates and therefore
+  # unused in the third. So every combination gets its own clippy, and every feature its own tests.
+  feature_matrix:
+    name: Feature matrix
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tokenizers
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
-          manifest-path: ./tokenizers/Cargo.toml
+          components: clippy
+
+      # Its own shared-key: this job's target dir churns through many feature
+      # sets and would otherwise keep evicting the plain build's cache.
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
+        with:
+          workspaces: tokenizers
+          shared-key: feature-matrix
+
+      # Test fixtures are immutable — cache them so CI doesn't re-download
+      # from the Hub (and get rate-limited) on every run.
+      - name: Cache HF test data
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        with:
+          path: tokenizers/data
+          key: hf-test-data-${{ hashFiles('tokenizers/Makefile') }}
+          restore-keys: hf-test-data-
+
+      # Provides `uvx`, used to run the huggingface_hub CLI that downloads
+      # test fixtures (see the Makefile) without a separate install step.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      # The same two fixtures the Windows leg fetches, and for the same reason:
+      # tk-encode's lib tests unwrap these outright. Every other fixture is
+      # optional (those tests return early when it is missing), so the full
+      # `make data` would only buy download time.
+      - name: Download lib-test fixtures
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision 54d012f11a4911b797aa6ef2dffc0fb67cbc7619 --local-dir data
+
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
+      # `--feature-powerset --depth 2` is every one of those features alone and every pair, each
+      # built with `--no-default-features` -- so it covers a model feature *without* `bpe`, which
+      # the hand-rolled matrix this replaced never tried. 15 configurations.
+      - name: Clippy every feature combination
+        run: |
+          cargo hack --package tk-encode --feature-powerset --depth 2 \
+            --include-features bpe,unigram,wordpiece,wordlevel,normalizers \
+            clippy --all-targets -- -D warnings
+
+      # Compiling is most of the gate, so the tests run per single feature rather than per pair.
+      - name: Test each feature on its own
+        run: |
+          cargo hack --package tk-encode --each-feature \
+            --include-features bpe,unigram,wordpiece,wordlevel,normalizers \
+            test --lib
