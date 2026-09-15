@@ -1056,7 +1056,13 @@ where
 /// balances merge operations across languages using a development set or target
 /// compression ratios. The single training entry point is
 /// :meth:`train_from_iterator`, the multi-corpus analogue of
-/// :meth:`tokenizers.Tokenizer.train_from_iterator`.
+/// :meth:`tokenizers.Tokenizer.train_from_iterator`. Balancing requires either
+/// ``dev_iterators`` (ideally parallel across languages) or ``ratio``; given
+/// neither, selection follows the per-language training totals, which the
+/// highest-data language dominates, so the result stays close to plain BPE. When
+/// both are given the dev set takes precedence. A runnable version that obtains
+/// per-language corpora and a parallel dev set is in
+/// ``examples/train_parity_bpe.py``.
 ///
 /// Args:
 ///     num_merges (:obj:`int`, `optional`):
@@ -1067,6 +1073,17 @@ where
 ///
 ///     min_frequency (:obj:`int`, `optional`):
 ///         Minimum pair frequency to merge. Defaults to ``0``.
+///
+///     ratio (:obj:`List[float]`, `optional`):
+///         Target compression rate per language, one entry per training iterator. The
+///         trainer selects the language with the lowest ``compression_rate / ratio``,
+///         so raising one language's ratio gives it more merges; only the values
+///         relative to each other matter. Rates are counted in the units the
+///         pre-tokenizer emits, bytes under
+///         :class:`~tokenizers.pre_tokenizers.ByteLevel`, so equal ratios do not give
+///         equal tokenization across scripts: Devanagari takes about 2.5x the bytes of
+///         Latin script for the same content. Set each ratio proportional to the
+///         language's average length on parallel text instead. Defaults to ``None``.
 ///
 ///     global_merges (:obj:`int`, `optional`):
 ///         Number of initial standard BPE merges before switching to parity mode. Defaults to ``0``.
@@ -1082,25 +1099,24 @@ where
 ///
 /// Example::
 ///
-///     from tokenizers import Tokenizer
-///     from tokenizers.models import BPE
-///     from tokenizers import pre_tokenizers
-///     from tokenizers.trainers import ParityBpeTrainer
-///
-///     tokenizer = Tokenizer(BPE())
-///     tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
-///
-///     def lines(path):
-///         with open(path) as f:
-///             yield from f
-///
-///     trainer = ParityBpeTrainer(num_merges=32000, variant="base")
-///     trainer.train_from_iterator(
-///         tokenizer,
-///         train_iterators=[lines("train_en.txt"), lines("train_de.txt")],
-///         dev_iterators=[lines("dev_en.txt"), lines("dev_de.txt")],
-///     )
-///     output = tokenizer.encode("Hello world")
+///     >>> from tokenizers import Tokenizer, pre_tokenizers
+///     >>> from tokenizers.models import BPE
+///     >>> from tokenizers.trainers import ParityBpeTrainer
+///     >>> tokenizer = Tokenizer(BPE())
+///     >>> tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
+///     >>> trainer = ParityBpeTrainer(num_merges=32000, variant="base")
+///     >>> # balance against a parallel dev set, the same sentences in every language
+///     >>> trainer.train_from_iterator(
+///     ...     tokenizer,
+///     ...     train_iterators=[english_lines, hindi_lines],
+///     ...     dev_iterators=[english_dev, hindi_dev],
+///     ... )
+///     >>> # or against target rates, which need no dev data
+///     >>> trainer.train_from_iterator(
+///     ...     tokenizer,
+///     ...     train_iterators=[english_lines, hindi_lines],
+///     ...     ratio=[1.0, 2.57],
+///     ... )
 ///
 #[cfg(feature = "parity-aware-bpe")]
 #[pyclass(module = "tokenizers.trainers", name = "ParityBpeTrainer")]
@@ -1312,8 +1328,9 @@ impl PyParityBpeTrainer {
     ///         ``train_iterators``.
     ///
     ///     ratio (:obj:`List[float]`, `optional`):
-    ///         Target compression ratios per language (alternative to
-    ///         ``dev_iterators``).
+    ///         Target compression rates per language, an alternative to
+    ///         ``dev_iterators`` and ignored when one is supplied. See the class
+    ///         docstring for how to choose the values.
     #[pyo3(signature = (tokenizer, train_iterators, dev_iterators = None, ratio = None))]
     fn train_from_iterator(
         &self,
