@@ -71,6 +71,44 @@ def test_pad_type_id_left(bert):
     assert encoding.attention_mask == [0, 0, 0, 0, 0, 1, 1, 1]
 
 
+def test_encode_padding_override(gpt2):
+    encoding = gpt2.encode("Hello", padding=Padding(length=4, pad_id=EOT))
+
+    assert encoding.ids == [15496] + [EOT] * 3
+    assert encoding.attention_mask == [1, 0, 0, 0]
+    assert gpt2.padding is None
+
+
+def test_encode_padding_override_replaces_config(gpt2):
+    gpt2.padding = Padding(length=4, pad_id=EOT)
+
+    assert gpt2.encode("Hello", padding=Padding(length=6, pad_id=EOT)).ids == [15496] + [EOT] * 5
+    assert gpt2.encode("Hello").ids == [15496] + [EOT] * 3
+
+
+def test_encode_padding_off(gpt2):
+    gpt2.padding = Padding(length=4, pad_id=EOT)
+
+    assert gpt2.encode("Hello", padding=None).ids == [15496]
+    assert gpt2.encode("Hello").ids == [15496] + [EOT] * 3
+
+
+def test_encode_batch_padding_override(gpt2):
+    short, long = gpt2.encode_batch(SHORT_AND_LONG, padding=Padding(pad_id=EOT))
+
+    assert short.ids == [15496] + [EOT] * 7
+    assert short.attention_mask == [1] + [0] * 7
+    assert long.ids == [15496, 612, 11, 703, 389, 345, 1909, 30]
+    assert gpt2.padding is None
+
+
+def test_encode_batch_padding_off(gpt2):
+    gpt2.padding = Padding(pad_id=EOT)
+
+    assert [len(e) for e in gpt2.encode_batch(SHORT_AND_LONG, padding=None)] == [1, 8]
+    assert [len(e) for e in gpt2.encode_batch(SHORT_AND_LONG)] == [8, 8]
+
+
 def test_padding_from_file(padded_wiki):
     tokenizer = Tokenizer.from_file(padded_wiki)
 

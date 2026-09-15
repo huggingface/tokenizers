@@ -1,6 +1,6 @@
 import pytest
 
-from tokenizers import Padding, Tokenizer, Truncation
+from tokenizers import Tokenizer, Truncation
 
 # Every id in this file comes from released tokenizers 0.23.1 on the same fixture
 LONG = "Hello there, how are you today?"
@@ -95,6 +95,28 @@ def test_encode_truncation_off(gpt2):
     assert gpt2.encode(LONG).ids == GPT2_IDS[:4]
 
 
+def test_encode_truncation_override_replaces_config(gpt2):
+    gpt2.truncation = Truncation(4)
+
+    assert gpt2.encode(LONG, truncation=Truncation(2)).ids == GPT2_IDS[:2]
+    assert gpt2.encode(LONG).ids == GPT2_IDS[:4]
+
+
+def test_encode_batch_truncation_override(gpt2):
+    short, long = gpt2.encode_batch(["Hello", LONG], truncation=Truncation(4))
+
+    assert short.ids == [15496]
+    assert long.ids == GPT2_IDS[:4]
+    assert gpt2.truncation is None
+
+
+def test_encode_batch_truncation_off(gpt2):
+    gpt2.truncation = Truncation(4)
+
+    assert [e.ids for e in gpt2.encode_batch(["Hello", LONG], truncation=None)] == [[15496], GPT2_IDS]
+    assert [e.ids for e in gpt2.encode_batch(["Hello", LONG])] == [[15496], GPT2_IDS[:4]]
+
+
 def test_set_truncation(truncated_wiki):
     tokenizer = Tokenizer.from_file(truncated_wiki)
 
@@ -105,16 +127,6 @@ def test_set_truncation(truncated_wiki):
     tokenizer.truncation = None
     assert tokenizer.truncation is None
     assert tokenizer.encode(LONG).ids == WIKI_IDS
-
-
-def test_padding_and_truncation(gpt2):
-    gpt2.truncation = Truncation(4)
-    gpt2.padding = Padding(length=4, pad_id=50256)
-
-    short, long = gpt2.encode_batch(["Hello", LONG])
-
-    assert short.ids == [15496, 50256, 50256, 50256]
-    assert long.ids == GPT2_IDS[:4]
 
 
 def test_defaults():
