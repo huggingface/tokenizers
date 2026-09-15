@@ -560,9 +560,9 @@ impl BpeTrainer {
             unsafe impl Sync for WordPtr {}
             let word_start = WordPtr(words.as_mut_ptr());
 
-            let changes = pos
+            let (pair_deltas, mut new_where_to_update) = pos
                 .maybe_par_iter()
-                .flat_map(|&i| {
+                .map(|&i| {
                     // We can merge each of these words in parallel here because each position
                     // can be there only once (AHashSet). So this is safe.
                     unsafe {
@@ -570,24 +570,37 @@ impl BpeTrainer {
                         // This is words[i], but avoids needing to go through &T (which triggers UB)
                         let word = word_start.0.add(i);
                         // let word: &mut Word = &mut (*word);
-                        (*word)
-                            .merge(top.pair.0, top.pair.1, new_token_id, max_token_length)
-                            .into_iter()
-                            .map(|c| (c, i))
-                            .collect::<Vec<_>>()
+                        let mut pair_deltas: AHashMap<Pair, i32> = AHashMap::new();
+                        let mut where_to_update: AHashMap<Pair, AHashSet<usize>> = AHashMap::new();
+                        for (pair, change) in
+                            (*word).merge(top.pair.0, top.pair.1, new_token_id, max_token_length)
+                        {
+                            *pair_deltas.entry(pair).or_default() += change * counts[i] as i32;
+                            if change > 0 {
+                                where_to_update.entry(pair).or_default().insert(i);
+                            }
+                        }
+                        (pair_deltas, where_to_update)
                     }
                 })
-                .collect::<Vec<_>>();
+                .reduce(
+                    || (AHashMap::new(), AHashMap::new()),
+                    |(mut pair_deltas, mut where_to_update), (pd, wtu)| {
+                        for (pair, delta) in pd {
+                            *pair_deltas.entry(pair).or_default() += delta;
+                        }
+                        for (pair, positions) in wtu {
+                            where_to_update.entry(pair).or_default().extend(positions);
+                        }
+                        (pair_deltas, where_to_update)
+                    },
+                );
 
             // Introduce new formed pairs
-            for ((pair, change), iw) in changes {
-                let count = change * counts[iw] as i32;
-                *pair_counts.entry(pair).or_default() += count;
-                if change > 0 {
-                    where_to_update.entry(pair).or_default().insert(iw);
-                }
+            for (pair, count_delta) in pair_deltas {
+                *pair_counts.entry(pair).or_default() += count_delta;
             }
-            where_to_update.drain().for_each(|(pair, pos)| {
+            new_where_to_update.drain().for_each(|(pair, pos)| {
                 let count = pair_counts[&pair];
                 if count > 0 {
                     queue.push(Merge {
