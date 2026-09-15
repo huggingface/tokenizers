@@ -10,7 +10,7 @@ use crate::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
 pub use crate::pipeline::encode_options::EncodeOptions;
-use crate::pipeline::encode_options::Override;
+pub use crate::pipeline::encode_options::Override;
 use crate::utils::truncation::truncate_pair;
 use crate::{
     DecoderRuntime, PaddingParams, TruncationParams,
@@ -295,7 +295,6 @@ impl PipelineTokenizer {
             Override::With(params) => Some(params),
         }
     }
-    // TODO: resolve_truncation
 }
 #[derive(Clone)]
 pub enum Input {
