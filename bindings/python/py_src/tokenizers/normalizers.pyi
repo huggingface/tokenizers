@@ -80,7 +80,7 @@ class ByteLevel(Normalizer):
 
         >>> from tokenizers.normalizers import ByteLevel
         >>> normalizer = ByteLevel()
-        >>> normalizer.normalize_str("hello\nworld")
+        >>> normalizer.normalize_str("hello\\nworld")
         'helloĊworld'
     """
     def __new__(cls, /) -> ByteLevel: ...
@@ -115,7 +115,7 @@ class NFC(Normalizer):
 
         >>> from tokenizers.normalizers import NFC
         >>> normalizer = NFC()
-        >>> normalizer.normalize_str("e\u0301")  # 'e' + combining accent
+        >>> normalizer.normalize_str("e\\u0301")  # 'e' + combining accent
         'é'
     """
     def __new__(cls, /) -> NFC: ...
@@ -137,7 +137,7 @@ class NFD(Normalizer):
         >>> from tokenizers.normalizers import NFD
         >>> normalizer = NFD()
         >>> normalizer.normalize_str("Héllo")
-        'He\u0301llo'
+        'He\\u0301llo'
     """
     def __new__(cls, /) -> NFD: ...
 
@@ -155,7 +155,7 @@ class NFKC(Normalizer):
 
         >>> from tokenizers.normalizers import NFKC
         >>> normalizer = NFKC()
-        >>> normalizer.normalize_str("ﬁne caf\u00e9")
+        >>> normalizer.normalize_str("ﬁne caf\\u00e9")
         'fine café'
     """
     def __new__(cls, /) -> NFKC: ...
@@ -192,7 +192,7 @@ class Nmt(Normalizer):
 
         >>> from tokenizers.normalizers import Nmt
         >>> normalizer = Nmt()
-        >>> normalizer.normalize_str("Hello\x00World")
+        >>> normalizer.normalize_str("Hello\\x00World")
         'Hello World'
     """
     def __new__(cls, /) -> Nmt: ...
@@ -310,7 +310,7 @@ class Replace(Normalizer):
         >>> Replace(".", " ").normalize_str("hello.world")
         'hello world'
         >>> # Replace using a regex
-        >>> Replace(Regex(r"\s+"), " ").normalize_str("hello   world")
+        >>> Replace(Regex(r"\\s+"), " ").normalize_str("hello   world")
         'hello world'
     """
     def __new__(cls, /, pattern: str | Regex, content: str) -> Replace: ...

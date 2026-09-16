@@ -139,7 +139,7 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
         println!("Found cdylib at {}", cdylib.display());
 
         let main_module_name = "tokenizers";
-        let python_module = pyo3_introspection::introspect_cdylib(&cdylib, main_module_name)
+        let mut python_module = pyo3_introspection::introspect_cdylib(&cdylib, main_module_name)
             .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name));
 
         // Sanity check: if docstrings are missing the patched pyo3 in
@@ -150,6 +150,7 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
         // one well-known class still carries its docstring before writing
         // out otherwise-empty stubs.
         assert_introspection_has_docstrings(&python_module);
+        escape_docstrings_for_python(&mut python_module);
 
         let type_stubs = pyo3_introspection::module_stub_files(&python_module);
 
@@ -174,6 +175,44 @@ fn absolutize_local_imports(contents: &str, root_module: &str) -> String {
     contents
         .replace("from . import", &format!("from {root_module} import"))
         .replace("from .", &format!("from {root_module}."))
+}
+
+fn escape_docstring(docstring: &mut Option<String>) {
+    if let Some(docstring) = docstring {
+        *docstring = docstring.replace('\\', "\\\\");
+    }
+}
+
+fn escape_class_docstrings(class: &mut Class) {
+    escape_docstring(&mut class.docstring);
+    for method in &mut class.methods {
+        escape_docstring(&mut method.docstring);
+    }
+    for attribute in &mut class.attributes {
+        escape_docstring(&mut attribute.docstring);
+    }
+    for inner_class in &mut class.inner_classes {
+        escape_class_docstrings(inner_class);
+    }
+}
+
+/// Preserve runtime docstrings when pyo3-introspection emits ordinary Python
+/// triple-quoted strings. Without this, Python interprets backslash sequences
+/// and warns on regex escapes such as `\s` and `\w`.
+fn escape_docstrings_for_python(module: &mut Module) {
+    escape_docstring(&mut module.docstring);
+    for function in &mut module.functions {
+        escape_docstring(&mut function.docstring);
+    }
+    for attribute in &mut module.attributes {
+        escape_docstring(&mut attribute.docstring);
+    }
+    for class in &mut module.classes {
+        escape_class_docstrings(class);
+    }
+    for submodule in &mut module.modules {
+        escape_docstrings_for_python(submodule);
+    }
 }
 
 /// Walk the introspected module tree and count classes, functions, and
@@ -240,6 +279,23 @@ fn assert_introspection_has_docstrings(module: &Module) {
          and align the versions before re-running.",
         total,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::escape_docstring;
+
+    #[test]
+    fn escapes_backslashes_in_docstrings() {
+        let mut docstring = Some(r#"Regex(r"\s+") and "e\u0301""#.to_owned());
+
+        escape_docstring(&mut docstring);
+
+        assert_eq!(
+            docstring.as_deref(),
+            Some(r#"Regex(r"\\s+") and "e\\u0301""#)
+        );
+    }
 }
 
 fn build_extension(manifest_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {

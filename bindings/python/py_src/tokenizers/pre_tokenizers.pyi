@@ -317,7 +317,7 @@ class Split(PreTokenizer):
         >>> pre_tokenizer.pre_tokenize_str("one,two,three")
         [('one', (0, 3)), ('two', (4, 7)), ('three', (8, 13))]
         >>> # Split using a regex, keeping the delimiter isolated
-        >>> Split(Regex(r"\s+"), behavior="isolated").pre_tokenize_str("hello   world")
+        >>> Split(Regex(r"\\s+"), behavior="isolated").pre_tokenize_str("hello   world")
         [('hello', (0, 5)), ('   ', (5, 8)), ('world', (8, 13))]
     """
     def __getnewargs__(self, /) -> tuple: ...
@@ -355,7 +355,7 @@ class UnicodeScripts(PreTokenizer):
 @final
 class Whitespace(PreTokenizer):
     """
-    This pre-tokenizer splits on word boundaries according to the ``\w+|[^\w\s]+``
+    This pre-tokenizer splits on word boundaries according to the ``\\w+|[^\\w\\s]+``
     regex pattern. It splits on word characters or characters that aren't words or
     whitespaces (punctuation such as hyphens, apostrophes, commas, etc.).
 
