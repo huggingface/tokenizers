@@ -101,3 +101,12 @@ class TestByteLevelBPE:
 
         output = tokenizer.encode("A sentence")
         assert output.tokens == ["A", "Ġsentence"]
+
+    def test_dropout_is_used_without_vocab(self):
+        # Without vocab/merges the tokenizer builds its own BPE, and `dropout`
+        # has to reach it the same way it does for the other BPE tokenizers.
+        tokenizer = ByteLevelBPETokenizer(dropout=0.1)
+        assert tokenizer._tokenizer.model.dropout == pytest.approx(0.1)
+
+    def test_dropout_defaults_to_none(self):
+        assert ByteLevelBPETokenizer()._tokenizer.model.dropout is None
