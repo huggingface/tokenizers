@@ -189,6 +189,7 @@ class Tokenizer:
         text: str,
         *,
         add_special_tokens: bool = True,
+        encode_special_tokens: bool = False,
         padding: Padding | None = ...,
         truncation: Truncation | None = ...,
     ) -> Encoding:
@@ -200,6 +201,9 @@ class Tokenizer:
                 The text to encode.
             add_special_tokens: bool
                  Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+            encode_special_tokens: bool
+                Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
+                or be replaced by their id in the added vocabulary.
             padding: `Padding` or `None`
                 Padding options. Pass `None` to disable padding.
                 When omitted, defaults to the padding options configured on the tokenizer.
@@ -216,6 +220,7 @@ class Tokenizer:
         texts: Sequence[str],
         *,
         add_special_tokens: bool = True,
+        encode_special_tokens: bool = False,
         padding: Padding | None = ...,
         truncation: Truncation | None = ...,
     ) -> list[Encoding]:
@@ -228,6 +233,9 @@ class Tokenizer:
                 The batch of text to encode.
             add_special_tokens: bool
                 Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+            encode_special_tokens: bool
+                Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
+                or be replaced by their id in the added vocabulary.
             padding: `Padding` or `None`
                 Padding options. Pass `None` to disable padding.
                 When omitted, defaults to the padding options configured on the tokenizer.
@@ -319,6 +327,7 @@ class Tokenizer:
         text: str,
         *,
         add_special_tokens: bool = True,
+        encode_special_tokens: bool = False,
         padding: Padding | None = ...,
         truncation: Truncation | None = ...,
     ) -> list[str]:
@@ -333,6 +342,9 @@ class Tokenizer:
                 The text to tokenize.
             add_special_tokens: bool
                  Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+            encode_special_tokens: bool
+                Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
+                or be replaced by their id in the added vocabulary.
             padding: `Padding` or `None`
                 Padding options. Pass `None` to disable padding.
                 When omitted, defaults to the padding options configured on the tokenizer.
