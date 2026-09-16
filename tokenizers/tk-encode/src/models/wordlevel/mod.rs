@@ -140,8 +140,8 @@ impl WordLevel {
         self.vocab.clone().into_iter().collect()
     }
 
-    pub fn get_vocab_size(&self) -> usize {
-        self.vocab.keys().len()
+    pub fn vocab_size(&self) -> usize {
+        self.vocab.len()
     }
 }
 
@@ -199,5 +199,16 @@ mod tests {
 
         let error = wordlevel.tokenize("c").err().unwrap();
         assert!(error.is::<Error>());
+    }
+
+    #[test]
+    fn vocab_size_counts_the_entries() {
+        let vocab: Vocab = [("<unk>".into(), 0), ("a".into(), 1), ("b".into(), 2)]
+            .iter()
+            .cloned()
+            .collect();
+        let wordlevel = WordLevelBuilder::default().vocab(vocab).build().unwrap();
+
+        assert_eq!(wordlevel.vocab_size(), 3);
     }
 }

@@ -28,6 +28,8 @@ use super::Result;
 mod parallel;
 mod scratch_pool;
 
+mod builder;
+
 pub use scratch_pool::ModelScratch;
 
 pub use bitsplit::Span;
@@ -200,7 +202,7 @@ struct TokenizerInner {
     added_vocabulary: BucketAddedVocabulary,
     normalizers: Vec<PipelineNormalizer>,
     pre_tokenizer: PipelinePreTokenizer,
-    model: PipelineModel,
+    model: Arc<PipelineModel>,
     post_processor: PipelinePostProcessor,
     decoder: Option<DecoderRuntime>,
     /// Lowest id owned by the added vocabulary, or `u32::MAX` when there is none.
@@ -235,11 +237,11 @@ impl PipelineTokenizer {
     /// in id order*, because `add_tokens` reuses a model id when the token is already in the
     /// vocabulary; doing it later, or out of order, moves ids silently.
     #[allow(clippy::too_many_arguments)]
-    pub fn from_parts(
+    fn from_parts(
         added_vocabulary: BucketAddedVocabulary,
         normalizers: Vec<PipelineNormalizer>,
         pre_tokenizer: PipelinePreTokenizer,
-        model: PipelineModel,
+        model: Arc<PipelineModel>,
         post_processor: PipelinePostProcessor,
         decoder: Option<DecoderRuntime>,
         role_to_token: BTreeMap<String, String>,
@@ -787,7 +789,7 @@ impl PipelineTokenizer {
         // nightly lints a leading irrefutable pattern in a let chain. Nesting the `if` instead
         // would trade this for `collapsible_if` on every build that has more than one model.
         #[allow(irrefutable_let_patterns)]
-        if let PipelineModel::BPE(bpe) = &self.inner.model
+        if let PipelineModel::BPE(bpe) = &*self.inner.model
             && bpe.is_byte_level()
         {
             return Ok(self.decode_byte_level(bpe, ids, skip_special_tokens));
@@ -976,6 +978,30 @@ impl PipelineModel {
             Self::WordLevel(model) => model.id_to_token(id),
             #[cfg(feature = "wordpiece")]
             Self::WordPiece(model) => model.id_to_token(id),
+        }
+    }
+
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+         match self {
+            Self::BPE(model) => model.token_to_id(token),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.token_to_id(token),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.token_to_id(token),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.token_to_id(token),
+        }
+    }
+
+    pub fn vocab_size(&self) -> usize {
+        match self {
+            PipelineModel::BPE(model) => model.vocab_size(),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.vocab_size(),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.vocab_size(),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.vocab_size(),
         }
     }
 }
@@ -1239,7 +1265,7 @@ mod tests {
             BucketAddedVocabulary::new(),
             Vec::new(),
             PipelinePreTokenizer::None,
-            PipelineModel::BPE(hello_bpe()),
+            Arc::new(PipelineModel::BPE(hello_bpe())),
             PipelinePostProcessor::default(),
             None,
             Default::default(),
@@ -1252,7 +1278,7 @@ mod tests {
             BucketAddedVocabulary::new(),
             Vec::new(),
             PipelinePreTokenizer::None,
-            PipelineModel::BPE(hello_bpe()),
+            Arc::new(PipelineModel::BPE(hello_bpe())),
             PipelinePostProcessor::default(),
             None,
             Default::default(),

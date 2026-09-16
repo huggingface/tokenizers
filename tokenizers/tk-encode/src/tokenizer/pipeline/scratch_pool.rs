@@ -139,7 +139,7 @@ impl std::ops::DerefMut for ScratchGuard<'_> {
 mod tests {
     use std::cell::Cell;
     use std::collections::BTreeSet;
-    use std::sync::Barrier;
+    use std::sync::{Arc, Barrier};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
@@ -190,7 +190,7 @@ mod tests {
             BucketAddedVocabulary::new(),
             Vec::new(),
             pre_tokenizer,
-            PipelineModel::BPE(hello_bpe()),
+            Arc::new(PipelineModel::BPE(hello_bpe())),
             PipelinePostProcessor::default(),
             None,
             Default::default(),

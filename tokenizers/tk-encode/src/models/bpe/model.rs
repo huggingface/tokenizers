@@ -93,6 +93,10 @@ impl PipelineBPE {
         self.vocab.id_to_token(id)
     }
 
+    pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.vocab.token_to_id(token)
+    }
+
     /// One bit per vocabulary id: can a pretoken equal to this entry be emitted as this entry,
     /// without running the merge loop?
     ///
@@ -157,6 +161,10 @@ impl PipelineBPE {
             let first_merge = self.convert_multipass(sequence, symbols);
             merge_multipass(&self.tables, symbols, first_merge);
         }
+    }
+
+    pub fn vocab_size(&self) -> usize {
+        self.vocab.len()
     }
 }
 
