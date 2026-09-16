@@ -210,7 +210,6 @@ fn build<M>(
         |t| token_to_id(&concrete, t),
         Some(&chain),
     )?;
-    // TODO: we need to read encode_special_tokens from the config as well.
     let model = lower(concrete)?;
 
     Ok(PipelineTokenizer::from_parts(

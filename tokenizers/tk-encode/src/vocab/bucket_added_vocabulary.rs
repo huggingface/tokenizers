@@ -161,7 +161,6 @@ impl std::hash::Hash for AddedToken {
 ///
 #[derive(Clone)]
 pub struct AddedVocabulary {
-    encode_special_tokens: bool,
     /// New fast path for normalize and extra needs:
     ///  - multi-bucket first bytes. If its len is 1, we use memchr; otherwise we just check each
     ///    byte on that table lookup. Its a 256-byte table.
@@ -187,7 +186,6 @@ impl fmt::Debug for AddedVocabulary {
 impl AddedVocabulary {
     pub fn new() -> Self {
         Self {
-            encode_special_tokens: false,
             token_metadata: Box::new([]),
             normalized_vocab: Buckets::new(),
             vocab: Buckets::new(),
@@ -253,15 +251,6 @@ impl AddedVocabulary {
         self.vocab
             .id_to_token(_id)
             .or_else(|| self.normalized_vocab.id_to_token(_id))
-    }
-
-    //
-    pub fn set_encode_special_tokens(&mut self, value: bool) {
-        self.encode_special_tokens = value;
-    }
-
-    pub fn get_encode_special_tokens(&self) -> bool {
-        self.encode_special_tokens
     }
 
     /// Check if a token is a special token
@@ -382,6 +371,7 @@ impl PipelinePatternMatcher for AddedVocabulary {
         bytes: &[u8],
         search_offset: usize,
         normalized: bool,
+        encode_special_tokens: bool,
     ) -> Option<((usize, usize), u32)> {
         let vocab = if normalized {
             &self.normalized_vocab
@@ -398,7 +388,7 @@ impl PipelinePatternMatcher for AddedVocabulary {
             let mut match_start = search + start as usize;
             let mut match_end = match_start + len as usize;
             let metadata = &self.token_metadata[id as usize];
-            if self.encode_special_tokens && metadata.special {
+            if encode_special_tokens && metadata.special {
                 search = match_end;
                 continue;
             }
@@ -671,8 +661,9 @@ mod tests {
         vocab: &AddedVocabulary,
         input: &str,
         normalized: bool,
+        encode_special_tokens: bool,
     ) -> Vec<(Option<String>, Option<u32>)> {
-        SpecialSegmentIterator::new(input, vocab, normalized)
+        SpecialSegmentIterator::new(input, vocab, normalized, encode_special_tokens)
             .map(|segment| match segment {
                 Segment::Text { text, .. } => (Some(text.to_string()), None),
                 Segment::SpecialToken(id) => (None, Some(id)),
@@ -699,7 +690,7 @@ mod tests {
 
         // Special tokens are declared on raw text, so a single raw pass carves them out.
         assert_eq!(
-            segments(&vocab, "[CLS] hello [SEP]", false),
+            segments(&vocab, "[CLS] hello [SEP]", false, false),
             vec![
                 (None, Some(0)),
                 (Some(" hello ".to_string()), None),
@@ -726,7 +717,7 @@ mod tests {
 
         // Standalone `mask` matches; the `mask` inside `bitmask` does not.
         assert_eq!(
-            segments(&vocab, "a mask bitmask", false),
+            segments(&vocab, "a mask bitmask", false, false),
             vec![
                 (Some("a ".to_string()), None),
                 (None, Some(0)),
@@ -755,7 +746,7 @@ mod tests {
         // The spaces around `<mask>` are absorbed into the matched span, so the surrounding
         // text segments come back trimmed.
         assert_eq!(
-            segments(&vocab, "hi <mask> there", false),
+            segments(&vocab, "hi <mask> there", false, false),
             vec![
                 (Some("hi".to_string()), None),
                 (None, Some(0)),
@@ -780,14 +771,13 @@ mod tests {
 
         // Default: the special token is carved out.
         assert_eq!(
-            segments(&vocab, "[CLS] hi", false),
+            segments(&vocab, "[CLS] hi", false, false),
             vec![(None, Some(0)), (Some(" hi".to_string()), None)]
         );
 
         // encode_special_tokens = true: the special token is left in the text for the model.
-        vocab.set_encode_special_tokens(true);
         assert_eq!(
-            segments(&vocab, "[CLS] hi", false),
+            segments(&vocab, "[CLS] hi", false, true),
             vec![(Some("[CLS] hi".to_string()), None)]
         );
     }
@@ -809,12 +799,12 @@ mod tests {
 
         // Raw pass: the token lives in the normalized matcher, so nothing is carved.
         assert_eq!(
-            segments(&vocab, "a mask", false),
+            segments(&vocab, "a mask", false, false),
             vec![(Some("a mask".to_string()), None)]
         );
         // Normalized pass over already-normalized text: the token is matched.
         assert_eq!(
-            segments(&vocab, "a mask", true),
+            segments(&vocab, "a mask", true, false),
             vec![(Some("a ".to_string()), None), (None, Some(0))]
         );
     }

@@ -86,8 +86,12 @@ pub fn encode(c: &mut Criterion) {
         group.bench_function("stage/added-tokens", |b| {
             b.iter(|| {
                 for line in &lines {
-                    let segments =
-                        SpecialSegmentIterator::new(line, tokenizer.get_added_vocabulary(), false);
+                    let segments = SpecialSegmentIterator::new(
+                        line,
+                        tokenizer.get_added_vocabulary(),
+                        false,
+                        false,
+                    );
                     for segment in segments {
                         black_box(&segment);
                     }
