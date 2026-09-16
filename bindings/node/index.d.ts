@@ -28,6 +28,11 @@ export interface EncodeOptions {
    */
   addSpecialTokens?: boolean
   /**
+   * Whether a special token written in the text goes through the model (`true`) or becomes its
+   * added-vocabulary id. `false` when left out.
+   */
+  encodeSpecialTokens?: boolean
+  /**
    * Padding for this call, replacing the tokenizer's configured padding. `false` disables
    * padding. Left out, the configured padding applies.
    */
