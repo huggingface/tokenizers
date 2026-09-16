@@ -2,8 +2,8 @@ use crate::{PaddingParams, TruncationParams};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncodeOptions {
-    /// Whether the post-processor should add special tokens to the sequence
-    /// eg: [CLS], [SEP], <|endoftext|>, </s>, etc. Defaults to `true`.
+    /// Whether the post-processor should add special tokens to the sequence,
+    /// e.g. `[CLS]`, `[SEP]`, `<|endoftext|>`, `</s>`. Defaults to `true`.
     pub add_special_tokens: bool,
     /// Whether special tokens found in the sequence should go through the tokenizer model (`true`)
     /// or be replaced by their id in the vocabulary (`false`). Defaults to `false`.

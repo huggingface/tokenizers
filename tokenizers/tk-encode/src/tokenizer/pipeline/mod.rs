@@ -94,12 +94,12 @@ impl PartialEq<PipelineToken> for u32 {
 pub trait PipelinePatternMatcher {
     /// Return the first special or added token in `input` as `Some(((start, end), id))`, where
     /// `start..end` is its byte range.
-    /// 
+    ///
     /// Set `normalized` to true when the text is normalized.
-    /// Set `encode_special_tokens` to `true` to treat special tokens as plain text and encode them through the tokenizer model,
-    /// or `false` to extract them.
-    /// 
-    /// Returns `None` if there is no added tokens in input.
+    /// Set `encode_special_tokens` to `true` to treat special tokens as plain text and encode
+    /// them through the tokenizer model, or `false` to extract them.
+    ///
+    /// Returns `None` if there are no added tokens left in `input`.
     fn extract_next(
         &self,
         full_input: &[u8],
