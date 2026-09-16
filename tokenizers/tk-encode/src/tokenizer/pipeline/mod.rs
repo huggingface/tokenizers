@@ -29,6 +29,7 @@ mod parallel;
 mod scratch_pool;
 
 mod builder;
+pub use builder::TokenizerBuilder;
 
 pub use scratch_pool::ModelScratch;
 
@@ -231,44 +232,6 @@ const _: fn() = || {
 };
 
 impl PipelineTokenizer {
-    /// This is the new "constructor" we expose.
-    ///
-    /// `added_vocabulary` must already have had its tokens replayed *against the concrete model and
-    /// in id order*, because `add_tokens` reuses a model id when the token is already in the
-    /// vocabulary; doing it later, or out of order, moves ids silently.
-    #[allow(clippy::too_many_arguments)]
-    fn from_parts(
-        added_vocabulary: BucketAddedVocabulary,
-        normalizers: Vec<PipelineNormalizer>,
-        pre_tokenizer: PipelinePreTokenizer,
-        model: Arc<PipelineModel>,
-        post_processor: PipelinePostProcessor,
-        decoder: Option<DecoderRuntime>,
-        role_to_token: BTreeMap<String, String>,
-        padding: Option<PaddingParams>,
-    ) -> Self {
-        let added_id_min = added_vocabulary
-            .get_added_tokens_decoder()
-            .keys()
-            .copied()
-            .min()
-            .unwrap_or(u32::MAX);
-        Self {
-            inner: Arc::new(TokenizerInner {
-                added_vocabulary,
-                normalizers,
-                pre_tokenizer,
-                model,
-                post_processor,
-                decoder,
-                added_id_min,
-                role_to_token,
-                padding,
-                scratch_pool: ScratchPool::new(),
-            }),
-        }
-    }
-
     pub fn resolve_padding<'a>(
         &'a self,
         padding_override: &'a Override<PaddingParams>,
@@ -982,7 +945,7 @@ impl PipelineModel {
     }
 
     pub fn token_to_id(&self, token: &str) -> Option<u32> {
-         match self {
+        match self {
             Self::BPE(model) => model.token_to_id(token),
             #[cfg(feature = "unigram")]
             Self::Unigram(model) => model.token_to_id(token),
@@ -1147,7 +1110,7 @@ mod tests {
     }
 
     #[test]
-    fn from_parts_padding_is_visible_through_get_padding() {
+    fn builder_padding_is_visible_through_get_padding() {
         let pipeline = hello_pipeline_with_padding(PaddingParams {
             pad_id: 42,
             ..PaddingParams::default()
@@ -1261,28 +1224,14 @@ mod tests {
     }
 
     fn hello_pipeline() -> PipelineTokenizer {
-        PipelineTokenizer::from_parts(
-            BucketAddedVocabulary::new(),
-            Vec::new(),
-            PipelinePreTokenizer::None,
-            Arc::new(PipelineModel::BPE(hello_bpe())),
-            PipelinePostProcessor::default(),
-            None,
-            Default::default(),
-            None,
-        )
+        TokenizerBuilder::new(PipelineModel::BPE(hello_bpe()))
+            .build()
+            .unwrap()
     }
 
     fn hello_pipeline_with_padding(padding: PaddingParams) -> PipelineTokenizer {
-        PipelineTokenizer::from_parts(
-            BucketAddedVocabulary::new(),
-            Vec::new(),
-            PipelinePreTokenizer::None,
-            Arc::new(PipelineModel::BPE(hello_bpe())),
-            PipelinePostProcessor::default(),
-            None,
-            Default::default(),
-            Some(padding),
-        )
+        let mut builder = TokenizerBuilder::new(PipelineModel::BPE(hello_bpe()));
+        builder.padding = Some(padding);
+        builder.build().unwrap()
     }
 }

@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use super::{TokenizerInner, scratch_pool::ScratchPool};
 use crate::{
     DecoderRuntime, PaddingParams, Result,
     pipeline::{
@@ -9,6 +10,8 @@ use crate::{
     vocab::bucket_added_vocabulary::{AddedToken, AddedVocabulary},
 };
 
+// XXX: no setters like `.normalizers(mut self) -> Self` 
+// instead callers just use `builder.normalizers = vec![...]`
 pub struct TokenizerBuilder {
     pub added_tokens: Vec<AddedToken>,
     pub normalizers: Vec<PipelineNormalizer>,
@@ -53,16 +56,26 @@ impl TokenizerBuilder {
             |token| self.model.token_to_id(token),
             Some(&normalizers),
         )?;
-        Ok(PipelineTokenizer::from_parts(
-            added_vocab,
-            self.normalizers,
-            self.pre_tokenizer,
-            self.model,
-            self.post_processor,
-            self.decoder,
-            self.role_to_token,
-            self.padding,
-        ))
+        let added_id_min = added_vocab
+            .get_added_tokens_decoder()
+            .keys()
+            .copied()
+            .min()
+            .unwrap_or(u32::MAX);
+        Ok(PipelineTokenizer {
+            inner: Arc::new(TokenizerInner {
+                added_vocabulary: added_vocab,
+                normalizers: self.normalizers,
+                pre_tokenizer: self.pre_tokenizer,
+                model: self.model,
+                post_processor: self.post_processor,
+                decoder: self.decoder,
+                added_id_min,
+                role_to_token: self.role_to_token,
+                padding: self.padding,
+                scratch_pool: ScratchPool::new(),
+            }),
+        })
     }
 }
 
