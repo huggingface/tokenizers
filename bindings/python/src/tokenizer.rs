@@ -268,7 +268,7 @@ impl Tokenizer {
             .map_err(err)
     }
 
-    /// Converts token ids to their string representation.
+    /// Converts token ids to their string representation. This does NOT apply the decoder.
     ///
     /// Args:
     ///     ids:
