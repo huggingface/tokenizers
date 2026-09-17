@@ -108,9 +108,7 @@ impl Encoding {
     #[getter]
     fn attention_mask(&self) -> Vec<u32> {
         match &self.repr {
-            Repr::Owned {
-                attention_mask, ..
-            } => attention_mask.clone(),
+            Repr::Owned { attention_mask, .. } => attention_mask.clone(),
             Repr::Row { .. } => self
                 .row_bytes(PipelineEncoding::attention_mask)
                 .map_or_else(|| vec![1; self.ids_slice().len()], widen),
@@ -144,7 +142,11 @@ impl Encoding {
 
     /// Pickle rebuilds an `Encoding` by calling `_unpickle` with these arguments.
     fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<(Bound<'py, PyAny>, UnpickleArguments)> {
-        let arguments = (self.ids_slice().to_vec(), self.type_ids(), self.attention_mask());
+        let arguments = (
+            self.ids_slice().to_vec(),
+            self.type_ids(),
+            self.attention_mask(),
+        );
         Ok((py.get_type::<Self>().getattr("_unpickle")?, arguments))
     }
 

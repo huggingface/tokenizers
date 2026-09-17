@@ -32,13 +32,29 @@ def test_left(gpt2):
 
 
 def test_fixed_length(gpt2):
+    # `length` is a floor, not a cap: padding never truncates, so a batch holding a longer document
+    # pads to that document instead. The batch stays rectangular, which is what lets it be read as
+    # one 2D array. Asking for exactly `length` needs truncation, which does not exist yet.
     gpt2.padding = Padding(length=4, pad_id=EOT)
 
-    short, long = gpt2.encode_batch(SHORT_AND_LONG)
+    batch = gpt2.encode_batch(SHORT_AND_LONG)
+    short, long = batch
 
-    assert short.ids == [15496] + [EOT] * 3
-    assert short.attention_mask == [1] + [0] * 3
+    assert batch.stride == 8
+    assert short.ids == [15496] + [EOT] * 7
+    assert short.attention_mask == [1] + [0] * 7
     assert long.ids == [15496, 612, 11, 703, 389, 345, 1909, 30]
+    assert long.attention_mask == [1] * 8
+
+
+def test_fixed_length_above_longest(gpt2):
+    # When `length` clears every document, it is the stride.
+    gpt2.padding = Padding(length=12, pad_id=EOT)
+
+    batch = gpt2.encode_batch(SHORT_AND_LONG)
+
+    assert batch.stride == 12
+    assert [len(e) for e in batch] == [12, 12]
 
 
 def test_pad_to_multiple_of(gpt2):
