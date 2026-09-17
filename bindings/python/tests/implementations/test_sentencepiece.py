@@ -14,6 +14,22 @@ class TestSentencePieceBPE:
 
 
 class TestSentencePieceUnigram:
+    @pytest.mark.parametrize("unk_id, expected_ids", [(0, [1, 0]), (1, [0, 1])])
+    def test_init_with_vocab_and_unk_id(self, unk_id, expected_ids):
+        vocab = [("a", -1.0)]
+        vocab.insert(unk_id, ("<unk>", 0.0))
+
+        with pytest.raises(Exception, match="Encountered an unknown token but `unk_id` is missing"):
+            SentencePieceUnigramTokenizer(vocab, "_", False).encode("ab")
+
+        tokenizer = SentencePieceUnigramTokenizer(vocab, "_", False, unk_id=unk_id)
+        output = tokenizer.encode("ab")
+        assert output.tokens == ["a", "b"]
+        assert output.ids == expected_ids
+
+        with pytest.raises(ValueError, match="`vocab` and `unk_id` must be both specified"):
+            SentencePieceUnigramTokenizer(unk_id=unk_id)
+
     def test_train(self, tmpdir):
         p = tmpdir.mkdir("tmpdir").join("file.txt")
         p.write("A first sentence\nAnother sentence\nAnd a last one")
