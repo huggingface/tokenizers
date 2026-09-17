@@ -52,6 +52,80 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Offsets = (usize, usize);
 
+struct TrainingLines<B> {
+    buf: B,
+    pending: Option<String>,
+    error: Option<std::io::Error>,
+}
+
+impl<B> TrainingLines<B>
+where
+    B: BufRead,
+{
+    fn new(buf: B) -> Self {
+        Self {
+            buf,
+            pending: None,
+            error: None,
+        }
+    }
+}
+
+fn is_control_line(line: &str) -> bool {
+    !line.is_empty()
+        && line
+            .bytes()
+            .all(|byte| matches!(byte, b'\n' | b'\r' | b'\t' | 0x0B | 0x0C))
+}
+
+impl<B> Iterator for TrainingLines<B>
+where
+    B: BufRead,
+{
+    type Item = std::io::Result<String>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(error) = self.error.take() {
+            return Some(Err(error));
+        }
+
+        let mut line = match self.pending.take() {
+            Some(line) => line,
+            None => {
+                let mut line = String::new();
+                match self.buf.read_line(&mut line) {
+                    Ok(0) => return None,
+                    Ok(_) => line,
+                    Err(error) => return Some(Err(error)),
+                }
+            }
+        };
+
+        if !is_control_line(&line) {
+            return Some(Ok(line));
+        }
+
+        let mut sequence = line;
+        loop {
+            line = String::new();
+            match self.buf.read_line(&mut line) {
+                Ok(0) => return Some(Ok(sequence)),
+                Ok(_) if is_control_line(&line) => {
+                    sequence.push_str(&line);
+                }
+                Ok(_) => {
+                    self.pending = Some(line);
+                    return Some(Ok(sequence));
+                }
+                Err(error) => {
+                    self.error = Some(error);
+                    return Some(Ok(sequence));
+                }
+            }
+        }
+    }
+}
+
 /// Takes care of pre-processing strings.
 pub trait Normalizer: Sync {
     fn normalize(&self, normalized: &mut NormalizedString) -> Result<()>;
@@ -1434,10 +1508,9 @@ where
                 match File::open(filename) {
                     Ok(file) => {
                         let file = BufReader::with_capacity(max_read, file);
-                        // We read new lines using this API instead of the Lines Iterator
-                        // on purpose. We want to keep the `\n` and potential `\r` between each lines
-                        // We use an iterator to be able to chain with par_bridge.
-                        itertools::Either::Left(file.lines_with_ending())
+                        // Keep consecutive control-only lines in one training sequence so BPE can learn
+                        // their merges without joining ordinary adjacent lines.
+                        itertools::Either::Left(TrainingLines::new(file))
                     }
                     Err(e) => itertools::Either::Right(std::iter::once(Err(e))),
                 }
@@ -1644,6 +1717,63 @@ mod tests {
     use crate::models::wordlevel::WordLevelBuilder;
     use crate::pre_tokenizers::whitespace::WhitespaceSplit;
     use ahash::AHashMap;
+    use std::io::{Cursor, Error, ErrorKind, Read};
+
+    #[test]
+    fn training_lines_keep_consecutive_control_lines_together() {
+        let cases = [
+            ("foo\nbar\n", vec!["foo\n".to_owned(), "bar\n".to_owned()]),
+            (
+                "foo\n\n\n\nbar\n",
+                vec!["foo\n".to_owned(), "\n\n\n".to_owned(), "bar\n".to_owned()],
+            ),
+            ("\n\nfoo\n", vec!["\n\n".to_owned(), "foo\n".to_owned()]),
+            (
+                "foo\r\n\r\nbar",
+                vec!["foo\r\n".to_owned(), "\r\n".to_owned(), "bar".to_owned()],
+            ),
+            ("foo\n\n", vec!["foo\n".to_owned(), "\n".to_owned()]),
+            ("foo", vec!["foo".to_owned()]),
+            ("", vec![]),
+        ];
+
+        for (input, expected) in cases {
+            let actual = TrainingLines::new(Cursor::new(input.as_bytes()))
+                .collect::<std::io::Result<Vec<_>>>()
+                .unwrap();
+            assert_eq!(actual, expected, "input: {input:?}");
+        }
+    }
+
+    #[test]
+    fn training_lines_reports_errors_after_control_runs() {
+        struct ReaderWithError {
+            data: Cursor<Vec<u8>>,
+            error: Option<Error>,
+        }
+
+        impl Read for ReaderWithError {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                match self.data.read(buf)? {
+                    0 => self.error.take().map_or(Ok(0), Err),
+                    bytes_read => Ok(bytes_read),
+                }
+            }
+        }
+
+        let reader = ReaderWithError {
+            data: Cursor::new(b"\n\n".to_vec()),
+            error: Some(Error::new(ErrorKind::BrokenPipe, "read failed")),
+        };
+        let mut lines = TrainingLines::new(BufReader::new(reader));
+
+        assert_eq!(lines.next().unwrap().unwrap(), "\n\n");
+        assert_eq!(
+            lines.next().unwrap().unwrap_err().kind(),
+            ErrorKind::BrokenPipe
+        );
+        assert!(lines.next().is_none());
+    }
 
     /// Build a tokenizer with a known vocabulary: "a"=0, "b"=1, ... "j"=9, "<unk>"=10
     /// Uses WhitespaceSplit so each space-separated word maps to one token.
