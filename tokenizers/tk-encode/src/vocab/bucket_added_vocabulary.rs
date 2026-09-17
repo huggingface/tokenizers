@@ -266,7 +266,7 @@ impl AddedVocabulary {
 
     /// Check if a token is a special token
     pub fn is_special_token(&self, token: &str) -> bool {
-        if let Some(tok) = self.vocab.token_to_id(token) {
+        if let Some(tok) = self.token_to_id(token) {
             return self.token_metadata[tok as usize].special;
         }
         false
@@ -322,7 +322,9 @@ impl AddedVocabulary {
             let flags = AddedTokenFlags::from(&token);
             let is_norm = flags.normalized;
             let norm_form: String = match normalizer {
-                Some(n) => n.normalize(&token.content)?.into_owned(),
+                // An added token is matched anywhere in the text, so its form is normalized as if
+                // it never opened the sequence.
+                Some(n) => n.normalize(&token.content, 1)?.into_owned(),
                 None => token.content.clone(),
             };
             let form = if is_norm {
@@ -644,6 +646,23 @@ mod tests {
 
         assert_eq!(vocab.simple_id_to_token(0).unwrap(), "hello");
         assert_eq!(vocab.simple_id_to_token(1).unwrap(), "[CLS]");
+    }
+
+    #[test]
+    fn is_special_token_true_for_a_normalized_special_token() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer: Option<&Lowercase> = None;
+        vocab
+            .add_special_tokens(
+                [AddedToken::from("<unk>", true).normalized(true)],
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
+                normalizer,
+            )
+            .unwrap();
+
+        assert!(vocab.is_special_token("<unk>"));
     }
 
     /// Drive the real `SpecialSegmentIterator` over an `AddedVocabulary`, mapping each

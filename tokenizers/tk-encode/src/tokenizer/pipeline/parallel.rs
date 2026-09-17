@@ -6,9 +6,19 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::parallelism::pool;
 use crate::pipeline::scratch_pool::{EncodeScratch, ScratchGuard};
 use crate::pipeline::{
-    EncodeHandle, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer, Segment, Seq,
-    SpecialSegmentIterator,
+    EncodeHandle, EncodeOptions, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer,
+    Segment, SpecialSegmentIterator,
 };
+
+/// Which half of an [`Input::Pair`] a chunk was cut from. [`Input::Single`] is all `A`.
+///
+/// Local to the planner: the post-processor used to spell its sequences this way, but a
+/// `Template` now carries the two type ids positionally and has no need of the distinction.
+#[derive(Clone, Copy, Debug)]
+enum Seq {
+    A,
+    B,
+}
 
 use super::Result;
 
@@ -112,7 +122,7 @@ struct EncodeBatch {
     /// Cursor for threads to pick up the next task (group of sequence chunks) to work on
     next_task: CachePadded<AtomicUsize>,
     tokenizer: PipelineTokenizer,
-    add_special_tokens: bool,
+    options: EncodeOptions,
     /// Completion queue containing the list of chunks (inserted as their sequence idx) that have finished, in completion order
     /// This enables us to track the number of remaining chunks, to know when we can return a result
     completion_queue: Vec<AtomicUsize>,
@@ -162,8 +172,11 @@ impl EncodeBatch {
                         Seq::B => s2,
                     },
                 };
-                self.tokenizer
-                    .encode_sequence_with(&input[chunk.range.clone()], scratch)
+                self.tokenizer.encode_sequence_with(
+                    &input[chunk.range.clone()],
+                    chunk.range.start,
+                    scratch,
+                )
             }))
             .unwrap_or_else(|_| Err("encode worker panicked".into()));
             // SAFETY: no two threads can share the same chunk because each chunk is owned by
@@ -199,7 +212,7 @@ impl EncodeBatch {
         let b = (a_len < chunk_results.len())
             .then(|| drain(&chunk_results[a_len..]))
             .transpose()?;
-        self.tokenizer.post_process(a, b, self.add_special_tokens)
+        self.tokenizer.post_process(a, b, &self.options)
     }
 
     fn take_encoding(&self, seq: usize) -> Result<Encoding> {
@@ -412,27 +425,27 @@ impl PipelineTokenizer {
 pub(crate) fn encode(
     tok: &PipelineTokenizer,
     inputs: Inputs,
-    add_special_tokens: bool,
+    options: &EncodeOptions,
 ) -> EncodeHandle {
     if inputs.size_bytes() < PARALLEL_MIN_BYTES {
         return EncodeHandle::blocking(
-            tok.encode_serial(inputs, add_special_tokens),
-            tok.inner.padding.clone(),
+            tok.encode_serial(inputs, options),
+            tok.resolve_padding(&options.padding).cloned(),
         );
     }
     if let Inputs::Single(Input::Single(seq)) = &inputs
         && seq.len() < 2 * PARALLEL_MIN_BYTES
     {
         return EncodeHandle::blocking(
-            tok.encode_serial(inputs, add_special_tokens),
-            tok.inner.padding.clone(),
+            tok.encode_serial(inputs, options),
+            tok.resolve_padding(&options.padding).cloned(),
         );
     }
     let Some(pool) = pool() else {
         // unable to get a pool handle, reverting to single threaded
         return EncodeHandle::blocking(
-            tok.encode_serial(inputs, add_special_tokens),
-            tok.inner.padding.clone(),
+            tok.encode_serial(inputs, options),
+            tok.resolve_padding(&options.padding).cloned(),
         );
     };
     let Plan {
@@ -445,8 +458,8 @@ pub(crate) fn encode(
     } = tok.plan_work(&inputs);
     if tasks.len() < 2 {
         return EncodeHandle::blocking(
-            tok.encode_serial(inputs, add_special_tokens),
-            tok.inner.padding.clone(),
+            tok.encode_serial(inputs, options),
+            tok.resolve_padding(&options.padding).cloned(),
         );
     }
     let n_seq = seq_start.len() - 1;
@@ -455,7 +468,7 @@ pub(crate) fn encode(
         inputs: Box::new(inputs),
         cancelled: AtomicBool::new(false),
         next_task: CachePadded(AtomicUsize::new(0)),
-        add_special_tokens,
+        options: options.clone(),
         tokenizer: tok.clone(),
         completion_queue: (0..n_seq)
             .map(|_| AtomicUsize::new(EncodeBatch::NOT_DONE))
@@ -476,7 +489,10 @@ pub(crate) fn encode(
             while batch.encode_task(&mut scratch) {}
         });
     }
-    EncodeHandle::streaming(StreamingIter::new(batch), tok.inner.padding.clone())
+    EncodeHandle::streaming(
+        StreamingIter::new(batch),
+        tok.resolve_padding(&options.padding).cloned(),
+    )
 }
 
 /// The flat batch path: each worker takes a run of documents, encodes them into one arena of its

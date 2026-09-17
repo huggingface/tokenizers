@@ -14,8 +14,8 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use tk_encode::pipeline::{
-    Model, PipelineModel, PipelineTokenizer, PreTokenizer, PreTokenizerScratch, Span,
-    SpecialSegmentIterator, normalize_all,
+    EncodeOptions, Model, PipelineModel, PipelineTokenizer, PreTokenizer, PreTokenizerScratch,
+    Span, SpecialSegmentIterator, normalize_all,
 };
 
 const BATCH_SIZE: usize = 1_000;
@@ -60,14 +60,24 @@ pub fn encode(c: &mut Criterion) {
         group.bench_function("fused", |b| {
             b.iter(|| {
                 for line in &lines {
-                    black_box(tokenizer.encode(*line, false).wait().unwrap());
+                    black_box(
+                        tokenizer
+                            .encode(*line, &EncodeOptions::no_specials())
+                            .wait()
+                            .unwrap(),
+                    );
                 }
             })
         });
         group.bench_function("fused-batch", |b| {
             b.iter(|| {
                 for batch in &batches {
-                    black_box(tokenizer.encode(batch.as_slice(), false).wait().unwrap());
+                    black_box(
+                        tokenizer
+                            .encode(batch.as_slice(), &EncodeOptions::no_specials())
+                            .wait()
+                            .unwrap(),
+                    );
                 }
             })
         });
@@ -91,12 +101,12 @@ pub fn encode(c: &mut Criterion) {
         // Every byte-level BPE in `../data` is in that boat; `llama-2.json` is one that is not.
         if !tokenizer.get_normalizers().is_empty() {
             group.bench_function("stage/normalize", |b| {
-                b.iter(|| black_box(normalize_all(tokenizer.get_normalizers(), &data).unwrap()))
+                b.iter(|| black_box(normalize_all(tokenizer.get_normalizers(), &data, 0).unwrap()))
             });
         }
 
         // Every later stage reads normalized text, so normalize once here rather than inside each.
-        let normalized = normalize_all(tokenizer.get_normalizers(), &data)
+        let normalized = normalize_all(tokenizer.get_normalizers(), &data, 0)
             .unwrap()
             .into_owned();
 

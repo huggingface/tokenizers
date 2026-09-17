@@ -3,18 +3,44 @@
 export declare class PipelineTokenizer {
   /**
    * Read a `tokenizer.json`. The file is put through the legacy "1.0" -> canonical "2.0"
-   * upgrade first, so the tokenizers already on disk keep loading.
+   * upgrade first, so the tokenizers already on disk keep loading; `tk_serialize` itself only
+   * reads the canonical form.
    */
   static fromFile(path: string): PipelineTokenizer
   /**
-   * `Uint32Array`, not `Vec<u32>`: a JS `Array` costs one napi value per token, which
-   * on token-dense input is 13x the encode itself (gpt2 chinese 31 vs 616 MB/s).
+   * `Uint32Array`, not `Vec<u32>`: a JS `Array` costs one napi value per token, which on
+   * token-dense input is 13x the encode itself (gpt2 chinese 31 vs 616 MB/s).
    */
-  encode(text: string, addSpecialTokens?: boolean | undefined | null): Uint32Array
+  encode(text: string, options?: EncodeOptions | undefined | null): Uint32Array
   /**
-   * Drops the two remaining per-call costs of `encode`: the JS string -> UTF-8 copy
-   * (as fast as the tokenizer itself, so it halves throughput) and the fresh
-   * ArrayBuffer (388 ns of a 789 ns call). Returns how many ids were written.
+   * Drops the two remaining per-call costs of [`Self::encode`]: the JS string -> UTF-8 copy
+   * (as fast as the tokenizer itself, so it halves throughput) and the fresh `ArrayBuffer`
+   * (388 ns of a 789 ns call). Returns how many ids were written.
    */
-  encodeBytesInto(text: Uint8Array, out: Uint32Array, addSpecialTokens?: boolean | undefined | null): number
+  encodeBytesInto(text: Uint8Array, out: Uint32Array, options?: EncodeOptions | undefined | null): number
+}
+
+/** Per-call settings. A field left out keeps the tokenizer's own behaviour. */
+export interface EncodeOptions {
+  /** `true` unless set. */
+  addSpecialTokens?: boolean
+  /**
+   * `false` turns the tokenizer's configured padding off, a `PaddingOptions` changes it for
+   * this call, `true` or left out keeps it.
+   */
+  padding?: boolean | PaddingOptions
+}
+
+/**
+ * A field left out keeps the tokenizer's configured padding, or the defaults when it configures
+ * none: pad to the longest sequence in the batch, on the right, with id 0 and token `[PAD]`.
+ */
+export interface PaddingOptions {
+  /** Pad every sequence to this many tokens instead of to the longest one in the batch. */
+  length?: number
+  direction?: 'left' | 'right'
+  padToMultipleOf?: number
+  padId?: number
+  padTypeId?: number
+  padToken?: string
 }

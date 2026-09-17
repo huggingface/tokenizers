@@ -29,6 +29,19 @@ use self::writer::Out;
 use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::tokenizer::Result;
 
+/// Write a lone `post_processor` -- the value of that one key -- rather than a whole
+/// `tokenizer.json`. The default frame comes back as `null`, which is how a config spells it.
+///
+/// The counterpart of [`post_processor_from_json`](crate::post_processor_from_json), for a caller
+/// holding a post-processor on its own.
+pub fn post_processor_to_json(
+    post_processor: &tk_encode::pipeline::PipelinePostProcessor,
+) -> Result<String> {
+    let mut out = Out::new();
+    write_post_processor(&mut out, post_processor)?;
+    Ok(out.finish())
+}
+
 /// Write a `tokenizer.json` as a string.
 pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
     let mut out = Out::new();
