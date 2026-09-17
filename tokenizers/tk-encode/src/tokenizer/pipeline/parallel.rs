@@ -1,7 +1,7 @@
 //! The parallel batch encode: one contiguous id buffer, nothing shared between workers.
 
 use crate::parallelism::pool;
-use crate::pipeline::{Encoding, PipelineToken, PipelineTokenizer};
+use crate::pipeline::{Document, Encoding, PipelineToken, PipelineTokenizer, Template};
 
 use super::Result;
 
@@ -20,8 +20,8 @@ pub const PARALLEL_MIN_BYTES: usize = 8 * 1024;
 pub(crate) fn encode_flat(
     tok: &PipelineTokenizer,
     inputs: &[&str],
-    prefix: &[PipelineToken],
-    suffix: &[PipelineToken],
+    template: &Template,
+    add_special_tokens: bool,
 ) -> Result<Option<Encoding>> {
     use rayon::prelude::*;
 
@@ -56,10 +56,19 @@ pub(crate) fn encode_flat(
                 |scratch, docs| {
                     let bytes: usize = docs.iter().map(|s| s.len()).sum();
                     let mut arena =
-                        Vec::with_capacity(bytes / 4 + (prefix.len() + suffix.len()) * docs.len());
+                        Vec::with_capacity(bytes / 4 + template.n_special() * docs.len());
                     let mut lens = Vec::with_capacity(docs.len());
                     for doc in docs {
-                        lens.push(tok.encode_framed(doc, scratch, prefix, suffix, &mut arena)?);
+                        let start = arena.len();
+                        tok.frame(
+                            Document::from(*doc),
+                            template,
+                            add_special_tokens,
+                            scratch,
+                            &mut arena,
+                            None,
+                        )?;
+                        lens.push((arena.len() - start) as u32);
                     }
                     Ok((arena, lens))
                 },
