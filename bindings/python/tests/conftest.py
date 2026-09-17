@@ -13,6 +13,9 @@ GPT2 = DATA / "gpt2.json"
 BERT = DATA / "bert-wiki.json"
 # BPE trained on wikitext with a Whitespace pre-tokenizer, no post-processor, no decoder.
 WIKI = DATA / "tokenizer-wiki.json"
+# Llama 3: byte-level BPE with a regex pre-tokenizer and `ignore_merges`, 256 special tokens, and a
+# post-processor that prepends `<|begin_of_text|>`.
+LLAMA3 = DATA / "llama-3-tokenizer.json"
 
 
 # Loading a file takes over a second on the debug build `make develop` installs, so the tests share
@@ -32,6 +35,11 @@ def shared_wiki():
     return Tokenizer.from_file(WIKI)
 
 
+@pytest.fixture(scope="session")
+def shared_llama3():
+    return Tokenizer.from_file(LLAMA3)
+
+
 @pytest.fixture
 def gpt2(shared_gpt2):
     yield shared_gpt2
@@ -48,6 +56,12 @@ def bert(shared_bert):
 def wiki(shared_wiki):
     yield shared_wiki
     shared_wiki.padding = None
+
+
+@pytest.fixture
+def llama3(shared_llama3):
+    yield shared_llama3
+    shared_llama3.padding = None
 
 
 @pytest.fixture

@@ -166,6 +166,21 @@ class Tokenizer:
         Returns:
             str
         """
+    def decode_tokens(
+        self, /, ids: Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = False
+    ) -> list[str]:
+        """
+        Converts token ids to their string representation.
+
+        Args:
+            ids:
+                The ids to convert, a numpy array or any sequence of ints.
+            skip_special_tokens: bool
+                Whether to skip special tokens
+
+        Returns:
+            list[str]
+        """
     def encode(self, /, text: str, *, add_special_tokens: bool = True, padding: Padding | None = ...) -> Encoding:
         """
         Encodes the given text to token ids.
@@ -276,3 +291,19 @@ class Tokenizer:
         """
     @padding.setter
     def padding(self, /, padding: Padding | None) -> None: ...
+    def tokenize(self, /, text: str, *, add_special_tokens: bool = True, padding: Padding | None = ...) -> list[str]:
+        """
+        Encodes the given text and returns the string representation of each token.
+
+        Args:
+            text: str
+                The text to tokenize.
+            add_special_tokens: bool
+                 Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+            padding: `Padding` or `None`
+                Padding options. Pass `None` to disable padding.
+                When omitted, defaults to the padding options configured on the tokenizer.
+
+        Returns:
+            list[str]
+        """
