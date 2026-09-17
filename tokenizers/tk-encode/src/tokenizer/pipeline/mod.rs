@@ -472,16 +472,6 @@ pub struct Encoding {
 }
 
 impl Encoding {
-    fn new(ids: Vec<PipelineToken>, type_ids: Option<Vec<u8>>) -> Self {
-        debug_assert!(type_ids.as_ref().is_none_or(|t| t.len() == ids.len()));
-        Self {
-            ids,
-            type_ids,
-            attention_mask: None,
-            offsets: None,
-        }
-    }
-
     /// A batch the caller already laid out contiguously. Only the parallel flat path builds one
     /// this way; the serial loop fills `offsets` as it goes.
     #[cfg(feature = "parallelism")]

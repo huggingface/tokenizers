@@ -1,16 +1,6 @@
 //! The post-processor half of the pipeline: the two [`Template`]s an encode adds its tokens from.
 
-use super::{Encoding, PipelineToken};
-
-#[inline]
-fn push_ids(run: &[(PipelineToken, u8)], out: &mut Vec<PipelineToken>) {
-    out.extend(run.iter().map(|&(id, _)| id));
-}
-
-#[inline]
-fn push_type_ids(run: &[(PipelineToken, u8)], out: &mut Vec<u8>) {
-    out.extend(run.iter().map(|&(_, id)| id));
-}
+use super::PipelineToken;
 
 /// The templates to wrap around one sequence and around a pair.
 #[derive(Debug)]
@@ -59,70 +49,6 @@ impl Template {
                 .any(|run| run.iter().any(|&(_, id)| id != 0))
     }
 
-    pub fn post_process<const SPECIALS: bool>(
-        &self,
-        s1: Vec<PipelineToken>,
-        s2: Option<Vec<PipelineToken>>,
-    ) -> Encoding {
-        let (a_len, b_len) = (s1.len(), s2.as_ref().map_or(0, Vec::len));
-
-        let type_ids = self.has_type_ids().then(|| {
-            let mut out = Vec::with_capacity(self.n_special() + a_len + b_len);
-            if SPECIALS {
-                push_type_ids(&self.prefix, &mut out);
-            }
-            out.resize(out.len() + a_len, self.a_type_id);
-            if SPECIALS {
-                push_type_ids(&self.infix, &mut out);
-            }
-            if let Some(id) = self.b_type_id {
-                out.resize(out.len() + b_len, id);
-            }
-            if SPECIALS {
-                push_type_ids(&self.suffix, &mut out);
-            }
-            out
-        });
-
-        let ids = match s2 {
-            Some(b) => self.wrap_pair::<SPECIALS>(s1, b),
-            None => {
-                // A's buffer already holds the front of the answer, so keep it.
-                debug_assert!(self.infix.is_empty(), "[BUG] single template with an infix");
-                let mut ids = s1;
-                if SPECIALS {
-                    ids.reserve(self.n_special());
-                    push_ids(&self.suffix, &mut ids);
-                    if !self.prefix.is_empty() {
-                        ids.splice(0..0, self.prefix.iter().map(|&(id, _)| id));
-                    }
-                }
-                ids
-            }
-        };
-        Encoding::new(ids, type_ids)
-    }
-
-    #[inline(never)]
-    fn wrap_pair<const SPECIALS: bool>(
-        &self,
-        a: Vec<PipelineToken>,
-        b: Vec<PipelineToken>,
-    ) -> Vec<PipelineToken> {
-        let mut ids = Vec::with_capacity(self.n_special() + a.len() + b.len());
-        if SPECIALS {
-            push_ids(&self.prefix, &mut ids);
-        }
-        ids.extend(a);
-        if SPECIALS {
-            push_ids(&self.infix, &mut ids);
-        }
-        ids.extend(b);
-        if SPECIALS {
-            push_ids(&self.suffix, &mut ids);
-        }
-        ids
-    }
 }
 
 #[cfg(test)]

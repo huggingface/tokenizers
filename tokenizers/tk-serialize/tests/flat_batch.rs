@@ -1,12 +1,12 @@
-//! `encode_batch_flat` must agree with `encode`, document for document.
+//! The batch path against itself: parallel must agree with serial, document for document.
 //!
-//! The flat path skips the planner, the completion queue and the per-document `Encoding`, so it is
-//! a second implementation of the same contract rather than a wrapper over the first. This is what
-//! keeps the two from drifting.
+//! There is one encode path now, but it still splits: a batch big enough goes through the pool and
+//! is reassembled from per-worker arenas, while a single document runs straight down the serial
+//! loop. Those are the two things that can drift, so that is what this compares.
 //!
 //! Run `make data/gpt2.json` first -- the fixture is fetched, not committed.
 
-use tk_encode::pipeline::{EncodeOptions, Override, PipelineTokenizer};
+use tk_encode::pipeline::{EncodeOptions, Input, Inputs, Override, PipelineTokenizer};
 
 fn corpus() -> Vec<String> {
     let mut v = Vec::new();
@@ -20,29 +20,81 @@ fn corpus() -> Vec<String> {
     v
 }
 
+fn options(add_special_tokens: bool) -> EncodeOptions {
+    EncodeOptions {
+        add_special_tokens,
+        padding: Override::Off,
+    }
+}
+
+fn gpt2() -> PipelineTokenizer {
+    let canonical = tk_convert::canonicalize_file("../data/gpt2.json").unwrap();
+    tk_serialize::from_json(&canonical).unwrap()
+}
+
+/// A batch clears the parallel floor and is reassembled from arenas; one document does not.
 fn check(tok: &PipelineTokenizer, add_special: bool) {
     let owned = corpus();
-    let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
-    // Padding off on both sides, so the comparison stays like for like.
-    let options = EncodeOptions {
-        add_special_tokens: add_special,
-        padding: Override::Off,
-    };
-    let flat = tok.encode_batch_flat(&refs, &options).unwrap();
-    let one_by_one = tok.encode(owned.clone(), &options).wait().unwrap();
+    let options = options(add_special);
 
-    assert_eq!(flat.n_documents(), one_by_one.len(), "document count");
-    for (i, enc) in one_by_one.iter().enumerate() {
-        let want: Vec<u32> = enc.ids().iter().map(|t| t.id()).collect();
-        let got: Vec<u32> = flat.document(i).unwrap().iter().map(|t| t.id()).collect();
-        assert_eq!(want, got, "document {i} differs for {:?}", owned[i]);
+    let batched = tok.encode(owned.clone(), &options).wait().unwrap();
+    assert_eq!(batched.len(), owned.len(), "document count");
+
+    for (i, text) in owned.iter().enumerate() {
+        let alone = tok.encode(text.clone(), &options).wait().unwrap();
+        assert_eq!(
+            batched[i].ids(),
+            alone[0].ids(),
+            "document {i} differs for {text:?}"
+        );
     }
 }
 
 #[test]
-fn flat_matches_encode() {
-    let canonical = tk_convert::canonicalize_file("../data/gpt2.json").unwrap();
-    let tok: PipelineTokenizer = tk_serialize::from_json(&canonical).unwrap();
+fn parallel_matches_serial() {
+    let tok = gpt2();
     check(&tok, false);
     check(&tok, true);
+}
+
+/// Without specials a pair is just its two sequences, back to back in one document.
+#[test]
+fn pair_is_both_sequences() {
+    let tok = gpt2();
+    let options = options(false);
+    let (first, second) = ("Hello there".to_string(), "General Kenobi".to_string());
+
+    let a = tok.encode(first.clone(), &options).wait().unwrap();
+    let b = tok.encode(second.clone(), &options).wait().unwrap();
+    let pair = tok.encode((first, second), &options).wait().unwrap();
+
+    let want: Vec<_> = a[0].ids().iter().chain(b[0].ids()).copied().collect();
+    assert_eq!(pair[0].ids(), want, "a pair frames A then B");
+}
+
+/// A batch mixing pairs and single sequences keeps each document's own framing.
+#[test]
+fn pairs_and_singles_in_one_batch() {
+    let tok = gpt2();
+    let options = options(false);
+    let pair = ("Hello there".to_string(), "General Kenobi".to_string());
+    let single = "You are a bold one".to_string();
+
+    let batch = tok
+        .encode(
+            Inputs::Batch(vec![
+                Input::Pair(pair.0.clone(), pair.1.clone()),
+                Input::Single(single.clone()),
+            ]),
+            &options,
+        )
+        .wait()
+        .unwrap();
+
+    let alone_pair = tok.encode(pair, &options).wait().unwrap();
+    let alone_single = tok.encode(single, &options).wait().unwrap();
+
+    assert_eq!(batch.len(), 2);
+    assert_eq!(batch[0].ids(), alone_pair[0].ids());
+    assert_eq!(batch[1].ids(), alone_single[0].ids());
 }
