@@ -1,5 +1,9 @@
+import { createRequire } from 'node:module'
+import { describe, it } from 'node:test'
+
+import { expect } from '../../lib/expect.ts'
 /* eslint-disable */
-var globRequire = require
+var globRequire = createRequire(import.meta.url)
 
 console.log = (..._args: any[]) => {}
 

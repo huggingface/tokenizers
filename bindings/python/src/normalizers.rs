@@ -313,10 +313,11 @@ impl PyBertNormalizer {
         handle_chinese_chars: bool,
         strip_accents: Option<bool>,
         lowercase: bool,
-    ) -> (Self, PyNormalizer) {
+    ) -> PyClassInitializer<Self> {
         let normalizer =
             BertNormalizer::new(clean_text, handle_chinese_chars, strip_accents, lowercase);
-        (PyBertNormalizer {}, normalizer.into())
+        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(normalizer))
+            .add_subclass(PyBertNormalizer {})
     }
 }
 
@@ -342,8 +343,8 @@ pub struct PyNFD {}
 impl PyNFD {
     #[new]
     #[pyo3(text_signature = "(self)")]
-    fn new() -> (Self, PyNormalizer) {
-        (PyNFD {}, PyNormalizer::new(NFD.into()))
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::from(PyNormalizer::new(NFD.into())).add_subclass(PyNFD {})
     }
 }
 
@@ -366,8 +367,8 @@ pub struct PyNFKD {}
 impl PyNFKD {
     #[new]
     #[pyo3(text_signature = "(self)")]
-    fn new() -> (Self, PyNormalizer) {
-        (PyNFKD {}, NFKD.into())
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(NFKD)).add_subclass(PyNFKD {})
     }
 }
 
@@ -390,8 +391,8 @@ pub struct PyNFC {}
 impl PyNFC {
     #[new]
     #[pyo3(text_signature = "(self)")]
-    fn new() -> (Self, PyNormalizer) {
-        (PyNFC {}, NFC.into())
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(NFC)).add_subclass(PyNFC {})
     }
 }
 
@@ -415,8 +416,8 @@ pub struct PyNFKC {}
 impl PyNFKC {
     #[new]
     #[pyo3(text_signature = "(self)")]
-    fn new() -> (Self, PyNormalizer) {
-        (PyNFKC {}, NFKC.into())
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(NFKC)).add_subclass(PyNFKC {})
     }
 }
 
@@ -441,7 +442,7 @@ pub struct PySequence {}
 impl PySequence {
     #[new]
     #[pyo3(signature = (normalizers), text_signature = "(self, normalizers)")]
-    fn new(normalizers: &Bound<'_, PyList>) -> PyResult<(Self, PyNormalizer)> {
+    fn new(normalizers: &Bound<'_, PyList>) -> PyResult<PyClassInitializer<Self>> {
         let mut sequence = Vec::with_capacity(normalizers.len());
         for n in normalizers.iter() {
             let normalizer: PyRef<PyNormalizer> = n.extract()?;
@@ -450,10 +451,12 @@ impl PySequence {
                 PyNormalizerTypeWrapper::Single(inner) => sequence.push(inner.clone()),
             }
         }
-        Ok((
-            PySequence {},
-            PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(sequence)),
-        ))
+        Ok(
+            PyClassInitializer::from(PyNormalizer::new(PyNormalizerTypeWrapper::Sequence(
+                sequence,
+            )))
+            .add_subclass(PySequence {}),
+        )
     }
 
     fn __getnewargs__<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyTuple>> {
@@ -529,8 +532,9 @@ pub struct PyLowercase {}
 impl PyLowercase {
     #[new]
     #[pyo3(text_signature = "(self)")]
-    fn new() -> (Self, PyNormalizer) {
-        (PyLowercase {}, Lowercase.into())
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(Lowercase))
+            .add_subclass(PyLowercase {})
     }
 }
 
@@ -580,8 +584,9 @@ impl PyStrip {
 
     #[new]
     #[pyo3(signature = (left = true, right = true), text_signature = "(self, left=True, right=True)")]
-    fn new(left: bool, right: bool) -> (Self, PyNormalizer) {
-        (PyStrip {}, Strip::new(left, right).into())
+    fn new(left: bool, right: bool) -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(Strip::new(left, right)))
+            .add_subclass(PyStrip {})
     }
 }
 
@@ -619,8 +624,9 @@ impl PyPrepend {
 
     #[new]
     #[pyo3(signature = (prepend="▁".to_string()), text_signature = "(self, prepend)")]
-    fn new(prepend: String) -> (Self, PyNormalizer) {
-        (PyPrepend {}, Prepend::new(prepend).into())
+    fn new(prepend: String) -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(Prepend::new(prepend)))
+            .add_subclass(PyPrepend {})
     }
 }
 
@@ -648,8 +654,9 @@ pub struct PyByteLevel {}
 impl PyByteLevel {
     #[new]
     #[pyo3(text_signature = "(self)")]
-    fn new() -> (Self, PyNormalizer) {
-        (PyByteLevel {}, ByteLevel::new().into())
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(ByteLevel::new()))
+            .add_subclass(PyByteLevel {})
     }
 }
 
@@ -673,8 +680,9 @@ pub struct PyStripAccents {}
 impl PyStripAccents {
     #[new]
     #[pyo3(text_signature = "(self)")]
-    fn new() -> (Self, PyNormalizer) {
-        (PyStripAccents {}, StripAccents.into())
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(StripAccents))
+            .add_subclass(PyStripAccents {})
     }
 }
 
@@ -698,8 +706,8 @@ pub struct PyNmt {}
 impl PyNmt {
     #[new]
     #[pyo3(text_signature = "(self)")]
-    fn new() -> (Self, PyNormalizer) {
-        (PyNmt {}, Nmt.into())
+    fn new() -> PyClassInitializer<Self> {
+        PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(Nmt)).add_subclass(PyNmt {})
     }
 }
 
@@ -721,18 +729,16 @@ pub struct PyPrecompiled {}
 impl PyPrecompiled {
     #[new]
     #[pyo3(text_signature = "(self, precompiled_charsmap)")]
-    fn new(precompiled_charsmap: Vec<u8>) -> PyResult<(Self, PyNormalizer)> {
+    fn new(precompiled_charsmap: Vec<u8>) -> PyResult<PyClassInitializer<Self>> {
         // let precompiled_charsmap: Vec<u8> = FromPyObject::extract(py_precompiled_charsmap)?;
-        Ok((
-            PyPrecompiled {},
-            Precompiled::from(&precompiled_charsmap)
-                .map_err(|e| {
-                    exceptions::PyException::new_err(format!(
-                        "Error while attempting to build Precompiled normalizer: {e}"
-                    ))
-                })?
-                .into(),
+        Ok(PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(
+            Precompiled::from(&precompiled_charsmap).map_err(|e| {
+                exceptions::PyException::new_err(format!(
+                    "Error while attempting to build Precompiled normalizer: {e}"
+                ))
+            })?,
         ))
+        .add_subclass(PyPrecompiled {}))
     }
 }
 
@@ -767,11 +773,11 @@ pub struct PyReplace {}
 impl PyReplace {
     #[new]
     #[pyo3(text_signature = "(self, pattern, content)")]
-    fn new(pattern: PyPattern, content: String) -> PyResult<(Self, PyNormalizer)> {
-        Ok((
-            PyReplace {},
-            ToPyResult(Replace::new(pattern, content)).into_py()?.into(),
+    fn new(pattern: PyPattern, content: String) -> PyResult<PyClassInitializer<Self>> {
+        Ok(PyClassInitializer::<PyNormalizer>::from(PyNormalizer::from(
+            ToPyResult(Replace::new(pattern, content)).into_py()?,
         ))
+        .add_subclass(PyReplace {}))
     }
 
     #[getter]

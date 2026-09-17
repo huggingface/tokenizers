@@ -93,6 +93,24 @@ impl tk::Model for Model {
       .tokenize(sequence)
   }
 
+  /// See [`tk::Model::tokenize_in_pretokenized`] for the lock-once rationale.
+  fn tokenize_in_pretokenized(
+    &self,
+    pretokenized: &mut tk::tokenizer::PreTokenizedString,
+    truncation: Option<(usize, tk::TruncationDirection)>,
+  ) -> tk::Result<()> {
+    let model = self.model.as_ref().ok_or("Uninitialized Model")?;
+    let guard = model.read().unwrap();
+    match truncation {
+      Some((max_tokens, direction)) => pretokenized.tokenize_with_limit(
+        |normalized| guard.tokenize(normalized.get()),
+        max_tokens,
+        direction,
+      ),
+      None => pretokenized.tokenize(|normalized| guard.tokenize(normalized.get())),
+    }
+  }
+
   fn token_to_id(&self, token: &str) -> Option<u32> {
     self.model.as_ref()?.read().unwrap().token_to_id(token)
   }

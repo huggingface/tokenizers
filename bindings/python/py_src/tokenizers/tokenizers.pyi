@@ -1,5 +1,5 @@
 # Generated content DO NOT EDIT
-from . import (
+from tokenizers import (
     AddedToken as AddedToken,
     Encoding as Encoding,
     NormalizedString as NormalizedString,

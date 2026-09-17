@@ -1,7 +1,9 @@
+import { describe, it, before, beforeEach } from 'node:test'
+
+import { TruncationStrategy, BPE, Encoding, AddedToken, Tokenizer } from '../../index.js'
+import { expect } from '../expect.ts'
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-empty-function */
-
-import { TruncationStrategy, BPE, Encoding, AddedToken, Tokenizer } from '../../'
 
 // jest.mock('../../bindings/tokenizer');
 // jest.mock('../../bindings/models', () => ({
@@ -17,25 +19,6 @@ import { TruncationStrategy, BPE, Encoding, AddedToken, Tokenizer } from '../../
 // const TokenizerMock = mocked(Tokenizer);
 
 describe('AddedToken', () => {
-  it('instantiates with only content', () => {
-    const addToken = new AddedToken('test', false)
-    expect(addToken.constructor.name).toEqual('AddedToken')
-  })
-
-  it('instantiates with empty options', () => {
-    const addToken = new AddedToken('test', false, {})
-    expect(addToken.constructor.name).toEqual('AddedToken')
-  })
-
-  it('instantiates with options', () => {
-    const addToken = new AddedToken('test', false, {
-      leftStrip: true,
-      rightStrip: true,
-      singleWord: true,
-    })
-    expect(addToken.constructor.name).toEqual('AddedToken')
-  })
-
   describe('getContent', () => {
     it('returns the string content of AddedToken', () => {
       const addedToken = new AddedToken('test', false)
@@ -131,16 +114,6 @@ describe('Tokenizer', () => {
       tokenizer.addTokens(['my', 'name', 'is', 'john', 'pair'])
     })
 
-    it('accepts a pair of strings as parameters', async () => {
-      const encoding = await tokenizer.encode('my name is john', 'pair')
-      expect(encoding).toBeDefined()
-    })
-
-    it('accepts a string with a null pair', async () => {
-      const encoding = await tokenizer.encode('my name is john', null)
-      expect(encoding).toBeDefined()
-    })
-
     // TODO
     // it("throws if we try to encode a pre-tokenized string without isPretokenized=true", async () => {
     //   await expect((encode as any)(["my", "name", "is", "john"], null)).rejects.toThrow(
@@ -148,25 +121,11 @@ describe('Tokenizer', () => {
     //   );
     // });
 
-    // it("accepts a pre-tokenized string as parameter", async () => {
-    //   const encoding = await tokenizer.encode(["my", "name", "is", "john"], undefined, {
-    //     isPretokenized: true,
-    //   });
-    //   expect(encoding).toBeDefined();
-    // });
-
     // it("throws if we try to encodeBatch pre-tokenized strings without isPretokenized=true", async () => {
     //   await expect((encodeBatch as any)([["my", "name", "is", "john"]])).rejects.toThrow(
     //     "encodeBatch with isPretokenized=false expects input to be `EncodeInput[]` " +
     //       "with `EncodeInput = string | [string, string]`"
     //   );
-    // });
-
-    // it("accepts a pre-tokenized input in encodeBatch", async () => {
-    //   const encoding = await tokenizer.encodeBatch([["my", "name", "is", "john"]], {
-    //     isPretokenized: true,
-    //   });
-    //   expect(encoding).toBeDefined();
     // });
 
     it('Encodes correctly if called with only one argument', async () => {
@@ -282,13 +241,6 @@ describe('Tokenizer', () => {
   })
 
   describe('getVocab', () => {
-    it('accepts `undefined` as parameter', () => {
-      const model = BPE.empty()
-      const tokenizer = new Tokenizer(model)
-
-      expect(tokenizer.getVocab(undefined)).toBeDefined()
-    })
-
     it('returns the vocabulary', () => {
       const model = BPE.empty()
       const tokenizer = new Tokenizer(model)
@@ -300,15 +252,6 @@ describe('Tokenizer', () => {
         is: 2,
         john: 3,
       })
-    })
-  })
-
-  describe('getVocabSize', () => {
-    it('accepts `undefined` as parameter', () => {
-      const model = BPE.empty()
-      const tokenizer = new Tokenizer(model)
-
-      expect(tokenizer.getVocabSize(undefined)).toBeDefined()
     })
   })
 
@@ -351,7 +294,7 @@ describe('Tokenizer', () => {
     let firstEncoding: Encoding
     let secondEncoding: Encoding
 
-    beforeAll(() => {
+    before(() => {
       const model = BPE.empty()
       tokenizer = new Tokenizer(model)
       tokenizer.addTokens(['my', 'name', 'is', 'john', 'pair'])

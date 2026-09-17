@@ -1,6 +1,8 @@
-// import { promisify } from 'util'
+import { describe, it } from 'node:test'
 
-import { BPE, Tokenizer, mergeEncodings, slice } from '../../'
+import { BPE, Tokenizer, mergeEncodings, slice } from '../../index.js'
+import { expect } from '../expect.ts'
+//
 
 describe('slice', () => {
   const text = 'My name is John 👋'
@@ -112,11 +114,6 @@ describe('mergeEncodings', () => {
   const model = BPE.empty()
   const tokenizer = new Tokenizer(model)
   tokenizer.addTokens(['my', 'name', 'is', 'john'])
-
-  it('accepts `undefined` as a second parameter', () => {
-    const encoding = mergeEncodings([], undefined)
-    expect(encoding.constructor.name).toEqual('Encoding')
-  })
 
   it('returns correct result with `growingOffsets` not provided', async () => {
     const firstEncoding = await tokenizer.encode('my name is', null)

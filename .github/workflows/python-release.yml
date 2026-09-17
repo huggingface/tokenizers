@@ -142,7 +142,7 @@ jobs:
       - run: pip install -U twine
 
       - name: build wheels
-        uses: PyO3/maturin-action@3e2bdf6ba6453a61e649744019b8a2d906c7eb38  # v1.51.0
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         with:
           target: ${{ matrix.target }}
           working-directory: ./bindings/python
@@ -175,7 +175,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - uses: PyO3/maturin-action@3e2bdf6ba6453a61e649744019b8a2d906c7eb38  # v1.51.0
+      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         with:
           working-directory: ./bindings/python
           command: sdist

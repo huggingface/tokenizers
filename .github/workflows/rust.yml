@@ -31,6 +31,12 @@ jobs:
         uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
         with:
           workspaces: tokenizers
+          # Skip caching ~/.cargo/bin — earlier runs left a stale
+          # rustup-init binary masquerading as `cargo`, breaking the
+          # build step on macOS. The cargo toolchain is reinstalled by
+          # dtolnay/rust-toolchain each run anyway, so caching it adds
+          # risk without speedup.
+          cache-bin: false
 
       - name: Install cargo-readme for Ubuntu
         if: matrix.os == 'ubuntu-latest'
@@ -60,11 +66,29 @@ jobs:
       - name: Lint with Clippy
         run: cargo clippy --manifest-path ./tokenizers/Cargo.toml --all-targets --all-features -- -D warnings
 
+      # Test fixtures are immutable — cache them so CI doesn't re-download
+      # from the Hub (and get rate-limited) on every run.
+      - name: Cache HF test data
+        if: matrix.os != 'windows-latest'
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: tokenizers/data
+          key: hf-test-data-${{ hashFiles('tokenizers/Makefile') }}
+          restore-keys: hf-test-data-
+
+      # Provides `uvx`, used to run the huggingface_hub CLI that downloads
+      # test fixtures (see the Makefile) without a separate install step.
+      - name: Install uv
+        if: matrix.os != 'windows-latest'
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+
       - name: Run Tests
         if: matrix.os != 'windows-latest'
         shell: bash
         working-directory: ./tokenizers
-        run: make test
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make test HF="uvx --from huggingface_hub hf"
 
       # Skip integration tests for now on Windows
       - name: Run lib Tests on Windows
@@ -76,7 +100,7 @@ jobs:
         run: cargo test --verbose --manifest-path ./tokenizers/Cargo.toml --doc
 
       - name: Run Audit
-        run: cargo audit -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119
+        run: cargo audit -D warnings -f ./tokenizers/Cargo.lock --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0119
 
       # Verify that Readme.md is up to date.
       - name: Make sure, Readme generated from lib.rs matches actual Readme

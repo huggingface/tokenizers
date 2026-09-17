@@ -50,6 +50,12 @@ features = ["pyo3/extension-module", "abi3"]
 [tool.ruff]
 line-length = 119
 target-version = "py311"
+# This is ruff's historical default rule set, which we relied on implicitly
+# until ruff started shipping a much larger one by default (0.14 enabled 53
+# rules here, 0.16 enables 411). CI installs ruff unpinned, so leaving the
+# selection implicit means a ruff release can turn hundreds of new rules on
+# and redden main without a line of our code changing. Opt in explicitly.
+lint.select = ["E4", "E7", "E9", "F"]
 lint.ignore = [
   # a == None in tests vs is None.
   "E711",

@@ -3,6 +3,7 @@
 from .. import trainers
 
 BpeTrainer = trainers.BpeTrainer
+ParityBpeTrainer = trainers.ParityBpeTrainer
 Trainer = trainers.Trainer
 UnigramTrainer = trainers.UnigramTrainer
 WordLevelTrainer = trainers.WordLevelTrainer
