@@ -6,8 +6,12 @@ on:
       - main
   pull_request:
 
+permissions: {}
+
 jobs:
   build:
+    permissions:
+      contents: read
     runs-on: ${{ matrix.os }}
     env:
       MACOSX_DEPLOYMENT_TARGET: 10.12
@@ -111,6 +115,6 @@ jobs:
 
       - name: Check semver
         if: matrix.os == 'ubuntu-latest'
-        uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239  # v2
+        uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239  # v2.9
         with:
           manifest-path: ./tokenizers/Cargo.toml

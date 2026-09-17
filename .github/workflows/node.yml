@@ -9,8 +9,12 @@ on:
     paths-ignore:
       - bindings/python/**
 
+permissions: {}
+
 jobs:
   build_and_test:
+    permissions:
+      contents: read
     name: Check everything builds
     runs-on: ubuntu-latest
     steps:
@@ -44,13 +48,13 @@ jobs:
         run: yarn build
 
       - name: Lint Rust formatting
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1.0.3
         with:
           command: fmt
           args: --manifest-path ./bindings/node/Cargo.toml -- --check
 
       - name: Lint Rust with Clippy
-        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1
+        uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505  # v1.0.3
         with:
           command: clippy
           args: --manifest-path ./bindings/node/Cargo.toml --all-targets --all-features -- -D warnings
