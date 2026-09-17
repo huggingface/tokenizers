@@ -10,8 +10,12 @@ on:
     paths-ignore:
       - bindings/node/**
 
+permissions: {}
+
 jobs:
   build_win_32:
+    permissions:
+      contents: read
     name: Check it builds for Windows 32-bit
     runs-on: windows-latest
     strategy:
@@ -40,6 +44,8 @@ jobs:
 
 
   build_and_test:
+    permissions:
+      contents: read
     name: Check everything builds & tests
     runs-on: ${{ matrix.os }}
     strategy:
@@ -147,6 +153,8 @@ jobs:
 
 
   audit:
+    permissions:
+      contents: read
     name: Audit dependencies
     # Runs independently of the build/test matrix so an advisory database hit
     # (which is OS- and interpreter-invariant) doesn't fail the build.

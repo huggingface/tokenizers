@@ -8,8 +8,12 @@ on:
     tags:
       - v*
 
+permissions: {}
+
 jobs:
   rust_publish:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
