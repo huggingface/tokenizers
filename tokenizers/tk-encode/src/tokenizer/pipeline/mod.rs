@@ -13,9 +13,9 @@ use crate::{
     DecoderRuntime, PaddingParams,
     models::bpe::{BpeScratch, PipelineBPE},
     pad_encodings,
-    utils::padding::pad_flat,
     pipeline::scratch_pool::{EncodeScratch, ScratchGuard, ScratchPool},
     tokenizer::Decoder as _,
+    utils::padding::pad_flat,
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
 };
 #[cfg(feature = "parallelism")]
@@ -594,7 +594,7 @@ impl Encoding {
     /// out of a batch needs the range, not just the ids.
     pub fn row_range(&self, i: usize) -> Option<std::ops::Range<usize>> {
         match &self.offsets {
-            None => (i == 0).then(|| 0..self.ids.len()),
+            None => (i == 0).then_some(0..self.ids.len()),
             Some(offsets) => Some(*offsets.get(i)? as usize..*offsets.get(i + 1)? as usize),
         }
     }
@@ -828,12 +828,11 @@ impl PipelineTokenizer {
     /// exists to avoid.
     fn flat_via_encode(&self, inputs: &[&str], add_special_tokens: bool) -> Result<Encoding> {
         let owned: Vec<String> = inputs.iter().map(|s| (*s).to_string()).collect();
-        // Padding off: the rows get concatenated into one buffer, and `encode_batch_flat` takes no
-        // padding parameter, so there is nothing to inherit.
+        // Padding off: this is the unpadded half of `encode_batch_flat`, which pads the finished
+        // buffer itself. Padding here as well would pad twice.
         let options = EncodeOptions {
             add_special_tokens,
             padding: Override::Off,
-            ..Default::default()
         };
         Ok(Encoding::concat(&self.encode(owned, &options).wait()?))
     }

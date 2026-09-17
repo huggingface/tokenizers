@@ -27,7 +27,6 @@ fn check(tok: &PipelineTokenizer, add_special: bool) {
     let options = EncodeOptions {
         add_special_tokens: add_special,
         padding: Override::Off,
-        ..Default::default()
     };
     let flat = tok.encode_batch_flat(&refs, &options).unwrap();
     let one_by_one = tok.encode(owned.clone(), &options).wait().unwrap();
