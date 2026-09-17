@@ -105,7 +105,6 @@ fn pad_one(encoding: &mut Encoding, target_length: usize, params: &PaddingParams
         ids,
         type_ids: Some(type_ids),
         attention_mask: Some(attention_mask),
-        // Padding runs per document, off the general path, which never sets offsets.
         offsets: None,
     };
 }
@@ -230,6 +229,7 @@ mod tests {
             ids: make_tokens(0..3),
             type_ids: Some(vec![1, 1, 1]),
             attention_mask: None,
+            offsets: None,
         }];
         let params = PaddingParams {
             strategy: PaddingStrategy::Fixed(5),

@@ -360,9 +360,8 @@ impl PipelineTokenizer {
     fn plan_work(&self, inputs: &Inputs) -> Plan {
         let mut chunks = Vec::with_capacity(inputs.len());
         let mut side_a_len = Vec::with_capacity(inputs.len());
-        // One flat buffer with per-sequence offsets, not a `Vec` per sequence. A batch of 20k
-        // short lines meant 20k heap allocations here, on the calling thread before any worker
-        // started, and it measured about as much as all the rest of the planning together.
+        // We pre allocate the output so threads can write into them without
+        // any mutex.
         let mut outputs: Vec<ChunkResult> = Vec::with_capacity(inputs.len());
         let mut seq_start: Vec<usize> = Vec::with_capacity(inputs.len() + 1);
         for (seq_idx, input) in inputs.into_iter().enumerate() {

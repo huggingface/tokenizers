@@ -746,7 +746,8 @@ impl PipelineTokenizer {
     ) -> Result<u32> {
         let start = ids.len();
         ids.extend_from_slice(prefix);
-        self.encode_sequence_into(input, scratch, ids)?;
+        // Offset 0: a document is always the whole of its own sequence here, never a slice of one.
+        self.encode_sequence_into(input, 0, scratch, ids)?;
         ids.extend_from_slice(suffix);
         Ok((ids.len() - start) as u32)
     }
@@ -758,38 +759,16 @@ impl PipelineTokenizer {
         add_special_tokens: bool,
     ) -> Option<(Vec<PipelineToken>, Vec<PipelineToken>)> {
         let template = &self.inner.post_processor.single;
-        if template.has_type_ids {
-            return None;
-        }
-        let pos = template
-            .slices
-            .iter()
-            .position(|s| matches!(s, Slice::Sequence { seq: Seq::A, .. }))?;
-        if !template
-            .slices
-            .iter()
-            .enumerate()
-            .all(|(i, s)| i == pos || matches!(s, Slice::Specials { .. }))
-        {
+        // A single template is `prefix $A suffix`, so prefix/suffix are the answer directly. An
+        // infix means a second sequence the flat layout has nowhere to put.
+        if template.has_type_ids() || !template.infix.is_empty() {
             return None;
         }
         if !add_special_tokens {
             return Some((Vec::new(), Vec::new()));
         }
-        let collect = |slices: &[Slice]| -> Vec<PipelineToken> {
-            slices
-                .iter()
-                .filter_map(|s| match s {
-                    Slice::Specials { tokens, .. } => Some(tokens.iter().cloned()),
-                    Slice::Sequence { .. } => None,
-                })
-                .flatten()
-                .collect()
-        };
-        Some((
-            collect(&template.slices[..pos]),
-            collect(&template.slices[pos + 1..]),
-        ))
+        let ids = |run: &[(PipelineToken, u8)]| run.iter().map(|&(id, _)| id).collect();
+        Some((ids(&template.prefix), ids(&template.suffix)))
     }
 
     /// Fallback for templates the flat path does not model: run the normal encode and copy the
@@ -797,13 +776,18 @@ impl PipelineTokenizer {
     /// exists to avoid.
     fn flat_via_encode(&self, inputs: &[&str], add_special_tokens: bool) -> Result<Encoding> {
         let owned: Vec<String> = inputs.iter().map(|s| (*s).to_string()).collect();
-        Ok(Encoding::concat(
-            &self.encode(owned, add_special_tokens).wait()?,
-        ))
+        // Padding off: the rows get concatenated into one buffer, and `encode_batch_flat` takes no
+        // padding parameter, so there is nothing to inherit.
+        let options = EncodeOptions {
+            add_special_tokens,
+            padding: Override::Off,
+            ..Default::default()
+        };
+        Ok(Encoding::concat(&self.encode(owned, &options).wait()?))
     }
 
     /// One scratch, for a caller that will encode many documents with it.
-    pub(crate) fn scratch(&self) -> ScratchGuard<'_> {
+    fn scratch(&self) -> ScratchGuard<'_> {
         self.inner.scratch_pool.get(&self.inner.model)
     }
 

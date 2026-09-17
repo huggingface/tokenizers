@@ -6,7 +6,7 @@
 //!
 //! Run `make data/gpt2.json` first -- the fixture is fetched, not committed.
 
-use tk_encode::pipeline::PipelineTokenizer;
+use tk_encode::pipeline::{EncodeOptions, Override, PipelineTokenizer};
 
 fn corpus() -> Vec<String> {
     let mut v = Vec::new();
@@ -24,7 +24,14 @@ fn check(tok: &PipelineTokenizer, add_special: bool) {
     let owned = corpus();
     let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
     let flat = tok.encode_batch_flat(&refs, add_special).unwrap();
-    let one_by_one = tok.encode(owned.clone(), add_special).wait().unwrap();
+    // Padding off, so the comparison stays like for like: the flat path never pads, and the
+    // fixture's own config would otherwise apply to this side only.
+    let options = EncodeOptions {
+        add_special_tokens: add_special,
+        padding: Override::Off,
+        ..Default::default()
+    };
+    let one_by_one = tok.encode(owned.clone(), &options).wait().unwrap();
 
     assert_eq!(flat.rows(), one_by_one.len(), "row count");
     for (i, enc) in one_by_one.iter().enumerate() {
