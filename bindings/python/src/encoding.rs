@@ -41,7 +41,7 @@ type UnpickleArguments = (Vec<u32>, Vec<u32>, Vec<u32>);
 impl Encoding {
     /// The id of each token, as a list of ints.
     #[getter]
-    fn ids(&self) -> &[u32] {
+    pub(crate) fn ids(&self) -> &[u32] {
         &self.ids
     }
 

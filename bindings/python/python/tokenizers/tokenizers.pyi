@@ -153,13 +153,15 @@ class Tokenizer:
         """
         Unpickles a `Tokenizer`
         """
-    def decode(self, /, ids: Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = True) -> str:
+    def decode(
+        self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = True
+    ) -> str:
         """
         Decodes token ids back into text
 
         Args:
             ids:
-                The ids to decode, a numpy array or any sequence of ints.
+                The ids to decode, an `Encoding`, a numpy array or any sequence of ints.
             skip_special_tokens: bool
                 Whether special tokens should not be added to the decoded text.
 
@@ -167,14 +169,14 @@ class Tokenizer:
             str
         """
     def decode_tokens(
-        self, /, ids: Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = False
+        self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = False
     ) -> list[str]:
         """
-        Converts token ids to their string representation.
+        Converts token ids to their string representation. This does NOT apply the decoder.
 
         Args:
             ids:
-                The ids to convert, a numpy array or any sequence of ints.
+                The ids to convert, an `Encoding`, a numpy array or any sequence of ints.
             skip_special_tokens: bool
                 Whether to skip special tokens
 
@@ -294,6 +296,9 @@ class Tokenizer:
     def tokenize(self, /, text: str, *, add_special_tokens: bool = True, padding: Padding | None = ...) -> list[str]:
         """
         Encodes the given text and returns the string representation of each token.
+
+        Shorthand for `decode_tokens(encode(text))`.
+        If you also need to access token ids, use `encode(text)`.
 
         Args:
             text: str

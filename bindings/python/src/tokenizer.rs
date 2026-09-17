@@ -187,6 +187,9 @@ impl Tokenizer {
 
     /// Encodes the given text and returns the string representation of each token.
     ///
+    /// Shorthand for `decode_tokens(encode(text))`.
+    /// If you also need to access token ids, use `encode(text)`.
+    ///
     /// Args:
     ///     text: str
     ///         The text to tokenize.
@@ -249,7 +252,7 @@ impl Tokenizer {
     ///
     /// Args:
     ///     ids:
-    ///         The ids to decode, a numpy array or any sequence of ints.
+    ///         The ids to decode, an `Encoding`, a numpy array or any sequence of ints.
     ///     skip_special_tokens: bool
     ///         Whether special tokens should not be added to the decoded text.
     ///
@@ -272,7 +275,7 @@ impl Tokenizer {
     ///
     /// Args:
     ///     ids:
-    ///         The ids to convert, a numpy array or any sequence of ints.
+    ///         The ids to convert, an `Encoding`, a numpy array or any sequence of ints.
     ///     skip_special_tokens: bool
     ///         Whether to skip special tokens
     ///

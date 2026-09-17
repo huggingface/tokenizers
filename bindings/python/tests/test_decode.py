@@ -50,3 +50,16 @@ def test_decode_tokens_skip_special_tokens(llama3):
 
     assert tokens[0] == "<|begin_of_text|>"
     assert llama3.decode_tokens(ids, skip_special_tokens=True) == tokens[1:]
+
+
+def test_decode_takes_an_encoding(llama3):
+    encoding = llama3.encode("Hello there")
+
+    assert llama3.decode(encoding) == "Hello there"
+    assert llama3.decode(encoding, skip_special_tokens=False) == llama3.decode(encoding.ids, skip_special_tokens=False)
+
+
+def test_decode_tokens_takes_an_encoding(llama3):
+    encoding = llama3.encode("Hello there")
+
+    assert llama3.decode_tokens(encoding) == llama3.decode_tokens(encoding.ids)
