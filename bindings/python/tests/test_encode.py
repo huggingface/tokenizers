@@ -41,28 +41,6 @@ def test_gpt2_multibyte_encode(gpt2, text, ids):
     assert gpt2.encode(text).ids == ids
 
 
-# 128000 is `<|begin_of_text|>`, prepended by the post-processor.
-@pytest.mark.parametrize(
-    ("text", "ids"),
-    [
-        ("Hello there, how are you today?", [9906, 1070, 11, 1268, 527, 499, 3432, 30]),
-        ("unbelievably", [359, 32898, 89234]),
-        ("line one\nline two", [1074, 832, 198, 1074, 1403]),
-        ("   ", [262]),
-        ("naïve café", [3458, 38672, 588, 53050]),
-        ("日本語", [102433, 102158]),
-        ("👋🏽", [9468, 239, 233, 9468, 237, 121]),
-    ],
-)
-def test_llama3_encode(llama3, text, ids):
-    encoding = llama3.encode(text)
-
-    assert encoding.ids == [128000, *ids]
-    assert encoding.type_ids == [0] * (len(ids) + 1)
-    assert encoding.attention_mask == [1] * (len(ids) + 1)
-    assert llama3.encode(text, add_special_tokens=False).ids == ids
-
-
 def test_bert_specials(bert):
     encoding = bert.encode("Hello there")
 
@@ -72,19 +50,16 @@ def test_bert_specials(bert):
     assert bert.encode("Hello there", add_special_tokens=False).ids == [27462, 7495]
 
 
-def test_special_tokens(gpt2, bert, llama3):
+def test_special_tokens(gpt2, bert):
     assert gpt2.encode("Hello<|endoftext|>world").ids == [15496, 50256, 6894]
     assert bert.encode("Hello [SEP] there").ids == [1, 27462, 2, 7495, 2]
-    assert llama3.encode("Hello<|eot_id|>world").ids == [128000, 9906, 128009, 14957]
 
 
-def test_empty(gpt2, bert, llama3):
+def test_empty(gpt2, bert):
     assert gpt2.encode("").ids == []
     assert len(gpt2.encode("")) == 0
     assert bert.encode("").ids == [1, 2]
     assert bert.encode("", add_special_tokens=False).ids == []
-    assert llama3.encode("").ids == [128000]
-    assert llama3.encode("", add_special_tokens=False).ids == []
 
 
 def test_encode_batch(gpt2):

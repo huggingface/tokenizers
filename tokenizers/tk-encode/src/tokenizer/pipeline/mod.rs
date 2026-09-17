@@ -1215,6 +1215,34 @@ mod tests {
     }
 
     #[test]
+    fn decode_tokens_skips_special_tokens_on_request() {
+        use crate::vocab::bucket_added_vocabulary::AddedToken;
+
+        let mut added = BucketAddedVocabulary::new();
+        added
+            .add_special_tokens(
+                [AddedToken::from("<s>", true)],
+                8,
+                |_| None,
+                None::<&PipelineNormalizer>,
+            )
+            .unwrap();
+        let pipeline = PipelineTokenizer::from_parts(
+            added,
+            Vec::new(),
+            PipelinePreTokenizer::None,
+            PipelineModel::BPE(hello_bpe()),
+            PipelinePostProcessor::default(),
+            None,
+            Default::default(),
+            None,
+        );
+
+        assert_eq!(pipeline.decode_tokens(&[8, 7], false), ["<s>", "hello"]);
+        assert_eq!(pipeline.decode_tokens(&[8, 7], true), ["hello"]);
+    }
+
+    #[test]
     fn decode_without_a_decoder_joins_tokens_with_a_space() {
         let pipeline = hello_pipeline();
 
