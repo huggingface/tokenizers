@@ -31,11 +31,11 @@ fn check(tok: &PipelineTokenizer, add_special: bool) {
     let flat = tok.encode_batch_flat(&refs, &options).unwrap();
     let one_by_one = tok.encode(owned.clone(), &options).wait().unwrap();
 
-    assert_eq!(flat.rows(), one_by_one.len(), "row count");
+    assert_eq!(flat.n_documents(), one_by_one.len(), "document count");
     for (i, enc) in one_by_one.iter().enumerate() {
         let want: Vec<u32> = enc.ids().iter().map(|t| t.id()).collect();
-        let got: Vec<u32> = flat.row(i).unwrap().iter().map(|t| t.id()).collect();
-        assert_eq!(want, got, "row {i} differs for {:?}", owned[i]);
+        let got: Vec<u32> = flat.document(i).unwrap().iter().map(|t| t.id()).collect();
+        assert_eq!(want, got, "document {i} differs for {:?}", owned[i]);
     }
 }
 

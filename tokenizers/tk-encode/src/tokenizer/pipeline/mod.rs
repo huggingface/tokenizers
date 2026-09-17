@@ -480,7 +480,7 @@ pub struct Encoding {
     pub(crate) type_ids: Option<Vec<u8>>,
     /// `None` if the encoding is not padded (mask is all ones)
     pub(crate) attention_mask: Option<Vec<u8>>,
-    /// Row starts when this holds a whole batch, CSR-style, `rows() + 1` entries: document `i` is
+    /// Document starts when this holds a whole batch, CSR-style, `n_documents() + 1` entries: document `i` is
     /// `ids[offsets[i]..offsets[i + 1]]`. `None` for a single document, which is all of `ids`.
     ///
     /// One type rather than two, because a batch differs from a document only in knowing where
@@ -541,7 +541,7 @@ impl Encoding {
         for encoding in encodings {
             offsets.push(ids.len() as u32);
             ids.extend_from_slice(&encoding.ids);
-            // A batch mixing tagged and untagged rows would still have to line up, so an untagged
+            // A batch mixing tagged and untagged documents would still have to line up, so an untagged
             // row reads as all-zero rather than shortening the buffer.
             if let Some(out) = type_ids.as_mut() {
                 match &encoding.type_ids {
@@ -582,7 +582,7 @@ impl Encoding {
     }
 
     /// How many documents this holds. `1` unless it came from a batch path.
-    pub fn rows(&self) -> usize {
+    pub fn n_documents(&self) -> usize {
         self.offsets
             .as_ref()
             .map_or(1, |offsets| offsets.len().saturating_sub(1))
@@ -592,7 +592,7 @@ impl Encoding {
     ///
     /// `type_ids` and `attention_mask` run the length of `ids`, so a caller reading one document
     /// out of a batch needs the range, not just the ids.
-    pub fn row_range(&self, i: usize) -> Option<std::ops::Range<usize>> {
+    pub fn document_range(&self, i: usize) -> Option<std::ops::Range<usize>> {
         match &self.offsets {
             None => (i == 0).then_some(0..self.ids.len()),
             Some(offsets) => Some(*offsets.get(i)? as usize..*offsets.get(i + 1)? as usize),
@@ -600,29 +600,29 @@ impl Encoding {
     }
 
     /// Ids of document `i`, or `None` when out of range.
-    pub fn row(&self, i: usize) -> Option<&[PipelineToken]> {
-        self.ids.get(self.row_range(i)?)
+    pub fn document(&self, i: usize) -> Option<&[PipelineToken]> {
+        self.ids.get(self.document_range(i)?)
     }
 
     /// How many ids document `i` holds. `0` when out of range.
-    pub fn row_len(&self, i: usize) -> usize {
-        self.row_range(i).map_or(0, |range| range.len())
+    pub fn document_len(&self, i: usize) -> usize {
+        self.document_range(i).map_or(0, |range| range.len())
     }
 
-    /// The row width when every document has the same one, which is what lets a batch be read as
-    /// a rectangular `(rows, stride)` array rather than row by row.
+    /// The width every document occupies when they all have the same one, which is what lets a
+    /// batch be read as a rectangular `(documents, stride)` array rather than one at a time.
     ///
     /// `None` for a ragged batch: unpadded, or padded to a fixed length that some document
     /// already exceeds, since padding never truncates.
     pub fn stride(&self) -> Option<usize> {
-        let rows = self.rows();
-        let first = self.row_len(0);
-        (rows > 0 && (1..rows).all(|i| self.row_len(i) == first)).then_some(first)
+        let documents = self.n_documents();
+        let first = self.document_len(0);
+        (documents > 0 && (1..documents).all(|i| self.document_len(i) == first)).then_some(first)
     }
 
     /// Each document's ids in turn.
-    pub fn rows_iter(&self) -> impl Iterator<Item = &[PipelineToken]> {
-        (0..self.rows()).filter_map(|i| self.row(i))
+    pub fn documents(&self) -> impl Iterator<Item = &[PipelineToken]> {
+        (0..self.n_documents()).filter_map(|i| self.document(i))
     }
 
     /// Row starts, when this holds a batch. See the field.
@@ -739,7 +739,7 @@ impl PipelineTokenizer {
     /// Falls back to [`Self::encode`] for a template the flat layout cannot model -- a pair
     /// template, or one carrying type ids.
     ///
-    /// Padding applies to the finished buffer: the offsets already say how long every row is, so
+    /// Padding applies to the finished buffer: the offsets already say how long every document is, so
     /// it is one pass at the padded stride rather than a reallocation per document.
     pub fn encode_batch_flat(&self, inputs: &[&str], options: &EncodeOptions) -> Result<Encoding> {
         let mut batch = self.encode_batch_flat_unpadded(inputs, options.add_special_tokens)?;
@@ -763,9 +763,13 @@ impl PipelineTokenizer {
             let total: usize = inputs.iter().map(|s| s.len()).sum();
             if total >= parallel::PARALLEL_MIN_BYTES
                 && inputs.len() > 1
-                && let Some(rows) = parallel::encode_flat(self, inputs, &prefix, &suffix)?
+                && let Some(mut documents) = parallel::encode_flat(self, inputs, &prefix, &suffix)?
             {
-                return Ok(rows);
+                documents.type_ids = self.flat_type_ids(
+                    documents.offsets.as_deref().unwrap_or_default(),
+                    add_special_tokens,
+                );
+                return Ok(documents);
             }
         }
 
@@ -779,7 +783,7 @@ impl PipelineTokenizer {
         offsets.push(ids.len() as u32);
         Ok(Encoding {
             ids,
-            type_ids: None,
+            type_ids: self.flat_type_ids(&offsets, add_special_tokens),
             attention_mask: None,
             offsets: Some(offsets),
         })
@@ -813,7 +817,7 @@ impl PipelineTokenizer {
         let template = &self.inner.post_processor.single;
         // A single template is `prefix $A suffix`, so prefix/suffix are the answer directly. An
         // infix means a second sequence the flat layout has nowhere to put.
-        if template.has_type_ids() || !template.infix.is_empty() {
+        if !template.infix.is_empty() {
             return None;
         }
         if !add_special_tokens {
@@ -821,6 +825,34 @@ impl PipelineTokenizer {
         }
         let ids = |run: &[(PipelineToken, u8)]| run.iter().map(|&(id, _)| id).collect();
         Some((ids(&template.prefix), ids(&template.suffix)))
+    }
+
+    /// The type id of every token in a flat batch, or `None` when they are all zero.
+    ///
+    /// A single template is `prefix $A suffix` with a fixed type id per run, so a document's type ids
+    /// follow from its length -- there is nothing to record while encoding, and this is one pass
+    /// over the offsets afterwards.
+    fn flat_type_ids(&self, offsets: &[u32], add_special_tokens: bool) -> Option<Vec<u8>> {
+        let template = &self.inner.post_processor.single;
+        if !template.has_type_ids() {
+            return None;
+        }
+        let (prefix, suffix): (&[_], &[_]) = if add_special_tokens {
+            (&template.prefix, &template.suffix)
+        } else {
+            (&[], &[])
+        };
+        let total = offsets.last().copied().unwrap_or(0) as usize;
+        let mut out = Vec::with_capacity(total);
+        for window in offsets.windows(2) {
+            let len = (window[1] - window[0]) as usize;
+            out.extend(prefix.iter().map(|&(_, type_id)| type_id));
+            let sequence = len.saturating_sub(prefix.len() + suffix.len());
+            out.resize(out.len() + sequence, template.a_type_id);
+            out.extend(suffix.iter().map(|&(_, type_id)| type_id));
+        }
+        debug_assert_eq!(out.len(), total, "[BUG] type ids must match the id buffer");
+        Some(out)
     }
 
     /// Fallback for templates the flat path does not model: run the normal encode and copy the

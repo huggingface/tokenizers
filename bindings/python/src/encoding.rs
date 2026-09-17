@@ -9,14 +9,14 @@ use crate::type_hints::U32Array;
 
 /// How an [`Encoding`] gets at its ids.
 ///
-/// `Row` is the batch case: every encoding in a batch shares one `Arc` over one contiguous id
+/// `InBatch` is the batch case: every encoding in a batch shares one `Arc` over one contiguous id
 /// buffer and remembers which document it is. The batch paths build exactly that buffer, so a
 /// batch of 20k documents costs one allocation to hand back rather than one per document -- the
 /// copy used to happen here, with the GIL held, after the threads had already finished.
 enum Repr {
-    Row {
+    InBatch {
         batch: Arc<PipelineEncoding>,
-        row: usize,
+        document: usize,
     },
     /// An encoding that did not come from a batch buffer: unpickling, mostly. Carries the
     /// buffers outright, because a padded encoding's mask is not the all-ones default and there
@@ -35,18 +35,18 @@ pub struct Encoding {
 }
 
 impl Encoding {
-    /// One document out of a shared batch. `row` must be in range.
-    pub(crate) fn row(batch: Arc<PipelineEncoding>, row: usize) -> Self {
-        debug_assert!(row < batch.rows(), "[BUG] row out of range");
+    /// One document out of a shared batch. `document` must be in range.
+    pub(crate) fn document(batch: Arc<PipelineEncoding>, document: usize) -> Self {
+        debug_assert!(document < batch.n_documents(), "[BUG] document out of range");
         Self {
-            repr: Repr::Row { batch, row },
+            repr: Repr::InBatch { batch, document },
         }
     }
 
     fn ids_slice(&self) -> &[u32] {
         match &self.repr {
-            Repr::Row { batch, row } => batch
-                .row(*row)
+            Repr::InBatch { batch, document } => batch
+                .document(*document)
                 .map_or(&[][..], |ids| PipelineToken::ids_of(ids)),
             Repr::Owned { ids, .. } => ids,
         }
@@ -59,10 +59,10 @@ impl Encoding {
     /// all-zero or all-one default eagerly cost a full-length allocation per document for
     /// something most callers never read, so it is left to the getter.
     fn row_bytes(&self, pick: fn(&PipelineEncoding) -> Option<&[u8]>) -> Option<&[u8]> {
-        let Repr::Row { batch, row } = &self.repr else {
+        let Repr::InBatch { batch, document } = &self.repr else {
             return None;
         };
-        let range = batch.row_range(*row)?;
+        let range = batch.document_range(*document)?;
         pick(batch)?.get(range)
     }
 }
@@ -72,7 +72,7 @@ fn widen(bytes: &[u8]) -> Vec<u32> {
 }
 
 impl PartialEq for Encoding {
-    /// Compares what the encoding says, not how it stores it: a row of a batch and the same ids
+    /// Compares what the encoding says, not how it stores it: a document of a batch and the same ids
     /// unpickled are equal.
     fn eq(&self, other: &Self) -> bool {
         self.ids_slice() == other.ids_slice()
@@ -97,7 +97,7 @@ impl Encoding {
     fn type_ids(&self) -> Vec<u32> {
         match &self.repr {
             Repr::Owned { type_ids, .. } => type_ids.clone(),
-            Repr::Row { .. } => self
+            Repr::InBatch { .. } => self
                 .row_bytes(PipelineEncoding::type_ids)
                 .map_or_else(|| vec![0; self.ids_slice().len()], widen),
         }
@@ -109,7 +109,7 @@ impl Encoding {
     fn attention_mask(&self) -> Vec<u32> {
         match &self.repr {
             Repr::Owned { attention_mask, .. } => attention_mask.clone(),
-            Repr::Row { .. } => self
+            Repr::InBatch { .. } => self
                 .row_bytes(PipelineEncoding::attention_mask)
                 .map_or_else(|| vec![1; self.ids_slice().len()], widen),
         }
@@ -174,7 +174,7 @@ impl Encoding {
 
 /// A read-only numpy array over `data`, with `encoding` as the array's base.
 fn view<'py>(encoding: &Bound<'py, Encoding>, data: &[u32]) -> U32Array<'py> {
-    // SAFETY: `Encoding` is frozen and never mutates its ids, and when they are a row of a batch
+    // SAFETY: `Encoding` is frozen and never mutates its ids, and when they are a document of a batch
     // it holds the `Arc` keeping that buffer alive, so `data` stays alive for as long as
     // `encoding` does. Numpy keeps `encoding` alive through the array's base.
     let array = unsafe {

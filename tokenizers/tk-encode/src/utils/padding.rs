@@ -46,7 +46,7 @@ pub enum PaddingStrategy {
     Fixed(usize),
 }
 
-/// The width rows pad to: the strategy's target, rounded up to `pad_to_multiple_of`.
+/// The width documents pad to: the strategy's target, rounded up to `pad_to_multiple_of`.
 fn pad_length(longest: usize, params: &PaddingParams) -> usize {
     let mut length = match params.strategy {
         PaddingStrategy::Fixed(size) => size,
@@ -72,31 +72,33 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
     Ok(())
 }
 
-/// Pad a flat batch to one uniform row width, in place.
+/// Pad a flat batch so every document occupies the same width, in place.
 ///
-/// The offsets already say how long every row is, so this is a fill with the pad id and a copy of
-/// each row into its slot: no reallocation per document, and the result is a dense
-/// `(rows, stride)` buffer that reads as a 2D array. The stride is never shorter than the longest
-/// row, because padding does not truncate.
+/// The offsets already say how long every document is, so this is a fill with the pad id and a
+/// copy of each document into its slot: no reallocation per document, and the result is a dense
+/// `(documents, stride)` buffer that reads as a 2D array. The stride is never shorter than the longest
+/// document, because padding does not truncate.
 pub fn pad_flat(batch: &mut Encoding, params: &PaddingParams) -> Result<()> {
-    let rows = batch.rows();
-    let Some(longest) = (0..rows).map(|i| batch.row_len(i)).max() else {
+    let documents = batch.n_documents();
+    let Some(longest) = (0..documents).map(|i| batch.document_len(i)).max() else {
         return Ok(());
     };
     let stride = pad_length(longest, params).max(longest);
-    if (0..rows).all(|i| batch.row_len(i) == stride) {
+    if (0..documents).all(|i| batch.document_len(i) == stride) {
         return Ok(());
     }
 
-    let mut ids = vec![PipelineToken::from(params.pad_id); rows * stride];
-    let mut mask = vec![0u8; rows * stride];
+    let mut ids = vec![PipelineToken::from(params.pad_id); documents * stride];
+    let mut mask = vec![0u8; documents * stride];
     // Only worth a buffer when there is something other than zeros to say.
     let mut type_ids = (batch.type_ids.is_some() || params.pad_type_id != 0)
-        .then(|| vec![params.pad_type_id as u8; rows * stride]);
+        .then(|| vec![params.pad_type_id as u8; documents * stride]);
 
-    for i in 0..rows {
-        let src = batch.row_range(i).expect("[BUG] row out of range");
-        // Left padding puts the row at the end of its slot, right padding at the start.
+    for i in 0..documents {
+        let src = batch
+            .document_range(i)
+            .expect("[BUG] document out of range");
+        // Left padding puts the document at the end of its slot, right padding at the start.
         let at = i * stride
             + match params.direction {
                 PaddingDirection::Left => stride - src.len(),
@@ -115,7 +117,7 @@ pub fn pad_flat(batch: &mut Encoding, params: &PaddingParams) -> Result<()> {
     batch.ids = ids;
     batch.attention_mask = Some(mask);
     batch.type_ids = type_ids;
-    batch.offsets = Some((0..=rows).map(|i| (i * stride) as u32).collect());
+    batch.offsets = Some((0..=documents).map(|i| (i * stride) as u32).collect());
     Ok(())
 }
 
