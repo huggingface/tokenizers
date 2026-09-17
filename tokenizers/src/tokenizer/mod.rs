@@ -766,10 +766,14 @@ where
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
         let encode = |is_pre_tokenized, subseq_idx, subseq| -> Result<Encoding> {
-            let normalized = self
+            let pre_tokenized = self
                 .added_vocabulary
                 .extract_and_normalize(self.normalizer.as_ref(), subseq);
-            let pre_tokenized = self.do_pre_tokenize(normalized)?;
+            let pre_tokenized = if is_pre_tokenized {
+                pre_tokenized
+            } else {
+                self.do_pre_tokenize(pre_tokenized)?
+            };
             let subseq_encoding = self.do_tokenize(
                 pre_tokenized,
                 type_id,
