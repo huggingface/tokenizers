@@ -23,14 +23,13 @@ fn corpus() -> Vec<String> {
 fn check(tok: &PipelineTokenizer, add_special: bool) {
     let owned = corpus();
     let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
-    let flat = tok.encode_batch_flat(&refs, add_special).unwrap();
-    // Padding off, so the comparison stays like for like: the flat path never pads, and the
-    // fixture's own config would otherwise apply to this side only.
+    // Padding off on both sides, so the comparison stays like for like.
     let options = EncodeOptions {
         add_special_tokens: add_special,
         padding: Override::Off,
         ..Default::default()
     };
+    let flat = tok.encode_batch_flat(&refs, &options).unwrap();
     let one_by_one = tok.encode(owned.clone(), &options).wait().unwrap();
 
     assert_eq!(flat.rows(), one_by_one.len(), "row count");

@@ -214,23 +214,11 @@ impl Tokenizer {
         // keeps no per-document buffer, so the batch comes back as one allocation instead of one
         // per document. `PyBackedStr` is what lets the input be borrowed at all -- it keeps the
         // Python `str` alive and reads without the GIL, so the borrow survives `py.detach`.
-        if matches!(options.padding, Override::Off) {
-            let refs: Vec<&str> = texts.iter().map(|s| &**s).collect();
-            let batch = py
-                .detach(|| self.pipeline.encode_batch_flat(&refs, add_special_tokens))
-                .map_err(err)?;
-            return Ok(Encoding::rows(batch));
-        }
-
-        // Padding still wants a row per document to pad, which the flat buffer does not carry.
-        let owned: Vec<String> = texts.iter().map(|s| (**s).to_owned()).collect();
-        let encodings = py
-            .detach(|| self.pipeline.encode(owned, &options).wait())
+        let refs: Vec<&str> = texts.iter().map(|s| &**s).collect();
+        let batch = py
+            .detach(|| self.pipeline.encode_batch_flat(&refs, &options))
             .map_err(err)?;
-        Ok(encodings
-            .into_iter()
-            .map(|e| Encoding::row(Arc::new(e), 0))
-            .collect())
+        Ok(Encoding::rows(batch))
     }
 
     /// Decodes token ids back into text

@@ -13,6 +13,7 @@ use crate::{
     DecoderRuntime, PaddingParams,
     models::bpe::{BpeScratch, PipelineBPE},
     pad_encodings,
+    utils::padding::pad_flat,
     pipeline::scratch_pool::{EncodeScratch, ScratchGuard, ScratchPool},
     tokenizer::Decoder as _,
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
@@ -603,6 +604,22 @@ impl Encoding {
         self.ids.get(self.row_range(i)?)
     }
 
+    /// How many ids document `i` holds. `0` when out of range.
+    pub fn row_len(&self, i: usize) -> usize {
+        self.row_range(i).map_or(0, |range| range.len())
+    }
+
+    /// The row width when every document has the same one, which is what lets a batch be read as
+    /// a rectangular `(rows, stride)` array rather than row by row.
+    ///
+    /// `None` for a ragged batch: unpadded, or padded to a fixed length that some document
+    /// already exceeds, since padding never truncates.
+    pub fn stride(&self) -> Option<usize> {
+        let rows = self.rows();
+        let first = self.row_len(0);
+        (rows > 0 && (1..rows).all(|i| self.row_len(i) == first)).then_some(first)
+    }
+
     /// Each document's ids in turn.
     pub fn rows_iter(&self) -> impl Iterator<Item = &[PipelineToken]> {
         (0..self.rows()).filter_map(|i| self.row(i))
@@ -721,7 +738,22 @@ impl PipelineTokenizer {
     ///
     /// Falls back to [`Self::encode`] for a template the flat layout cannot model -- a pair
     /// template, or one carrying type ids.
-    pub fn encode_batch_flat(&self, inputs: &[&str], add_special_tokens: bool) -> Result<Encoding> {
+    ///
+    /// Padding applies to the finished buffer: the offsets already say how long every row is, so
+    /// it is one pass at the padded stride rather than a reallocation per document.
+    pub fn encode_batch_flat(&self, inputs: &[&str], options: &EncodeOptions) -> Result<Encoding> {
+        let mut batch = self.encode_batch_flat_unpadded(inputs, options.add_special_tokens)?;
+        if let Some(params) = self.resolve_padding(&options.padding) {
+            pad_flat(&mut batch, params)?;
+        }
+        Ok(batch)
+    }
+
+    fn encode_batch_flat_unpadded(
+        &self,
+        inputs: &[&str],
+        add_special_tokens: bool,
+    ) -> Result<Encoding> {
         let Some((prefix, suffix)) = self.flat_specials(add_special_tokens) else {
             return self.flat_via_encode(inputs, add_special_tokens);
         };
