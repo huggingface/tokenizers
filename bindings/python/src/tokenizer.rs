@@ -184,7 +184,7 @@ impl Tokenizer {
         let mut encodings = py
             .detach(|| self.pipeline.encode(text, &options).wait())
             .map_err(err)?;
-        Ok(Encoding::row(Arc::new(encodings.swap_remove(0)), 0))
+        Ok(Encoding::document(Arc::new(encodings.swap_remove(0)), 0))
     }
 
     /// Encodes a batch of text.

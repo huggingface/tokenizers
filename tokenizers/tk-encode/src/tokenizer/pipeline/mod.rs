@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
-use std::iter::Enumerate;
 use std::sync::Arc;
-use std::vec::IntoIter;
 
 #[cfg(feature = "unigram")]
 use crate::models::unigram::{Unigram, UnigramScratch};
@@ -20,8 +18,6 @@ use crate::{
 };
 #[cfg(feature = "parallelism")]
 pub use parallel::PARALLEL_MIN_BYTES;
-#[cfg(feature = "parallelism")]
-use parallel::StreamingIter;
 
 use super::Result;
 
@@ -311,8 +307,18 @@ impl Inputs {
         }
     }
 
-    fn len(&self) -> usize {
-        self.as_slice().len()
+    /// Every document as a plain sequence, or `None` if any of them is a pair.
+    ///
+    /// Pairs frame differently -- prefix, A, infix, B, suffix -- so the flat batch path only
+    /// takes the single-sequence case.
+    fn as_sequences(&self) -> Option<Vec<&str>> {
+        self.as_slice()
+            .iter()
+            .map(|input| match input {
+                Input::Single(s) => Some(s.as_str()),
+                Input::Pair(..) => None,
+            })
+            .collect()
     }
 }
 
@@ -416,60 +422,19 @@ impl From<&[(&str, &str)]> for Inputs {
     }
 }
 
-enum HandleState {
-    Blocking(Enumerate<IntoIter<Result<Encoding>>>),
-    #[cfg(feature = "parallelism")]
-    Streaming(StreamingIter),
-}
-
+/// What [`PipelineTokenizer::encode`] hands back, waited on with [`Self::wait`].
+///
+/// There is one encode path behind it and it has already finished by the time you hold this, so
+/// `wait` is a move. The type stays because it is the shape an asynchronous encode returns: when
+/// the batch path learns to hand back documents as they finish, callers do not change.
 pub struct EncodeHandle {
-    state: HandleState,
-    padding: Option<PaddingParams>,
+    encodings: Result<Vec<Encoding>>,
 }
 
 impl EncodeHandle {
-    /// Fully computed results, for the serial case
-    fn blocking(results: Vec<Result<Encoding>>, padding: Option<PaddingParams>) -> Self {
-        Self {
-            state: HandleState::Blocking(results.into_iter().enumerate()),
-            padding,
-        }
-    }
-
-    #[cfg(feature = "parallelism")]
-    fn streaming(it: StreamingIter, padding: Option<PaddingParams>) -> Self {
-        Self {
-            state: HandleState::Streaming(it),
-            padding,
-        }
-    }
-
-    fn len(&self) -> usize {
-        match &self.state {
-            HandleState::Blocking(it) => it.len(),
-            #[cfg(feature = "parallelism")]
-            HandleState::Streaming(it) => it.len(),
-        }
-    }
-}
-
-impl EncodeHandle {
-    /// Wait for all scheduled encoding to finish
-    ///
-    /// Returns in input order
-    pub fn wait(mut self) -> Result<Vec<Encoding>> {
-        let padding = self.padding.take();
-
-        // XXX: `Vec::new` does not allocate anything when capacity == 0, so creating empty
-        // Encodings should not allocate anything either
-        let mut out = vec![Encoding::empty(); self.len()];
-        for (seq, res) in self {
-            out[seq] = res?;
-        }
-        if let Some(params) = padding {
-            pad_encodings(&mut out, &params)?;
-        }
-        Ok(out)
+    /// Wait for the encode to finish. Returns one [`Encoding`] per document, in input order.
+    pub fn wait(self) -> Result<Vec<Encoding>> {
+        self.encodings
     }
 }
 
@@ -493,15 +458,6 @@ pub struct Encoding {
 }
 
 impl Encoding {
-    fn empty() -> Self {
-        Self {
-            ids: Vec::new(),
-            type_ids: None,
-            attention_mask: None,
-            offsets: None,
-        }
-    }
-
     fn new(ids: Vec<PipelineToken>, type_ids: Option<Vec<u8>>) -> Self {
         debug_assert!(type_ids.as_ref().is_none_or(|t| t.len() == ids.len()));
         Self {
@@ -620,42 +576,34 @@ impl Encoding {
         (documents > 0 && (1..documents).all(|i| self.document_len(i) == first)).then_some(first)
     }
 
+    /// The batch split into one [`Encoding`] per document.
+    ///
+    /// Slicing, not re-encoding: each document copies its own run out of the shared buffer. A
+    /// caller that can read the batch as it stands should do that instead.
+    pub fn into_documents(self) -> Vec<Self> {
+        (0..self.n_documents())
+            .map(|i| {
+                let range = self.document_range(i).expect("[BUG] document out of range");
+                Self {
+                    ids: self.ids[range.clone()].to_vec(),
+                    type_ids: self.type_ids.as_ref().map(|t| t[range.clone()].to_vec()),
+                    attention_mask: self.attention_mask.as_ref().map(|m| m[range].to_vec()),
+                    offsets: None,
+                }
+            })
+            .collect()
+    }
+
     /// Each document's ids in turn.
     pub fn documents(&self) -> impl Iterator<Item = &[PipelineToken]> {
         (0..self.n_documents()).filter_map(|i| self.document(i))
     }
 
-    /// Row starts, when this holds a batch. See the field.
+    /// Document starts, when this holds a batch. See the field.
     pub fn offsets(&self) -> Option<&[u32]> {
         self.offsets.as_deref()
     }
 }
-/// Iterator yields results in completion order
-pub struct HandleIter {
-    handle: EncodeHandle,
-}
-
-impl Iterator for HandleIter {
-    type Item = (usize, Result<Encoding>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match &mut self.handle.state {
-            HandleState::Blocking(it) => it.next(),
-            #[cfg(feature = "parallelism")]
-            HandleState::Streaming(it) => it.next(),
-        }
-    }
-}
-
-impl IntoIterator for EncodeHandle {
-    type Item = (usize, Result<Encoding>);
-    type IntoIter = HandleIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        Self::IntoIter { handle: self }
-    }
-}
-
 impl PipelineTokenizer {
     pub fn get_model(&self) -> &PipelineModel {
         &self.inner.model
@@ -709,20 +657,30 @@ impl PipelineTokenizer {
     ///
     /// This way, special / added tokens declared on raw or normalized text are both caught.
     /// The remaining text is pre-tokenized and run through the model span by span.
+    /// Returns one [`Encoding`] per document, in input order. A caller that wants the whole batch
+    /// as one buffer should use [`Self::encode_batch_flat`] and skip the split.
     pub fn encode(&self, inputs: impl Into<Inputs>, options: &EncodeOptions) -> EncodeHandle {
-        let inputs = inputs.into();
-        assert!(
-            inputs.len() < usize::MAX,
-            "we use usize::MAX as a sentinel value for the completion queue, we don't support batches larger than that"
-        );
-        #[cfg(not(feature = "parallelism"))]
-        return EncodeHandle::blocking(
-            self.encode_serial(inputs, options),
-            self.resolve_padding(&options.padding).cloned(),
-        );
+        EncodeHandle {
+            encodings: self.encode_now(inputs.into(), options),
+        }
+    }
 
-        #[cfg(feature = "parallelism")]
-        parallel::encode(self, inputs, options)
+    fn encode_now(&self, inputs: Inputs, options: &EncodeOptions) -> Result<Vec<Encoding>> {
+        // One path: encode the batch into a single buffer, then hand back a slice of it per
+        // document. A pair frames differently, so it keeps the per-document route.
+        let Some(documents) = inputs.as_sequences() else {
+            let mut out: Vec<Encoding> = self
+                .encode_serial(inputs, options)
+                .into_iter()
+                .collect::<Result<_>>()?;
+            if let Some(params) = self.resolve_padding(&options.padding) {
+                pad_encodings(&mut out, params)?;
+            }
+            return Ok(out);
+        };
+        Ok(self
+            .encode_batch_flat(&documents, options)?
+            .into_documents())
     }
 
     /// Encode a batch into one contiguous id buffer.
@@ -866,7 +824,7 @@ impl PipelineTokenizer {
             add_special_tokens,
             padding: Override::Off,
         };
-        Ok(Encoding::concat(&self.encode(owned, &options).wait()?))
+        Ok(Encoding::concat(&self.encode_now(owned.into(), &options)?))
     }
 
     /// One scratch, for a caller that will encode many documents with it.
