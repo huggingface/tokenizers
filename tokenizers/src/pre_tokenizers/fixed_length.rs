@@ -23,6 +23,12 @@ fn default_length() -> usize {
 
 impl PreTokenizer for FixedLength {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
+        // `length` is deserialized straight from the config with no validation;
+        // a value of 0 would panic in `<[_]>::chunks` ("chunk size must be
+        // non-zero"). Reject it with a clear error instead.
+        if self.length == 0 {
+            return Err("FixedLength pre-tokenizer length must be greater than 0".into());
+        }
         pretokenized.split(|_, normalized| {
             let text = normalized.get();
             if text.is_empty() {
@@ -118,5 +124,14 @@ mod tests {
                 ("d", (15, 16)),
             ]
         );
+    }
+
+    #[test]
+    fn zero_length_is_rejected() {
+        // `length` is deserialized without validation; a value of 0 used to
+        // panic in `chunks`. It must now return an error on non-empty input.
+        let pretok = FixedLength { length: 0 };
+        let mut pretokenized = PreTokenizedString::from("hello");
+        assert!(pretok.pre_tokenize(&mut pretokenized).is_err());
     }
 }
