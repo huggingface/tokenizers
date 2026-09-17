@@ -16,7 +16,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
@@ -28,7 +28,7 @@ jobs:
         run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
 
       - name: Cache cargo registry / git / target
-        uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc  # v2.9.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
           workspaces: tokenizers
           # Skip caching ~/.cargo/bin — earlier runs left a stale
@@ -40,12 +40,12 @@ jobs:
 
       - name: Install cargo-readme for Ubuntu
         if: matrix.os == 'ubuntu-latest'
-        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
+        uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c  # v2.87.10
         with:
           tool: cargo-readme
 
       - name: Install cargo-audit
-        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95  # v2.75.20
+        uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c  # v2.87.10
         with:
           tool: cargo-audit
 
@@ -70,7 +70,7 @@ jobs:
       # from the Hub (and get rate-limited) on every run.
       - name: Cache HF test data
         if: matrix.os != 'windows-latest'
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: tokenizers/data
           key: hf-test-data-${{ hashFiles('tokenizers/Makefile') }}
@@ -80,7 +80,7 @@ jobs:
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
         if: matrix.os != 'windows-latest'
-        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
 
       - name: Run Tests
         if: matrix.os != 'windows-latest'
@@ -111,6 +111,6 @@ jobs:
 
       - name: Check semver
         if: matrix.os == 'ubuntu-latest'
-        uses: obi1kenobi/cargo-semver-checks-action@5b298c9520f7096a4683c0bd981a7ac5a7e249ae  # v2
+        uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239  # v2
         with:
           manifest-path: ./tokenizers/Cargo.toml
