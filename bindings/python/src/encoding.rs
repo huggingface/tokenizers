@@ -43,14 +43,6 @@ impl Encoding {
         }
     }
 
-    /// Every document of a batch, sharing its buffer.
-    pub(crate) fn rows(batch: PipelineEncoding) -> Vec<Self> {
-        let batch = Arc::new(batch);
-        (0..batch.rows())
-            .map(|row| Self::row(Arc::clone(&batch), row))
-            .collect()
-    }
-
     fn ids_slice(&self) -> &[u32] {
         match &self.repr {
             Repr::Row { batch, row } => batch

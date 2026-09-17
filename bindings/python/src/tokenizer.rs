@@ -7,6 +7,7 @@ use pyo3::types::PyDict;
 use tk_encode::PaddingParams;
 use tk_encode::pipeline::{EncodeOptions, Override, PipelineTokenizer as Pipeline};
 
+use crate::batch::Batch;
 use crate::encoding::Encoding;
 use crate::error::{convert_err, err, poison_err};
 use crate::padding::{Padding, PaddingArg};
@@ -199,7 +200,7 @@ impl Tokenizer {
     ///         When omitted, defaults to the padding options configured on the tokenizer.
     ///
     /// Returns:
-    ///     List[Encoding]
+    ///     Batch
     #[pyo3(signature = (texts, *, add_special_tokens=true, padding=PaddingArg::InheritConfig))]
     fn encode_batch(
         &self,
@@ -207,7 +208,7 @@ impl Tokenizer {
         texts: Vec<PyBackedStr>,
         add_special_tokens: bool,
         padding: PaddingArg,
-    ) -> PyResult<Vec<Encoding>> {
+    ) -> PyResult<Batch> {
         let options = self.make_options(add_special_tokens, padding)?;
 
         // The flat path is the default: it borrows the documents, gives each worker one arena and
@@ -218,7 +219,7 @@ impl Tokenizer {
         let batch = py
             .detach(|| self.pipeline.encode_batch_flat(&refs, &options))
             .map_err(err)?;
-        Ok(Encoding::rows(batch))
+        Ok(Batch::new(batch))
     }
 
     /// Decodes token ids back into text

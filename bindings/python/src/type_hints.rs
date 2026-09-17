@@ -2,7 +2,7 @@
 
 use std::convert::Infallible;
 
-use numpy::{PyArray1, PyReadonlyArray1};
+use numpy::{PyArray1, PyArray2, PyReadonlyArray1};
 use pyo3::exceptions::PyTypeError;
 use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
@@ -15,6 +15,24 @@ pub struct U32Array<'py>(pub Bound<'py, PyArray1<u32>>);
 impl<'py> IntoPyObject<'py> for U32Array<'py> {
     type Target = PyArray1<u32>;
     type Output = Bound<'py, PyArray1<u32>>;
+    type Error = Infallible;
+
+    const OUTPUT_TYPE: PyStaticExpr = type_hint_subscript!(
+        type_hint_identifier!("numpy.typing", "NDArray"),
+        type_hint_identifier!("numpy", "uint32")
+    );
+
+    fn into_pyobject(self, _py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        Ok(self.0)
+    }
+}
+
+/// The same, for the `(rows, stride)` array a padded batch reads as.
+pub struct U32Array2<'py>(pub Bound<'py, PyArray2<u32>>);
+
+impl<'py> IntoPyObject<'py> for U32Array2<'py> {
+    type Target = PyArray2<u32>;
+    type Output = Bound<'py, PyArray2<u32>>;
     type Error = Infallible;
 
     const OUTPUT_TYPE: PyStaticExpr = type_hint_subscript!(
