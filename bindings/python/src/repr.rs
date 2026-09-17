@@ -33,7 +33,7 @@ pub(crate) fn tokenizer(file: &Map<String, Value>, padding: &str) -> String {
     let mut out = String::from("Tokenizer(");
     for (i, key) in known.chain(extra).enumerate() {
         if i > 0 {
-            out.push_str(", ");
+            out.push_str(",\n\t");
         }
         out.push_str(key);
         out.push('=');
@@ -100,7 +100,7 @@ fn write_entries<'a>(
 ) {
     for (i, (key, value)) in entries.enumerate() {
         if i > 0 {
-            out.push_str(", ");
+            out.push_str(",\n\t");
         }
         if i == shown {
             out.push_str("...");
