@@ -1,7 +1,8 @@
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyDict;
 use tk_encode::PaddingParams;
 use tk_encode::pipeline::{EncodeOptions, Override, PipelineTokenizer as Pipeline};
@@ -179,10 +180,10 @@ impl Tokenizer {
     ) -> PyResult<Encoding> {
         let options = self.make_options(add_special_tokens, padding)?;
         // py.detach releases the GIL while encode runs on Rust side
-        let encodings = py
+        let mut encodings = py
             .detach(|| self.pipeline.encode(text, &options).wait())
             .map_err(err)?;
-        Ok(Encoding::from(&encodings[0]))
+        Ok(Encoding::row(Arc::new(encodings.swap_remove(0)), 0))
     }
 
     /// Encodes a batch of text.
@@ -203,16 +204,33 @@ impl Tokenizer {
     fn encode_batch(
         &self,
         py: Python<'_>,
-        texts: Vec<String>,
+        texts: Vec<PyBackedStr>,
         add_special_tokens: bool,
         padding: PaddingArg,
     ) -> PyResult<Vec<Encoding>> {
         let options = self.make_options(add_special_tokens, padding)?;
-        // py.detach releases the GIL while encode runs on Rust side
+
+        // The flat path is the default: it borrows the documents, gives each worker one arena and
+        // keeps no per-document buffer, so the batch comes back as one allocation instead of one
+        // per document. `PyBackedStr` is what lets the input be borrowed at all -- it keeps the
+        // Python `str` alive and reads without the GIL, so the borrow survives `py.detach`.
+        if matches!(options.padding, Override::Off) {
+            let refs: Vec<&str> = texts.iter().map(|s| &**s).collect();
+            let batch = py
+                .detach(|| self.pipeline.encode_batch_flat(&refs, add_special_tokens))
+                .map_err(err)?;
+            return Ok(Encoding::rows(batch));
+        }
+
+        // Padding still wants a row per document to pad, which the flat buffer does not carry.
+        let owned: Vec<String> = texts.iter().map(|s| (**s).to_owned()).collect();
         let encodings = py
-            .detach(|| self.pipeline.encode(texts, &options).wait())
+            .detach(|| self.pipeline.encode(owned, &options).wait())
             .map_err(err)?;
-        Ok(encodings.iter().map(Encoding::from).collect())
+        Ok(encodings
+            .into_iter()
+            .map(|e| Encoding::row(Arc::new(e), 0))
+            .collect())
     }
 
     /// Decodes token ids back into text

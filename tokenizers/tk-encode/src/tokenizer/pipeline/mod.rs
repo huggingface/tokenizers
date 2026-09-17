@@ -59,6 +59,17 @@ impl PipelineToken {
     pub const fn id(self) -> u32 {
         self.0
     }
+
+    /// The ids of a whole slice, without copying it.
+    ///
+    /// Lets a caller hand a batch's ids to something that wants `u32` -- numpy, the Python
+    /// bindings -- without walking the slice to rebuild it as a `Vec<u32>`, which for a batch of
+    /// short documents is the dominant cost of returning the batch at all.
+    pub const fn ids_of(tokens: &[Self]) -> &[u32] {
+        // SAFETY: `PipelineToken` is `#[repr(transparent)]` over `u32` (see the attribute above),
+        // so a `[PipelineToken]` and a `[u32]` of the same length have identical layout.
+        unsafe { std::slice::from_raw_parts(tokens.as_ptr().cast::<u32>(), tokens.len()) }
+    }
 }
 
 impl From<u32> for PipelineToken {
@@ -576,14 +587,20 @@ impl Encoding {
             .map_or(1, |offsets| offsets.len().saturating_sub(1))
     }
 
+    /// Where document `i` sits in the flat buffers, or `None` when out of range.
+    ///
+    /// `type_ids` and `attention_mask` run the length of `ids`, so a caller reading one document
+    /// out of a batch needs the range, not just the ids.
+    pub fn row_range(&self, i: usize) -> Option<std::ops::Range<usize>> {
+        match &self.offsets {
+            None => (i == 0).then(|| 0..self.ids.len()),
+            Some(offsets) => Some(*offsets.get(i)? as usize..*offsets.get(i + 1)? as usize),
+        }
+    }
+
     /// Ids of document `i`, or `None` when out of range.
     pub fn row(&self, i: usize) -> Option<&[PipelineToken]> {
-        match &self.offsets {
-            None => (i == 0).then_some(self.ids.as_slice()),
-            Some(offsets) => self
-                .ids
-                .get(*offsets.get(i)? as usize..*offsets.get(i + 1)? as usize),
-        }
+        self.ids.get(self.row_range(i)?)
     }
 
     /// Each document's ids in turn.
@@ -693,11 +710,14 @@ impl PipelineTokenizer {
 
     /// Encode a batch into one contiguous id buffer.
     ///
-    /// [`Self::encode`] owns its inputs and returns a `Vec` per document, so a batch of short
-    /// documents spends its time in the allocator and in the planning that arranges the work --
-    /// none of which the threads can help with. This path takes the documents borrowed, gives each
-    /// worker one arena and one scratch, and concatenates the arenas at the end. There is no plan,
-    /// no completion queue and nothing shared between workers, which is what lets it scale.
+    /// [`Self::encode`] hands back a handle while the work is still running, so its inputs have to
+    /// outlive the call and it takes them owned -- ownership it needs to keep the bytes alive, not
+    /// to read them. Add the `Vec` per document it returns, and a batch of short documents spends
+    /// its time in the allocator and in the planning that arranges the work, none of which the
+    /// threads can help with. This path blocks, which confines the borrow to the call: it takes
+    /// the documents borrowed, gives each worker one arena and one scratch, and concatenates the
+    /// arenas at the end. There is no plan, no completion queue and nothing shared between
+    /// workers, which is what lets it scale.
     ///
     /// Falls back to [`Self::encode`] for a template the flat layout cannot model -- a pair
     /// template, or one carrying type ids.
