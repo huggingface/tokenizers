@@ -500,38 +500,7 @@ impl Encoding {
     }
 
     /// Lay per-document encodings out as one batch, for a template the flat path cannot frame.
-    fn concat(encodings: &[Self]) -> Self {
-        let total = encodings.iter().map(Self::len).sum();
-        let mut ids = Vec::with_capacity(total);
-        let mut offsets = Vec::with_capacity(encodings.len() + 1);
-        let mut type_ids = encodings
-            .iter()
-            .any(|e| e.type_ids.is_some())
-            .then(|| Vec::with_capacity(total));
-        for encoding in encodings {
-            offsets.push(ids.len() as u32);
-            ids.extend_from_slice(&encoding.ids);
-            // A batch mixing tagged and untagged documents would still have to line up, so an untagged
-            // row reads as all-zero rather than shortening the buffer.
-            if let Some(out) = type_ids.as_mut() {
-                match &encoding.type_ids {
-                    Some(src) => out.extend_from_slice(src),
-                    None => out.resize(out.len() + encoding.len(), 0),
-                }
-            }
-        }
-        offsets.push(ids.len() as u32);
-        Self {
-            ids,
-            type_ids,
-            attention_mask: None,
-            offsets: Some(offsets),
-        }
-    }
-}
-
-impl Encoding {
-    pub fn is_empty(&self) -> bool {
+        pub fn is_empty(&self) -> bool {
         self.ids.len() == 0
     }
 
@@ -912,18 +881,7 @@ impl PipelineTokenizer {
     }
 
     /// [`Self::encode_sequence_into`] into a fresh buffer, for the callers that want one back.
-    fn encode_sequence_with(
-        &self,
-        input: &str,
-        offset: usize,
-        scratch: &mut EncodeScratch,
-    ) -> Result<Vec<PipelineToken>> {
-        let mut output = Vec::with_capacity(input.len() / 4);
-        self.encode_sequence_into(input, offset, scratch, &mut output)?;
-        Ok(output)
-    }
-
-    /// Encode `input`, appending its ids to `out`.
+        /// Encode `input`, appending its ids to `out`.
     ///
     /// The entry point that allocates nothing per call: no `Encoding`, no `Vec<Encoding>` from the
     /// handle, and no copy out of either. [`Self::encode`] is this plus those wrappers, and an
