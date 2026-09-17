@@ -10,8 +10,9 @@ use crate::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
 use crate::{
-    DecoderRuntime,
+    DecoderRuntime, PaddingParams,
     models::bpe::{BpeScratch, PipelineBPE},
+    pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     tokenizer::Decoder as _,
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
@@ -30,13 +31,15 @@ mod scratch_pool;
 pub use scratch_pool::ModelScratch;
 
 pub use bitsplit::Span;
+pub mod encode_options;
+pub use encode_options::{EncodeOptions, Override};
 
 mod normalizer;
 mod post_processor;
 mod pre_tokenizer;
 
 pub use normalizer::{Normalizer, NormalizerChain, PipelineNormalizer, normalize_all};
-pub use post_processor::{PipelinePostProcessor, Seq, Slice, Template, build_slices, compose};
+pub use post_processor::{PipelinePostProcessor, Template};
 pub use pre_tokenizer::{
     PipelinePreTokenizer, PreTokenizer, PreTokenizerScratch, SplitPolicy, split, split_delimiter,
     split_matches,
@@ -207,6 +210,8 @@ struct TokenizerInner {
     /// the special-token metadata that used to need a separate `tokenizer_config.json`. Empty
     /// when the config declares none. `BTreeMap` so the writer emits a stable key order.
     role_to_token: BTreeMap<String, String>,
+    /// Padding configuration. [`EncodeOptions::padding`] overrides it per call.
+    padding: Option<PaddingParams>,
     scratch_pool: ScratchPool,
 }
 
@@ -229,6 +234,7 @@ impl PipelineTokenizer {
     /// `added_vocabulary` must already have had its tokens replayed *against the concrete model and
     /// in id order*, because `add_tokens` reuses a model id when the token is already in the
     /// vocabulary; doing it later, or out of order, moves ids silently.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_parts(
         added_vocabulary: BucketAddedVocabulary,
         normalizers: Vec<PipelineNormalizer>,
@@ -237,6 +243,7 @@ impl PipelineTokenizer {
         post_processor: PipelinePostProcessor,
         decoder: Option<DecoderRuntime>,
         role_to_token: BTreeMap<String, String>,
+        padding: Option<PaddingParams>,
     ) -> Self {
         let added_id_min = added_vocabulary
             .get_added_tokens_decoder()
@@ -254,10 +261,23 @@ impl PipelineTokenizer {
                 decoder,
                 added_id_min,
                 role_to_token,
+                padding,
                 scratch_pool: ScratchPool::new(),
             }),
         }
     }
+
+    pub fn resolve_padding<'a>(
+        &'a self,
+        padding_override: &'a Override<PaddingParams>,
+    ) -> Option<&'a PaddingParams> {
+        match padding_override {
+            Override::InheritConfig => self.inner.padding.as_ref(),
+            Override::Off => None,
+            Override::With(params) => Some(params),
+        }
+    }
+    // TODO: resolve_truncation
 }
 #[derive(Clone)]
 pub enum Input {
@@ -371,20 +391,23 @@ enum HandleState {
 
 pub struct EncodeHandle {
     state: HandleState,
+    padding: Option<PaddingParams>,
 }
 
 impl EncodeHandle {
     /// Fully computed results, for the serial case
-    fn blocking(results: Vec<Result<Encoding>>) -> Self {
+    fn blocking(results: Vec<Result<Encoding>>, padding: Option<PaddingParams>) -> Self {
         Self {
             state: HandleState::Blocking(results.into_iter().enumerate()),
+            padding,
         }
     }
 
     #[cfg(feature = "parallelism")]
-    fn streaming(it: StreamingIter) -> Self {
+    fn streaming(it: StreamingIter, padding: Option<PaddingParams>) -> Self {
         Self {
             state: HandleState::Streaming(it),
+            padding,
         }
     }
 
@@ -401,12 +424,17 @@ impl EncodeHandle {
     /// Wait for all scheduled encoding to finish
     ///
     /// Returns in input order
-    pub fn wait(self) -> Result<Vec<Encoding>> {
+    pub fn wait(mut self) -> Result<Vec<Encoding>> {
+        let padding = self.padding.take();
+
         // XXX: `Vec::new` does not allocate anything when capacity == 0, so creating empty
         // Encodings should not allocate anything either
         let mut out = vec![Encoding::empty(); self.len()];
         for (seq, res) in self {
             out[seq] = res?;
+        }
+        if let Some(params) = padding {
+            pad_encodings(&mut out, &params)?;
         }
         Ok(out)
     }
@@ -414,8 +442,11 @@ impl EncodeHandle {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Encoding {
-    ids: Vec<PipelineToken>,
-    type_ids: Option<Vec<u8>>,
+    pub(crate) ids: Vec<PipelineToken>,
+    /// `None` if every token has type id 0
+    pub(crate) type_ids: Option<Vec<u8>>,
+    /// `None` if the encoding is not padded (mask is all ones)
+    pub(crate) attention_mask: Option<Vec<u8>>,
 }
 
 impl Encoding {
@@ -423,12 +454,17 @@ impl Encoding {
         Self {
             ids: Vec::new(),
             type_ids: None,
+            attention_mask: None,
         }
     }
 
     fn new(ids: Vec<PipelineToken>, type_ids: Option<Vec<u8>>) -> Self {
         debug_assert!(type_ids.as_ref().is_none_or(|t| t.len() == ids.len()));
-        Self { ids, type_ids }
+        Self {
+            ids,
+            type_ids,
+            attention_mask: None,
+        }
     }
 }
 
@@ -447,6 +483,10 @@ impl Encoding {
 
     pub fn type_ids(&self) -> Option<&[u8]> {
         self.type_ids.as_deref()
+    }
+
+    pub fn attention_mask(&self) -> Option<&[u8]> {
+        self.attention_mask.as_deref()
     }
 }
 /// Iterator yields results in completion order
@@ -516,6 +556,10 @@ impl PipelineTokenizer {
         self.inner.role_to_token.get(role).map(String::as_str)
     }
 
+    pub fn get_padding(&self) -> Option<&PaddingParams> {
+        self.inner.padding.as_ref()
+    }
+
     /// Encode `input` into token ids.
     ///
     /// Special tokens are matched in two passes:
@@ -524,29 +568,32 @@ impl PipelineTokenizer {
     ///
     /// This way, special / added tokens declared on raw or normalized text are both caught.
     /// The remaining text is pre-tokenized and run through the model span by span.
-    pub fn encode(&self, inputs: impl Into<Inputs>, add_special_tokens: bool) -> EncodeHandle {
+    pub fn encode(&self, inputs: impl Into<Inputs>, options: &EncodeOptions) -> EncodeHandle {
         let inputs = inputs.into();
         assert!(
             inputs.len() < usize::MAX,
             "we use usize::MAX as a sentinel value for the completion queue, we don't support batches larger than that"
         );
         #[cfg(not(feature = "parallelism"))]
-        return EncodeHandle::blocking(self.encode_serial(inputs, add_special_tokens));
+        return EncodeHandle::blocking(
+            self.encode_serial(inputs, options),
+            self.resolve_padding(&options.padding).cloned(),
+        );
 
         #[cfg(feature = "parallelism")]
-        parallel::encode(self, inputs, add_special_tokens)
+        parallel::encode(self, inputs, options)
     }
 
-    fn encode_serial(&self, inputs: Inputs, add_special_tokens: bool) -> Vec<Result<Encoding>> {
+    fn encode_serial(&self, inputs: Inputs, options: &EncodeOptions) -> Vec<Result<Encoding>> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         match inputs {
             Inputs::Single(input) => {
-                vec![self.encode_one(input, add_special_tokens, &mut scratch)]
+                vec![self.encode_one(input, options, &mut scratch)]
             }
             Inputs::Batch(batch) => {
                 let mut output = Vec::with_capacity(batch.len());
                 for input in batch {
-                    output.push(self.encode_one(input, add_special_tokens, &mut scratch));
+                    output.push(self.encode_one(input, options, &mut scratch));
                 }
                 output
             }
@@ -556,96 +603,52 @@ impl PipelineTokenizer {
     fn encode_one(
         &self,
         input: Input,
-        add_special_tokens: bool,
+        options: &EncodeOptions,
         scratch: &mut EncodeScratch,
     ) -> Result<Encoding> {
         match input {
             Input::Single(seq) => {
-                let toks = self.encode_sequence_with(&seq, scratch)?;
-                Ok(self.post_process(toks, None, add_special_tokens)?)
+                let toks = self.encode_sequence_with(&seq, 0, scratch)?;
+                Ok(self.post_process(toks, None, options)?)
             }
+            // Each side of a pair is a sequence of its own, so both start at offset 0.
             Input::Pair(s1, s2) => {
-                let a = self.encode_sequence_with(&s1, scratch)?;
-                let b = self.encode_sequence_with(&s2, scratch)?;
-                Ok(self.post_process(a, Some(b), add_special_tokens)?)
+                let a = self.encode_sequence_with(&s1, 0, scratch)?;
+                let b = self.encode_sequence_with(&s2, 0, scratch)?;
+                Ok(self.post_process(a, Some(b), options)?)
             }
         }
     }
 
+    /// Pick the template the input shape calls for and let it add the specials.
+    ///
+    /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside.
     fn post_process(
         &self,
         s1: Vec<PipelineToken>,
         s2: Option<Vec<PipelineToken>>,
-        add_special_tokens: bool,
+        options: &EncodeOptions,
     ) -> Result<Encoding> {
         let pp = &self.inner.post_processor;
         let template = if s2.is_some() { &pp.pair } else { &pp.single };
-
-        // Fast path: when nothing has to be woven around the sequence, the sequence already *is*
-        // the encoding, and the loop below is a second full pass over every token plus a second
-        // allocation to hold it. That pass is invisible on sparse text and the dominant added cost
-        // on token-dense text, which is where it showed up: the regression against
-        // `poc/target-encode-clean` tracked tokens-per-byte, not bytes.
-        //
-        // Taken only when the template would reproduce `s1` exactly: one sequence, it is `A`, no
-        // type ids to interleave, and any `Specials` slices are being skipped anyway.
-        if s2.is_none() && !template.has_type_ids {
-            let mut sequences = 0usize;
-            let reproduces_s1 = template.slices.iter().all(|slice| match slice {
-                Slice::Specials { .. } => !add_special_tokens,
-                Slice::Sequence { seq: Seq::A, .. } => {
-                    sequences += 1;
-                    true
-                }
-                Slice::Sequence { seq: Seq::B, .. } => false,
-            });
-            if reproduces_s1 && sequences == 1 {
-                return Ok(Encoding::new(s1, None));
-            }
-        }
-
-        let seq_len = s1.len() + s2.as_ref().map_or(0, Vec::len);
-        let cap = template.n_special + seq_len;
-
-        let (mut a, mut b) = (Some(s1), s2);
-        let mut ids = Vec::with_capacity(cap);
-        let mut type_ids = template.has_type_ids.then(|| Vec::with_capacity(cap));
-
-        for slice in &template.slices {
-            match slice {
-                Slice::Specials { tokens, type_id } => {
-                    if !add_special_tokens {
-                        continue;
-                    }
-                    ids.extend_from_slice(tokens);
-                    if let Some(tids) = type_ids.as_mut() {
-                        tids.resize(tids.len() + tokens.len(), *type_id);
-                    }
-                }
-                Slice::Sequence { seq, type_id } => {
-                    let tokens = match seq {
-                        Seq::A => a.take(),
-                        Seq::B => b.take(),
-                    }
-                    .ok_or("[BUG] valid template should guarantee each referenced sequence is provided exactly once")?;
-                    if let Some(tids) = type_ids.as_mut() {
-                        tids.resize(tids.len() + tokens.len(), *type_id);
-                    }
-                    ids.extend(tokens);
-                }
-            }
-        }
-
-        Ok(Encoding::new(ids, type_ids))
+        Ok(if options.add_special_tokens {
+            template.post_process::<true>(s1, s2)
+        } else {
+            template.post_process::<false>(s1, s2)
+        })
     }
 
     /// Encode one sequence, appending its ids to `output`.
     ///
     /// Takes the buffer rather than returning one, so a caller that already owns somewhere to put
     /// the ids -- [`Self::encode_into`] -- pays neither an allocation nor a copy for them.
+    ///
+    /// `offset` is where `input` starts in its sequence: the parallel encoder hands over slices of
+    /// a longer sequence, and `PrependBehavior::First` needs to know which slice opens it.
     fn encode_sequence_into(
         &self,
         input: &str,
+        offset: usize,
         scratch: &mut EncodeScratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
@@ -655,8 +658,12 @@ impl PipelineTokenizer {
                 Segment::SpecialToken(token) => {
                     output.push(PipelineToken::from(token));
                 }
-                Segment::Text { text: chunk, .. } => {
-                    let normalized = normalize_all(&self.inner.normalizers, chunk)?;
+                Segment::Text {
+                    text: chunk,
+                    input_offset,
+                } => {
+                    let normalized =
+                        normalize_all(&self.inner.normalizers, chunk, offset + input_offset)?;
 
                     // Extract special tokens from the normalized input
                     for segment in
@@ -728,10 +735,11 @@ impl PipelineTokenizer {
     fn encode_sequence_with(
         &self,
         input: &str,
+        offset: usize,
         scratch: &mut EncodeScratch,
     ) -> Result<Vec<PipelineToken>> {
         let mut output = Vec::with_capacity(input.len() / 4);
-        self.encode_sequence_into(input, scratch, &mut output)?;
+        self.encode_sequence_into(input, offset, scratch, &mut output)?;
         Ok(output)
     }
 
@@ -741,36 +749,23 @@ impl PipelineTokenizer {
     /// handle, and no copy out of either. [`Self::encode`] is this plus those wrappers, and an
     /// encode-only caller in a loop -- a server, a benchmark -- wants this one.
     ///
-    /// Falls back to the general path when the post-processor actually has something to weave
+    /// Falls back to the general path when the post-processor actually has something to add
     /// around the sequence, since that has to assemble a whole `Encoding` anyway.
     pub fn encode_into(
         &self,
         input: &str,
-        add_special_tokens: bool,
+        options: &EncodeOptions,
         out: &mut Vec<PipelineToken>,
     ) -> Result<()> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         let template = &self.inner.post_processor.single;
-        let mut sequences = 0usize;
-        // The same question `post_process` asks: would the template just reproduce the sequence?
-        let reproduces_sequence = !template.has_type_ids
-            && template.slices.iter().all(|slice| match slice {
-                Slice::Specials { .. } => !add_special_tokens,
-                Slice::Sequence { seq: Seq::A, .. } => {
-                    sequences += 1;
-                    true
-                }
-                Slice::Sequence { seq: Seq::B, .. } => false,
-            })
-            && sequences == 1;
+        // Would the template just reproduce the sequence? Nothing to add, nothing to tag.
+        let reproduces_sequence =
+            !template.has_type_ids() && (!options.add_special_tokens || template.n_special() == 0);
         if reproduces_sequence {
-            return self.encode_sequence_into(input, &mut scratch, out);
+            return self.encode_sequence_into(input, 0, &mut scratch, out);
         }
-        let encoding = self.encode_one(
-            Input::Single(input.to_owned()),
-            add_special_tokens,
-            &mut scratch,
-        )?;
+        let encoding = self.encode_one(Input::Single(input.to_owned()), options, &mut scratch)?;
         out.extend_from_slice(encoding.ids());
         Ok(())
     }
@@ -1077,6 +1072,7 @@ impl ModelScratch for PipelineModelScratch {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PaddingStrategy;
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
     impl PipelinePatternMatcher for FixedMatcher {
@@ -1115,5 +1111,152 @@ mod tests {
                 (Some("cc"), None),
             ]
         );
+    }
+
+    #[test]
+    fn padding_defaults_to_none() {
+        let pipeline = hello_pipeline();
+
+        assert!(pipeline.get_padding().is_none());
+    }
+
+    #[test]
+    fn from_parts_padding_is_visible_through_get_padding() {
+        let pipeline = hello_pipeline_with_padding(PaddingParams {
+            pad_id: 42,
+            ..PaddingParams::default()
+        });
+
+        assert_eq!(pipeline.get_padding().unwrap().pad_id, 42);
+    }
+
+    // "hhello" tokenizes to 2 ids and "hello" to 1 (both merge down to `hello`, but the leading
+    // "h" in "hhello" has nothing left to merge with once "hello" is taken), which is exactly the
+    // uneven batch padding exists for.
+    #[test]
+    fn wait_leaves_a_batch_unpadded_with_no_padding_config() {
+        let pipeline = hello_pipeline();
+
+        let encodings = pipeline
+            .encode(vec!["hhello", "hello"], &EncodeOptions::no_specials())
+            .wait()
+            .unwrap();
+
+        assert_eq!(encodings[0].len(), 2);
+        assert_eq!(encodings[1].len(), 1);
+    }
+
+    #[test]
+    fn wait_applies_the_tokenizers_configured_padding() {
+        let pipeline = hello_pipeline_with_padding(PaddingParams {
+            strategy: PaddingStrategy::BatchLongest,
+            ..PaddingParams::default()
+        });
+
+        let encodings = pipeline
+            .encode(vec!["hhello", "hello"], &EncodeOptions::no_specials())
+            .wait()
+            .unwrap();
+
+        assert_eq!(encodings[0].len(), 2);
+        assert_eq!(encodings[1].len(), 2);
+    }
+
+    #[test]
+    fn override_with_replaces_the_tokenizers_configured_padding() {
+        let pipeline = hello_pipeline_with_padding(PaddingParams {
+            strategy: PaddingStrategy::BatchLongest,
+            ..PaddingParams::default()
+        });
+        let options = EncodeOptions {
+            padding: Override::With(PaddingParams {
+                strategy: PaddingStrategy::Fixed(5),
+                ..PaddingParams::default()
+            }),
+            ..EncodeOptions::no_specials()
+        };
+
+        let encodings = pipeline
+            .encode(vec!["hhello", "hello"], &options)
+            .wait()
+            .unwrap();
+
+        assert!(encodings.iter().all(|e| e.len() == 5));
+    }
+
+    #[test]
+    fn override_off_turns_off_the_tokenizers_configured_padding() {
+        let pipeline = hello_pipeline_with_padding(PaddingParams {
+            strategy: PaddingStrategy::BatchLongest,
+            ..PaddingParams::default()
+        });
+        let options = EncodeOptions {
+            padding: Override::Off,
+            ..EncodeOptions::no_specials()
+        };
+
+        let encodings = pipeline
+            .encode(vec!["hhello", "hello"], &options)
+            .wait()
+            .unwrap();
+
+        assert_eq!(encodings[0].len(), 2);
+        assert_eq!(encodings[1].len(), 1);
+    }
+
+    fn hello_bpe() -> PipelineBPE {
+        use crate::models::bpe::{BpeConfig, Merges, Vocab};
+
+        let vocab: Vocab = [
+            ("h", 0u32),
+            ("e", 1),
+            ("l", 2),
+            ("o", 3),
+            ("he", 4),
+            ("hel", 5),
+            ("hell", 6),
+            ("hello", 7),
+        ]
+        .into_iter()
+        .map(|(s, i)| (s.to_string(), i))
+        .collect();
+        let merges: Merges = vec![
+            ("h".to_string(), "e".to_string()),
+            ("he".to_string(), "l".to_string()),
+            ("hel".to_string(), "l".to_string()),
+            ("hell".to_string(), "o".to_string()),
+        ];
+        PipelineBPE::from_config(BpeConfig {
+            vocab,
+            merges,
+            ..BpeConfig::default()
+        })
+        .unwrap()
+    }
+
+    fn hello_pipeline() -> PipelineTokenizer {
+        PipelineTokenizer::from_parts(
+            BucketAddedVocabulary::new(),
+            Vec::new(),
+            PipelinePreTokenizer::None,
+            PipelineModel::BPE(hello_bpe()),
+            PipelinePostProcessor::default(),
+            None,
+            Default::default(),
+            None,
+        )
+    }
+
+    fn hello_pipeline_with_padding(padding: PaddingParams) -> PipelineTokenizer {
+        PipelineTokenizer::from_parts(
+            BucketAddedVocabulary::new(),
+            Vec::new(),
+            PipelinePreTokenizer::None,
+            PipelineModel::BPE(hello_bpe()),
+            PipelinePostProcessor::default(),
+            None,
+            Default::default(),
+            Some(padding),
+        )
     }
 }

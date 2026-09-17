@@ -1,6 +1,9 @@
 use std::{
     mem,
-    sync::{Mutex, PoisonError},
+    sync::{
+        Mutex, PoisonError,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use bitsplit::Span;
@@ -16,7 +19,21 @@ pub(crate) struct EncodeScratch {
     pub(crate) pre_tokens: Vec<Span>,
 }
 
-/// A pool of [`PipelineModelScratch`].
+/// How many independent sub-pools the scratch pool keeps.
+const SCRATCH_SHARDS: usize = 64;
+
+/// A stable per-thread sub-pool index, assigned once on first use.
+fn scratch_shard() -> usize {
+    static NEXT_SHARD: AtomicUsize = AtomicUsize::new(0);
+    thread_local! {
+        static SHARD: usize = NEXT_SHARD.fetch_add(1, Ordering::Relaxed) % SCRATCH_SHARDS;
+    }
+    SHARD.with(|shard| *shard)
+}
+
+/// A pool of [`PipelineModelScratch`], split into [`SCRATCH_SHARDS`] independent sub-pools.
+///
+/// Sharding the thread pool considerably reduces contention on machines with a very high number of threads (NVIDIA Vera, Intel GNR, AMD Turin) - see https://github.com/huggingface/tokenizers/pull/2365
 ///
 /// When calling [`PipelineTokenizer::encode`], an instance of [`PipelineModelScratch`] is taken out of this pool
 /// and given to the tokenizer. When the encoding is done, the scratch buffer is returned to the pool and can be
@@ -24,11 +41,15 @@ pub(crate) struct EncodeScratch {
 ///
 /// The reusability matters because the scratch buffer may hold cache structures which are more useful when reused,
 /// and less importantly it saves an extra allocation for an fresh buffer every time.
-pub(super) struct ScratchPool(Mutex<Vec<EncodeScratch>>);
+pub(super) struct ScratchPool(Box<[Mutex<Vec<EncodeScratch>>]>);
 
 impl ScratchPool {
     pub(crate) fn new() -> Self {
-        Self(Mutex::new(Vec::new()))
+        Self(
+            (0..SCRATCH_SHARDS)
+                .map(|_| Mutex::new(Vec::new()))
+                .collect(),
+        )
     }
 
     /// Get a scratch buffer from the pool, wrapped in a [`ScratchGuard`].
@@ -42,17 +63,37 @@ impl ScratchPool {
     }
 
     pub(crate) fn get_with<'a>(&'a self, init: impl FnOnce() -> EncodeScratch) -> ScratchGuard<'a> {
-        // The Mutex lock is held just long enough to pop the scratch out of the pool
-        let taken = self.0.lock().unwrap_or_else(PoisonError::into_inner).pop();
+        let shard = scratch_shard();
+        // The Mutex lock is held just long enough to pop the scratch out of the sub-pool
+        let mut taken = self.0[shard]
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop();
+        if taken.is_none() {
+            taken = self.take_from_another(shard);
+        }
         ScratchGuard {
             scratch: taken.unwrap_or_else(init),
             pool: self,
+            shard,
         }
+    }
+
+    /// Take a scratch from a sub-pool other than `own`, for a thread whose own is empty.
+    ///
+    /// `try_lock` so a miss skips a busy sub-pool instead of queueing behind its owner.
+    fn take_from_another(&self, own: usize) -> Option<EncodeScratch> {
+        (1..self.0.len())
+            .map(|step| (own + step) % self.0.len())
+            .find_map(|shard| self.0[shard].try_lock().ok()?.pop())
     }
 
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner).len()
+        self.0
+            .iter()
+            .map(|shard| shard.lock().unwrap_or_else(PoisonError::into_inner).len())
+            .sum()
     }
 }
 
@@ -62,10 +103,11 @@ impl ScratchPool {
 /// When it gets dropped, it pushes [`Self::scratch`] back into the shared [`Self::pool`] so it can
 /// get reused by a later call to [`PipelineTokenizer::encode`].
 ///
-/// TODO @McPatate : The Mutex can create contention, to be replaced by a better access pattern
 pub(super) struct ScratchGuard<'a> {
     scratch: EncodeScratch,
     pool: &'a ScratchPool,
+    /// Which sub-pool to return the scratch to; a borrowed scratch stays with the borrower.
+    shard: usize,
 }
 
 impl Drop for ScratchGuard<'_> {
@@ -73,8 +115,7 @@ impl Drop for ScratchGuard<'_> {
         // Steals the scratch buffer from self, replaces it with PipelineModelScratch::default()
         let scratch = mem::take(&mut self.scratch);
         // Push the scratch back in the pool
-        self.pool
-            .0
+        self.pool.0[self.shard]
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(scratch);
@@ -104,7 +145,8 @@ mod tests {
     use super::*;
     use crate::models::bpe::PipelineBPE;
     use crate::pipeline::{
-        PipelineModel, PipelinePostProcessor, PipelinePreTokenizer, PipelineTokenizer,
+        EncodeOptions, PipelineModel, PipelinePostProcessor, PipelinePreTokenizer,
+        PipelineTokenizer,
     };
     use crate::pre_tokenizers::sequence::PipelineSequence;
     use crate::pre_tokenizers::whitespace::Whitespace;
@@ -152,6 +194,7 @@ mod tests {
             PipelinePostProcessor::default(),
             None,
             Default::default(),
+            None,
         )
     }
 
@@ -236,6 +279,32 @@ mod tests {
         );
     }
 
+    // Sharding must not turn "the pool has a scratch" into "this thread has none". A thread whose
+    // own sub-pool is empty has to take one that exists somewhere else rather than build, or a pool
+    // serving threads that come and go would allocate alongside the scratches it is already
+    // holding. Driven through `take_from_another` rather than through a second thread on purpose:
+    // sub-pool indices come from a counter shared with every other test in the binary, so which
+    // index a spawned thread lands on is not something a test can pin down.
+    #[test]
+    fn an_empty_sub_pool_takes_from_another_instead_of_building() {
+        let pool = ScratchPool::new();
+        let built = AtomicUsize::new(0);
+
+        drop(pool.get_with(|| counting_init(&built)));
+        assert_eq!(pool.len(), 1, "the scratch did not come back to the pool");
+
+        let elsewhere = (scratch_shard() + 1) % SCRATCH_SHARDS;
+        assert!(
+            pool.take_from_another(elsewhere).is_some(),
+            "a sub-pool with nothing in it did not find the scratch another one held"
+        );
+        assert_eq!(
+            pool.len(),
+            0,
+            "the scratch was handed out and is still in the pool"
+        );
+    }
+
     // `Drop` runs while a panic unwinds, so an encode that blows up half way through still hands
     // its scratch back rather than taking it with it.
     //
@@ -267,7 +336,10 @@ mod tests {
     #[test]
     fn the_pool_gets_back_the_used_scratch_not_the_none_leftover() {
         let pipeline = hello_pipeline();
-        pipeline.encode("hello", false).wait().unwrap();
+        pipeline
+            .encode("hello", &EncodeOptions::no_specials())
+            .wait()
+            .unwrap();
         assert_eq!(pipeline.inner.scratch_pool.len(), 1);
         let scratch = pipeline.inner.scratch_pool.get(&pipeline.inner.model);
         assert!(
@@ -314,15 +386,24 @@ mod tests {
 
         // The first encode grows the buffers to what this input needs, the second runs inside
         // them. Anything from there on has nothing left to grow.
-        pipeline.encode(input.as_str(), false).wait().unwrap();
-        pipeline.encode(input.as_str(), false).wait().unwrap();
+        pipeline
+            .encode(input.as_str(), &EncodeOptions::no_specials())
+            .wait()
+            .unwrap();
+        pipeline
+            .encode(input.as_str(), &EncodeOptions::no_specials())
+            .wait()
+            .unwrap();
         let warm = pooled_buffers(&pipeline);
         assert!(
             warm.pre_tokens.1 >= words && warm.symbols.1 > 0,
             "the encodes left buffers this test cannot compare: {warm:?}"
         );
 
-        pipeline.encode(input.as_str(), false).wait().unwrap();
+        pipeline
+            .encode(input.as_str(), &EncodeOptions::no_specials())
+            .wait()
+            .unwrap();
         assert_eq!(
             pooled_buffers(&pipeline),
             warm,
@@ -352,7 +433,10 @@ mod tests {
 
         // The buffers rotate, so they take a few encodes to all have been grown once.
         for _ in 0..4 {
-            pipeline.encode(input.as_str(), false).wait().unwrap();
+            pipeline
+                .encode(input.as_str(), &EncodeOptions::no_specials())
+                .wait()
+                .unwrap();
         }
         let warm = pooled_span_buffers(&pipeline);
         assert_eq!(
@@ -363,7 +447,10 @@ mod tests {
              is comparing addresses that prove nothing"
         );
 
-        pipeline.encode(input.as_str(), false).wait().unwrap();
+        pipeline
+            .encode(input.as_str(), &EncodeOptions::no_specials())
+            .wait()
+            .unwrap();
         assert_eq!(
             pooled_span_buffers(&pipeline),
             warm,
@@ -380,7 +467,10 @@ mod tests {
     #[test]
     fn the_word_cache_outlives_the_encode_call() {
         let pipeline = hello_pipeline();
-        pipeline.encode("helo", false).wait().unwrap();
+        pipeline
+            .encode("helo", &EncodeOptions::no_specials())
+            .wait()
+            .unwrap();
 
         let mut scratch = pipeline.inner.scratch_pool.get(&pipeline.inner.model);
         let PipelineModelScratch::BPE(bpe) = &mut scratch.model else {

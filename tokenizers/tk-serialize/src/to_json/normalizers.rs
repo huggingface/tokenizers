@@ -2,6 +2,7 @@
 use super::writer::Out;
 #[cfg(feature = "normalizers")]
 use base64::Engine as _;
+use tk_encode::normalizers::metaspace::PrependBehavior;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
 use tk_encode::pipeline::PipelineNormalizer;
 use tk_encode::tokenizer::Result;
@@ -44,7 +45,14 @@ fn write_one(out: &mut Out, normalizer: &PipelineNormalizer) -> Result<()> {
                 "replacement",
                 metaspace.delimiter().encode_utf8(&mut [0; 4]),
             );
-            out.field_bool("prepend", metaspace.prepend());
+            out.field_str(
+                "prepend",
+                match metaspace.prepend() {
+                    PrependBehavior::Always => "always",
+                    PrependBehavior::First => "first",
+                    PrependBehavior::Never => "never",
+                },
+            );
             out.field_bool("drop_whitespace", metaspace.drop_whitespace());
             out.obj_close();
         }

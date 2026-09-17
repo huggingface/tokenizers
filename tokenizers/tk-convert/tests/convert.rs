@@ -193,13 +193,38 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
     assert_eq!(
         v["normalizer"],
         serde_json::json!({"type": "MetaspaceNormalizer", "replacement": "▁",
-                           "prepend": true, "drop_whitespace": false})
+                           "prepend": "always", "drop_whitespace": false})
     );
     assert_eq!(
         v["pre_tokenizer"],
         serde_json::json!({"type": "Split", "pattern": {"String": "▁"},
                            "behavior": "MergedWithNext", "invert": false})
     );
+
+    // All three schemes carry through by name.
+    for scheme in ["always", "first", "never"] {
+        let v = done(
+            BPE,
+            &format!(
+                r#", "pre_tokenizer": {{"type": "Metaspace", "replacement": "▁",
+                     "prepend_scheme": "{scheme}"}}"#
+            ),
+        );
+        assert_eq!(v["normalizer"]["prepend"], scheme);
+    }
+
+    // `split: false`: the normalizer stays, the pre-tokenizer slot is empty.
+    let v = done(
+        BPE,
+        r#", "pre_tokenizer": {"type": "Metaspace", "replacement": "▁",
+             "prepend_scheme": "first", "split": false}"#,
+    );
+    assert_eq!(
+        v["normalizer"],
+        serde_json::json!({"type": "MetaspaceNormalizer", "replacement": "▁",
+                           "prepend": "first", "drop_whitespace": false})
+    );
+    assert_eq!(v["pre_tokenizer"], serde_json::Value::Null);
 
     // The t5/albert pair: the `WhitespaceSplit` was never a component, it was `drop_whitespace`.
     let v = done(
@@ -209,6 +234,31 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
     );
     assert_eq!(v["normalizer"]["drop_whitespace"], true);
     assert_eq!(v["pre_tokenizer"]["type"], "Split");
+
+    // That pair only works under `always`. With the whitespace gone, the delimiter is the only
+    // cut left, so the words would run together into one span.
+    for scheme in ["first", "never"] {
+        let e = err(
+            BPE,
+            &format!(
+                r#", "pre_tokenizer": {{"type": "Sequence", "pretokenizers": [
+                     {{"type": "WhitespaceSplit"}},
+                     {{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "{scheme}"}}]}}"#
+            ),
+        );
+        assert!(
+            e.contains(&format!("with `prepend_scheme: {scheme}` is not supported")),
+            "{scheme}: {e}"
+        );
+    }
+    // Nor under `split: false`. Upstream keeps one span per word.
+    let e = err(
+        BPE,
+        r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
+             {"type": "WhitespaceSplit"},
+             {"type": "Metaspace", "replacement": "▁", "split": false}]}"#,
+    );
+    assert!(e.contains("with `split: false` is not supported"), "{e}");
 
     // The delimiter half lands *after* a declared normalizer -- the order the old reader applied,
     // and the one the added-token matcher depends on.
@@ -221,14 +271,15 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
     assert_eq!(chain[0]["type"], "NFKC");
     assert_eq!(chain[1]["type"], "MetaspaceNormalizer");
 
-    // `split: false` wrote delimiters but never cut, and the pair has no way to say that.
-    assert!(
-        err(
-            BPE,
-            r#", "pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "split": false}"#
-        )
-        .contains("split: false")
+    // The delimiter half still lands after a declared normalizer under `split: false`.
+    let v = done(
+        BPE,
+        r#", "normalizer": {"type": "NFKC"}
+           , "pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "split": false}"#,
     );
+    let chain = &v["normalizer"]["normalizers"];
+    assert_eq!(chain[1]["type"], "MetaspaceNormalizer");
+    assert_eq!(v["pre_tokenizer"], serde_json::Value::Null);
 }
 
 // ---- ByteLevel ------------------------------------------------------------------------------
@@ -296,6 +347,101 @@ fn a_template_states_its_ids_instead_of_naming_them() {
     );
     // The lookup table was the reason for the names, and both go.
     assert!(pp.get("special_tokens").is_none());
+}
+
+/// The canonical form has no `Sequence` post-processor -- the writer cannot spell one -- so the
+/// upgrade drops the wrapper rather than leaving the reader to collapse it at load time.
+#[test]
+fn a_sequence_post_processor_collapses_to_the_member_that_adds_tokens() {
+    // llama-3's shape: a `ByteLevel` in front of a `TemplateProcessing`.
+    let v = done(
+        BPE,
+        r#", "post_processor": {"type": "Sequence", "processors": [
+             {"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": true, "use_regex": true},
+             {"type": "TemplateProcessing",
+              "single": [{"SpecialToken": {"id": "<s>", "type_id": 0}},
+                         {"Sequence": {"id": "A", "type_id": 0}}],
+              "pair": [],
+              "special_tokens": {"<s>": {"id": "<s>", "ids": [1], "tokens": ["<s>"]}}}]}"#,
+    );
+    let pp = &v["post_processor"];
+    assert_eq!(pp["type"], "TemplateProcessing");
+    assert_eq!(
+        pp["single"],
+        serde_json::json!([{"ids": [1], "type_id": 0}, {"seq": "A", "type_id": 0}])
+    );
+
+    // Nothing adds tokens, so the first member stands and still means the default frame -- which a
+    // `ByteLevel` lowers to, and `null` is how the writer spells it.
+    let v = done(
+        BPE,
+        r#", "post_processor": {"type": "Sequence", "processors": [
+             {"type": "ByteLevel", "add_prefix_space": true, "trim_offsets": true, "use_regex": true}]}"#,
+    );
+    assert_eq!(v["post_processor"], serde_json::Value::Null);
+
+    // Two members that both add tokens: there is no one canonical answer.
+    let msg = err(
+        BPE,
+        r#", "post_processor": {"type": "Sequence", "processors": [
+             {"type": "TemplateProcessing", "single": [{"seq": "A"}], "pair": [],
+              "special_tokens": {}},
+             {"type": "TemplateProcessing",
+              "single": [{"SpecialToken": {"id": "<s>", "type_id": 0}},
+                         {"Sequence": {"id": "A", "type_id": 0}}],
+              "pair": [],
+              "special_tokens": {"<s>": {"id": "<s>", "ids": [1], "tokens": ["<s>"]}}}]}"#,
+    );
+    assert!(
+        msg.contains("more than one member that adds tokens"),
+        "{msg}"
+    );
+}
+
+/// `BertProcessing` and `RobertaProcessing` name a frame, so this pass spells it as the template
+/// it is. The reader has no arm for either name; this is the only place that knows what they meant.
+#[test]
+fn bert_and_roberta_processing_lower_to_the_frame_they_name() {
+    // `[CLS] $A [SEP]` and `[CLS] $A [SEP] $B:1 [SEP]:1`.
+    let v = done(
+        BPE,
+        r#", "post_processor": {"type": "BertProcessing", "cls": ["a", 0], "sep": ["b", 1]}"#,
+    );
+    assert_eq!(
+        v["post_processor"],
+        serde_json::json!({"type": "TemplateProcessing",
+            "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
+            "pair": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]},
+                     {"seq": "B", "type_id": 1}, {"ids": [1], "type_id": 1}]})
+    );
+
+    // `<s> $A </s>` and `<s> $A </s></s> $B </s>`, all at type id 0.
+    let v = done(
+        BPE,
+        r#", "post_processor": {"type": "RobertaProcessing", "cls": ["a", 0], "sep": ["b", 1],
+             "trim_offsets": true, "add_prefix_space": true}"#,
+    );
+    assert_eq!(
+        v["post_processor"],
+        serde_json::json!({"type": "TemplateProcessing",
+            "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
+            "pair": [{"ids": [0]}, {"seq": "A"}, {"ids": [1, 1]}, {"seq": "B"}, {"ids": [1]}]})
+    );
+
+    // A bare `ByteLevel` only ever re-tagged offsets, which the pipeline does not keep.
+    let v = done(
+        BPE,
+        r#", "post_processor": {"type": "ByteLevel", "add_prefix_space": true,
+             "trim_offsets": true, "use_regex": true}"#,
+    );
+    assert_eq!(v["post_processor"], serde_json::Value::Null);
+
+    // Only the id half of `["<token>", id]` is kept, so a pair that is not one cannot be read.
+    let msg = err(
+        BPE,
+        r#", "post_processor": {"type": "BertProcessing", "sep": ["b"], "cls": ["a", 0]}"#,
+    );
+    assert!(msg.contains("[token, id] pair"), "{msg}");
 }
 
 #[test]
