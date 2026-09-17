@@ -501,14 +501,17 @@ impl NormalizedString {
 
     /// Prepend the given string to ourself
     pub fn prepend(&mut self, s: &str) -> &mut Self {
-        if let Some(next) = self.normalized.chars().next() {
-            let transformations = s
-                .chars()
-                .enumerate()
-                .map(|(i, c)| (c, isize::from(i != 0)))
-                .chain(std::iter::once((next, 1)));
-
-            self.transform_range(Range::Normalized(0..next.len_utf8()), transformations, 0);
+        if !s.is_empty() {
+            // The prepended text has no counterpart in the original input, so it
+            // must map to a zero-width span at the start of the original string.
+            // Inserting it as new characters at an empty range does exactly that
+            // and leaves the existing characters' alignments untouched. Borrowing
+            // the first original character's offsets instead (the previous
+            // behaviour) produced overlapping token offsets for multi-byte
+            // scripts once the model split the prepended marker off, e.g. CJK
+            // tokens with `▁` under the Metaspace pre-tokenizer. See #1775.
+            let transformations = s.chars().map(|c| (c, 1isize));
+            self.transform_range(Range::Normalized(0..0), transformations, 0);
         }
         self
     }
@@ -1374,13 +1377,16 @@ mod tests {
         let mut n = NormalizedString::from("there");
         n.prepend("Hey ");
         assert_eq!(&n.normalized, "Hey there");
+        // The prepended "Hey " has no source in the original input, so it maps to
+        // a zero-width span at the start; the original characters keep their own
+        // offsets (rather than the first one being shared with the prefix).
         assert_eq!(
             n.alignments,
             vec![
-                (0, 1),
-                (0, 1),
-                (0, 1),
-                (0, 1),
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 0),
                 (0, 1),
                 (1, 2),
                 (2, 3),
@@ -1388,7 +1394,35 @@ mod tests {
                 (4, 5)
             ]
         );
-        assert_eq!(n.convert_offsets(Range::Normalized(0..4)), Some(0..1));
+        assert_eq!(n.convert_offsets(Range::Normalized(0..4)), Some(0..0));
+    }
+
+    #[test]
+    fn prepend_multibyte_no_overlap() {
+        // Regression for #1775: when the prepended metaspace-style marker is a
+        // multi-byte character and the following original characters are also
+        // multi-byte (e.g. CJK), the prefix must not borrow the first original
+        // character's bytes, which previously produced overlapping offsets.
+        let mut n = NormalizedString::from("中文");
+        n.prepend("\u{2581}"); // ▁, 3 bytes
+        assert_eq!(&n.normalized, "\u{2581}中文");
+        // alignments hold one entry per normalized byte. ▁ -> zero-width (0,0);
+        // 中 -> original bytes (0,3); 文 -> (3,6). Crucially ▁ does not share 中's
+        // (0,3) span, so token offsets no longer overlap.
+        assert_eq!(
+            n.alignments,
+            vec![
+                (0, 0),
+                (0, 0),
+                (0, 0),
+                (0, 3),
+                (0, 3),
+                (0, 3),
+                (3, 6),
+                (3, 6),
+                (3, 6),
+            ]
+        );
     }
 
     #[test]
