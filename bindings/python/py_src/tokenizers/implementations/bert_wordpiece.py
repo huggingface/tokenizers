@@ -27,9 +27,11 @@ class BertWordPieceTokenizer(BaseTokenizer):
         wordpieces_prefix: str = "##",
     ):
         if vocab is not None:
-            tokenizer = Tokenizer(WordPiece(vocab, unk_token=str(unk_token)))
+            tokenizer = Tokenizer(
+                WordPiece(vocab, unk_token=str(unk_token), continuing_subword_prefix=wordpieces_prefix)
+            )
         else:
-            tokenizer = Tokenizer(WordPiece(unk_token=str(unk_token)))
+            tokenizer = Tokenizer(WordPiece(unk_token=str(unk_token), continuing_subword_prefix=wordpieces_prefix))
 
         # Let the tokenizer know about special tokens if they are part of the vocab
         if tokenizer.token_to_id(str(unk_token)) is not None:
