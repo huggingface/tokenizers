@@ -1,4 +1,4 @@
-# bitsplit — mask splitter spec
+# bitcanon — mask splitter spec
 
 A Rust library for **pre-tokenizer splitting as a bitstream program**. Not a general regex engine:
 it covers exactly what `tokenizers` needs — the GPT-family regexes, the class-run family, and
@@ -10,8 +10,8 @@ processors*) for the operator set and carry discipline; *Interleaved Bitstream E
 Multi-Pattern Regex Matching on GPUs* (MICRO'25, doi 10.1145/3725843.3756052) for the execution
 model — fuse every instruction into ONE block-wise loop instead of one pass per instruction.
 
-Status: proven in `scratch/bitsplit` for three grammars, all byte-exact against their
-`bitsplit` grammar counterparts.
+Status: proven in `scratch/bitcanon` for three grammars, all byte-exact against their
+`bitcanon` grammar counterparts.
 
 ---
 
@@ -25,12 +25,12 @@ program decides 64 bytes per register op, branchlessly, so its cost is flat.
   fsm_deepseek   ████████████████████████████████████████████████  2.93   4.7 B/tok
   fsm_cl100k     ██████████████████████████████                    1.86
   fsm_byte_level ████████████████████████████                      1.71
-  bitsplit ds    █████████                                         0.58
-  bitsplit cl100k████████                                          0.50
-  bitsplit bl    ██████                                            0.41
+  bitcanon ds    █████████                                         0.58
+  bitcanon cl100k████████                                          0.50
+  bitcanon bl    ██████                                            0.41
 ```
 
-The FSM spread across grammars is 71% (1.71 → 2.93); bitsplit's is 20%. **Flat cost across grammars
+The FSM spread across grammars is 71% (1.71 → 2.93); bitcanon's is 20%. **Flat cost across grammars
 is the design invariant** — it means the per-grammar layer is thin, which is what makes the library
 worth having.
 
@@ -42,7 +42,7 @@ worth having.
   text  ─────────────────────────────────────────────────────────────┐
     │                                                                │
     ▼                                                                │
-  classify (bitsplit)           one Atom tag per byte                │
+  classify (bitcanon)           one Atom tag per byte                │
     │                                                                │
     ▼                                                                ▼
   ┌─────────────────────── per 64-byte block, fused ────────────────────────┐

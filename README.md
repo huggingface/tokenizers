@@ -67,7 +67,7 @@ tokenizer.padding = None                             # get/set padding
 
 ### Remaining before 1.0.0
 
-- Improve `bitsplit`
+- Improve `bitcanon`
 - Bring training back
 - Apply performance improvement to trainer
 - Bring back offset output
@@ -137,7 +137,7 @@ the 325 KB story.
 </details>
 
 <details>
-<summary><b><code>bitsplit</code></b> — SIMD pre-tokenization</summary>
+<summary><b><code>bitcanon</code></b> — SIMD pre-tokenization</summary>
 
 Unicode atom classification plus pre-tokenization as a **bitstream program** rather than a scalar
 FSM. Follows *Interleaved Bitstream Execution for Multi-Pattern Regex Matching on GPUs*
@@ -158,7 +158,7 @@ feeds every grammar, and a grammar pays only for the distinctions it actually as
 regex engine has no such shared vocabulary to compile against.
 
 **Zero Unicode dependencies at runtime.** Those tables are committed source, baked offline by
-`bitmap_gen` (below) from `unicode-properties`. `bitsplit`'s entire runtime dependency list is
+`bitmap_gen` (below) from `unicode-properties`. `bitcanon`'s entire runtime dependency list is
 `ahash` — no `unicode-*` crate, no build script, so nothing that ships carries a Unicode table
 crate or rebuilds one.
 
@@ -202,14 +202,14 @@ They have opposite constraints, so they get opposite dependency budgets.
 <details>
 <summary><b><code>bitmap_gen</code></b> — dev-only table generator</summary>
 
-`cargo run -p bitmap_gen` regenerates `bitsplit`'s committed classify tables from
+`cargo run -p bitmap_gen` regenerates `bitcanon`'s committed classify tables from
 `unicode-properties`, emitting one `Atom` tag per codepoint.
 
 **Why separate — this is what buys the zero Unicode dependency.** `unicode-properties` is a
 dependency of *this* crate and of nothing else: the tables it produces are checked into
-`bitsplit/src/classify/atom_tables.rs` as ordinary source, so the Unicode data is resolved once, at
+`bitcanon/src/classify/atom_tables.rs` as ordinary source, so the Unicode data is resolved once, at
 development time, by a crate that is never linked into anything that ships and is never published.
-No build script either — `bitsplit` compiles with no code generation step, and a release binary
+No build script either — `bitcanon` compiles with no code generation step, and a release binary
 contains the tags without containing a Unicode crate to derive them. The release workflow re-runs
 the generator and fails if the committed table differs, so "baked" cannot silently mean "stale".
 </details>

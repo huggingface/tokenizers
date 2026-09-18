@@ -1,7 +1,7 @@
 use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::Result;
-use bitsplit::classes::class_runs_into;
-use bitsplit::classify::mask;
+use bitcanon::classes::class_runs_into;
+use bitcanon::classify::mask;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// Pre tokenizes the numbers into single tokens. If individual_digits is set
@@ -23,8 +23,8 @@ impl Default for Digits {
     }
 }
 
-// SAFETY: the spans come from an `bitsplit` fsm, which splits only at character boundaries of `text`.
-// See `bitsplit` docs.
+// SAFETY: the spans come from an `bitcanon` fsm, which splits only at character boundaries of `text`.
+// See `bitcanon` docs.
 unsafe impl pipeline::PreTokenizer for Digits {
     fn pre_tokenize(
         &self,
@@ -32,7 +32,7 @@ unsafe impl pipeline::PreTokenizer for Digits {
         scratch: &mut PreTokenizerScratch,
         out: &mut Vec<pipeline::Span>,
     ) -> Result<()> {
-        // isolate each numeric char (`individual_digits`) or keep numeric runs — bitsplit classify +
+        // isolate each numeric char (`individual_digits`) or keep numeric runs — bitcanon classify +
         // class-runs FSM. atom `NUMERIC` == `char::is_numeric`, so byte-exact with the scalar path.
         let individual = self.individual_digits;
         scratch.split_on_bits(

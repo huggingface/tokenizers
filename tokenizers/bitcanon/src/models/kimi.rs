@@ -10,7 +10,7 @@ use crate::{AUX_NONE, Span};
 
 /// kimi-k2 pre-tokenization.
 #[must_use]
-pub fn bitsplit_kimi(
+pub fn bitcanon_kimi(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],

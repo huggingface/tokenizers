@@ -28,7 +28,7 @@ jobs:
           path: ~/.cargo/registry
           key: ubuntu-latest-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
 
-      # bitsplit ships committed classify tables (no build script). Regenerate them here — this
+      # bitcanon ships committed classify tables (no build script). Regenerate them here — this
       # self-validates every codepoint against the reference atom() and fails the release if the
       # committed table is stale (someone changed the scheme without `cargo run -p bitmap_gen`).
       # The `--` matters: without it a path that no longer exists is read as a revision, and
@@ -37,11 +37,11 @@ jobs:
         working-directory: ./tokenizers
         run: |
           cargo run -p bitmap_gen
-          git diff --exit-code -- bitsplit/src/classify/atom_tables.rs \
-            || { echo "::error::bitsplit/src/classify/atom_tables.rs is stale — run 'cargo run -p bitmap_gen' and commit"; exit 1; }
+          git diff --exit-code -- bitcanon/src/classify/atom_tables.rs \
+            || { echo "::error::bitcanon/src/classify/atom_tables.rs is stale — run 'cargo run -p bitmap_gen' and commit"; exit 1; }
 
       # One command, not one step per crate: `--workspace` publishes the members in dependency
-      # order (bitsplit, then tk-encode/tk-convert, then tk-serialize, then tokenizers) and waits
+      # order (bitcanon, then tk-encode/tk-convert, then tk-serialize, then tokenizers) and waits
       # for each to appear on the index before starting the next, so tk-serialize can resolve the
       # tk-encode it just uploaded. bitmap_gen is skipped for us: it is `publish = false`.
       # No rc gate: a caret requirement never resolves a prerelease unless asked for by name.
