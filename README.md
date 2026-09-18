@@ -150,7 +150,7 @@ Japanese 7.6, Russian 7.1.
 Short-string latency at 512 bytes, warm, 1000 samples: **2.1–3.6 µs p50** and 3.4–5.7 µs p99
 across the eight model families.
 
-Decoding was rewritten to write bytes straight into a reusable buffer: **305–429 MB/s** against
+Decoding was rewritten to write bytes straight into a reusable buffer: **306–429 MB/s** against
 0.23.1's 36–57, a **5.9–8.9×** range.
 
 <sub>Apple M4 Max, one complete report, warm, median of 5. <code>1.0.0-rc.0 (tokenizers-rc0 @
