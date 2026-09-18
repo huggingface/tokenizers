@@ -1,6 +1,6 @@
 {
   "name": "tokenizers",
-  "version": "0.15.3-dev0",
+  "version": "1.0.0-dev.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/huggingface/tokenizers.git"
@@ -9,7 +9,7 @@
     "url": "https://github.com/huggingface/tokenizers/issues"
   },
   "homepage": "https://github.com/huggingface/tokenizers/tree/master/bindings/node",
-  "author": "Anthony MOI <m.anthony.moi@gmail.com>",
+  "author": "Anthony MOI <m.anthony.moi@gmail.com>, Arthur Zucker <arthur@huggingface.co>,Luc Georges <luc@huggingface.co>, Simon Brandeis <simon@huggingface.co>",
   "license": "Apache-2.0",
   "description": "Provides an implementation of today's most used tokenizers, with a focus on performances and versatility.",
   "files": [
@@ -51,7 +51,7 @@
     "format:toml": "taplo format",
     "format:rs": "cargo fmt",
     "lint": "prettier . --check",
-    "test": "node --test \"lib/**/*.test.ts\" \"examples/**/*.test.ts\"",
+    "test": "node --test \"test/**/*.test.ts\"",
     "version": "napi version"
   },
   "devDependencies": {
