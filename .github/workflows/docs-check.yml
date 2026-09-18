@@ -12,8 +12,12 @@ on:
     branches-ignore:
       - feat/train_encode_split
 
+permissions: {}
+
 jobs:
   build:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
