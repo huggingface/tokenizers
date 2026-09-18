@@ -44,7 +44,7 @@
 //!
 //! There is no `Tokenizer` type here to build up and mutate. What you get is a finished
 //! [`pipeline::PipelineTokenizer`] — from `tk_serialize::from_json_file`, or from
-//! [`pipeline::PipelineTokenizer::from_parts`] if you assemble the components yourself — and once
+//! [`pipeline::TokenizerBuilder`] if you assemble the components yourself — and once
 //! built it is read-only: getters, `encode` and `decode`, but no setters, no `save`, and no
 //! `from_pretrained` constructor. Upgrading a config written by an older version is `tk-convert`'s
 //! one remaining job (`canonicalize_file`, re-exported by the `tokenizers` umbrella crate). What an

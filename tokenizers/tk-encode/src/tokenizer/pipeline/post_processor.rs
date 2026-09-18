@@ -13,7 +13,7 @@ fn push_type_ids(run: &[(PipelineToken, u8)], out: &mut Vec<u8>) {
 }
 
 /// The templates to wrap around one sequence and around a pair.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PipelinePostProcessor {
     pub single: Template,
     pub pair: Template,

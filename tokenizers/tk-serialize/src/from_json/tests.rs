@@ -3,7 +3,7 @@
 
 use super::decoders::read_one_decoder;
 use super::*;
-use tk_encode::pipeline::EncodeOptions;
+use tk_encode::pipeline::{EncodeOptions, PipelinePreTokenizer};
 use tk_encode::tokenizer::{PaddingDirection, PaddingStrategy};
 
 /// A minimal BPE that needs no data files: two merges over a four-token vocab.

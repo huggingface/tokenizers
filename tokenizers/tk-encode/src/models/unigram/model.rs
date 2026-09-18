@@ -457,7 +457,7 @@ impl Unigram {
         self.token_to_ids.get_vocab().into_iter().collect()
     }
 
-    pub fn get_vocab_size(&self) -> usize {
+    pub fn vocab_size(&self) -> usize {
         self.vocab.len()
     }
 

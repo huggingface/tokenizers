@@ -276,3 +276,15 @@ fn a_capacity_of_zero_turns_the_cache_off() {
     assert_eq!(pipeline_ids(&model, "abcd", &mut scratch), [8]);
     assert!(scratch.word_cache.is_none());
 }
+
+#[test]
+fn vocab_size_counts_the_pieces() {
+    let pieces = vec![
+        ("<unk>".to_string(), 0.0),
+        ("a".to_string(), -1.0),
+        ("b".to_string(), -2.0),
+    ];
+    let model = Unigram::from(pieces, Some(0), false).unwrap();
+
+    assert_eq!(model.vocab_size(), 3);
+}

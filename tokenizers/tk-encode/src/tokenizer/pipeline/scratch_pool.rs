@@ -145,12 +145,10 @@ mod tests {
     use super::*;
     use crate::models::bpe::PipelineBPE;
     use crate::pipeline::{
-        EncodeOptions, PipelineModel, PipelinePostProcessor, PipelinePreTokenizer,
-        PipelineTokenizer,
+        EncodeOptions, PipelineModel, PipelinePreTokenizer, PipelineTokenizer, TokenizerBuilder,
     };
     use crate::pre_tokenizers::sequence::PipelineSequence;
     use crate::pre_tokenizers::whitespace::Whitespace;
-    use crate::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
 
     /// A BPE model that merges "hello" into the single id 7.
     fn hello_bpe() -> PipelineBPE {
@@ -183,19 +181,12 @@ mod tests {
         .unwrap()
     }
 
-    /// Assembled through `from_parts` rather than from a `Tokenizer`: the config layer lives in
-    /// `tk-convert` now, and the scratch pool does not care which reader filled the parts.
+    /// Assembled through `TokenizerBuilder` rather than read from a config: the scratch pool does
+    /// not care which reader filled the parts.
     fn hello_pipeline_with(pre_tokenizer: PipelinePreTokenizer) -> PipelineTokenizer {
-        PipelineTokenizer::from_parts(
-            BucketAddedVocabulary::new(),
-            Vec::new(),
-            pre_tokenizer,
-            PipelineModel::BPE(hello_bpe()),
-            PipelinePostProcessor::default(),
-            None,
-            Default::default(),
-            None,
-        )
+        let mut builder = TokenizerBuilder::new(PipelineModel::BPE(hello_bpe()));
+        builder.pre_tokenizer = pre_tokenizer;
+        builder.build().unwrap()
     }
 
     fn hello_pipeline() -> PipelineTokenizer {

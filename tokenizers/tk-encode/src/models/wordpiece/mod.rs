@@ -154,7 +154,7 @@ impl WordPiece {
         self.vocab.clone().into_iter().collect()
     }
 
-    pub fn get_vocab_size(&self) -> usize {
+    pub fn vocab_size(&self) -> usize {
         self.vocab.len()
     }
 
@@ -239,6 +239,7 @@ impl pipeline::ModelScratch for WordPieceScratch {}
 pub struct PipelineWordPiece {
     vocab_trie: yada::DoubleArray<Vec<u8>>,
     vocab_r: Box<[Option<Box<str>>]>,
+    vocab_size: usize,
     unk_token: Option<u32>,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
@@ -260,6 +261,7 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
         let mut keyset: Vec<_> = vocab.into_iter().collect();
         keyset.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
         let vocab_trie = DoubleArray::new(DoubleArrayBuilder::build(&keyset)?)?;
+        let vocab_size = keyset.len();
         let max_id = keyset.iter().map(|&(_, id)| id).max().unwrap_or(0) as usize;
         let mut vocab_r = vec![None; max_id + 1];
         for (token, id) in keyset {
@@ -272,6 +274,7 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
             unk_token,
             vocab_trie,
             vocab_r: vocab_r.into_boxed_slice(),
+            vocab_size,
         })
     }
 }
@@ -328,8 +331,16 @@ impl PipelineWordPiece {
         Ok(())
     }
 
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.vocab_trie.exact_match_search(token.as_bytes())
+    }
+
     pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(id as usize)?.as_deref().map(str::to_owned)
+    }
+
+    pub fn vocab_size(&self) -> usize {
+        self.vocab_size
     }
 
     /// `{"token": id}`, in id order. For a writer; the reverse table is dense over the ids, so the
@@ -495,5 +506,31 @@ mod tests {
         let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
         assert_eq!(ids, [3, 4]);
         assert_eq!(scratch.word_cache.lookup(b"world").hit(), Some(&[4u32][..]));
+    }
+
+    /// Ids 0, 1 and 5: the reverse table spans six slots, the vocabulary has three entries.
+    #[test]
+    fn vocab_size_counts_entries_not_ids() {
+        let vocab: Vocab = [("[UNK]", 0u32), ("hell", 1), ("##o", 5)]
+            .into_iter()
+            .map(|(token, id)| (token.to_string(), id))
+            .collect();
+        let model = WordPiece::builder().vocab(vocab).build().unwrap();
+        let model = PipelineWordPiece::try_from(model).unwrap();
+
+        assert_eq!(model.vocab_size(), 3);
+    }
+
+    /// `hell` is both an entry and a prefix of `hello`: exact means the whole key, no more, no less.
+    #[test]
+    fn token_to_id_matches_whole_entries_only() {
+        let model = pipeline_wordpiece();
+
+        assert_eq!(model.token_to_id("hello"), Some(3));
+        assert_eq!(model.token_to_id("hell"), Some(1));
+        assert_eq!(model.token_to_id("##o"), Some(2));
+        assert_eq!(model.token_to_id("hel"), None);
+        assert_eq!(model.token_to_id("hellooo"), None);
+        assert_eq!(model.token_to_id(""), None);
     }
 }

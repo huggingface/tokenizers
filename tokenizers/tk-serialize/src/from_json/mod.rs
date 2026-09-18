@@ -50,12 +50,10 @@ use self::post_processors::read_post_processor;
 use self::pre_tokenizers::read_pre_tokenizer;
 use crate::json::Json;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use tk_encode::models::bpe::{BpeConfig, PipelineBPE};
-use tk_encode::pipeline::{
-    NormalizerChain, PipelineModel, PipelineNormalizer, PipelinePreTokenizer, PipelineTokenizer,
-};
+use tk_encode::pipeline::{PipelineModel, PipelineTokenizer, TokenizerBuilder};
 use tk_encode::tokenizer::Result;
-use tk_encode::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
 
 fn unsupported(what: &str) -> tk_encode::Error {
     format!(
@@ -124,103 +122,44 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
         return Err(unsupported("a model whose vocab is a file path (`files`)"));
     }
 
-    match kind {
+    let model = match kind {
         "BPE" => {
             let (vocab, merges, options) = read_bpe(model_cfg)?;
-            build(
-                doc,
-                normalizers,
-                pre_tokenizer,
+            PipelineModel::BPE(PipelineBPE::from_config(BpeConfig {
                 vocab,
-                |v| v.len(),
-                |v, t| v.get(t).copied(),
-                |vocab| {
-                    Ok(PipelineModel::BPE(PipelineBPE::from_config(BpeConfig {
-                        vocab,
-                        merges,
-                        ..options
-                    })?))
-                },
-            )
+                merges,
+                ..options
+            })?)
         }
         #[cfg(feature = "wordpiece")]
-        "WordPiece" => build(
-            doc,
-            normalizers,
-            pre_tokenizer,
-            read_wordpiece(model_cfg)?,
-            tk_encode::models::wordpiece::WordPiece::get_vocab_size,
-            tk_encode::models::wordpiece::WordPiece::token_to_id,
-            |wp| Ok(PipelineModel::WordPiece(wp.try_into()?)),
-        ),
+        "WordPiece" => PipelineModel::WordPiece(read_wordpiece(model_cfg)?.try_into()?),
         #[cfg(feature = "unigram")]
-        "Unigram" => build(
-            doc,
-            normalizers,
-            pre_tokenizer,
-            read_unigram(model_cfg)?,
-            tk_encode::models::unigram::Unigram::get_vocab_size,
-            tk_encode::models::unigram::Unigram::token_to_id,
-            |u| Ok(PipelineModel::Unigram(u)),
-        ),
+        "Unigram" => PipelineModel::Unigram(read_unigram(model_cfg)?),
         #[cfg(feature = "wordlevel")]
-        "WordLevel" => build(
-            doc,
-            normalizers,
-            pre_tokenizer,
-            read_wordlevel(model_cfg)?,
-            tk_encode::models::wordlevel::WordLevel::get_vocab_size,
-            tk_encode::models::wordlevel::WordLevel::token_to_id,
-            |wl| Ok(PipelineModel::WordLevel(wl)),
-        ),
+        "WordLevel" => PipelineModel::WordLevel(read_wordlevel(model_cfg)?),
         // Covers both an unrecognised `"type"` and a known one whose per-model feature is off,
         // because from here the two are indistinguishable: the arm simply is not compiled.
-        other => Err(format!(
-            "the slim JSON reader cannot read the `{other}` model: either it is not a model \
-             type this crate knows, or its feature (`unigram`, `wordpiece`, `wordlevel`) is \
-             off in this build"
-        )
-        .into()),
-    }
-}
-
-fn build<M>(
-    doc: &Json<'_>,
-    normalizers: Vec<PipelineNormalizer>,
-    pre_tokenizer: PipelinePreTokenizer,
-    concrete: M,
-    vocab_size: impl FnOnce(&M) -> usize,
-    token_to_id: impl Fn(&M, &str) -> Option<u32>,
-    lower: impl FnOnce(M) -> Result<PipelineModel>,
-) -> Result<PipelineTokenizer> {
-    let added = read_added_tokens(doc.field("added_tokens"))?;
-
-    let mut added_vocabulary = BucketAddedVocabulary::new();
-    // TODO: this has nothing to do here.
-    let declared = match normalizers.last() {
-        Some(PipelineNormalizer::Metaspace(_)) => &normalizers[..normalizers.len() - 1],
-        _ => &normalizers[..],
+        other => {
+            return Err(format!(
+                "the slim JSON reader cannot read the `{other}` model: either it is not a model \
+                 type this crate knows, or its feature (`unigram`, `wordpiece`, `wordlevel`) is \
+                 off in this build"
+            )
+            .into());
+        }
     };
-    let chain = NormalizerChain(declared);
-    added_vocabulary.add_tokens(
-        added,
-        vocab_size(&concrete),
-        |t| token_to_id(&concrete, t),
-        Some(&chain),
-    )?;
-    // TODO: we need to read encode_special_tokens from the config as well.
-    let model = lower(concrete)?;
 
-    Ok(PipelineTokenizer::from_parts(
-        added_vocabulary,
+    TokenizerBuilder {
+        added_tokens: read_added_tokens(doc.field("added_tokens"))?,
         normalizers,
         pre_tokenizer,
-        model,
-        read_post_processor(doc.field("post_processor"))?,
-        read_decoder(doc.field("decoder"))?,
-        read_role_to_token(doc.field("role_to_token"))?,
-        read_padding(doc.field("padding"))?,
-    ))
+        model: Arc::new(model),
+        post_processor: read_post_processor(doc.field("post_processor"))?,
+        decoder: read_decoder(doc.field("decoder"))?,
+        role_to_token: read_role_to_token(doc.field("role_to_token"))?,
+        padding: read_padding(doc.field("padding"))?,
+    }
+    .build()
 }
 
 /// `{"eos_token": "</s>", ...}`. Absent or `null` means the config declares no roles.
