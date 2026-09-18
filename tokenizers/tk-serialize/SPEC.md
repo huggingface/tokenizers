@@ -47,12 +47,12 @@ Every component, at every depth, is an object tagged with `"type"`.
 |---|---|
 | **normalizer** | `Sequence` `BertNormalizer` `ByteLevel` `Lowercase` `MetaspaceNormalizer` `NFC` `NFD` `NFKC` `NFKD` `Nmt` `Precompiled` `Prepend` `Replace` `Strip` `StripAccents` |
 | **pre_tokenizer** | `Sequence` `BertPreTokenizer` `CharDelimiterSplit` `Digits` `FixedLength` `Punctuation` `Split` `UnicodeScripts` `Whitespace` `WhitespaceSplit` |
-| **post_processor** | `Sequence`† `BertProcessing`† `ByteLevel`† `RobertaProcessing`† `TemplateProcessing` |
+| **post_processor** | `TemplateProcessing` |
 | **decoder** | `Sequence` `BPEDecoder` `ByteFallback` `ByteLevel` `CTC` `Fuse` `Metaspace` `Replace` `Strip` `WordPiece` |
 
-† **Read-only.** Accepted on the way in, never written back under that tag: every post-processor
-lowers to a template, so all four come back as `TemplateProcessing`. The pipeline does not keep the
-distinction, so there is nothing to write it from.
+There is one post-processor. `Sequence`, `BertProcessing`, `ByteLevel` and `RobertaProcessing` were
+spellings of a template, and tk-convert rewrites each into the `TemplateProcessing` it named -- so
+this reader has no arm for them, and only that pass has to know what the old names meant.
 
 There is no `Metaspace` pre-tokenizer. One is two components — it rewrites text *and* cuts it, which
 the pipeline keeps apart — so canonically it is spelled as the two it is:

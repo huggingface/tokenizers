@@ -9,8 +9,12 @@ on:
     paths-ignore:
       - bindings/python/**
 
+permissions: {}
+
 jobs:
   build_and_test:
+    permissions:
+      contents: read
     name: Check everything builds & tests
     runs-on: ubuntu-latest
     defaults:
@@ -30,7 +34,7 @@ jobs:
           shared-key: node
 
       - name: Install Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: latest
 
@@ -43,7 +47,7 @@ jobs:
       # Test fixtures are immutable — cache them so CI doesn't re-download
       # from the Hub (and get rate-limited) on every run.
       - name: Cache HF test data
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
         with:
           path: bindings/node/data
           key: hf-test-data-node-${{ hashFiles('bindings/node/Makefile') }}
@@ -52,7 +56,7 @@ jobs:
       # Provides `uvx`, used to run the huggingface_hub CLI that downloads
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
 
       - name: Run JS tests
         env:
@@ -60,6 +64,8 @@ jobs:
         run: make test HF="uvx --from huggingface_hub hf"
 
   quality:
+    permissions:
+      contents: read
     name: Lint & format
     runs-on: ubuntu-latest
     defaults:
@@ -87,7 +93,7 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Install Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: latest
 
@@ -98,6 +104,8 @@ jobs:
         run: yarn lint
 
   audit:
+    permissions:
+      contents: read
     name: Audit dependencies
     runs-on: ubuntu-latest
     defaults:

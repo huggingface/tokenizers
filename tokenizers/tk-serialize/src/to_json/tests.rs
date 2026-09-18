@@ -6,6 +6,7 @@ use super::*;
 use crate::from_json::from_json;
 use crate::json::Json;
 use crate::vendored::f64_from_literal;
+use tk_encode::pipeline::EncodeOptions;
 
 const BPE_MODEL: &str = r#"{"type": "BPE", "byte_level": false,
     "vocab": {"a": 0, "b": 1, "ab": 2, "abab": 3}, "merges": [["a", "b"], ["ab", "ab"]]}"#;
@@ -53,9 +54,9 @@ fn json(text: &str) -> serde_json::Value {
     serde_json::from_str(text).expect("a test expectation is valid JSON")
 }
 
-fn ids(tokenizer: &PipelineTokenizer, text: &str, specials: bool) -> Vec<u32> {
+fn ids(tokenizer: &PipelineTokenizer, text: &str, options: &EncodeOptions) -> Vec<u32> {
     let encoded = tokenizer
-        .encode(text, specials)
+        .encode(text, options)
         .wait()
         .expect("encoding a text");
     encoded
@@ -117,11 +118,12 @@ fn round_trip_preserves_ids_on_every_real_config() {
             .unwrap_or_else(|e| panic!("{name}: its own reader refuses the output: {e}"));
         configs += 1;
         for text in TEXTS {
-            for specials in [false, true] {
+            for options in [EncodeOptions::no_specials(), EncodeOptions::default()] {
                 assert_eq!(
-                    ids(&before, text, specials),
-                    ids(&after, text, specials),
-                    "{name}: ids moved across a round trip (specials={specials}) on {text:?}"
+                    ids(&before, text, &options),
+                    ids(&after, text, &options),
+                    "{name}: ids moved across a round trip (add_special_tokens={}) on {text:?}",
+                    options.add_special_tokens
                 );
             }
         }
@@ -153,9 +155,12 @@ fn reversing_the_written_merges_moves_ids() {
     let perturbed = from_json(&parsed.to_string()).expect("the perturbed config still reads");
 
     // `a+b` outranks `b+c`, so `abc` is `ab` + `c`. Reversed, `b+c` wins: `a` + `bc`.
-    assert_eq!(ids(&tokenizer, "abc", false), vec![3, 2]);
     assert_eq!(
-        ids(&perturbed, "abc", false),
+        ids(&tokenizer, "abc", &EncodeOptions::no_specials()),
+        vec![3, 2]
+    );
+    assert_eq!(
+        ids(&perturbed, "abc", &EncodeOptions::no_specials()),
         vec![0, 4],
         "reversing the merge order left the ids alone, so the gate compares nothing"
     );
@@ -164,7 +169,11 @@ fn reversing_the_written_merges_moves_ids() {
     // merge, and reversing a *chain*. Both look exactly like a dead gate.
     let chained = from_json(&config(&[])).expect("the chain config reads");
     let text = to_json(&chained).expect("and writes");
-    assert_eq!(ids(&chained, "abab", false), vec![3], "`abab` merges up");
+    assert_eq!(
+        ids(&chained, "abab", &EncodeOptions::no_specials()),
+        vec![3],
+        "`abab` merges up"
+    );
     for pop in [true, false] {
         let mut parsed: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
         let merges = parsed["model"]["merges"].as_array_mut().expect("merges");
@@ -175,7 +184,7 @@ fn reversing_the_written_merges_moves_ids() {
         }
         let weak = from_json(&parsed.to_string()).expect("a weak perturbation still reads");
         assert_eq!(
-            ids(&weak, "abab", false),
+            ids(&weak, "abab", &EncodeOptions::no_specials()),
             vec![3],
             "pop={pop} moved an id after all"
         );
@@ -189,9 +198,13 @@ const IDEMPOTENT: &[(&str, &str)] = &[
     ("normalizer",     r#"{"type": "Lowercase"}"#),
     ("normalizer",     r#"{"type": "Prepend", "prepend": "_"}"#),
     ("normalizer",     r#"{"type": "Replace", "pattern": {"String": " "}, "content": "_"}"#),
-    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": true, "drop_whitespace": false}"#),
+    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "always", "drop_whitespace": false}"#),
+    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "first", "drop_whitespace": false}"#),
+    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "never", "drop_whitespace": false}"#),
     // `drop_whitespace` is one flag, never the legacy `Sequence[WhitespaceSplit, Metaspace]`.
-    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": true, "drop_whitespace": true}"#),
+    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "always", "drop_whitespace": true}"#),
+    // A `Metaspace` with `split: false` leaves the slot empty, so `null` has to round-trip.
+    ("pre_tokenizer",  r#"null"#),
     ("pre_tokenizer",  r#"{"type": "Digits", "individual_digits": true}"#),
     ("pre_tokenizer",  r#"{"type": "Whitespace"}"#),
     ("pre_tokenizer",  r#"{"type": "WhitespaceSplit"}"#),
@@ -212,8 +225,8 @@ const IDEMPOTENT: &[(&str, &str)] = &[
 ];
 
 /// `(slot, in, out)`: what the pipeline folded or dropped. An empty `Sequence` disappears, a nested
-/// one flattens, a decoder reads past `ByteLevel`'s flags and `Metaspace`'s `split` (but keeps
-/// `prepend_scheme: first`), and Bert/Roberta processing are frames, so both become one template.
+/// one flattens, and a decoder reads past `ByteLevel`'s flags and `Metaspace`'s `split` (but keeps
+/// `prepend_scheme: first`).
 #[rustfmt::skip]
 const REWRITTEN: &[(&str, &str, &str)] = &[
     ("normalizer", r#"{"type": "Sequence", "normalizers": []}"#, "null"),
@@ -225,12 +238,6 @@ const REWRITTEN: &[(&str, &str, &str)] = &[
                 r#"{"type": "ByteLevel"}"#),
     ("decoder", r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first", "split": false}"#,
                 r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first"}"#),
-    ("post_processor", r#"{"type": "BertProcessing", "cls": ["a", 0], "sep": ["b", 1]}"#,
-        r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
-            "pair": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}, {"seq": "B", "type_id": 1}, {"ids": [1], "type_id": 1}]}"#),
-    ("post_processor", r#"{"type": "RobertaProcessing", "cls": ["a", 0], "sep": ["b", 1], "trim_offsets": true, "add_prefix_space": true}"#,
-        r#"{"type": "TemplateProcessing", "single": [{"ids": [0]}, {"seq": "A"}, {"ids": [1]}],
-            "pair": [{"ids": [0]}, {"seq": "A"}, {"ids": [1, 1]}, {"seq": "B"}, {"ids": [1]}]}"#),
     // Ascending id order is load-bearing: the reader replays added tokens in that order, and
     // `add_tokens` reuses a model id when the token is already in the vocabulary.
     ("added_tokens", r#"[{"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true},
@@ -291,7 +298,7 @@ fn the_canonical_shape_is_tagged_versioned_and_null_where_absent() {
         (
             "normalizer",
             r#"{"type": "MetaspaceNormalizer", "replacement": "▁",
-            "prepend": true, "drop_whitespace": false}"#,
+            "prepend": "always", "drop_whitespace": false}"#,
         ),
         ("pre_tokenizer", r#"{"type": "Whitespace"}"#),
         ("decoder", r#"{"type": "Fuse"}"#),

@@ -54,6 +54,8 @@ tk-serialize = { path = "../tk-serialize", features = [
 ] }
 tk-encode = { path = "../tk-encode", default-features = false, features = [
   "fancy-regex",
+  # The oracle's long case must reach the parallel encoder, not the serial path.
+  "parallelism",
 ] }
 criterion = "0.8"
 rayon = "1.12"

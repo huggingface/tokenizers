@@ -87,6 +87,21 @@ pub fn from_json_file(path: impl AsRef<std::path::Path>) -> Result<PipelineToken
     from_json(&text)
 }
 
+/// Read a lone `post_processor` -- the value of that one key -- rather than a whole
+/// `tokenizer.json`. `null` and the empty string are the default frame, the same as a config that
+/// leaves the key out.
+///
+/// The bindings hold a post-processor on its own, so they need this half of the reader; going
+/// through it is what keeps one parser for the canonical spelling.
+pub fn post_processor_from_json(text: &str) -> Result<tk_encode::pipeline::PipelinePostProcessor> {
+    let text = text.trim();
+    if text.is_empty() || text == "null" {
+        return Ok(tk_encode::pipeline::PipelinePostProcessor::default());
+    }
+    let doc = Json::parse(text).map_err(|e| -> tk_encode::Error { e.to_string().into() })?;
+    read_post_processor(Some(&doc))
+}
+
 fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
     // `2.0` is the canonical format this crate reads and writes. A `1.0` file is a legacy file:
     // tk-convert turns one into a `2.0` file, and this reader never sees it.

@@ -1,40 +1,50 @@
 [package]
 name = "tokenizers-python"
-version = "1.0.0-rc.0"
-authors = ["Anthony MOI <m.anthony.moi@gmail.com>"]
+version = "0.24.0"
 edition = "2024"
+publish = false
 
 [lib]
 name = "tokenizers"
 crate-type = ["cdylib"]
 
 [dependencies]
-rayon = "1.10"
-serde = { version = "1.0", features = ["rc", "derive"] }
+pyo3 = { version = "=0.29", default-features = false, features = [
+  "macros",
+  "extension-module",
+  "abi3-py310",
+  "experimental-inspect",
+] }
+numpy = "=0.29"
+# Same three crates as `bindings/node`, for the same reason (see its Cargo.toml): only what the
+# pipeline encode path needs, not the pre-v1 engine's umbrella.
+tk-encode    = { path = "../../tokenizers/tk-encode", default-features = false, features = [
+  "parallelism",
+  "normalizers",
+  "bpe",
+  "unigram",
+  "wordpiece",
+  "wordlevel",
+  "unicode-scripts",
+] }
+tk-serialize = { path = "../../tokenizers/tk-serialize", features = [
+  # `serialize` for `to_json`, which `Tokenizer.__repr__` renders.
+  "serialize",
+  "parallelism",
+  "normalizers",
+  "bpe",
+  "unigram",
+  "wordpiece",
+  "wordlevel",
+  "unicode-scripts",
+] }
+tk-convert   = { path = "../../tokenizers/tk-convert", default-features = false }
+# `Tokenizer.__repr__` renders the `tokenizer.json` the pipeline writes.
 serde_json = "1.0"
-libc = "0.2"
-env_logger = "0.11"
-pyo3 = { version = "=0.29", default-features = false, features = ["py-clone", "experimental-inspect"] }
-pyo3-async-runtimes = { version = "0.29", features = ["tokio-runtime"] }
-tokio = { version = "1.47.1", features = ["rt", "rt-multi-thread", "macros", "signal"] }
-once_cell = "1.19.0"
-numpy = "0.29"
-ndarray = "0.16"
-itertools = "0.14"
-ahash = { version = "0.8.11", features = ["serde"] }
-pyo3-ffi = { version = "=0.29" }
-
-[dependencies.tokenizers]
-path = "../../tokenizers"
 
 [build-dependencies]
 pyo3-build-config = "=0.29"
 
-[dev-dependencies]
-tempfile = "3.10"
-pyo3 = { version = "0.29", features = ["auto-initialize", "experimental-inspect"] }
-
-[features]
-default = ["ext-module", "abi3"]
-ext-module = ["pyo3/extension-module"]
-abi3 = ["pyo3/abi3", "pyo3/abi3-py310"]
+# Not a workspace member, so this does not inherit tokenizers/Cargo.toml's profile.
+[profile.release]
+lto = "fat"

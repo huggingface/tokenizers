@@ -1,5 +1,4 @@
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
-use ahash::AHashMap;
 use std::sync::LazyLock;
 
 // The GPT-2 pre-tokenize regex is the canonical spec in bitsplit (single source of truth); re-export
@@ -19,15 +18,26 @@ pub use bitsplit::regexes::GPT2 as GPT2_REGEX_STR;
 ///
 /// The mapping is a bijection — see [`CHAR_BYTES_LOOKUP`] for the inverse.
 pub static BYTES_CHAR_LOOKUP: LazyLock<[char; 256]> = LazyLock::new(make_byte_char_lookup);
-/// Inverse of [`BYTES_CHAR_LOOKUP`]: maps each byte-level unicode character back to its byte.
+/// Inverse of [`BYTES_CHAR_LOOKUP`], indexed by codepoint: `CHAR_BYTES_LOOKUP[c as usize]` is
+/// the byte that `c` stands for, or `None` if `c` is not a byte-level character.
 ///
-/// Used when decoding byte-level tokens back into raw bytes. Because [`BYTES_CHAR_LOOKUP`] is
-/// a bijection over all 256 bytes, this map has exactly 256 entries with no collisions.
-pub static CHAR_BYTES_LOOKUP: LazyLock<AHashMap<char, u8>> = LazyLock::new(|| {
-    (0..=255u8)
-        .map(|byte| (BYTES_CHAR_LOOKUP[byte as usize], byte))
-        .collect()
+/// [`make_byte_char_lookup`] only ever emits codepoints below 324, so a 512-entry table holds
+/// the whole alphabet and the inverse needs no hashing. Read it through [`char_to_byte`], which
+/// handles the out-of-range case.
+pub static CHAR_BYTES_LOOKUP: LazyLock<[Option<u8>; 512]> = LazyLock::new(|| {
+    let mut table = [None; 512];
+    for byte in 0..=255u8 {
+        table[BYTES_CHAR_LOOKUP[byte as usize] as usize] = Some(byte);
+    }
+    table
 });
+
+/// The byte `c` stands for in the byte-level alphabet, or `None` if it is not one of its
+/// characters. One array index; the reverse mapping used to be a hash probe.
+#[inline]
+pub fn char_to_byte(c: char) -> Option<u8> {
+    *CHAR_BYTES_LOOKUP.get(c as usize)?
+}
 
 fn make_byte_char_lookup() -> [char; 256] {
     let mut lookup: [char; 256] = ['\0'; 256];
@@ -57,9 +67,7 @@ fn make_byte_char_lookup() -> [char; 256] {
 }
 
 fn reverse_lookup(c: char) -> Vec<u8> {
-    CHAR_BYTES_LOOKUP
-        .get(&c)
-        .map_or_else(|| c.to_string().into_bytes(), |b| vec![*b])
+    char_to_byte(c).map_or_else(|| c.to_string().into_bytes(), |b| vec![b])
 }
 
 pub(crate) fn transform_vocab(vocab: BucketVocabStore) -> BucketVocabStore {
@@ -70,4 +78,47 @@ pub(crate) fn transform_vocab(vocab: BucketVocabStore) -> BucketVocabStore {
             .map(|(string, token_id)| (string.chars().flat_map(reverse_lookup).collect(), token_id))
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `CHAR_BYTES_LOOKUP` indexes by codepoint without a guard, so it would panic on first use
+    /// if [`make_byte_char_lookup`] ever moved the alphabet past the end of the table.
+    #[test]
+    fn alphabet_fits_the_table() {
+        for c in BYTES_CHAR_LOOKUP.iter() {
+            assert!(
+                (*c as usize) < CHAR_BYTES_LOOKUP.len(),
+                "{c:?} (U+{:04X}) is past the table",
+                *c as u32
+            );
+        }
+    }
+
+    #[test]
+    fn every_byte_round_trips() {
+        for byte in 0..=255u8 {
+            assert_eq!(char_to_byte(BYTES_CHAR_LOOKUP[byte as usize]), Some(byte));
+        }
+    }
+
+    /// Codepoints the alphabet does not claim, on both sides of the table's end: the
+    /// non-printable ASCII and latin1 holes that `make_byte_char_lookup` remaps away from, and
+    /// a character far beyond 512.
+    #[test]
+    fn chars_outside_the_alphabet_have_no_byte() {
+        for c in [
+            '\0',
+            '\u{7f}',
+            '\u{a0}',
+            '\u{ad}',
+            '\u{1ff}',
+            '漢',
+            '\u{1f600}',
+        ] {
+            assert_eq!(char_to_byte(c), None, "{c:?} should not map to a byte");
+        }
+    }
 }
