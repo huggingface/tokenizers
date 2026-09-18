@@ -1,12 +1,12 @@
 name: Rust Release
 
-env:
-  CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
-
 on:
   push:
     tags:
       - v*
+  # Manual runs do everything but upload: the drift check, then `cargo publish --dry-run`, which
+  # packages every crate and builds each one from its own tarball. See the publish step.
+  workflow_dispatch:
 
 permissions: {}
 
@@ -47,12 +47,19 @@ jobs:
       # No rc gate: a caret requirement never resolves a prerelease unless asked for by name.
       - name: Publish workspace crates
         working-directory: ./tokenizers
-        run: cargo publish --workspace --token ${CRATES_TOKEN}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+        run: cargo publish --workspace ${{ !startsWith(github.ref, 'refs/tags/v') && '--dry-run' || '' }}
 
       # tk-train is `exclude`d from the workspace, so `--workspace` never sees it, and it cannot
       # even be packaged until tk-encode and tk-convert are live: from outside the workspace its
       # path deps resolve their version pins against the registry. It goes last, on its own.
+      # Tags only: with nothing on the registry yet it cannot even be packaged, so a manual run
+      # has no dry-run for it.
       - name: Publish tk-train
+        if: startsWith(github.ref, 'refs/tags/v')
         working-directory: ./tokenizers/tk-train
-        run: cargo publish --token ${CRATES_TOKEN}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+        run: cargo publish
 
