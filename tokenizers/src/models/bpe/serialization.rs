@@ -235,4 +235,13 @@ mod test {
         let bpe_string = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"vocab":{"<unk>":0,"a":1,"b":2},"merges":[]}"#;
         assert_eq!(serde_json::from_str::<BPE>(bpe_string).unwrap(), bpe);
     }
+
+    #[test]
+    // A file whose merges concatenate to a token longer than any vocab entry
+    // must deserialize to an error, not panic.
+    fn test_deserialization_merge_longer_than_vocab() {
+        let bpe_string = r#"{"type":"BPE","dropout":null,"unk_token":null,"continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"vocab":{"aa":0,"bb":1},"merges":[["aa","bb"]]}"#;
+        let err = serde_json::from_str::<BPE>(bpe_string).unwrap_err();
+        assert!(err.to_string().contains("aabb"), "{}", err);
+    }
 }
