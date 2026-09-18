@@ -25,7 +25,7 @@ impl Default for BPEDecoder {
 
 impl Decoder for BPEDecoder {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
-        let n = tokens.len() - 1;
+        let n = tokens.len().saturating_sub(1);
         Ok(tokens
             .into_iter()
             .enumerate()

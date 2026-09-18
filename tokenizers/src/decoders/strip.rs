@@ -42,7 +42,7 @@ impl Decoder for Strip {
                 }
 
                 let mut stop_cut = chars.len();
-                for i in 0..self.stop {
+                for i in 0..self.stop.min(chars.len() - start_cut) {
                     let index = chars.len() - i - 1;
                     if chars[index] == self.content {
                         stop_cut = index;
