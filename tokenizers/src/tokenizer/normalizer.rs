@@ -544,6 +544,16 @@ impl NormalizedString {
 
     /// Lowercase
     pub fn lowercase(&mut self) -> &mut Self {
+        // ASCII fast path: each `A`..=`Z` becomes a single-byte `a`..=`z`,
+        // so byte length and per-byte alignments are unchanged. We can mutate
+        // bytes in place and skip the Unicode-aware `transform` rebuild.
+        if self.normalized.is_ascii() {
+            // Safety: `ascii_lower` only flips `0x20` on bytes already in
+            // `b'A'..=b'Z'` (all < 0x80), so the result remains valid UTF-8.
+            let bytes = unsafe { self.normalized.as_bytes_mut() };
+            crate::utils::simd::ascii_lower(bytes);
+            return self;
+        }
         let mut new_chars: Vec<(char, isize)> = vec![];
         self.for_each(|c| {
             c.to_lowercase().enumerate().for_each(|(index, c)| {
@@ -2287,6 +2297,45 @@ mod tests {
         s.transform(transforms, 0);
         s.lowercase();
         assert_eq!(s.get(), "a...");
+    }
+
+    #[test]
+    fn lowercase_ascii_fast_path_preserves_alignments() {
+        // After a non-trivial transform (here NFKD on a ligature) the alignments
+        // map several normalized bytes back onto fewer original bytes. The ASCII
+        // fast path must leave that mapping byte-for-byte unchanged.
+        let mut n = NormalizedString::from("ABC\u{FB00}DEF"); // "ABCﬀDEF"; ﬀ -> "ff" via NFKD
+        n.nfkd();
+        // Sanity: result is now all ASCII so the fast path will trigger.
+        assert!(n.get().is_ascii());
+
+        let bytes_before = n.normalized.clone();
+        let alignments_before = n.alignments.clone();
+        let original_before = n.original.clone();
+        let shift_before = n.original_shift;
+
+        n.lowercase();
+
+        assert_eq!(
+            n.normalized,
+            bytes_before.to_lowercase(),
+            "bytes mismatch fast vs ASCII to_lowercase"
+        );
+        assert_eq!(n.alignments, alignments_before, "alignments mutated");
+        assert_eq!(n.original, original_before, "original mutated");
+        assert_eq!(n.original_shift, shift_before, "original_shift mutated");
+    }
+
+    #[test]
+    fn lowercase_ascii_matches_unicode_path_byte_for_byte() {
+        // Cross-check against char::to_lowercase on every printable ASCII byte:
+        // the fast path must produce exactly the same bytes the slow path would.
+        let input: String = (0x20u8..0x7F).map(|b| b as char).collect();
+        let mut fast = NormalizedString::from(input.as_str());
+        fast.lowercase();
+
+        let expected: String = input.chars().flat_map(|c| c.to_lowercase()).collect();
+        assert_eq!(fast.get(), expected);
     }
 
     #[test]
