@@ -9,16 +9,17 @@ const MAX_LINE_WIDTH: usize = 100;
 
 const INDENT: &str = "    ";
 
-pub(crate) fn tokenizer(file: &Json<'_>, padding: &str) -> String {
+/// `padding` and `truncation` can be overwritten
+pub(crate) fn tokenizer(file: &Json<'_>, padding: &str, truncation: &str) -> String {
     let mut out = String::from("Tokenizer(");
     for (key, value) in file.entries().unwrap() {
         newline(1, &mut out);
         out.push_str(key);
         out.push('=');
-        if key == "padding" {
-            out.push_str(&padding.replace('\n', &format!("\n{INDENT}")));
-        } else {
-            write_value(key, value, Some(1), &mut out);
+        match key {
+            "padding" => push_indented(padding, &mut out),
+            "truncation" => push_indented(truncation, &mut out),
+            _ => write_value(key, value, Some(1), &mut out),
         }
         out.push(',');
     }
@@ -85,7 +86,7 @@ fn write_value(key: &str, value: &Json<'_>, indent: Option<usize>, out: &mut Str
     }
 }
 
-/// The entries stay on one line when it fits in [`MAX_LINE_WIDTH`] columns. 
+/// The entries stay on one line when it fits in [`MAX_LINE_WIDTH`] columns.
 /// Otherwise one per line.
 fn write_entries<'a>(
     entries: impl Iterator<Item = (&'a str, &'a Json<'a>)>,
@@ -130,6 +131,10 @@ fn write_entries_at(
             out.push(',');
         }
     }
+}
+
+fn push_indented(rendered: &str, out: &mut String) {
+    out.push_str(&rendered.replace('\n', &format!("\n{INDENT}")));
 }
 
 fn newline(indent: usize, out: &mut String) {

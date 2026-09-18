@@ -365,6 +365,9 @@ impl Tokenizer {
         let padding = self
             .padding()?
             .map_or_else(|| "None".to_owned(), |padding| padding.__repr__());
-        Ok(repr::tokenizer(&file, &padding))
+        let truncation = self
+            .truncation()?
+            .map_or_else(|| "None".to_owned(), |truncation| truncation.__repr__());
+        Ok(repr::tokenizer(&file, &padding, &truncation))
     }
 }
