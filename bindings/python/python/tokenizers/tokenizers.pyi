@@ -220,7 +220,7 @@ class Tokenizer:
         texts: Sequence[str],
         *,
         add_special_tokens: bool = True,
-        encode_special_tokens: bool = True,
+        encode_special_tokens: bool = False,
         padding: Padding | None = ...,
         truncation: Truncation | None = ...,
     ) -> list[Encoding]:

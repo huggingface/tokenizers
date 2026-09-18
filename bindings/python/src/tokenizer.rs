@@ -297,7 +297,7 @@ impl Tokenizer {
     ///
     /// Returns:
     ///     List[Encoding]
-    #[pyo3(signature = (texts, *, add_special_tokens=true, encode_special_tokens=true, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
+    #[pyo3(signature = (texts, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
     fn encode_batch(
         &self,
         py: Python<'_>,

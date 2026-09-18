@@ -1248,10 +1248,7 @@ mod tests {
     #[test]
     fn encode_special_tokens_sends_the_special_through_the_model() {
         let pipeline = hello_pipeline_with_special("lol");
-        let carved = EncodeOptions {
-            encode_special_tokens: false,
-            ..EncodeOptions::no_specials()
-        };
+        let carved = EncodeOptions::no_specials();
         let encoded = EncodeOptions {
             encode_special_tokens: true,
             ..EncodeOptions::no_specials()
