@@ -21,8 +21,8 @@ full measurement set is here: **[tokenizers v1](https://huggingface-tokenizers-v
 # To come for v1
 
 The rc ships the fast path: load a `tokenizer.json`, encode, decode, batch. What is **not** back
-yet is the part of the old API that let you *assemble* a tokenizer from its components. Today
-`tokenizers` exports exactly three names — `Tokenizer`, `Encoding`, `Padding`. Restoring the
+yet is the part of the old API that let you *assemble* a tokenizer from its components. Today the
+Python package exports exactly three classes — `Tokenizer`, `Encoding`, `Padding`. Restoring the
 component surface on the new pipeline is the remaining v1 work.
 
 ### The target API
@@ -99,25 +99,32 @@ incremental merging / `BucketVocabStore`
 Single thread, the closest competitor is [gigatoken](https://github.com/marcelroed/gigatoken), and
 we are narrowly ahead of it. At 8 threads it is ahead of us.
 
-| single thread, median MB/s | | 8 threads, median MB/s | |
-|---|---:|---|---:|
-| **tokenizers v1** | **131.2** | gigatoken | **918** |
-| gigatoken | 128.7 | **tokenizers v1** | 836 |
-| fastokens | 60.6 | tokie | 327 |
-| wordchipper | 50.7 | wordchipper | 264 |
-| tiktoken | 28.8 | tiktoken | 172 |
-| kitoken | 26.8 | fastokens | 163 |
-| tokie | 25.9 | kitoken | 161 |
-| tokenizers 0.23.1 | 8.7 | tokenizers 0.23.1 | 46 |
+| single thread | median MB/s | × 0.23.1 |
+|---|---:|---:|
+| **tokenizers v1** | **131.2** | **15.1×** |
+| gigatoken | 128.7 | 14.8× |
+| fastokens | 60.6 | 7.0× |
+| wordchipper | 50.7 | 5.8× |
+| tiktoken | 28.8 | 3.3× |
+| kitoken | 26.8 | 3.1× |
+| tokie | 25.9 | 3.0× |
+| tokenizers 0.23.1 | 8.7 | 1.0× |
 
-That is **15.1×** over `tokenizers` 0.23.1 single thread, and 18× at 8 threads. The thread curve,
-1 → 2 → 4 → 8:
+Threading is the other story. The curve, 1 → 2 → 4 → 8 workers, on its own smaller cell set
+(6 models, English and Chinese — so the 1-thread column here is not the table above):
 
 | | 1 | 2 | 4 | 8 | % of linear |
 |---|---:|---:|---:|---:|---:|
-| gigatoken | 168 | 296 | 517 | 918 | 72% |
-| tokenizers v1 | 147 | 276 | 473 | 836 | 70% |
+| gigatoken | 168 | 296 | 517 | **918** | 72% |
+| **tokenizers v1** | 147 | 276 | 473 | 836 | 70% |
+| tokie | 52 | 102 | 179 | 327 | 79% |
+| wordchipper | 41 | 78 | 144 | 264 | 67% |
+| tiktoken | 26 | 52 | 96 | 172 | 83% |
+| fastokens | 51 | 82 | 130 | 163 | 39% |
+| kitoken | 23 | 45 | 86 | 161 | 85% |
 | tokenizers 0.23.1 | 8 | 15 | 27 | 46 | 74% |
+
+That is **15.1×** over `tokenizers` 0.23.1 single thread and **18×** at 8 threads.
 
 **Where we lose:** multi-threaded throughput, and scaling efficiency — 70% of linear against
 gigatoken's 72%, and behind `kitoken` (85%), `tiktoken` (83%) and `tokie` (79%), which scale better

@@ -41,6 +41,8 @@ default = []
 bench-baseline = ["dep:tokenizers-release"]
 
 [dev-dependencies]
+# No version pins on these two: cargo strips path dev-deps when packaging, and tk-serialize
+# dev-depends back on us, so a pin here would publish a requirement cycle that cannot resolve.
 tk-serialize = { path = "../tk-serialize", features = [
   "bpe",
   "unigram",
