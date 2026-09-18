@@ -40,8 +40,19 @@ jobs:
           git diff --exit-code -- bitsplit/src/classify/atom_tables.rs \
             || { echo "::error::bitsplit/src/classify/atom_tables.rs is stale — run 'cargo run -p bitmap_gen' and commit"; exit 1; }
 
-      - name: Publish package rust
+      # One command, not one step per crate: `--workspace` publishes the members in dependency
+      # order (bitsplit, then tk-encode/tk-convert, then tk-serialize, then tokenizers) and waits
+      # for each to appear on the index before starting the next, so tk-serialize can resolve the
+      # tk-encode it just uploaded. bitmap_gen is skipped for us: it is `publish = false`.
+      # No rc gate: a caret requirement never resolves a prerelease unless asked for by name.
+      - name: Publish workspace crates
         working-directory: ./tokenizers
-        if: ${{ !contains(github.ref, 'rc') }}
+        run: cargo publish --workspace --token ${CRATES_TOKEN}
+
+      # tk-train is `exclude`d from the workspace, so `--workspace` never sees it, and it cannot
+      # even be packaged until tk-encode and tk-convert are live: from outside the workspace its
+      # path deps resolve their version pins against the registry. It goes last, on its own.
+      - name: Publish tk-train
+        working-directory: ./tokenizers/tk-train
         run: cargo publish --token ${CRATES_TOKEN}
 
