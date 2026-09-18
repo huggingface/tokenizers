@@ -6,7 +6,7 @@ pub struct EncodeOptions {
     /// e.g. `[CLS]`, `[SEP]`, `<|endoftext|>`, `</s>`. Defaults to `true`.
     pub add_special_tokens: bool,
     /// Whether special tokens found in the sequence should go through the tokenizer model (`true`)
-    /// or be replaced by their id in the vocabulary (`false`). Defaults to `false`.
+    /// or be replaced by their id in the vocabulary (`false`). Defaults to `true`.
     pub encode_special_tokens: bool,
     /// Override the tokenizer's padding options. Defaults to [`Override::InheritConfig`].
     pub padding: Override<PaddingParams>,
@@ -17,7 +17,7 @@ impl Default for EncodeOptions {
     fn default() -> Self {
         Self {
             add_special_tokens: true,
-            encode_special_tokens: false,
+            encode_special_tokens: true,
             padding: Override::InheritConfig,
             truncation: Override::InheritConfig,
         }
