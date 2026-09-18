@@ -8,17 +8,23 @@ env:
   AWS_DEFAULT_REGION: us-east-1
   DIST_DIR: ${{ github.sha }}
 
+permissions: {}
+
 jobs:
   lock_exists:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     name: Cargo.lock
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Cargo.lock lock exists 
         run: cat Cargo.lock
         working-directory: ./bindings/python
 
   build:
+    permissions:
+      contents: read
     name: build on ${{ matrix.platform || matrix.os }} (${{ matrix.target }} - ${{ matrix.manylinux || 'auto' }} - ${{ matrix.flavor == 'ft' && '3.14t' || matrix.interpreter || '3.14' }})
     # only run on push to main and on release
     needs: [lock_exists]
@@ -131,10 +137,10 @@ jobs:
         format('{0}-latest', matrix.os)
       }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: set up python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: ${{ matrix.python-install || '3.14' }}
           architecture: ${{ matrix.python-architecture || 'x64' }}
@@ -170,11 +176,13 @@ jobs:
           name: pypi_files-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux }}-${{ matrix.flavor || 'abi3' }}
           path: ./bindings/python/dist
   build-sdist:
+    permissions:
+      contents: read
     name: build sdist
     needs: [lock_exists]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         with:
           working-directory: ./bindings/python
@@ -188,6 +196,8 @@ jobs:
 
 
   upload_package:
+    permissions:
+      contents: read
     name: Upload package to PyPi
     runs-on: ubuntu-latest
     needs: [build, build-sdist]
@@ -195,10 +205,10 @@ jobs:
       PYPI_TOKEN: ${{ secrets.PYPI_TOKEN_DIST }}
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.14"
           architecture: x64
