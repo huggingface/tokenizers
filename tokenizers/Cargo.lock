@@ -202,7 +202,7 @@ dependencies = [
 
 [[package]]
 name = "bitsplit"
-version = "0.1.0"
+version = "0.1.0-rc.0"
 dependencies = [
  "ahash",
  "onig",
@@ -727,9 +727,9 @@ dependencies = [
 
 [[package]]
 name = "daachorse"
-version = "1.0.1"
+version = "3.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f55d7153ba3b507595872a3874803f07a8a81d1e888abed8e5db7da0597d6e2"
+checksum = "5614204febbc33cc07a2806aa6440b904ac012b68eecc37f4493ea4a76455a3d"
 
 [[package]]
 name = "daachorse"
@@ -3145,7 +3145,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tk-convert"
-version = "1.0.0-rc.0"
+version = "0.1.0-rc.0"
 dependencies = [
  "bitsplit",
  "criterion 0.8.2",
@@ -3154,12 +3154,12 @@ dependencies = [
  "thiserror",
  "tk-encode",
  "tk-serialize",
- "tokenizers 0.23.1",
+ "tokenizers 0.23.2",
 ]
 
 [[package]]
 name = "tk-encode"
-version = "1.0.0-rc.0"
+version = "0.1.0-rc.0"
 dependencies = [
  "ahash",
  "assert_approx_eq",
@@ -3195,7 +3195,7 @@ dependencies = [
 
 [[package]]
 name = "tk-serialize"
-version = "1.0.0-rc.0"
+version = "0.1.0-rc.0"
 dependencies = [
  "base64 0.22.1",
  "bitsplit",
@@ -3208,13 +3208,13 @@ dependencies = [
 
 [[package]]
 name = "tokenizers"
-version = "0.23.1"
+version = "0.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44e5bea67576e04b6ff8564c5d9e09c2ef0cf476502245f2f120e497769d3112"
+checksum = "7afbf6e88718afcc138bad01d6ccc3051dbbc3b2ce9793d8b8a3aeb610969cfc"
 dependencies = [
  "ahash",
  "compact_str",
- "daachorse 1.0.1",
+ "daachorse 3.0.3",
  "dary_heap",
  "derive_builder",
  "esaxx-rs",
