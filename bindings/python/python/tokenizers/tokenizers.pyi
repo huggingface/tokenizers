@@ -69,7 +69,7 @@ class Encoding:
 @final
 class Padding:
     """
-    Padding options
+    A class exposing padding options to Python consumers
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...
@@ -143,13 +143,13 @@ class Tokenizer:
     """
     A tokenizer. Encodes text into token ids, and decodes token ids back into text.
     """
-    def __reduce__(self, /) -> tuple[Any, tuple[str, Padding | None]]:
+    def __reduce__(self, /) -> tuple[Any, tuple[str, Padding | None, Truncation | None]]:
         """
         Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
         """
     def __repr__(self, /) -> str: ...
     @staticmethod
-    def _unpickle(json: str, padding: Padding | None) -> Tokenizer:
+    def _unpickle(json: str, padding: Padding | None, truncation: Truncation | None) -> Tokenizer:
         """
         Unpickles a `Tokenizer`
         """
@@ -183,7 +183,15 @@ class Tokenizer:
         Returns:
             list[str]
         """
-    def encode(self, /, text: str, *, add_special_tokens: bool = True, padding: Padding | None = ...) -> Encoding:
+    def encode(
+        self,
+        /,
+        text: str,
+        *,
+        add_special_tokens: bool = True,
+        padding: Padding | None = ...,
+        truncation: Truncation | None = ...,
+    ) -> Encoding:
         """
         Encodes the given text to token ids.
 
@@ -195,12 +203,21 @@ class Tokenizer:
             padding: `Padding` or `None`
                 Padding options. Pass `None` to disable padding.
                 When omitted, defaults to the padding options configured on the tokenizer.
+            truncation: `Truncation` or `None`
+                Truncation options. Pass `None` to disable truncation.
+                When omitted, defaults to the truncation options configured on the tokenizer.
 
         Returns:
             Encoding
         """
     def encode_batch(
-        self, /, texts: Sequence[str], *, add_special_tokens: bool = True, padding: Padding | None = ...
+        self,
+        /,
+        texts: Sequence[str],
+        *,
+        add_special_tokens: bool = True,
+        padding: Padding | None = ...,
+        truncation: Truncation | None = ...,
     ) -> list[Encoding]:
         """
         Encodes a batch of text.
@@ -214,6 +231,9 @@ class Tokenizer:
             padding: `Padding` or `None`
                 Padding options. Pass `None` to disable padding.
                 When omitted, defaults to the padding options configured on the tokenizer.
+            truncation: `Truncation` or `None`
+                Truncation options. Pass `None` to disable truncation.
+                When omitted, defaults to the truncation options configured on the tokenizer.
 
         Returns:
             List[Encoding]
@@ -293,7 +313,15 @@ class Tokenizer:
         """
     @padding.setter
     def padding(self, /, padding: Padding | None) -> None: ...
-    def tokenize(self, /, text: str, *, add_special_tokens: bool = True, padding: Padding | None = ...) -> list[str]:
+    def tokenize(
+        self,
+        /,
+        text: str,
+        *,
+        add_special_tokens: bool = True,
+        padding: Padding | None = ...,
+        truncation: Truncation | None = ...,
+    ) -> list[str]:
         """
         Encodes the given text and returns the string representation of each token.
 
@@ -308,7 +336,67 @@ class Tokenizer:
             padding: `Padding` or `None`
                 Padding options. Pass `None` to disable padding.
                 When omitted, defaults to the padding options configured on the tokenizer.
+            truncation: `Truncation` or `None`
+                Truncation options. Pass `None` to disable truncation.
+                When omitted, defaults to the truncation options configured on the tokenizer.
 
         Returns:
             list[str]
+        """
+    @property
+    def truncation(self, /) -> Truncation | None:
+        """
+        The truncation applied to every encode, or `None`.
+        Assign `None` to switch truncation off.
+        """
+    @truncation.setter
+    def truncation(self, /, truncation: Truncation | None) -> None: ...
+
+@final
+class Truncation:
+    """
+    A class exposing truncation options to Python consumers
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __hash__(self, /) -> int: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __new__(
+        cls,
+        /,
+        max_length: int,
+        strategy: Literal["longest_first", "only_first", "only_second"] = ...,
+        direction: Literal["left", "right"] = ...,
+    ) -> Truncation:
+        """
+        Args:
+            max_length: int
+                The maximum number of tokens, including special tokens, to keep.
+                        Encodings with more tokens will get truncated.
+            strategy: `"longest_first"` (the default), `"only_first"` or `"only_second"`
+                Which sequence of a pair is truncated.
+            direction: `"right"` (the default) or `"left"`
+                Whether to truncate tokens at the end of the sequence (`"right"`) or at
+                        the beginning of the sequence (`"left"`).
+        """
+    def __reduce__(
+        self, /
+    ) -> tuple[type, tuple[int, Literal["longest_first", "only_first", "only_second"], Literal["left", "right"]]]:
+        """
+        Pickle rebuilds a `Truncation` by calling the class with these constructor arguments.
+        """
+    def __repr__(self, /) -> str: ...
+    @property
+    def direction(self, /) -> Literal["left", "right"]:
+        """
+        Whether to truncate tokens at the end of the sequence (`"right"`) or at the beginning of the sequence (`"left"`).
+        """
+    @property
+    def max_length(self, /) -> int:
+        """
+        The maximum number of tokens, including special tokens, to keep. Encodings with more tokens will get truncated.
+        """
+    @property
+    def strategy(self, /) -> Literal["longest_first", "only_first", "only_second"]:
+        """
+        Which sequence of a pair is truncated.
         """

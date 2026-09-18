@@ -4,11 +4,12 @@ use std::sync::Mutex;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use tk_encode::PaddingParams;
+use tk_encode::TruncationParams;
 use tk_encode::pipeline::{EncodeOptions, Override, PipelineTokenizer as Pipeline};
 
 use crate::encoding::Encoding;
 use crate::error::{convert_err, err, poison_err};
-use crate::padding::{Padding, PaddingArg};
+use crate::options::{OverrideSentinel, Padding, Truncation};
 use crate::repr;
 use crate::type_hints::{Token, TokenIds};
 
@@ -19,34 +20,48 @@ pub struct Tokenizer {
     // Needs a mutex so a concurrent thread can access the value while
     // encode is running.
     padding: Mutex<Option<PaddingParams>>,
+    truncation: Mutex<Option<TruncationParams>>,
 }
 
 impl Tokenizer {
     fn make_options(
         &self,
         add_special_tokens: bool,
-        padding: PaddingArg,
+        padding: OverrideSentinel<PaddingParams>,
+        truncation: OverrideSentinel<TruncationParams>,
     ) -> PyResult<EncodeOptions> {
         let padding = match padding {
-            PaddingArg::InheritConfig => {
+            OverrideSentinel::InheritConfig => {
                 self.clone_padding()?.map_or(Override::Off, Override::With)
             }
-            PaddingArg::Off => Override::Off,
-            PaddingArg::With(params) => Override::With(params),
+            OverrideSentinel::Off => Override::Off,
+            OverrideSentinel::With(params) => Override::With(params),
+        };
+        let truncation = match truncation {
+            OverrideSentinel::InheritConfig => self
+                .clone_truncation()?
+                .map_or(Override::Off, Override::With),
+            OverrideSentinel::Off => Override::Off,
+            OverrideSentinel::With(params) => Override::With(params),
         };
         Ok(EncodeOptions {
             add_special_tokens,
             padding,
+            truncation,
         })
     }
 
     fn clone_padding(&self) -> PyResult<Option<PaddingParams>> {
         Ok(self.padding.lock().map_err(poison_err)?.clone())
     }
+
+    fn clone_truncation(&self) -> PyResult<Option<TruncationParams>> {
+        Ok(self.truncation.lock().map_err(poison_err)?.clone())
+    }
 }
 
 /// What `Tokenizer.__reduce__` gives to pickle
-type UnpickleArguments = (String, Option<Padding>);
+type UnpickleArguments = (String, Option<Padding>, Option<Truncation>);
 
 #[pymethods]
 impl Tokenizer {
@@ -61,9 +76,11 @@ impl Tokenizer {
         let canonical = tk_convert::canonicalize_file(path).map_err(convert_err)?;
         let pipeline: Pipeline = tk_serialize::from_json(&canonical).map_err(err)?;
         let padding = pipeline.get_padding().cloned();
+        let truncation = pipeline.get_truncation().cloned();
         Ok(Self {
             pipeline,
             padding: Mutex::new(padding),
+            truncation: Mutex::new(truncation),
         })
     }
 
@@ -156,6 +173,20 @@ impl Tokenizer {
         Ok(())
     }
 
+    /// The truncation applied to every encode, or `None`.
+    /// Assign `None` to switch truncation off.
+    #[getter]
+    fn truncation(&self) -> PyResult<Option<Truncation>> {
+        Ok(self.clone_truncation()?.map(Truncation::from))
+    }
+
+    #[setter]
+    fn set_truncation(&self, truncation: Option<PyRef<'_, Truncation>>) -> PyResult<()> {
+        *self.truncation.lock().map_err(poison_err)? =
+            truncation.map(|truncation| truncation.params().clone());
+        Ok(())
+    }
+
     /// Encodes the given text to token ids.
     ///
     /// Args:
@@ -166,18 +197,22 @@ impl Tokenizer {
     ///     padding: `Padding` or `None`
     ///         Padding options. Pass `None` to disable padding.
     ///         When omitted, defaults to the padding options configured on the tokenizer.
+    ///     truncation: `Truncation` or `None`
+    ///         Truncation options. Pass `None` to disable truncation.
+    ///         When omitted, defaults to the truncation options configured on the tokenizer.
     ///
     /// Returns:
     ///     Encoding
-    #[pyo3(signature = (text, *, add_special_tokens=true, padding=PaddingArg::InheritConfig))]
+    #[pyo3(signature = (text, *, add_special_tokens=true, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
     fn encode(
         &self,
         py: Python<'_>,
         text: String,
         add_special_tokens: bool,
-        padding: PaddingArg,
+        padding: OverrideSentinel<PaddingParams>,
+        truncation: OverrideSentinel<TruncationParams>,
     ) -> PyResult<Encoding> {
-        let options = self.make_options(add_special_tokens, padding)?;
+        let options = self.make_options(add_special_tokens, padding, truncation)?;
         // py.detach releases the GIL while encode runs on Rust side
         let encodings = py
             .detach(|| self.pipeline.encode(text, &options).wait())
@@ -198,18 +233,22 @@ impl Tokenizer {
     ///     padding: `Padding` or `None`
     ///         Padding options. Pass `None` to disable padding.
     ///         When omitted, defaults to the padding options configured on the tokenizer.
+    ///     truncation: `Truncation` or `None`
+    ///         Truncation options. Pass `None` to disable truncation.
+    ///         When omitted, defaults to the truncation options configured on the tokenizer.
     ///
     /// Returns:
     ///     list[str]
-    #[pyo3(signature = (text, *, add_special_tokens=true, padding=PaddingArg::InheritConfig))]
+    #[pyo3(signature = (text, *, add_special_tokens=true, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
     fn tokenize(
         &self,
         py: Python<'_>,
         text: String,
         add_special_tokens: bool,
-        padding: PaddingArg,
+        padding: OverrideSentinel<PaddingParams>,
+        truncation: OverrideSentinel<TruncationParams>,
     ) -> PyResult<Vec<String>> {
-        let options = self.make_options(add_special_tokens, padding)?;
+        let options = self.make_options(add_special_tokens, padding, truncation)?;
         py.detach(|| -> tk_encode::Result<Vec<String>> {
             let encodings = self.pipeline.encode(text, &options).wait()?;
             let ids: Vec<u32> = encodings[0].ids().iter().map(|token| token.id()).collect();
@@ -229,18 +268,22 @@ impl Tokenizer {
     ///     padding: `Padding` or `None`
     ///         Padding options. Pass `None` to disable padding.
     ///         When omitted, defaults to the padding options configured on the tokenizer.
+    ///     truncation: `Truncation` or `None`
+    ///         Truncation options. Pass `None` to disable truncation.
+    ///         When omitted, defaults to the truncation options configured on the tokenizer.
     ///
     /// Returns:
     ///     List[Encoding]
-    #[pyo3(signature = (texts, *, add_special_tokens=true, padding=PaddingArg::InheritConfig))]
+    #[pyo3(signature = (texts, *, add_special_tokens=true, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
     fn encode_batch(
         &self,
         py: Python<'_>,
         texts: Vec<String>,
         add_special_tokens: bool,
-        padding: PaddingArg,
+        padding: OverrideSentinel<PaddingParams>,
+        truncation: OverrideSentinel<TruncationParams>,
     ) -> PyResult<Vec<Encoding>> {
-        let options = self.make_options(add_special_tokens, padding)?;
+        let options = self.make_options(add_special_tokens, padding, truncation)?;
         // py.detach releases the GIL while encode runs on Rust side
         let encodings = py
             .detach(|| self.pipeline.encode(texts, &options).wait())
@@ -297,17 +340,22 @@ impl Tokenizer {
         let json = tk_serialize::to_json(&self.pipeline).map_err(err)?;
         Ok((
             py.get_type::<Self>().getattr("_unpickle")?,
-            (json, self.padding()?),
+            (json, self.padding()?, self.truncation()?),
         ))
     }
 
     /// Unpickles a `Tokenizer`
     #[staticmethod]
-    fn _unpickle(json: &str, padding: Option<PyRef<'_, Padding>>) -> PyResult<Self> {
+    fn _unpickle(
+        json: &str,
+        padding: Option<PyRef<'_, Padding>>,
+        truncation: Option<PyRef<'_, Truncation>>,
+    ) -> PyResult<Self> {
         let pipeline: Pipeline = tk_serialize::from_json(json).map_err(err)?;
         Ok(Self {
             pipeline,
             padding: Mutex::new(padding.map(|padding| padding.params().clone())),
+            truncation: Mutex::new(truncation.map(|trunc| trunc.params().clone())),
         })
     }
 

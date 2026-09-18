@@ -1,6 +1,6 @@
 import pytest
 
-from tokenizers import Padding
+from tokenizers import Padding, Truncation
 
 TEXTS = ["Hello there, how are you?", "naïve café", "Hello<|eot_id|>world", ""]
 
@@ -24,3 +24,11 @@ def test_tokenize_forwards_padding(wiki):
 
     assert wiki.tokenize("Hello there", padding=padding) == wiki.decode_tokens(encoding.ids)
     assert len(wiki.tokenize("Hello there")) == 2
+
+
+def test_tokenize_forwards_truncation(gpt2):
+    truncation = Truncation(max_length=2)
+    encoding = gpt2.encode("Hello there, how are you?", truncation=truncation)
+
+    assert gpt2.tokenize("Hello there, how are you?", truncation=truncation) == gpt2.decode_tokens(encoding.ids)
+    assert len(gpt2.tokenize("Hello there, how are you?")) > 2

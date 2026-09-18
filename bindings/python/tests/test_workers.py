@@ -1,7 +1,7 @@
 import multiprocessing
 import pickle
 
-from tokenizers import Padding, Tokenizer
+from tokenizers import Padding, Tokenizer, Truncation
 
 TEXTS = ["Hello there", "General Kenobi", "You are a bold one"]
 
@@ -22,6 +22,16 @@ def test_pickle_tokenizer_padding(padded_wiki):
     assert pickle.loads(pickle.dumps(tokenizer)).padding is None
 
 
+def test_pickle_tokenizer_truncation(truncated_wiki):
+    tokenizer = Tokenizer.from_file(truncated_wiki)
+
+    tokenizer.truncation = Truncation(2, direction="left")
+    assert pickle.loads(pickle.dumps(tokenizer)).truncation == Truncation(2, direction="left")
+
+    tokenizer.truncation = None
+    assert pickle.loads(pickle.dumps(tokenizer)).truncation is None
+
+
 def test_pickle_encoding(bert):
     bert.padding = Padding(length=8, pad_id=3)
     encoding = bert.encode("Hello there")
@@ -37,6 +47,12 @@ def test_pickle_padding():
     padding = Padding(direction="left", pad_id=50256, pad_token="<|endoftext|>", pad_to_multiple_of=8)
 
     assert pickle.loads(pickle.dumps(padding)) == padding
+
+
+def test_pickle_truncation():
+    truncation = Truncation(7, strategy="only_second", direction="left")
+
+    assert pickle.loads(pickle.dumps(truncation)) == truncation
 
 
 def _encode_batch(tokenizer, texts):

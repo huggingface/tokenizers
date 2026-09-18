@@ -3,7 +3,7 @@
 //! Encode text to token ids and decode token ids back to text
 mod encoding;
 mod error;
-mod padding;
+mod options;
 mod repr;
 mod tokenizer;
 mod type_hints;
@@ -17,7 +17,9 @@ mod tokenizers {
     #[pymodule_export]
     use crate::encoding::Encoding;
     #[pymodule_export]
-    use crate::padding::Padding;
+    use crate::options::Padding;
+    #[pymodule_export]
+    use crate::options::Truncation;
     #[pymodule_export]
     use crate::tokenizer::Tokenizer;
 
