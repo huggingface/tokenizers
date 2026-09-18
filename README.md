@@ -18,6 +18,13 @@ and should scale with your workflow: your GPUs should never sit idle waiting on 
 **v1 is in release candidate.** `1.0.0-rc.0` is on crates.io and PyPI, and the write-up with the
 full measurement set is here: **[tokenizers v1](https://huggingface-tokenizers-v1.static.hf.space/index.html)**.
 
+<p align="center">
+  <a href="https://huggingface-tokenizers-v1.static.hf.space/index.html">
+    <img src="assets/single-thread-throughput.svg" width="700"
+         alt="Single-thread tokenization throughput, median MB/s: tokenizers v1 131.2, gigatoken 128.7, fastokens 60.6, wordchipper 50.7, tiktoken 28.8, kitoken 26.8, tokie 25.9, tokenizers 0.23.1 8.7.">
+  </a>
+</p>
+
 # To come for v1
 
 The rc ships the fast path: load a `tokenizer.json`, encode, decode, batch. What is **not** back
