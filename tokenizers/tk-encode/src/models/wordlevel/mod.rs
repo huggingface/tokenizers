@@ -1,4 +1,4 @@
-use crate::pipeline::{self, ModelScratch, PipelineToken};
+use crate::pipeline::{self, ModelScratch, PipelineToken, TokenSink};
 use crate::tokenizer::{Result, Token};
 use ahash::AHashMap;
 use std::collections::HashMap;
@@ -151,11 +151,11 @@ impl ModelScratch for WordLevelScratch {}
 impl pipeline::Model for WordLevel {
     type Scratch = WordLevelScratch;
     fn init_scratch(&self) -> Self::Scratch {}
-    fn tokenize_pipeline(
+    fn tokenize_pipeline<S: TokenSink>(
         &self,
         sequence: &str,
         _scratch: &mut Self::Scratch,
-        output: &mut Vec<pipeline::PipelineToken>,
+        output: &mut S,
     ) -> Result<()> {
         if let Some(&id) = self.vocab.get(sequence) {
             output.push(PipelineToken::from(id))

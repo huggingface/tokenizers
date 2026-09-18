@@ -1,6 +1,6 @@
-//! The batch path against itself: parallel must agree with serial, document for document.
+//! Parallel must agree with serial, document for document.
 //!
-//! There is one encode path now, but it still splits: a batch big enough goes through the pool and
+//! A big enough batch goes through the pool and
 //! is reassembled from per-worker arenas, while a single document runs straight down the serial
 //! loop. Those are the two things that can drift, so that is what this compares.
 //!
@@ -20,13 +20,6 @@ fn corpus() -> Vec<String> {
     v
 }
 
-fn options(add_special_tokens: bool) -> EncodeOptions {
-    EncodeOptions {
-        add_special_tokens,
-        padding: Override::Off,
-    }
-}
-
 fn gpt2() -> PipelineTokenizer {
     let canonical = tk_convert::canonicalize_file("../data/gpt2.json").unwrap();
     tk_serialize::from_json(&canonical).unwrap()
@@ -35,8 +28,10 @@ fn gpt2() -> PipelineTokenizer {
 /// A batch clears the parallel floor and is reassembled from arenas; one document does not.
 fn check(tok: &PipelineTokenizer, add_special: bool) {
     let owned = corpus();
-    let options = options(add_special);
-
+    let options = EncodeOptions {
+        add_special_tokens: add_special,
+        padding: Override::Off,
+    };
     let batched = tok.encode(owned.clone(), &options).wait().unwrap();
     assert_eq!(batched.len(), owned.len(), "document count");
 
@@ -61,7 +56,10 @@ fn parallel_matches_serial() {
 #[test]
 fn pair_is_both_sequences() {
     let tok = gpt2();
-    let options = options(false);
+    let options = EncodeOptions {
+        add_special_tokens: false,
+        padding: Override::Off,
+    };
     let (first, second) = ("Hello there".to_string(), "General Kenobi".to_string());
 
     let a = tok.encode(first.clone(), &options).wait().unwrap();
@@ -76,7 +74,10 @@ fn pair_is_both_sequences() {
 #[test]
 fn pairs_and_singles_in_one_batch() {
     let tok = gpt2();
-    let options = options(false);
+    let options = EncodeOptions {
+        add_special_tokens: false,
+        padding: Override::Off,
+    };
     let pair = ("Hello there".to_string(), "General Kenobi".to_string());
     let single = "You are a bold one".to_string();
 

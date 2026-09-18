@@ -4,7 +4,7 @@ use super::{
 };
 use crate::utils::word_cache::{Lookup, WordCache};
 use crate::{
-    pipeline::{self, PipelineToken},
+    pipeline::{self, PipelineToken, TokenSink},
     tokenizer::{Result, Token},
 };
 use crate::{
@@ -529,11 +529,11 @@ impl pipeline::Model for Unigram {
     /// [`Unigram::encode`] has to hand back the pieces themselves and caches those. A hit
     /// skips the lattice, the `String` every piece is built into, and the vocabulary
     /// lookup that turns each one back into an id.
-    fn tokenize_pipeline(
+    fn tokenize_pipeline<S: TokenSink>(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<pipeline::PipelineToken>,
+        output: &mut S,
     ) -> Result<()> {
         if sequence.is_empty() {
             return Ok(());
@@ -583,7 +583,7 @@ impl pipeline::Model for Unigram {
         if let Some(cache) = scratch.word_cache.as_mut()
             && let Some(at) = placement
         {
-            cache.insert(at, output[start..].iter().map(|token| token.id()));
+            cache.insert(at, output.written()[start..].iter().map(|token| token.id()));
         }
         Ok(())
     }

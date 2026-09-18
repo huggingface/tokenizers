@@ -33,6 +33,7 @@ pub use encode_options::{EncodeOptions, Override};
 mod normalizer;
 mod post_processor;
 mod pre_tokenizer;
+mod token_sink;
 
 pub use normalizer::{Normalizer, NormalizerChain, PipelineNormalizer, normalize_all};
 pub use post_processor::{PipelinePostProcessor, Template};
@@ -40,6 +41,7 @@ pub use pre_tokenizer::{
     PipelinePreTokenizer, PreTokenizer, PreTokenizerScratch, SplitPolicy, split, split_delimiter,
     split_matches,
 };
+pub use token_sink::{TokenSink, TokenSlot};
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
@@ -490,7 +492,7 @@ impl Encoding {
     }
 
     /// Lay per-document encodings out as one batch, for a template the flat path cannot frame.
-        pub fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.ids.len() == 0
     }
 
@@ -639,7 +641,9 @@ impl PipelineTokenizer {
     }
 
     fn encode_now(&self, inputs: Inputs, options: &EncodeOptions) -> Result<Vec<Encoding>> {
-        Ok(self.encode_documents(&inputs.as_documents(), options)?.into_documents())
+        Ok(self
+            .encode_documents(&inputs.as_documents(), options)?
+            .into_documents())
     }
 
     /// Encode a batch into one contiguous id buffer.
@@ -739,19 +743,19 @@ impl PipelineTokenizer {
     /// `type_ids` is filled alongside when the template tags anything -- which is why the
     /// sequence lengths are taken here rather than recovered from the offsets afterwards, since
     /// a pair needs to know where A ends.
-    pub(crate) fn frame(
+    pub(crate) fn frame<S: TokenSink>(
         &self,
         document: Document<'_>,
         template: &Template,
         add_special_tokens: bool,
         scratch: &mut EncodeScratch,
-        ids: &mut Vec<PipelineToken>,
+        ids: &mut S,
         mut type_ids: Option<&mut Vec<u8>>,
     ) -> Result<()> {
-        fn specials(
+        fn specials<S: TokenSink>(
             add: bool,
             run: &[(PipelineToken, u8)],
-            ids: &mut Vec<PipelineToken>,
+            ids: &mut S,
             type_ids: &mut Option<&mut Vec<u8>>,
         ) {
             if !add {
@@ -759,7 +763,7 @@ impl PipelineTokenizer {
             }
             ids.extend(run.iter().map(|&(id, _)| id));
             if let Some(out) = type_ids {
-                out.extend(run.iter().map(|&(_, type_id)| type_id));
+                Extend::extend(*out, run.iter().map(|&(_, type_id)| type_id));
             }
         }
 
@@ -784,12 +788,12 @@ impl PipelineTokenizer {
         Ok(())
     }
 
-    fn encode_sequence_into(
+    fn encode_sequence_into<S: TokenSink>(
         &self,
         input: &str,
         offset: usize,
         scratch: &mut EncodeScratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut S,
     ) -> Result<()> {
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
@@ -840,7 +844,7 @@ impl PipelineTokenizer {
                                     pre_tokenizer_scratch,
                                     pre_tokens,
                                 )?;
-                                output.reserve(pre_tokens.len());
+                                let _ = output.room(pre_tokens.len());
                                 #[cfg(debug_assertions)]
                                 for pre_token in pre_tokens.iter() {
                                     let range = pre_token.range();
@@ -871,7 +875,7 @@ impl PipelineTokenizer {
     }
 
     /// [`Self::encode_sequence_into`] into a fresh buffer, for the callers that want one back.
-        /// Encode `input`, appending its ids to `out`.
+    /// Encode `input`, appending its ids to `out`.
     ///
     /// The entry point that allocates nothing per call: no `Encoding`, no `Vec<Encoding>` from the
     /// handle, and no copy out of either. [`Self::encode`] is this plus those wrappers, and an
@@ -1048,11 +1052,11 @@ impl PipelineDecodeStream<'_> {
 pub trait Model {
     type Scratch: ModelScratch;
 
-    fn tokenize_pipeline(
+    fn tokenize_pipeline<S: TokenSink>(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut S,
     ) -> Result<()>;
 
     /// Every pre-token of a chunk in one call.
@@ -1063,12 +1067,12 @@ pub trait Model {
     ///
     /// The default is the loop it replaces, so a model only overrides this if it has per-chunk
     /// work to hoist out of the loop.
-    fn tokenize_spans(
+    fn tokenize_spans<S: TokenSink>(
         &self,
         chunk: &str,
         spans: &[Span],
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut S,
     ) -> Result<()> {
         for span in spans {
             self.tokenize_pipeline(&chunk[span.range()], scratch, output)?;
@@ -1115,11 +1119,11 @@ impl PipelineModel {
 impl Model for PipelineModel {
     type Scratch = PipelineModelScratch;
 
-    fn tokenize_pipeline(
+    fn tokenize_pipeline<S: TokenSink>(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut S,
     ) -> Result<()> {
         match (self, scratch) {
             (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
@@ -1141,12 +1145,12 @@ impl Model for PipelineModel {
         }
     }
 
-    fn tokenize_spans(
+    fn tokenize_spans<S: TokenSink>(
         &self,
         chunk: &str,
         spans: &[Span],
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut S,
     ) -> Result<()> {
         match (self, scratch) {
             (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {

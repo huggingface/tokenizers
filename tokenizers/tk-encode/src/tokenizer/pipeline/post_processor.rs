@@ -48,7 +48,6 @@ impl Template {
                 .iter()
                 .any(|run| run.iter().any(|&(_, id)| id != 0))
     }
-
 }
 
 #[cfg(test)]
