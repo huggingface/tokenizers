@@ -1,6 +1,6 @@
 {
   "name": "tokenizers",
-  "version": "1.0.0-rc0",
+  "version": "1.0.0-dev.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/huggingface/tokenizers.git"

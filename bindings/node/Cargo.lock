@@ -74,7 +74,7 @@ checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 
 [[package]]
 name = "bitsplit"
-version = "0.1.0-rc.0"
+version = "0.1.0-dev.0"
 dependencies = [
  "ahash",
 ]
@@ -702,7 +702,7 @@ dependencies = [
 
 [[package]]
 name = "node"
-version = "1.0.0-rc.0"
+version = "1.0.0-dev.0"
 dependencies = [
  "napi",
  "napi-build",
@@ -1190,7 +1190,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tk-convert"
-version = "0.1.0-rc.0"
+version = "0.1.0-dev.0"
 dependencies = [
  "bitsplit",
  "serde_json",
@@ -1199,7 +1199,7 @@ dependencies = [
 
 [[package]]
 name = "tk-encode"
-version = "0.1.0-rc.0"
+version = "0.1.0-dev.0"
 dependencies = [
  "ahash",
  "bitsplit",
@@ -1225,7 +1225,7 @@ dependencies = [
 
 [[package]]
 name = "tk-serialize"
-version = "0.1.0-rc.0"
+version = "0.1.0-dev.0"
 dependencies = [
  "base64 0.22.1",
  "bitsplit",
