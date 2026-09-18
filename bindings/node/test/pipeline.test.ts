@@ -69,6 +69,18 @@ test('addSpecialTokens is honoured', () => {
   assert.ok(withSpecials.length >= without.length)
 })
 
+test('encodeSpecialTokens sends a special token through the model', () => {
+  const tok = PipelineTokenizer.fromFile(MODEL)
+  const sepId = JSON.parse(readFileSync(MODEL, 'utf8')).added_tokens.find(
+    (t: { content: string; id: number }) => t.content === '[SEP]',
+  ).id
+  const carved = tok.encode('[SEP]', { addSpecialTokens: false })
+  const encoded = tok.encode('[SEP]', { addSpecialTokens: false, encodeSpecialTokens: true })
+  assert.deepStrictEqual(carved, Uint32Array.of(sepId))
+  // `Whitespace` cuts `[SEP]` into `[`, `SEP`, `]`: the same pieces the spaced spelling gives.
+  assert.deepStrictEqual(encoded, tok.encode('[ SEP ]', { addSpecialTokens: false }))
+})
+
 test('padding.length pads to a fixed length', () => {
   const tok = PipelineTokenizer.fromFile(MODEL)
   const plain = tok.encode('Hello')

@@ -125,6 +125,13 @@ fn cells() -> Vec<(&'static str, EncodeOptions)> {
         ("no specials", EncodeOptions::no_specials()),
         ("specials", EncodeOptions::default()),
         (
+            "encode specials",
+            EncodeOptions {
+                encode_special_tokens: true,
+                ..EncodeOptions::no_specials()
+            },
+        ),
+        (
             "truncate right",
             EncodeOptions {
                 truncation: Override::With(truncate(TruncationDirection::Right)),
@@ -172,10 +179,12 @@ fn cells() -> Vec<(&'static str, EncodeOptions)> {
     ]
 }
 
-/// `base` with the padding and truncation `options` resolves to: the file's own settings when
-/// inherited, none when off, and `options`' own when given.
+/// `base` with `options` applied: `encode_special_tokens` as given, and the padding and truncation
+/// each resolved to the file's own settings when inherited, none when off, and `options`' own
+/// when given.
 fn released_with(base: &Released, options: &EncodeOptions) -> Released {
     let mut released = base.clone();
+    released.set_encode_special_tokens(options.encode_special_tokens);
     match &options.padding {
         Override::InheritConfig => {}
         Override::Off => {

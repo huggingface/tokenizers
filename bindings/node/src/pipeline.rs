@@ -27,6 +27,9 @@ pub struct EncodeOptions {
   /// Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`. `true`
   /// when left out.
   pub add_special_tokens: Option<bool>,
+  /// Whether a special token written in the text goes through the model (`true`) or becomes its
+  /// added-vocabulary id. `false` when left out.
+  pub encode_special_tokens: Option<bool>,
   /// Padding for this call, replacing the tokenizer's configured padding. `false` disables
   /// padding. Left out, the configured padding applies.
   #[napi(ts_type = "false | PaddingOptions")]
@@ -159,6 +162,7 @@ impl PipelineTokenizer {
     let options = options.unwrap_or_default();
     Ok(PipelineEncodeOptions {
       add_special_tokens: options.add_special_tokens.unwrap_or(true),
+      encode_special_tokens: options.encode_special_tokens.unwrap_or(false),
       padding: override_with(options.padding, PaddingOptions::params)?,
       truncation: override_with(options.truncation, TruncationOptions::params)?,
     })

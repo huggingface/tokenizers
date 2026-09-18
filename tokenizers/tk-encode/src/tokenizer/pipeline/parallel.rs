@@ -171,6 +171,7 @@ impl EncodeBatch {
                 self.tokenizer.encode_sequence_with(
                     &input[chunk.range.clone()],
                     chunk.range.start,
+                    &self.options,
                     scratch,
                 )
             }))
@@ -303,6 +304,7 @@ impl PipelineTokenizer {
         seq_idx: usize,
         side: Seq,
         input: &str,
+        encode_special_tokens: bool,
         chunks: &mut Vec<SequenceChunk>,
         seq_outputs: &mut Vec<ChunkResult>,
     ) {
@@ -319,7 +321,12 @@ impl PipelineTokenizer {
             return;
         }
         let current_chunks_len = chunks.len();
-        for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
+        for segment in SpecialSegmentIterator::new(
+            input,
+            &self.inner.added_vocabulary,
+            false,
+            encode_special_tokens,
+        ) {
             let idx = seq_outputs.len();
             let (segment, offset) = match segment {
                 Segment::SpecialToken(id) => {
@@ -352,7 +359,7 @@ impl PipelineTokenizer {
         }
     }
 
-    fn plan_work(&self, inputs: &Inputs) -> Plan {
+    fn plan_work(&self, inputs: &Inputs, options: &EncodeOptions) -> Plan {
         let mut chunks = Vec::with_capacity(inputs.len());
         let mut side_a_len = Vec::with_capacity(inputs.len());
         let mut outputs = Vec::with_capacity(inputs.len());
@@ -360,13 +367,34 @@ impl PipelineTokenizer {
             let mut seq_outputs = vec![];
             match input {
                 Input::Single(s) => {
-                    self.plan_sequence(seq_idx, Seq::A, s, &mut chunks, &mut seq_outputs);
+                    self.plan_sequence(
+                        seq_idx,
+                        Seq::A,
+                        s,
+                        options.encode_special_tokens,
+                        &mut chunks,
+                        &mut seq_outputs,
+                    );
                     side_a_len.push(seq_outputs.len());
                 }
                 Input::Pair(s1, s2) => {
-                    self.plan_sequence(seq_idx, Seq::A, s1, &mut chunks, &mut seq_outputs);
+                    self.plan_sequence(
+                        seq_idx,
+                        Seq::A,
+                        s1,
+                        options.encode_special_tokens,
+                        &mut chunks,
+                        &mut seq_outputs,
+                    );
                     let a_len = seq_outputs.len();
-                    self.plan_sequence(seq_idx, Seq::B, s2, &mut chunks, &mut seq_outputs);
+                    self.plan_sequence(
+                        seq_idx,
+                        Seq::B,
+                        s2,
+                        options.encode_special_tokens,
+                        &mut chunks,
+                        &mut seq_outputs,
+                    );
                     side_a_len.push(a_len);
                 }
             }
@@ -443,7 +471,7 @@ pub(crate) fn encode(
         side_a_len,
         outputs,
         chunk_count,
-    } = tok.plan_work(&inputs);
+    } = tok.plan_work(&inputs, options);
     if tasks.len() < 2 {
         return EncodeHandle::blocking(
             tok.encode_serial(inputs, options),
