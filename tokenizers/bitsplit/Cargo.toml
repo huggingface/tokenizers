@@ -1,6 +1,6 @@
 [package]
 name = "bitsplit"
-version = "0.1.0"
+version = "0.1.0-rc.0"
 edition = "2024"
 rust-version = "1.89" # AVX-512 VBMI intrinsics (simd_avx_classify) are stable only since 1.89
 authors = [

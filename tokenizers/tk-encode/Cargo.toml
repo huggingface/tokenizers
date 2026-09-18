@@ -1,12 +1,13 @@
 [package]
 name = "tk-encode"
-version = "1.0.0-rc.0"
+version = "0.1.0-rc.0"
 edition = "2024"
 authors = [
   "Anthony MOI <m.anthony.moi@gmail.com>",
   "Nicolas Patry <patry.nicolas@protonmail.com>",
-  "Arthur Zucker <arthur@huggingface.co",
-  "Luc Georges <luc@huggingface.co",
+  "Arthur Zucker <arthur@huggingface.co>",
+  "Luc Georges <luc@huggingface.co>",
+  "Simon Brandeis <simon@huggingface.co>",
 ]
 homepage = "https://github.com/huggingface/tokenizers"
 repository = "https://github.com/huggingface/tokenizers"
@@ -28,7 +29,7 @@ path = "src/lib.rs"
 
 [dependencies]
 ############ Required dependencies ###############################
-bitsplit = { path = "../bitsplit" }
+bitsplit = { path = "../bitsplit", version = "0.1.0-rc.0" }
 rand = "0.10"
 ptr_hash = { version = "2.0.2", default-features = false }
 unicode_categories = "0.1"

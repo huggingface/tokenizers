@@ -172,12 +172,10 @@ jobs:
           if-no-files-found: error
 
   publish:
-    # Skip the npm publish step on rc tags — publishing requires a stable
-    # version and the npm-side write permissions / secrets we only want
-    # active on real releases. rc tags still exercise the build +
-    # universal-macOS jobs (so the matrix is tested end-to-end), they
-    # just don't push to the registry.
-    if: ${{ !contains(github.ref, 'rc') }}
+    # Tag pushes only: this workflow also runs on workflow_dispatch, and a dispatch would
+    # otherwise push whatever version package.json happens to hold. rc tags DO publish now —
+    # they just don't take the `latest` dist-tag (see --tag in the Publish step below).
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     permissions:
       # npm provenance signing needs id-token=write; the publish itself
       # authenticates via NODE_AUTH_TOKEN (NPM_TOKEN secret), set up by
@@ -227,7 +225,12 @@ jobs:
         run: npm pack --dry-run --ignore-scripts
       - name: Publish
         working-directory: ./bindings/node
-        run: npm publish --access public --provenance --ignore-scripts
+        # npm has no prerelease exclusion the way cargo and PyPI do: an untagged rc becomes
+        # what plain `npm install tokenizers` serves. Keep rc off `latest`.
+        run: |
+          TAG=latest
+          [[ "$GITHUB_REF" == *rc* ]] && TAG=rc
+          npm publish --access public --provenance --ignore-scripts --tag "$TAG"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

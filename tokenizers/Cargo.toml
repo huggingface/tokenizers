@@ -5,11 +5,11 @@ exclude = ["tk-train"]
 
 [package]
 authors = [
-  "Arthur Zucker <arthur@huggingface.co",
+  "Arthur Zucker <arthur@huggingface.co>",
   "Nicolas Patry <patry.nicolas@protonmail.com>",
   "Anthony MOI <m.anthony.moi@gmail.com>",
-  "Luc Georges <luc@huggingface.co",
-  "Simon Brandeis <simon@huggingface.co",
+  "Luc Georges <luc@huggingface.co>",
+  "Simon Brandeis <simon@huggingface.co>",
 ]
 edition = "2024"
 name = "tokenizers"
@@ -33,12 +33,7 @@ description = """
 Fastest implementation of the most used tokenizers in AI. """
 autotests = false
 autobenches = false
-exclude = [
-  "rust-toolchain",
-  "target/*",
-  "Cargo.lock",
-  "data/*",
-]
+exclude = ["rust-toolchain", "target/*", "Cargo.lock", "data/*"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -49,7 +44,7 @@ path = "src/lib.rs"
 bench = false
 
 [dependencies]
-tk-encode = { path = "tk-encode", version = "1.0.0-rc.0", default-features = false, features = [
+tk-encode = { path = "tk-encode", version = "0.1.0-rc.0", default-features = false, features = [
   "parallelism",
   "normalizers",
   "bpe",
@@ -58,10 +53,10 @@ tk-encode = { path = "tk-encode", version = "1.0.0-rc.0", default-features = fal
   "wordlevel",
   "unicode-scripts",
 ] }
-tk-convert = { path = "tk-convert", version = "1.0.0-rc.0", default-features = false }
+tk-convert = { path = "tk-convert", version = "0.1.0-rc.0", default-features = false }
 # The reader and the writer. Same component features as `tk-encode` above: the reader has one match
 # arm per component, so a component compiled out of the runtime cannot be read into it either.
-tk-serialize = { path = "tk-serialize", version = "1.0.0-rc.0", default-features = false, features = [
+tk-serialize = { path = "tk-serialize", version = "0.1.0-rc.0", default-features = false, features = [
   "deserialize",
   "serialize",
   "parallelism",
