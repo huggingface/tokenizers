@@ -770,12 +770,15 @@ impl PipelineTokenizer {
             }
         }
 
+        // Three bytes a token, not four: English BPE runs about 3.5, so a quarter left this
+        // buffer short and it doubled and copied itself on the way up.
         let mut ids = Vec::with_capacity(
             documents
                 .iter()
                 .map(|document| document.text.len())
                 .sum::<usize>()
-                / 4,
+                / 3
+                + 16,
         );
         let mut type_ids = tagged.then(Vec::new);
         let mut offsets = Vec::with_capacity(documents.len() + 1);

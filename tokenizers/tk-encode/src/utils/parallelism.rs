@@ -85,6 +85,20 @@ fn lock() -> MaybeLockGuard {
 /// silicon), so the quality-of-service class is the only lever: `USER_INITIATED` is the "someone
 /// is waiting for this" tier, which biases placement to the performance cores.
 ///
+/// Measured with Instruments CPU Counters on an M3 Max (10 performance + 4 efficiency cores),
+/// 10 workers on a 200k-document batch, counting samples whose thread was actually running:
+/// `USER_INITIATED` leaves 18.5% of them on efficiency cores, `USER_INTERACTIVE` 30.2%. The top
+/// tier is for UI responsiveness and is not a request for a fast core, so it is the wrong one.
+///
+/// That 18.5% is also most of what stops the batch scaling linearly: an efficiency core runs
+/// this work at a fraction of the speed, so the documents that land there are what everything
+/// else waits for. There is no way to do better from userspace on this platform.
+///
+/// Measured on an M3 Max (10 performance + 4 efficiency cores) with Instruments CPU Counters,
+/// 10 workers on a 200k-document batch: the default class left 30% of running samples on
+/// efficiency cores,  18.5%.  is *worse* again at 30.2% -- the
+/// top tier is for UI work and is not a request for a fast core.
+///
 /// TODO: on Linux, pin each worker to its own core with `sched_setaffinity` instead -- that is a
 /// real placement guarantee rather than a hint, and it also stops the scheduler migrating a
 /// worker away from the caches it just warmed.
@@ -108,10 +122,14 @@ pub fn pool() -> Option<Arc<rayon::ThreadPool>> {
     }
 
     let num_threads = num_threads();
-    // We don't create a thread pool when thread == 1
-    let slot = if num_threads == 1 {
-        None
-    } else {
+    // A pool is built even for one thread, deliberately.
+    //
+    // Declining to used to mean `encode_flat` bailed and the batch fell back to the caller's
+    // serial loop -- one `Encoding` with its own allocation per document, a different algorithm
+    // from the two-thread one. That cost ~1.6x at one thread and made the one-thread point of
+    // every scaling curve incomparable with the rest of it. A one-thread pool costs one thread
+    // and rayon's dispatch; the flat assembly it unlocks is worth far more than both.
+    let slot = {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads)
             .thread_name(|i| format!("tk-encode-{i}"))

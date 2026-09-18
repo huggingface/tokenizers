@@ -21,7 +21,13 @@ pub const PARALLEL_MIN_BYTES: usize = 8 * 1024;
 /// completion queue to drain and no lock on the hot path -- the whole coordination structure the
 /// general path needs exists to hand back a `Vec` per document, which this shape does not do.
 ///
-/// Returns `None` when there is no pool or only one thread, so the caller runs its serial loop.
+/// Never returns `None` for want of threads: one thread runs the same flat assembly serially.
+///
+/// It used to bail to the caller's serial loop, which is a *different algorithm* -- one `Encoding`
+/// with its own allocation per document. So a one-thread batch encode ran different code from a
+/// two-thread one: about 1.6x slower, and it made the one-thread point of a scaling curve
+/// incomparable with the rest of it (curves read 3.7x/47% where the honest figures were 2.5x/31%,
+/// and cells above 100% efficiency were routine). The flat shape is the batch path at every width.
 pub(crate) fn encode_flat(
     tok: &PipelineTokenizer,
     inputs: &[Document<'_>],
@@ -31,13 +37,13 @@ pub(crate) fn encode_flat(
 ) -> Result<Option<Encoding>> {
     use rayon::prelude::*;
 
+    // Still `None` if the pool cannot be built at all, which is a real failure and keeps the
+    // caller's serial fallback. What is gone is the `threads < 2` bail: one thread now runs this
+    // same assembly on a one-thread pool, so the batch path is one algorithm at every width.
     let Some(pool) = pool() else {
         return Ok(None);
     };
     let threads = pool.current_num_threads();
-    if threads < 2 {
-        return Ok(None);
-    }
 
     // Chunks sized so each carries real work but every thread still gets several of them.
     let total: usize = inputs.iter().map(|d| d.text.len()).sum();
@@ -64,8 +70,13 @@ pub(crate) fn encode_flat(
                 || tok.scratch(),
                 |scratch, docs| {
                     let bytes: usize = docs.iter().map(|d| d.text.len()).sum();
+                    // Three bytes a token, not four. English BPE runs about 3.5, so reserving a
+                    // quarter left every arena a little short: each one filled, doubled and
+                    // copied itself exactly once, which is 476 reallocations and a copy of the
+                    // whole batch on a 200k run. Over-reserving costs address space the arena
+                    // never touches; under-reserving costs a memcpy of everything.
                     let mut arena =
-                        Vec::with_capacity(bytes / 4 + template.n_special() * docs.len());
+                        Vec::with_capacity(bytes / 3 + template.n_special() * docs.len() + 16);
                     let mut lens = Vec::with_capacity(docs.len());
                     let mut longest = 0;
                     for doc in docs {
