@@ -90,7 +90,9 @@ pub trait Model {
     ///
     /// When `truncation` is `Some((max_tokens, direction))`, the
     /// `tokenize_with_limit` early-exit path is taken; otherwise every
-    /// pre-token is tokenized.
+    /// pre-token is tokenized. Note that the encode pipeline always passes
+    /// `None`: exiting early would drop the tokens that `Encoding::truncate`
+    /// moves into `Encoding::overflowing` (#2091).
     ///
     /// The default calls `self.tokenize()` per pre-token, which is correct
     /// for self-contained `Model` implementations.  Implementations that
@@ -1183,19 +1185,12 @@ where
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
         let mut pretokenized: PreTokenizedString = pretokenized.into();
-        let truncation = match self.truncation.as_ref() {
-            Some(TruncationParams {
-                direction,
-                max_length,
-                strategy,
-                ..
-            }) if *strategy != TruncationStrategy::OnlySecond || type_id != 0 => {
-                Some((*max_length, *direction))
-            }
-            _ => None,
-        };
+        // Tokenize every pre-token, even when truncation is enabled: the tokens
+        // beyond `max_length` are moved by `Encoding::truncate` into
+        // `Encoding::overflowing` during post-processing, so exiting early
+        // would silently drop them (#2091).
         self.model
-            .tokenize_in_pretokenized(&mut pretokenized, truncation)?;
+            .tokenize_in_pretokenized(&mut pretokenized, None)?;
         pretokenized.into_encoding(word_idx, type_id, offsets_type)
     }
 }
@@ -1717,6 +1712,69 @@ mod tests {
             truncated.get_ids(),
             &full.get_ids()[n - 3..],
             "Left-truncated should match last 3 tokens of full encoding"
+        );
+    }
+
+    #[test]
+    fn right_truncation_populates_overflowing() {
+        // https://github.com/huggingface/tokenizers/issues/2091
+        // "a b c d e f g h i j" → 10 tokens [0,1,2,3,4,5,6,7,8,9]
+        // Right truncation to 4 with stride 2 → [0,1,2,3], and the rest must
+        // remain available through `Encoding::overflowing`, with consecutive
+        // pieces overlapping by `stride` tokens.
+        let input = "a b c d e f g h i j";
+
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 4,
+            strategy: TruncationStrategy::LongestFirst,
+            stride: 2,
+            direction: TruncationDirection::Right,
+        }))
+        .unwrap();
+        let truncated = tok.encode(input, false).unwrap();
+
+        assert_eq!(truncated.get_ids(), &[0, 1, 2, 3]);
+        let overflowing_ids: Vec<&[u32]> = truncated
+            .get_overflowing()
+            .iter()
+            .map(|encoding| encoding.get_ids())
+            .collect();
+        assert_eq!(
+            overflowing_ids,
+            [&[2, 3, 4, 5][..], &[4, 5, 6, 7], &[6, 7, 8, 9]],
+            "Truncation should keep the remaining tokens in `overflowing`"
+        );
+    }
+
+    #[test]
+    fn left_truncation_populates_overflowing() {
+        // https://github.com/huggingface/tokenizers/issues/2091
+        // "a b c d e f g h i j" → 10 tokens [0,1,2,3,4,5,6,7,8,9]
+        // Left truncation to 3 → [7,8,9], with the leading tokens chunked
+        // right-to-left into `Encoding::overflowing`.
+        let input = "a b c d e f g h i j";
+
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 3,
+            strategy: TruncationStrategy::LongestFirst,
+            stride: 0,
+            direction: TruncationDirection::Left,
+        }))
+        .unwrap();
+        let truncated = tok.encode(input, false).unwrap();
+
+        assert_eq!(truncated.get_ids(), &[7, 8, 9]);
+        let overflowing_ids: Vec<&[u32]> = truncated
+            .get_overflowing()
+            .iter()
+            .map(|encoding| encoding.get_ids())
+            .collect();
+        assert_eq!(
+            overflowing_ids,
+            [&[4, 5, 6][..], &[1, 2, 3], &[0]],
+            "Truncation should keep the remaining tokens in `overflowing`"
         );
     }
 
