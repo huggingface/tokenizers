@@ -67,7 +67,7 @@ impl WordLevelBuilder {
         self
     }
 
-    /// The the `UNK` token for the vocab.
+    /// The `UNK` token for the vocab.
     #[must_use]
     pub fn unk_token(mut self, unk_token: String) -> Self {
         self.config.unk_token = unk_token;

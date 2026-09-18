@@ -29,7 +29,7 @@ use crate::processors::PyPostProcessor;
 use crate::utils::{MaybeSizedIterator, PyBufferedIterator};
 use std::collections::BTreeMap;
 
-/// Represents a token that can be be added to a :class:`~tokenizers.Tokenizer`.
+/// Represents a token that can be added to a :class:`~tokenizers.Tokenizer`.
 /// It can have special options that defines the way it should behave.
 ///
 /// Args:
