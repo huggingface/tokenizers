@@ -10,12 +10,16 @@ defaults:
   run:
     working-directory: tokenizers
 
+permissions: {}
+
 jobs:
   # x86_64 runner → runs the SSE4.1/AVX classify SIMD paths NATIVELY, plus fmt/clippy + the drift guard.
   native:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@stable
         with: { components: rustfmt, clippy }
       - run: cargo fmt -p bitsplit -p bitmap_gen -- --check
@@ -27,9 +31,11 @@ jobs:
   # AVX-512 classify path — GitHub runners often lack AVX-512, so emulate it with Intel SDE and run the
   # SAME byte-exact test binaries under it.
   avx512-sde:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Intel SDE
         run: |
@@ -48,12 +54,14 @@ jobs:
 
   # wasm32 SIMD128 classify + class-runs boundary extractor — run the test suite under wasmtime.
   wasm:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: wasm32-wasip1 }
-      - uses: bytecodealliance/actions/wasmtime/setup@v1
+      - uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1.1.3
       - name: Test under wasmtime (simd128)
         env:
           RUSTFLAGS: "-C target-feature=+simd128"

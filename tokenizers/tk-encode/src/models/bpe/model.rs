@@ -9,6 +9,7 @@ use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken, Span};
 use crate::tokenizer::Result;
+use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
 use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
 use crate::vocab::bucket_vocab_store::{BucketVocabStore, key_and_hash, key_and_hash_readable};
 
@@ -86,11 +87,18 @@ impl PipelineBPE {
         self.vocab.id_to_token_bytes(id)
     }
 
-    /// A token as a `String`, for the decoder-chain route. Only meaningful when the entries are
-    /// the token strings as written, i.e. when [`Self::is_byte_level`] is false; a byte-level
-    /// model decodes through [`Self::id_to_token_bytes`] instead.
+    /// The string representation of a token, with printable markers of unprintable bytes
     pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
-        self.vocab.id_to_token(id)
+        if !self.is_byte_level() {
+            return self.vocab.id_to_token(id);
+        }
+        let bytes = self.id_to_token_bytes(id)?;
+        Some(
+            bytes
+                .iter()
+                .map(|&b| BYTES_CHAR_LOOKUP[b as usize])
+                .collect(),
+        )
     }
 
     /// One bit per vocabulary id: can a pretoken equal to this entry be emitted as this entry,

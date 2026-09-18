@@ -6,8 +6,12 @@ on:
       - main
   pull_request:
 
+permissions: {}
+
 jobs:
   build_and_test:
+    permissions:
+      contents: read
     name: Build & test
     runs-on: ${{ matrix.os }}
     env:
@@ -44,7 +48,7 @@ jobs:
       # from the Hub (and get rate-limited) on every run.
       - name: Cache HF test data
         if: matrix.os != 'windows-latest'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
         with:
           path: tokenizers/data
           key: hf-test-data-${{ hashFiles('tokenizers/Makefile') }}
@@ -53,7 +57,7 @@ jobs:
       # Provides `uvx`, used to run the huggingface_hub CLI that downloads
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
 
       - name: Run tests
         if: matrix.os != 'windows-latest'
@@ -99,6 +103,8 @@ jobs:
 
   # Matrixed so platform-specific cfg gates and target-specific lints get coverage.
   clippy:
+    permissions:
+      contents: read
     name: Clippy
     runs-on: ${{ matrix.os }}
     strategy:
@@ -126,6 +132,8 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   format:
+    permissions:
+      contents: read
     name: Format
     runs-on: ubuntu-latest
     defaults:
@@ -143,6 +151,8 @@ jobs:
         run: cargo fmt --all -- --check
 
   readme:
+    permissions:
+      contents: read
     name: READMEs up to date
     runs-on: ubuntu-latest
     defaults:
@@ -174,6 +184,8 @@ jobs:
           done
 
   audit:
+    permissions:
+      contents: read
     name: Audit dependencies
     runs-on: ubuntu-latest
     defaults:
@@ -198,6 +210,8 @@ jobs:
         run: cargo audit -D warnings --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119 --ignore RUSTSEC-2026-0204 --ignore RUSTSEC-2025-0057
 
   semver:
+    permissions:
+      contents: read
     name: Semver checks
     runs-on: ubuntu-latest
     defaults:
@@ -231,6 +245,8 @@ jobs:
   # `use Model as _` import needed by two of the three model gates and therefore
   # unused in the third. So every combination gets its own clippy, and every feature its own tests.
   feature_matrix:
+    permissions:
+      contents: read
     name: Feature matrix
     runs-on: ubuntu-latest
     defaults:
@@ -255,7 +271,7 @@ jobs:
       # Test fixtures are immutable — cache them so CI doesn't re-download
       # from the Hub (and get rate-limited) on every run.
       - name: Cache HF test data
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
         with:
           path: tokenizers/data
           key: hf-test-data-${{ hashFiles('tokenizers/Makefile') }}
@@ -264,7 +280,7 @@ jobs:
       # Provides `uvx`, used to run the huggingface_hub CLI that downloads
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
 
       # The same two fixtures the Windows leg fetches, and for the same reason:
       # tk-encode's lib tests unwrap these outright. Every other fixture is

@@ -640,6 +640,26 @@ impl PipelineTokenizer {
         }
     }
 
+    /// Decode a slice of token ids to a Vec of the tokens' string representation
+    pub fn decode_tokens(&self, ids: &[u32], skip_special_tokens: bool) -> Vec<String> {
+        ids.iter()
+            .filter_map(|&id| {
+                if id >= self.inner.added_id_min {
+                    self.inner
+                        .added_vocabulary
+                        .simple_id_to_token(id)
+                        .or_else(|| self.inner.model.id_to_token(id))
+                        .filter(|token| {
+                            !skip_special_tokens
+                                || !self.inner.added_vocabulary.is_special_token(token)
+                        })
+                } else {
+                    self.inner.model.id_to_token(id)
+                }
+            })
+            .collect()
+    }
+
     /// Pick the template the input shape calls for and let it add the specials.
     ///
     /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside.
@@ -820,24 +840,7 @@ impl PipelineTokenizer {
         {
             return Ok(self.decode_byte_level(bpe, ids, skip_special_tokens));
         }
-        let tokens = ids
-            .iter()
-            .filter_map(|&id| {
-                if id >= self.inner.added_id_min {
-                    self.inner
-                        .added_vocabulary
-                        .simple_id_to_token(id)
-                        .or_else(|| self.inner.model.id_to_token(id))
-                        .filter(|token| {
-                            !skip_special_tokens
-                                || !self.inner.added_vocabulary.is_special_token(token)
-                        })
-                } else {
-                    self.inner.model.id_to_token(id)
-                }
-            })
-            .collect::<Vec<_>>();
-
+        let tokens = self.decode_tokens(ids, skip_special_tokens);
         match &self.inner.decoder {
             Some(decoder) => decoder.decode(tokens),
             None => Ok(tokens.join(" ")),
@@ -1697,6 +1700,49 @@ mod tests {
             padding,
             truncation,
         )
+    }
+
+    #[test]
+    fn decode_tokens_drops_ids_outside_the_vocabulary() {
+        let pipeline = hello_pipeline();
+
+        assert_eq!(pipeline.decode_tokens(&[7, 99, 4], false), ["hello", "he"]);
+    }
+
+    #[test]
+    fn decode_tokens_skips_special_tokens_on_request() {
+        use crate::vocab::bucket_added_vocabulary::AddedToken;
+
+        let mut added = BucketAddedVocabulary::new();
+        added
+            .add_special_tokens(
+                [AddedToken::from("<s>", true)],
+                8,
+                |_| None,
+                None::<&PipelineNormalizer>,
+            )
+            .unwrap();
+        let pipeline = PipelineTokenizer::from_parts(
+            added,
+            Vec::new(),
+            PipelinePreTokenizer::None,
+            PipelineModel::BPE(hello_bpe()),
+            PipelinePostProcessor::default(),
+            None,
+            Default::default(),
+            None,
+            None,
+        );
+
+        assert_eq!(pipeline.decode_tokens(&[8, 7], false), ["<s>", "hello"]);
+        assert_eq!(pipeline.decode_tokens(&[8, 7], true), ["hello"]);
+    }
+
+    #[test]
+    fn decode_without_a_decoder_joins_tokens_with_a_space() {
+        let pipeline = hello_pipeline();
+
+        assert_eq!(pipeline.decode(&[7, 4], false).unwrap(), "hello he");
     }
 
     fn hello_bpe() -> PipelineBPE {
