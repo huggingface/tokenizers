@@ -1,5 +1,22 @@
-//! The parallel batch encode: one contiguous id buffer, nothing shared between workers.
-
+//! Batch encode: documents in, one contiguous id buffer out.
+//!
+//!   documents  [d0 d1 d2 d3 d4 d5 ..................................... dN]
+//!                   |  par_chunks: a run of documents per task
+//!        +----------+----------+----------+----------+
+//!     worker 0   worker 1   worker 2   worker 3            one scratch each,
+//!        |          |          |          |                reused across tasks
+//!     arena 0    arena 1    arena 2    arena 3             private, stays in cache
+//!        +----------+----+-----+----------+
+//!                        |  split_at_mut: disjoint runs, filled in parallel
+//!                        v
+//!   unpadded   ids [d0|d1|d2|d3|d4|.....................]  document i is
+//!              offsets  ^  ^  ^  ^                         ids[offsets[i]..offsets[i+1]]
+//!
+//!   padded     ids [d0...pad|d1.....pad|d2......pad|....]  every document `stride` wide,
+//!                   <- stride ->                           so it reads as a 2D array
+//!
+//! The arenas are the point: a worker writing into the shared output instead measured slower,
+//! because every write then lands in a multi-megabyte buffer and allocates a cache line.
 use crate::parallelism::pool;
 use crate::pipeline::{Document, Encoding, PipelineToken, PipelineTokenizer, Template};
 use crate::utils::padding::{PaddingDirection, PaddingParams, pad_length};
@@ -12,22 +29,10 @@ type Part = (Vec<PipelineToken>, Vec<u32>, u32);
 
 /// Below this many bytes a batch is encoded serially: the pool costs more than it saves.
 ///
-/// `pub` (re-exported by `pipeline`): the differential "parallel == serial" tests live in
-/// `tk-convert`, and have to size an input past this threshold to reach the parallel path at all.
+/// `pub` so the differential tests in `tk-convert` can size an input past it.
 pub const PARALLEL_MIN_BYTES: usize = 8 * 1024;
 
-/// The flat batch path: each worker takes a run of documents, encodes them into one arena of its
-/// own, and records how long each came out. Nothing is shared, so there is no plan to build, no
-/// completion queue to drain and no lock on the hot path -- the whole coordination structure the
-/// general path needs exists to hand back a `Vec` per document, which this shape does not do.
-///
-/// Never returns `None` for want of threads: one thread runs the same flat assembly serially.
-///
-/// It used to bail to the caller's serial loop, which is a *different algorithm* -- one `Encoding`
-/// with its own allocation per document. So a one-thread batch encode ran different code from a
-/// two-thread one: about 1.6x slower, and it made the one-thread point of a scaling curve
-/// incomparable with the rest of it (curves read 3.7x/47% where the honest figures were 2.5x/31%,
-/// and cells above 100% efficiency were routine). The flat shape is the batch path at every width.
+/// One thread runs the same flat assembly serially, so this is one algorithm at every width.
 pub(crate) fn encode_flat(
     tok: &PipelineTokenizer,
     inputs: &[Document<'_>],
@@ -37,44 +42,26 @@ pub(crate) fn encode_flat(
 ) -> Result<Option<Encoding>> {
     use rayon::prelude::*;
 
-    // Still `None` if the pool cannot be built at all, which is a real failure and keeps the
-    // caller's serial fallback. What is gone is the `threads < 2` bail: one thread now runs this
-    // same assembly on a one-thread pool, so the batch path is one algorithm at every width.
     let Some(pool) = pool() else {
         return Ok(None);
     };
     let threads = pool.current_num_threads();
 
-    // Chunks sized so each carries real work but every thread still gets several of them.
     let total: usize = inputs.iter().map(|d| d.text.len()).sum();
     let avg = (total / inputs.len().max(1)).max(1);
-    // Enough documents to be worth a task -- twice the parallel floor measured best, below which
-    // rayon's per-task cost starts to show -- but never so many that a thread gets only one run.
     let by_bytes = (2 * PARALLEL_MIN_BYTES).div_ceil(avg);
     let by_balance = (inputs.len() / (threads * 4).max(1)).max(1);
     let chunk = by_bytes.min(by_balance).max(1);
 
     let laid_out = pool.install(|| -> Result<Encoding> {
-        // Each worker fills an arena of its own and records how long every document came out.
-        //
-        // The arena is small enough to stay in cache, which is why the copy below is worth making:
-        // writing straight into the shared output instead was measured slower -- every write then
-        // lands somewhere in a multi-megabyte buffer and allocates a cache line from memory, while
-        // this keeps the hot path local and pays one streaming copy at the end.
         let parts: Vec<Result<Part>> = inputs
             .par_chunks(chunk)
-            // One scratch per worker, not one per chunk. `ScratchPool` is a mutex, and the scratch
-            // it hands back carries a 2 MB word cache: taking one per chunk both contends on the
-            // lock and drags that cache between cores as the pool reissues it.
+            // One scratch per worker, not per chunk: the 2 MB word cache must not migrate.
             .map_init(
                 || tok.scratch(),
                 |scratch, docs| {
                     let bytes: usize = docs.iter().map(|d| d.text.len()).sum();
-                    // Three bytes a token, not four. English BPE runs about 3.5, so reserving a
-                    // quarter left every arena a little short: each one filled, doubled and
-                    // copied itself exactly once, which is 476 reallocations and a copy of the
-                    // whole batch on a 200k run. Over-reserving costs address space the arena
-                    // never touches; under-reserving costs a memcpy of everything.
+                    // Three bytes a token, not four: a quarter left every arena one realloc short.
                     let mut arena =
                         Vec::with_capacity(bytes / 3 + template.n_special() * docs.len() + 16);
                     let mut lens = Vec::with_capacity(docs.len());
@@ -103,18 +90,12 @@ pub(crate) fn encode_flat(
         let total_rows: usize = parts.iter().map(|(_, lens, _)| lens.len()).sum();
 
         if let Some(params) = padding {
-            // Each worker already tracked its own longest, so the stride costs one value per chunk
-            // rather than a walk over every document. Serial work between two parallel phases is
-            // what lets the pool's threads fall asleep, and waking them costs more than this did.
+            // Workers track their own longest, so the stride costs one value per chunk.
             let longest = parts.iter().map(|(.., l)| *l).max().unwrap_or(0) as usize;
             let stride = pad_length(longest, params).max(longest);
             let total = total_rows * stride;
             let pad = PipelineToken::from(params.pad_id);
-            // Uninitialised: a worker owns its whole region, so it writes its documents *and*
-            // their padding, and every slot is written exactly once.
             let mut ids: Vec<PipelineToken> = Vec::with_capacity(total);
-            // The mask is the one buffer worth pre-filling: `vec![0u8; n]` is `alloc_zeroed`, free,
-            // and the workers only mark the real tokens.
             let mut mask = vec![0u8; total];
             {
                 let mut id_rest = &mut ids.spare_capacity_mut()[..total];
@@ -133,7 +114,6 @@ pub(crate) fn encode_flat(
                         for (document, &len) in lens.iter().enumerate() {
                             let len = len as usize;
                             let slot = &mut id_dst[document * stride..(document + 1) * stride];
-                            // Left padding puts the document at the end of its slot, right at the start.
                             let (text, padding, at) = match params.direction {
                                 PaddingDirection::Right => {
                                     let (text, padding) = slot.split_at_mut(len);
@@ -144,8 +124,7 @@ pub(crate) fn encode_flat(
                                     (text, padding, document * stride + stride - len)
                                 }
                             };
-                            // SAFETY: `text` is `len` uninitialised slots from `split_at_mut`, disjoint
-                            // from every other job's region and from the source in this part's arena.
+                            // SAFETY: `text` is `len` uninitialised slots from `split_at_mut`, disjoint from every other job.
                             unsafe {
                                 std::ptr::copy_nonoverlapping(
                                     arena[read..].as_ptr(),
@@ -161,8 +140,6 @@ pub(crate) fn encode_flat(
                         }
                     });
             }
-            // SAFETY: every slot belonged to exactly one job, and each job wrote its documents and
-            // filled the rest of their slots with the pad id.
             unsafe { ids.set_len(total) };
             return Ok(Encoding::padded(
                 ids,
@@ -188,8 +165,7 @@ pub(crate) fn encode_flat(
             }
             jobs.par_iter_mut()
                 .for_each(|(arena, lens, base, id_dst, off_dst)| {
-                    // SAFETY: `id_dst` is `arena.len()` uninitialised slots from `split_at_mut`, so it
-                    // is disjoint from every other job's run and cannot overlap the source.
+                    // SAFETY: `id_dst` is `arena.len()` uninitialised slots from `split_at_mut`, disjoint per job.
                     unsafe {
                         std::ptr::copy_nonoverlapping(
                             arena.as_ptr(),
@@ -204,8 +180,6 @@ pub(crate) fn encode_flat(
                     }
                 });
         }
-        // SAFETY: the loop above handed every one of the `total_ids` slots to exactly one job,
-        // and each job filled its run in full.
         unsafe { ids.set_len(total_ids) };
         offsets[total_rows] = total_ids as u32;
         Ok(Encoding::batch(ids, offsets))

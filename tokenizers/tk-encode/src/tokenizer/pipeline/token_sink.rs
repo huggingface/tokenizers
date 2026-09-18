@@ -2,15 +2,9 @@
 
 use super::PipelineToken;
 
-/// Somewhere tokens are written: a growable [`Vec`], or a fixed slot in a batch's buffer.
+/// Where a model writes tokens: a growable `Vec`, or a fixed slot in a batch's buffer.
 ///
-/// The models write through this so the same code can fill a `Vec` or write straight into one
-/// document's slot of a pre-allocated batch, with no copy in between.
-///
-/// A slot can run out. When it does, [`Self::room`] returns `None` and every later write is
-/// dropped -- the model is not asked to unwind, because the caller re-encodes that one document
-/// into a `Vec` instead. So an implementation only has to stay memory-safe past the end, not
-/// correct; correctness comes from the re-encode.
+/// A slot that runs out drops later writes and flags it; the caller re-encodes that document.
 pub trait TokenSink: Extend<PipelineToken> {
     /// A cursor with space for `n` more tokens, or `None` when there is no room for them.
     fn room(&mut self, n: usize) -> Option<*mut PipelineToken>;
@@ -22,8 +16,7 @@ pub trait TokenSink: Extend<PipelineToken> {
     ///
     /// # Safety
     ///
-    /// `n` tokens must have been written at the cursor the matching [`Self::room`] returned, and
-    /// `n` must not exceed what was asked for.
+    /// `n` tokens must have been written at the cursor the matching [`Self::room`] returned.
     unsafe fn advance(&mut self, n: usize);
 
     /// Drop everything past `len`.
@@ -69,10 +62,7 @@ impl TokenSink for Vec<PipelineToken> {
     }
 }
 
-/// One document's slot in a batch buffer: a fixed run of tokens that cannot grow.
-///
-/// Writes past the end are dropped and remembered in [`Self::overflowed`], which is the caller's
-/// signal to re-encode this document into a `Vec` and spill it.
+/// One document's slot: a fixed run that cannot grow, so writes past the end are dropped.
 pub struct TokenSlot<'a> {
     slot: &'a mut [PipelineToken],
     len: usize,

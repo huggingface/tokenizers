@@ -72,12 +72,7 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
     Ok(())
 }
 
-/// Pad a flat batch so every document occupies the same width, in place.
-///
-/// The offsets already say how long every document is, so this is a fill with the pad id and a
-/// copy of each document into its slot: no reallocation per document, and the result is a dense
-/// `(documents, stride)` buffer that reads as a 2D array. The stride is never shorter than the longest
-/// document, because padding does not truncate.
+/// Pad a flat batch so every document occupies the same width; it never truncates.
 pub fn pad_flat(batch: &mut Encoding, params: &PaddingParams) -> Result<()> {
     let documents = batch.n_documents();
     let Some(longest) = (0..documents).map(|i| batch.document_len(i)).max() else {
@@ -94,9 +89,7 @@ pub fn pad_flat(batch: &mut Encoding, params: &PaddingParams) -> Result<()> {
     let mut type_ids = (batch.type_ids.is_some() || params.pad_type_id != 0)
         .then(|| vec![params.pad_type_id as u8; documents * stride]);
 
-    // Every document fills its own slot, so this is the same shape of work as the encode and
-    // wants the same threads: serial, it was a third of a padded batch's time, all of it after
-    // the workers had already finished.
+    // Every document fills its own slot, so this wants the same threads as the encode.
     let fill = |i: usize,
                 id_slot: &mut [PipelineToken],
                 mask_slot: &mut [u8],

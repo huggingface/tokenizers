@@ -10,13 +10,7 @@ use tk_encode::pipeline::{Encoding as PipelineEncoding, PipelineToken};
 use crate::encoding::Encoding;
 use crate::type_hints::{U32Array, U32Array2};
 
-/// A batch of encodings, sharing one contiguous id buffer.
-///
-/// Encoding a batch produces one buffer and the offsets saying where each document sits in it.
-/// Whether the batch was padded only changes how it is worth reading back: a padded batch has one
-/// width, so it reads as a `(documents, stride)` array with no copy at all, while an unpadded one
-/// is ragged and has to be read one document at a time. Either way the encode did the same work,
-/// and indexing a document is a slice.
+/// A batch of encodings sharing one id buffer; indexing a document is a slice of it.
 #[pyclass(frozen, sequence, module = "tokenizers")]
 pub struct Batch {
     inner: Arc<PipelineEncoding>,
@@ -69,9 +63,7 @@ impl Batch {
         Ok(Encoding::document(Arc::clone(&self.inner), document as usize))
     }
 
-    /// The width every document occupies when they all have the same one, else `None`.
-    ///
-    /// A padded batch is rectangular and can be read as a 2D array; an unpadded one is not.
+    /// The width every document occupies when uniform, else `None`.
     #[getter]
     fn stride(&self) -> Option<usize> {
         self.inner.stride()
@@ -91,10 +83,7 @@ impl Batch {
         )
     }
 
-    /// Every document's ids as one read-only `(documents, stride)` `uint32` numpy array.
-    ///
-    /// A view over the batch's own buffer, not a copy: the batch built it at this exact shape.
-    /// Raises if the batch is not rectangular.
+    /// Every document's ids as one read-only `(documents, stride)` array, a view not a copy.
     #[getter]
     fn ids_array<'py>(this: &Bound<'py, Self>) -> PyResult<U32Array2<'py>> {
         let batch = this.get();
@@ -102,10 +91,7 @@ impl Batch {
         view2(this, batch.ids_slice(), batch.inner.n_documents(), stride)
     }
 
-    /// The attention mask of every document as one read-only `(documents, stride)` `uint32` array.
-    ///
-    /// Unlike the ids this is widened from the batch's `u8` mask, so it does allocate. An
-    /// unpadded batch has no mask and reads as all ones.
+    /// The attention mask as one `(documents, stride)` array; widened, so it allocates.
     #[getter]
     fn attention_mask_array<'py>(this: &Bound<'py, Self>) -> PyResult<U32Array2<'py>> {
         let batch = this.get();
@@ -162,9 +148,7 @@ fn view2<'py>(
 ) -> PyResult<U32Array2<'py>> {
     let view = ArrayView2::from_shape((documents, stride), data)
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    // SAFETY: `Batch` is frozen and never mutates its buffer, and it holds the `Arc` keeping that
-    // buffer alive, so `data` outlives every array numpy hands out. Numpy keeps `batch` alive
-    // through the array's base.
+    // SAFETY: `Batch` is frozen and holds the `Arc`, so `data` outlives every array numpy makes.
     let array = unsafe { PyArray2::borrow_from_array(&view, batch.clone().into_any()) };
     array.readwrite().make_nonwriteable();
     Ok(U32Array2(array))

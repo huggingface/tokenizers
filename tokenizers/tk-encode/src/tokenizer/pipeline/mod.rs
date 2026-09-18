@@ -44,10 +44,6 @@ pub use pre_tokenizer::{
 pub use token_sink::{TokenSink, TokenSlot};
 
 /// Below this many tokens, laying a batch out across threads costs more than doing it here.
-///
-/// The pool's fixed cost is tens of microseconds; a batch of 100 short documents is two. Measured
-/// on a 20k-document batch, where the parallel split is twice as fast, and on a 100-document one,
-/// where it was three times slower.
 pub(crate) const PARALLEL_LAYOUT_MIN_TOKENS: usize = 64 * 1024;
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
@@ -65,11 +61,7 @@ impl PipelineToken {
         self.0
     }
 
-    /// `n` zeroed tokens, for free.
-    ///
-    /// `vec![0u32; n]` is `alloc_zeroed`, which the allocator answers with pages that are already
-    /// zero -- no write at all. `vec![PipelineToken::from(0); n]` misses that specialisation and
-    /// writes every slot: 0.14 ms per 8M tokens against 0.001 ms.
+    /// `n` zeroed tokens for free: `vec![0u32; n]` is `alloc_zeroed`, the newtype is not.
     pub fn zeroed(n: usize) -> Vec<Self> {
         let zeroed: Vec<u32> = vec![0; n];
         let mut zeroed = std::mem::ManuallyDrop::new(zeroed);
@@ -85,10 +77,6 @@ impl PipelineToken {
     }
 
     /// The ids of a whole slice, without copying it.
-    ///
-    /// Lets a caller hand a batch's ids to something that wants `u32` -- numpy, the Python
-    /// bindings -- without walking the slice to rebuild it as a `Vec<u32>`, which for a batch of
-    /// short documents is the dominant cost of returning the batch at all.
     pub const fn ids_of(tokens: &[Self]) -> &[u32] {
         // SAFETY: `PipelineToken` is `#[repr(transparent)]` over `u32` (see the attribute above),
         // so a `[PipelineToken]` and a `[u32]` of the same length have identical layout.
@@ -320,9 +308,7 @@ pub enum Input {
     Pair(String, String),
 }
 
-/// One document to encode: a sequence, and for a pair the second one.
-///
-/// Borrowed, because encoding is a blocking call -- the text only has to outlive it.
+/// One document to encode: a sequence, and for a pair the second one. Borrowed.
 #[derive(Clone, Copy)]
 pub struct Document<'a> {
     pub text: &'a str,
@@ -465,10 +451,6 @@ impl From<&[(&str, &str)]> for Inputs {
 }
 
 /// What [`PipelineTokenizer::encode`] hands back, waited on with [`Self::wait`].
-///
-/// There is one encode path behind it and it has already finished by the time you hold this, so
-/// `wait` is a move. The type stays because it is the shape an asynchronous encode returns: when
-/// the batch path learns to hand back documents as they finish, callers do not change.
 pub struct EncodeHandle {
     encodings: Result<Vec<Encoding>>,
 }
@@ -497,9 +479,7 @@ pub struct Encoding {
     /// allocated them. With offsets a whole batch costs a fixed handful, and it is the shape a
     /// serving stack wants anyway, having to assemble a contiguous batch for the model regardless.
     pub(crate) offsets: Option<Vec<u32>>,
-    /// Set when the documents do not sit back to back -- the workers write into regions sized
-    /// ahead of the encode, so what they do not use is a gap. `offsets` then holds each
-    /// document's start and this its length, instead of CSR's "starts, and the next one's start".
+    /// Each document's length, set when regions leave gaps and `offsets` holds only starts.
     pub(crate) lengths: Option<Vec<u32>>,
 }
 
@@ -568,9 +548,6 @@ impl Encoding {
     }
 
     /// Where document `i` sits in the flat buffers, or `None` when out of range.
-    ///
-    /// `type_ids` and `attention_mask` run the length of `ids`, so a caller reading one document
-    /// out of a batch needs the range, not just the ids.
     pub fn document_range(&self, i: usize) -> Option<std::ops::Range<usize>> {
         match (&self.offsets, &self.lengths) {
             (Some(starts), Some(lengths)) => {
@@ -592,21 +569,14 @@ impl Encoding {
         self.document_range(i).map_or(0, |range| range.len())
     }
 
-    /// The width every document occupies when they all have the same one, which is what lets a
-    /// batch be read as a rectangular `(documents, stride)` array rather than one at a time.
-    ///
-    /// `None` for a ragged batch: unpadded, or padded to a fixed length that some document
-    /// already exceeds, since padding never truncates.
+    /// The width every document occupies when uniform, else `None`: what allows a 2D read.
     pub fn stride(&self) -> Option<usize> {
         let documents = self.n_documents();
         let first = self.document_len(0);
         (documents > 0 && (1..documents).all(|i| self.document_len(i) == first)).then_some(first)
     }
 
-    /// The batch split into one [`Encoding`] per document.
-    ///
-    /// Slicing, not re-encoding: each document copies its own run out of the shared buffer. A
-    /// caller that can read the batch as it stands should do that instead.
+    /// The batch split into one [`Encoding`] per document, copying each run out of the buffer.
     pub fn into_documents(self) -> Vec<Self> {
         let cut = |i: usize| {
             let range = self.document_range(i).expect("[BUG] document out of range");
@@ -709,14 +679,7 @@ impl PipelineTokenizer {
             .into_documents())
     }
 
-    /// Encode a batch into one contiguous id buffer.
-    ///
-    /// Every document is framed by its template and appended to one buffer, with `offsets`
-    /// recording where each begins. Nothing is allocated per document, which is what a batch of
-    /// short ones otherwise spends its time on.
-    ///
-    /// Padding applies to the finished buffer: the offsets already say how long every document
-    /// is, so it is one pass at the padded stride rather than a reallocation per document.
+    /// Every document framed by its template into one buffer, with `offsets` marking each.
     pub fn encode_documents(
         &self,
         documents: &[Document<'_>],
@@ -733,8 +696,6 @@ impl PipelineTokenizer {
     }
 
     /// Encode every document into one buffer, padded if asked.
-    ///
-    /// The pool pads as it lays the batch out, so only the serial route needs a pass of its own.
     fn lay_out(
         &self,
         documents: &[Document<'_>],
@@ -814,11 +775,6 @@ impl PipelineTokenizer {
     }
 
     /// One document into `ids`, framed by its template: `prefix A infix? B? suffix`.
-    ///
-    /// The only place framing happens, for the serial loop and the parallel one alike.
-    /// `type_ids` is filled alongside when the template tags anything -- which is why the
-    /// sequence lengths are taken here rather than recovered from the offsets afterwards, since
-    /// a pair needs to know where A ends.
     pub(crate) fn frame<S: TokenSink>(
         &self,
         document: Document<'_>,

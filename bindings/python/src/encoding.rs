@@ -7,20 +7,13 @@ use tk_encode::pipeline::{Encoding as PipelineEncoding, PipelineToken};
 
 use crate::type_hints::U32Array;
 
-/// How an [`Encoding`] gets at its ids.
-///
-/// `InBatch` is the batch case: every encoding in a batch shares one `Arc` over one contiguous id
-/// buffer and remembers which document it is. The batch paths build exactly that buffer, so a
-/// batch of 20k documents costs one allocation to hand back rather than one per document -- the
-/// copy used to happen here, with the GIL held, after the threads had already finished.
+/// How an [`Encoding`] reaches its ids: a shared batch buffer, or its own.
 enum Repr {
     InBatch {
         batch: Arc<PipelineEncoding>,
         document: usize,
     },
-    /// An encoding that did not come from a batch buffer: unpickling, mostly. Carries the
-    /// buffers outright, because a padded encoding's mask is not the all-ones default and there
-    /// is no batch left to read it back from.
+    /// Not from a batch buffer (unpickling): carries its own, a padded mask is not all ones.
     Owned {
         ids: Vec<u32>,
         type_ids: Vec<u32>,
@@ -52,12 +45,7 @@ impl Encoding {
         }
     }
 
-    /// A per-token `u8` buffer of the batch, narrowed to this document.
-    ///
-    /// `None` when the encoding carries no such buffer, which is the common case: a single
-    /// sequence template has no type ids, and an unpadded encoding has no mask. Building the
-    /// all-zero or all-one default eagerly cost a full-length allocation per document for
-    /// something most callers never read, so it is left to the getter.
+    /// A per-token `u8` buffer of the batch narrowed to this document, `None` when absent.
     fn row_bytes(&self, pick: fn(&PipelineEncoding) -> Option<&[u8]>) -> Option<&[u8]> {
         let Repr::InBatch { batch, document } = &self.repr else {
             return None;
@@ -174,9 +162,7 @@ impl Encoding {
 
 /// A read-only numpy array over `data`, with `encoding` as the array's base.
 fn view<'py>(encoding: &Bound<'py, Encoding>, data: &[u32]) -> U32Array<'py> {
-    // SAFETY: `Encoding` is frozen and never mutates its ids, and when they are a document of a batch
-    // it holds the `Arc` keeping that buffer alive, so `data` stays alive for as long as
-    // `encoding` does. Numpy keeps `encoding` alive through the array's base.
+    // SAFETY: `Encoding` is frozen and holds the `Arc`, so `data` outlives every array.
     let array = unsafe {
         PyArray1::borrow_from_array(&ArrayView1::from(data), encoding.clone().into_any())
     };

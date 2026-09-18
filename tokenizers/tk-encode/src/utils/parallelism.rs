@@ -75,33 +75,10 @@ fn lock() -> MaybeLockGuard {
     }
 }
 
-/// Ask the scheduler to keep this thread on a fast core.
+/// Bias this thread to a performance core: macOS cannot pin, so QoS is the only lever.
 ///
-/// An encode is latency-sensitive throughput work, but a thread spawned with the default class
-/// looks like anything else, and on a machine with both fast and efficient cores the scheduler is
-/// free to park it on a slow one -- where it becomes the straggler the whole batch waits for.
-///
-/// macOS has no thread pinning at all (`THREAD_AFFINITY_POLICY` is advisory and ignored on Apple
-/// silicon), so the quality-of-service class is the only lever: `USER_INITIATED` is the "someone
-/// is waiting for this" tier, which biases placement to the performance cores.
-///
-/// Measured with Instruments CPU Counters on an M3 Max (10 performance + 4 efficiency cores),
-/// 10 workers on a 200k-document batch, counting samples whose thread was actually running:
-/// `USER_INITIATED` leaves 18.5% of them on efficiency cores, `USER_INTERACTIVE` 30.2%. The top
-/// tier is for UI responsiveness and is not a request for a fast core, so it is the wrong one.
-///
-/// That 18.5% is also most of what stops the batch scaling linearly: an efficiency core runs
-/// this work at a fraction of the speed, so the documents that land there are what everything
-/// else waits for. There is no way to do better from userspace on this platform.
-///
-/// Measured on an M3 Max (10 performance + 4 efficiency cores) with Instruments CPU Counters,
-/// 10 workers on a 200k-document batch: the default class left 30% of running samples on
-/// efficiency cores,  18.5%.  is *worse* again at 30.2% -- the
-/// top tier is for UI work and is not a request for a fast core.
-///
-/// TODO: on Linux, pin each worker to its own core with `sched_setaffinity` instead -- that is a
-/// real placement guarantee rather than a hint, and it also stops the scheduler migrating a
-/// worker away from the caches it just warmed.
+/// `USER_INITIATED` measured 18.5% of running samples on efficiency cores, the default and
+/// `USER_INTERACTIVE` both 30%. TODO: on Linux pin with `sched_setaffinity`, a guarantee.
 fn prefer_fast_cores() {
     #[cfg(target_vendor = "apple")]
     // SAFETY: `pthread_set_qos_class_self_np` only sets a scheduling hint on the calling thread.
@@ -122,13 +99,7 @@ pub fn pool() -> Option<Arc<rayon::ThreadPool>> {
     }
 
     let num_threads = num_threads();
-    // A pool is built even for one thread, deliberately.
-    //
-    // Declining to used to mean `encode_flat` bailed and the batch fell back to the caller's
-    // serial loop -- one `Encoding` with its own allocation per document, a different algorithm
-    // from the two-thread one. That cost ~1.6x at one thread and made the one-thread point of
-    // every scaling curve incomparable with the rest of it. A one-thread pool costs one thread
-    // and rayon's dispatch; the flat assembly it unlocks is worth far more than both.
+    // A pool even for one thread: the flat assembly beats the caller's serial loop.
     let slot = {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads)
