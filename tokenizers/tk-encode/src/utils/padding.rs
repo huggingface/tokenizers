@@ -46,27 +46,121 @@ pub enum PaddingStrategy {
     Fixed(usize),
 }
 
+/// The width documents pad to: the strategy's target, rounded up to `pad_to_multiple_of`.
+pub(crate) fn pad_length(longest: usize, params: &PaddingParams) -> usize {
+    let mut length = match params.strategy {
+        PaddingStrategy::Fixed(size) => size,
+        PaddingStrategy::BatchLongest => longest,
+    };
+    if let Some(multiple) = params.pad_to_multiple_of
+        && multiple > 0
+        && length % multiple > 0
+    {
+        length += multiple - length % multiple;
+    }
+    length
+}
+
 pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Result<()> {
-    if encodings.is_empty() {
+    let Some(longest) = encodings.iter().map(Encoding::len).max() else {
+        return Ok(());
+    };
+    let length = pad_length(longest, params);
+    encodings
+        .iter_mut()
+        .for_each(|encoding| pad_one(encoding, length, params));
+    Ok(())
+}
+
+/// Pad a flat batch so every document occupies the same width; it never truncates.
+pub fn pad_flat(batch: &mut Encoding, params: &PaddingParams) -> Result<()> {
+    let documents = batch.n_documents();
+    let Some(longest) = (0..documents).map(|i| batch.document_len(i)).max() else {
+        return Ok(());
+    };
+    let stride = pad_length(longest, params).max(longest);
+    if (0..documents).all(|i| batch.document_len(i) == stride) {
         return Ok(());
     }
 
-    let mut pad_length = match params.strategy {
-        PaddingStrategy::Fixed(size) => size,
-        PaddingStrategy::BatchLongest => encodings.iter().map(Encoding::len).max().unwrap(),
+    let mut ids = vec![PipelineToken::from(params.pad_id); documents * stride];
+    let mut mask = vec![0u8; documents * stride];
+    // Only worth a buffer when there is something other than zeros to say.
+    let mut type_ids = (batch.type_ids.is_some() || params.pad_type_id != 0)
+        .then(|| vec![params.pad_type_id as u8; documents * stride]);
+
+    // Every document fills its own slot, so this wants the same threads as the encode.
+    let fill = |i: usize,
+                id_slot: &mut [PipelineToken],
+                mask_slot: &mut [u8],
+                type_slot: Option<&mut [u8]>| {
+        let src = batch
+            .document_range(i)
+            .expect("[BUG] document out of range");
+        // Left padding puts the document at the end of its slot, right padding at the start.
+        let at = match params.direction {
+            PaddingDirection::Left => stride - src.len(),
+            PaddingDirection::Right => 0,
+        };
+        let to = at..at + src.len();
+        id_slot[to.clone()].copy_from_slice(&batch.ids[src.clone()]);
+        mask_slot[to.clone()].fill(1);
+        if let Some(slot) = type_slot {
+            match &batch.type_ids {
+                Some(source) => slot[to].copy_from_slice(&source[src]),
+                None => slot[to].fill(0),
+            }
+        }
     };
 
-    if let Some(multiple) = params.pad_to_multiple_of
-        && multiple > 0
-        && pad_length % multiple > 0
+    #[cfg(feature = "parallelism")]
+    let filled = match crate::pipeline::PARALLEL_LAYOUT_MIN_TOKENS
+        .le(&(documents * stride))
+        .then(crate::parallelism::pool)
+        .flatten()
     {
-        pad_length += multiple - pad_length % multiple;
+        Some(pool) => {
+            use rayon::prelude::*;
+            let types = type_ids.as_deref_mut();
+            pool.install(|| match types {
+                Some(types) => ids
+                    .par_chunks_mut(stride)
+                    .zip(mask.par_chunks_mut(stride))
+                    .zip(types.par_chunks_mut(stride))
+                    .enumerate()
+                    .for_each(|(i, ((id_slot, mask_slot), type_slot))| {
+                        fill(i, id_slot, mask_slot, Some(type_slot));
+                    }),
+                None => ids
+                    .par_chunks_mut(stride)
+                    .zip(mask.par_chunks_mut(stride))
+                    .enumerate()
+                    .for_each(|(i, (id_slot, mask_slot))| fill(i, id_slot, mask_slot, None)),
+            });
+            true
+        }
+        None => false,
+    };
+    #[cfg(not(feature = "parallelism"))]
+    let filled = false;
+
+    if !filled {
+        let mut types = type_ids.as_deref_mut();
+        for (i, (id_slot, mask_slot)) in ids
+            .chunks_mut(stride)
+            .zip(mask.chunks_mut(stride))
+            .enumerate()
+        {
+            let type_slot = types.as_mut().map(|t| &mut t[i * stride..(i + 1) * stride]);
+            fill(i, id_slot, mask_slot, type_slot);
+        }
     }
 
-    encodings
-        .iter_mut()
-        .for_each(|encoding| pad_one(encoding, pad_length, params));
-
+    batch.ids = ids;
+    batch.attention_mask = Some(mask);
+    batch.type_ids = type_ids;
+    batch.offsets = Some((0..=documents).map(|i| (i * stride) as u32).collect());
+    batch.lengths = None;
     Ok(())
 }
 
@@ -105,6 +199,8 @@ fn pad_one(encoding: &mut Encoding, target_length: usize, params: &PaddingParams
         ids,
         type_ids: Some(type_ids),
         attention_mask: Some(attention_mask),
+        offsets: None,
+        lengths: None,
     };
 }
 
@@ -121,6 +217,8 @@ mod tests {
             ids: make_tokens(ids),
             type_ids: None,
             attention_mask: None,
+            offsets: None,
+            lengths: None,
         }
     }
 
@@ -207,6 +305,8 @@ mod tests {
             ids: make_tokens(0..3),
             type_ids: Some(vec![1, 1, 1]),
             attention_mask: None,
+            offsets: None,
+            lengths: None,
         }];
         let params = PaddingParams {
             strategy: PaddingStrategy::Fixed(5),
@@ -226,6 +326,8 @@ mod tests {
             ids: make_tokens(0..3),
             type_ids: Some(vec![1, 1, 1]),
             attention_mask: None,
+            offsets: None,
+            lengths: None,
         }];
         let params = PaddingParams {
             strategy: PaddingStrategy::Fixed(5),

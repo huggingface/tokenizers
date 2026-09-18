@@ -11,6 +11,68 @@ from numpy.typing import NDArray
 __version__: Final[str]
 
 @final
+class Batch:
+    """
+    A batch of encodings, sharing one contiguous id buffer.
+
+    Encoding a batch produces one buffer and the offsets saying where each document sits in it.
+    Whether the batch was padded only changes how it is worth reading back: a padded batch has one
+    row width, so it reads as a `(rows, stride)` array with no copy at all, while an unpadded one
+    is ragged and has to be read row by row. Either way the encode did the same work, and indexing
+    a row is a slice.
+    """
+    def __eq__(self, other: object, /) -> bool:
+        """
+        A batch equals any sequence holding the same encodings, so it compares against a list.
+        """
+    def __getitem__(self, index: int, /) -> Encoding:
+        """
+        The encoding of document `i`, a view over the batch's buffer.
+        """
+    def __len__(self, /) -> int:
+        """
+        The number of documents in the batch.
+        """
+    def __reduce__(self, /) -> tuple[Any, tuple[list[Encoding]]]:
+        """
+        Pickles as a plain list: the shared buffer cannot cross to another process, its rows can.
+        """
+    def __repr__(self, /) -> str: ...
+    @property
+    def attention_mask_array(self, /) -> NDArray[uint32]:
+        """
+        The attention mask of every document as one read-only `(rows, stride)` `uint32` array.
+
+        Unlike the ids this is widened from the batch's `u8` mask, so it does allocate. An
+        unpadded batch has no mask and reads as all ones.
+        """
+    @property
+    def ids(self, /) -> list:
+        """
+        The ids of every document, as a list of lists.
+        """
+    @property
+    def ids_array(self, /) -> NDArray[uint32]:
+        """
+        Every document's ids as one read-only `(rows, stride)` `uint32` numpy array.
+
+        A view over the batch's own buffer, not a copy: the batch built it at this exact shape.
+        Raises if the batch is not rectangular.
+        """
+    @property
+    def offsets(self, /) -> NDArray[uint32]:
+        """
+        Where each document starts in the flat buffer, `len(batch) + 1` entries.
+        """
+    @property
+    def stride(self, /) -> int | None:
+        """
+        The row width when every document has the same one, else `None`.
+
+        A padded batch is rectangular and can be read as a 2D array; an unpadded one is not.
+        """
+
+@final
 class Encoding:
     """
     Text encoded to token ids by a tokenizer.
@@ -41,7 +103,7 @@ class Encoding:
     def attention_mask_array(self, /) -> NDArray[uint32]:
         """
         Attention mask when the encoding is padded: 1 for token ids, 0 for padding tokens.
-        A read-only `uint32` numpy array, a view over the encoding, not a copy.
+        A read-only `uint32` numpy array.
         """
     @property
     def ids(self, /) -> list[int]:
@@ -63,7 +125,6 @@ class Encoding:
     def type_ids_array(self, /) -> NDArray[uint32]:
         """
         The type id of each token, as a read-only `uint32` numpy array.
-        A view over the encoding, not a copy.
         """
 
 @final
@@ -184,7 +245,7 @@ class Tokenizer:
         """
     def encode_batch(
         self, /, texts: Sequence[str], *, add_special_tokens: bool = True, padding: Padding | None = ...
-    ) -> list[Encoding]:
+    ) -> Batch:
         """
         Encodes a batch of text.
         The encodings come back in input order.
@@ -199,7 +260,7 @@ class Tokenizer:
                 When omitted, defaults to the padding options configured on the tokenizer.
 
         Returns:
-            List[Encoding]
+            Batch
         """
     @staticmethod
     def from_file(path: str | PathLike[str]) -> Tokenizer:

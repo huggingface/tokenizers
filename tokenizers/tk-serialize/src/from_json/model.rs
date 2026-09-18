@@ -1,6 +1,6 @@
 use super::unsupported;
 use crate::json::Json;
-use tk_encode::models::bpe::{BpeConfig, Merges, Vocab};
+use tk_encode::models::bpe::{BpeConfig, DEFAULT_CACHE_CAPACITY, Merges, Vocab};
 use tk_encode::tokenizer::Result;
 
 pub(super) fn read_bpe(cfg: &Json<'_>) -> Result<(Vocab, Merges, BpeConfig)> {
@@ -55,6 +55,16 @@ pub(super) fn read_bpe(cfg: &Json<'_>) -> Result<(Vocab, Merges, BpeConfig)> {
             .field("ignore_merges")
             .and_then(Json::as_bool)
             .unwrap_or_default(),
+        // Read, not defaulted. Every other option here is "left at its default unless the
+        // config names it", and this one was the exception: it was silently dropped, so a
+        // `tokenizer.json` asking for a different cache size -- or for no cache at all,
+        // `cache_capacity: 0` -- got `DEFAULT_CACHE_CAPACITY` regardless. `BpeConfig` has
+        // carried the field all along and `to_config` reports it, so the reader was the only
+        // half of the round trip that ignored it.
+        cache_capacity: cfg
+            .field("cache_capacity")
+            .and_then(Json::as_usize)
+            .unwrap_or(DEFAULT_CACHE_CAPACITY),
         byte_level,
         ..BpeConfig::default()
     };

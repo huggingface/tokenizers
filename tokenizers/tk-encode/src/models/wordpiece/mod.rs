@@ -1,7 +1,7 @@
 //! [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 //! model.
 
-use crate::pipeline::{self, PipelineToken};
+use crate::pipeline::{self, PipelineToken, TokenSink};
 use crate::tokenizer::{Result, Token};
 use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::utils::word_cache::{Lookup, WordCache};
@@ -281,11 +281,11 @@ impl PipelineWordPiece {
     /// longest entry the rest of it starts with once the continuing-subword prefix
     /// is put in front, and so on. A piece with no entry at all anywhere in the
     /// word makes the whole word one unk token.
-    fn tokenize_word(
+    fn tokenize_word<S: TokenSink>(
         &self,
         sequence: &str,
         candidate: &mut String,
-        output: &mut Vec<PipelineToken>,
+        output: &mut S,
     ) -> Result<()> {
         let checkpoint = output.len();
 
@@ -369,11 +369,11 @@ impl pipeline::Model for PipelineWordPiece {
 
     /// A hit skips `tokenize_word`: one trie search per piece of the word,
     /// each over a fresh copy of what is left to match.
-    fn tokenize_pipeline(
+    fn tokenize_pipeline<S: TokenSink>(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<pipeline::PipelineToken>,
+        output: &mut S,
     ) -> Result<()> {
         if sequence.is_empty() {
             return Ok(());
@@ -394,7 +394,10 @@ impl pipeline::Model for PipelineWordPiece {
         let start = output.len();
         self.tokenize_word(sequence, candidate_str, output)?;
 
-        word_cache.insert(placement, output[start..].iter().map(|token| token.id()));
+        word_cache.insert(
+            placement,
+            output.written()[start..].iter().map(|token| token.id()),
+        );
         Ok(())
     }
 }

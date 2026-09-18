@@ -32,6 +32,37 @@ fn config<'a>(overrides: &'a [(&'a str, &'a str)]) -> String {
     )
 }
 
+/// `cache_capacity` is read, not defaulted.
+///
+/// It used to be dropped: `read_bpe` left the field at `BpeConfig::default()`, so a config
+/// asking for a different cache -- or for none at all, `cache_capacity: 0` -- silently got
+/// `DEFAULT_CACHE_CAPACITY` anyway. The field was never the writer's either, so the only way
+/// to notice was to measure it, and a benchmark engine built on exactly this field
+/// (tokbench's `pipeline-no-cache`) had been reporting a cached engine as cache-free.
+#[test]
+fn cache_capacity_is_read_from_the_model() {
+    use tk_encode::models::bpe::DEFAULT_CACHE_CAPACITY;
+
+    let capacity = |model: &str| -> usize {
+        let doc = Json::parse(model).expect("the test model is valid json");
+        let (_, _, options) = super::model::read_bpe(&doc).expect("the test model is a valid BPE");
+        options.cache_capacity
+    };
+    let with = |value: &str| -> String {
+        TINY_BPE.replace(
+            r#""type": "BPE""#,
+            &format!(r#""type": "BPE", "cache_capacity": {value}"#),
+        )
+    };
+
+    // Named, and honoured. Zero is the interesting one: that is how a config turns the
+    // cache off, and `BpeConfig` maps it to no `WordCache` at all.
+    assert_eq!(capacity(&with("0")), 0);
+    assert_eq!(capacity(&with("1024")), 1024);
+    // Absent, so the default -- the same rule as every other option the reader reads.
+    assert_eq!(capacity(TINY_BPE), DEFAULT_CACHE_CAPACITY);
+}
+
 /// The message from a config the reader must refuse. Not `unwrap_err`: `PipelineTokenizer` has no
 /// `Debug`, which is what that would need on the `Ok` side.
 fn read_err(text: &str) -> String {

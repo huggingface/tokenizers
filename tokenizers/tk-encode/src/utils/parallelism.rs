@@ -75,7 +75,19 @@ fn lock() -> MaybeLockGuard {
     }
 }
 
-pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
+/// Bias this thread to a performance core: macOS cannot pin, so QoS is the only lever.
+///
+/// `USER_INITIATED` measured 18.5% of running samples on efficiency cores, the default and
+/// `USER_INTERACTIVE` both 30%. TODO: on Linux pin with `sched_setaffinity`, a guarantee.
+fn prefer_fast_cores() {
+    #[cfg(target_vendor = "apple")]
+    // SAFETY: `pthread_set_qos_class_self_np` only sets a scheduling hint on the calling thread.
+    unsafe {
+        libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INITIATED, 0);
+    }
+}
+
+pub fn pool() -> Option<Arc<rayon::ThreadPool>> {
     register_fork_handler();
 
     let generation = POOL_GEN.load(Ordering::Acquire);
@@ -87,13 +99,20 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     }
 
     let num_threads = num_threads();
-    // We don't create a thread pool when thread == 1
-    let slot = if num_threads == 1 {
-        None
-    } else {
+    // A pool even for one thread: the flat assembly beats the caller's serial loop.
+    let slot = {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads)
             .thread_name(|i| format!("tk-encode-{i}"))
+            .spawn_handler(|thread| {
+                std::thread::Builder::new()
+                    .name(thread.name().unwrap_or("tk-encode").to_owned())
+                    .spawn(move || {
+                        prefer_fast_cores();
+                        thread.run();
+                    })
+                    .map(|_| ())
+            })
             .build()
             .ok()?;
         let slot = Slot {

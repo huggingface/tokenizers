@@ -1,11 +1,13 @@
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyDict;
 use tk_encode::PaddingParams;
 use tk_encode::pipeline::{EncodeOptions, Override, PipelineTokenizer as Pipeline};
 
+use crate::batch::Batch;
 use crate::encoding::Encoding;
 use crate::error::{convert_err, err, poison_err};
 use crate::padding::{Padding, PaddingArg};
@@ -179,10 +181,10 @@ impl Tokenizer {
     ) -> PyResult<Encoding> {
         let options = self.make_options(add_special_tokens, padding)?;
         // py.detach releases the GIL while encode runs on Rust side
-        let encodings = py
+        let mut encodings = py
             .detach(|| self.pipeline.encode(text, &options).wait())
             .map_err(err)?;
-        Ok(Encoding::from(&encodings[0]))
+        Ok(Encoding::document(Arc::new(encodings.swap_remove(0)), 0))
     }
 
     /// Encodes a batch of text.
@@ -198,21 +200,26 @@ impl Tokenizer {
     ///         When omitted, defaults to the padding options configured on the tokenizer.
     ///
     /// Returns:
-    ///     List[Encoding]
+    ///     Batch
     #[pyo3(signature = (texts, *, add_special_tokens=true, padding=PaddingArg::InheritConfig))]
     fn encode_batch(
         &self,
         py: Python<'_>,
-        texts: Vec<String>,
+        texts: Vec<PyBackedStr>,
         add_special_tokens: bool,
         padding: PaddingArg,
-    ) -> PyResult<Vec<Encoding>> {
+    ) -> PyResult<Batch> {
         let options = self.make_options(add_special_tokens, padding)?;
-        // py.detach releases the GIL while encode runs on Rust side
-        let encodings = py
-            .detach(|| self.pipeline.encode(texts, &options).wait())
+
+        // The flat path is the default: it borrows the documents, gives each worker one arena and
+        // keeps no per-document buffer, so the batch comes back as one allocation instead of one
+        // per document. `PyBackedStr` is what lets the input be borrowed at all -- it keeps the
+        // Python `str` alive and reads without the GIL, so the borrow survives `py.detach`.
+        let refs: Vec<&str> = texts.iter().map(|s| &**s).collect();
+        let batch = py
+            .detach(|| self.pipeline.encode_batch_flat(&refs, &options))
             .map_err(err)?;
-        Ok(encodings.iter().map(Encoding::from).collect())
+        Ok(Batch::new(batch))
     }
 
     /// Decodes token ids back into text

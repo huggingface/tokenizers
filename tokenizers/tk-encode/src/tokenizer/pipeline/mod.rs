@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
-use std::iter::Enumerate;
 use std::sync::Arc;
-use std::vec::IntoIter;
 
 #[cfg(feature = "unigram")]
 use crate::models::unigram::{Unigram, UnigramScratch};
@@ -12,15 +10,13 @@ use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
 use crate::{
     DecoderRuntime, PaddingParams,
     models::bpe::{BpeScratch, PipelineBPE},
-    pad_encodings,
-    pipeline::scratch_pool::{EncodeScratch, ScratchPool},
+    pipeline::scratch_pool::{EncodeScratch, ScratchGuard, ScratchPool},
     tokenizer::Decoder as _,
+    utils::padding::pad_flat,
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
 };
 #[cfg(feature = "parallelism")]
 pub use parallel::PARALLEL_MIN_BYTES;
-#[cfg(feature = "parallelism")]
-use parallel::StreamingIter;
 
 use super::Result;
 
@@ -37,6 +33,7 @@ pub use encode_options::{EncodeOptions, Override};
 mod normalizer;
 mod post_processor;
 mod pre_tokenizer;
+mod token_sink;
 
 pub use normalizer::{Normalizer, NormalizerChain, PipelineNormalizer, normalize_all};
 pub use post_processor::{PipelinePostProcessor, Template};
@@ -44,6 +41,10 @@ pub use pre_tokenizer::{
     PipelinePreTokenizer, PreTokenizer, PreTokenizerScratch, SplitPolicy, split, split_delimiter,
     split_matches,
 };
+pub use token_sink::{TokenSink, TokenSlot};
+
+/// Below this many tokens, laying a batch out across threads costs more than doing it here.
+pub(crate) const PARALLEL_LAYOUT_MIN_TOKENS: usize = 64 * 1024;
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
@@ -58,6 +59,28 @@ impl PipelineToken {
     /// The vocabulary id this token stands for.
     pub const fn id(self) -> u32 {
         self.0
+    }
+
+    /// `n` zeroed tokens for free: `vec![0u32; n]` is `alloc_zeroed`, the newtype is not.
+    pub fn zeroed(n: usize) -> Vec<Self> {
+        let zeroed: Vec<u32> = vec![0; n];
+        let mut zeroed = std::mem::ManuallyDrop::new(zeroed);
+        // SAFETY: `PipelineToken` is `#[repr(transparent)]` over `u32`, so the two have the same
+        // size, alignment and validity, and the allocation transfers unchanged.
+        unsafe {
+            Vec::from_raw_parts(
+                zeroed.as_mut_ptr().cast::<Self>(),
+                zeroed.len(),
+                zeroed.capacity(),
+            )
+        }
+    }
+
+    /// The ids of a whole slice, without copying it.
+    pub const fn ids_of(tokens: &[Self]) -> &[u32] {
+        // SAFETY: `PipelineToken` is `#[repr(transparent)]` over `u32` (see the attribute above),
+        // so a `[PipelineToken]` and a `[u32]` of the same length have identical layout.
+        unsafe { std::slice::from_raw_parts(tokens.as_ptr().cast::<u32>(), tokens.len()) }
     }
 }
 
@@ -285,6 +308,19 @@ pub enum Input {
     Pair(String, String),
 }
 
+/// One document to encode: a sequence, and for a pair the second one. Borrowed.
+#[derive(Clone, Copy)]
+pub struct Document<'a> {
+    pub text: &'a str,
+    pub pair: Option<&'a str>,
+}
+
+impl<'a> From<&'a str> for Document<'a> {
+    fn from(text: &'a str) -> Self {
+        Self { text, pair: None }
+    }
+}
+
 #[derive(Clone)]
 pub enum Inputs {
     Single(Input),
@@ -299,8 +335,18 @@ impl Inputs {
         }
     }
 
-    fn len(&self) -> usize {
-        self.as_slice().len()
+    /// The batch as borrowed documents, which is what the encode path takes.
+    fn as_documents(&self) -> Vec<Document<'_>> {
+        self.as_slice()
+            .iter()
+            .map(|input| match input {
+                Input::Single(text) => Document { text, pair: None },
+                Input::Pair(text, pair) => Document {
+                    text,
+                    pair: Some(pair),
+                },
+            })
+            .collect()
     }
 }
 
@@ -337,8 +383,29 @@ impl From<Vec<String>> for Inputs {
     }
 }
 
+/// Above this many inputs, the copy below is worth handing to the pool.
+#[cfg(feature = "parallelism")]
+const PARALLEL_CONVERT_MIN: usize = 1024;
+
 impl From<&[&str]> for Inputs {
     fn from(b: &[&str]) -> Self {
+        // `Input` owns its text, so a borrowed batch is copied before anything else can start --
+        // and it was copied on the calling thread, ahead of every worker. On a 20k-line batch that
+        // measured 19% of the whole encode, which by itself capped the speedup however many
+        // threads were free. The copies are independent, so the pool can do them.
+        #[cfg(feature = "parallelism")]
+        if b.len() >= PARALLEL_CONVERT_MIN
+            && let Some(pool) = crate::utils::parallelism::pool()
+        {
+            use rayon::prelude::*;
+            return pool.install(|| {
+                Self::Batch(
+                    b.par_iter()
+                        .map(|s| Input::Single((*s).to_owned()))
+                        .collect(),
+                )
+            });
+        }
         Self::Batch(b.iter().map(|s| Input::Single((*s).to_owned())).collect())
     }
 }
@@ -383,60 +450,15 @@ impl From<&[(&str, &str)]> for Inputs {
     }
 }
 
-enum HandleState {
-    Blocking(Enumerate<IntoIter<Result<Encoding>>>),
-    #[cfg(feature = "parallelism")]
-    Streaming(StreamingIter),
-}
-
+/// What [`PipelineTokenizer::encode`] hands back, waited on with [`Self::wait`].
 pub struct EncodeHandle {
-    state: HandleState,
-    padding: Option<PaddingParams>,
+    encodings: Result<Vec<Encoding>>,
 }
 
 impl EncodeHandle {
-    /// Fully computed results, for the serial case
-    fn blocking(results: Vec<Result<Encoding>>, padding: Option<PaddingParams>) -> Self {
-        Self {
-            state: HandleState::Blocking(results.into_iter().enumerate()),
-            padding,
-        }
-    }
-
-    #[cfg(feature = "parallelism")]
-    fn streaming(it: StreamingIter, padding: Option<PaddingParams>) -> Self {
-        Self {
-            state: HandleState::Streaming(it),
-            padding,
-        }
-    }
-
-    fn len(&self) -> usize {
-        match &self.state {
-            HandleState::Blocking(it) => it.len(),
-            #[cfg(feature = "parallelism")]
-            HandleState::Streaming(it) => it.len(),
-        }
-    }
-}
-
-impl EncodeHandle {
-    /// Wait for all scheduled encoding to finish
-    ///
-    /// Returns in input order
-    pub fn wait(mut self) -> Result<Vec<Encoding>> {
-        let padding = self.padding.take();
-
-        // XXX: `Vec::new` does not allocate anything when capacity == 0, so creating empty
-        // Encodings should not allocate anything either
-        let mut out = vec![Encoding::empty(); self.len()];
-        for (seq, res) in self {
-            out[seq] = res?;
-        }
-        if let Some(params) = padding {
-            pad_encodings(&mut out, &params)?;
-        }
-        Ok(out)
+    /// Wait for the encode to finish. Returns one [`Encoding`] per document, in input order.
+    pub fn wait(self) -> Result<Vec<Encoding>> {
+        self.encodings
     }
 }
 
@@ -447,28 +469,55 @@ pub struct Encoding {
     pub(crate) type_ids: Option<Vec<u8>>,
     /// `None` if the encoding is not padded (mask is all ones)
     pub(crate) attention_mask: Option<Vec<u8>>,
+    /// Document starts when this holds a whole batch, CSR-style, `n_documents() + 1` entries: document `i` is
+    /// `ids[offsets[i]..offsets[i + 1]]`. `None` for a single document, which is all of `ids`.
+    ///
+    /// One type rather than two, because a batch differs from a document only in knowing where
+    /// the documents begin. [`PipelineTokenizer::encode`] hands back a `Vec` per document, which
+    /// is nothing for a handful of long ones and the dominant cost for thousands of short ones:
+    /// 20k chat lines cost 20k allocations plus the matching frees, on a different thread than
+    /// allocated them. With offsets a whole batch costs a fixed handful, and it is the shape a
+    /// serving stack wants anyway, having to assemble a contiguous batch for the model regardless.
+    pub(crate) offsets: Option<Vec<u32>>,
+    /// Each document's length, set when regions leave gaps and `offsets` holds only starts.
+    pub(crate) lengths: Option<Vec<u32>>,
 }
 
 impl Encoding {
-    fn empty() -> Self {
-        Self {
-            ids: Vec::new(),
-            type_ids: None,
-            attention_mask: None,
-        }
-    }
-
-    fn new(ids: Vec<PipelineToken>, type_ids: Option<Vec<u8>>) -> Self {
-        debug_assert!(type_ids.as_ref().is_none_or(|t| t.len() == ids.len()));
+    /// A batch the workers already laid out at a uniform stride, mask and all.
+    #[cfg(feature = "parallelism")]
+    pub(crate) fn padded(
+        ids: Vec<PipelineToken>,
+        attention_mask: Vec<u8>,
+        offsets: Vec<u32>,
+    ) -> Self {
         Self {
             ids,
-            type_ids,
-            attention_mask: None,
+            type_ids: None,
+            attention_mask: Some(attention_mask),
+            offsets: Some(offsets),
+            lengths: None,
         }
     }
-}
 
-impl Encoding {
+    /// A batch the workers laid out contiguously, document after document.
+    #[cfg(feature = "parallelism")]
+    pub(crate) fn batch(ids: Vec<PipelineToken>, offsets: Vec<u32>) -> Self {
+        debug_assert_eq!(
+            offsets.last().copied(),
+            Some(ids.len() as u32),
+            "[BUG] offsets must end at the id count"
+        );
+        Self {
+            ids,
+            type_ids: None,
+            attention_mask: None,
+            offsets: Some(offsets),
+            lengths: None,
+        }
+    }
+
+    /// Lay per-document encodings out as one batch, for a template the flat path cannot frame.
     pub fn is_empty(&self) -> bool {
         self.ids.len() == 0
     }
@@ -488,33 +537,81 @@ impl Encoding {
     pub fn attention_mask(&self) -> Option<&[u8]> {
         self.attention_mask.as_deref()
     }
-}
-/// Iterator yields results in completion order
-pub struct HandleIter {
-    handle: EncodeHandle,
-}
 
-impl Iterator for HandleIter {
-    type Item = (usize, Result<Encoding>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match &mut self.handle.state {
-            HandleState::Blocking(it) => it.next(),
-            #[cfg(feature = "parallelism")]
-            HandleState::Streaming(it) => it.next(),
+    /// How many documents this holds. `1` unless it came from a batch path.
+    pub fn n_documents(&self) -> usize {
+        match (&self.offsets, &self.lengths) {
+            (_, Some(lengths)) => lengths.len(),
+            (Some(offsets), None) => offsets.len().saturating_sub(1),
+            (None, None) => 1,
         }
     }
-}
 
-impl IntoIterator for EncodeHandle {
-    type Item = (usize, Result<Encoding>);
-    type IntoIter = HandleIter;
+    /// Where document `i` sits in the flat buffers, or `None` when out of range.
+    pub fn document_range(&self, i: usize) -> Option<std::ops::Range<usize>> {
+        match (&self.offsets, &self.lengths) {
+            (Some(starts), Some(lengths)) => {
+                let start = *starts.get(i)? as usize;
+                Some(start..start + *lengths.get(i)? as usize)
+            }
+            (Some(offsets), None) => Some(*offsets.get(i)? as usize..*offsets.get(i + 1)? as usize),
+            (None, _) => (i == 0).then_some(0..self.ids.len()),
+        }
+    }
 
-    fn into_iter(self) -> Self::IntoIter {
-        Self::IntoIter { handle: self }
+    /// Ids of document `i`, or `None` when out of range.
+    pub fn document(&self, i: usize) -> Option<&[PipelineToken]> {
+        self.ids.get(self.document_range(i)?)
+    }
+
+    /// How many ids document `i` holds. `0` when out of range.
+    pub fn document_len(&self, i: usize) -> usize {
+        self.document_range(i).map_or(0, |range| range.len())
+    }
+
+    /// The width every document occupies when uniform, else `None`: what allows a 2D read.
+    pub fn stride(&self) -> Option<usize> {
+        let documents = self.n_documents();
+        let first = self.document_len(0);
+        (documents > 0 && (1..documents).all(|i| self.document_len(i) == first)).then_some(first)
+    }
+
+    /// The batch split into one [`Encoding`] per document, copying each run out of the buffer.
+    pub fn into_documents(self) -> Vec<Self> {
+        let cut = |i: usize| {
+            let range = self.document_range(i).expect("[BUG] document out of range");
+            Self {
+                ids: self.ids[range.clone()].to_vec(),
+                type_ids: self.type_ids.as_ref().map(|t| t[range.clone()].to_vec()),
+                attention_mask: self.attention_mask.as_ref().map(|m| m[range].to_vec()),
+                offsets: None,
+                lengths: None,
+            }
+        };
+        let documents = self.n_documents();
+
+        // One allocation per document, so for a batch of short ones this is the same shape of
+        // work as the encode and wants the same threads.
+        #[cfg(feature = "parallelism")]
+        if self.ids.len() >= PARALLEL_LAYOUT_MIN_TOKENS
+            && let Some(pool) = crate::parallelism::pool()
+        {
+            use rayon::prelude::*;
+            return pool.install(|| (0..documents).into_par_iter().map(cut).collect());
+        }
+        (0..documents).map(cut).collect()
+    }
+
+    /// Each document's ids in turn.
+    pub fn documents(&self) -> impl Iterator<Item = &[PipelineToken]> {
+        (0..self.n_documents()).filter_map(|i| self.document(i))
+    }
+
+    /// Document starts, when this holds a batch. See the field.
+    pub fn offsets(&self) -> Option<&[u32]> {
+        self.offsets.as_deref()
     }
 }
-
 impl PipelineTokenizer {
     pub fn get_model(&self) -> &PipelineModel {
         &self.inner.model
@@ -568,89 +665,167 @@ impl PipelineTokenizer {
     ///
     /// This way, special / added tokens declared on raw or normalized text are both caught.
     /// The remaining text is pre-tokenized and run through the model span by span.
+    /// Returns one [`Encoding`] per document, in input order. A caller that wants the whole batch
+    /// as one buffer should use [`Self::encode_batch_flat`] and skip the split.
     pub fn encode(&self, inputs: impl Into<Inputs>, options: &EncodeOptions) -> EncodeHandle {
-        let inputs = inputs.into();
-        assert!(
-            inputs.len() < usize::MAX,
-            "we use usize::MAX as a sentinel value for the completion queue, we don't support batches larger than that"
-        );
-        #[cfg(not(feature = "parallelism"))]
-        return EncodeHandle::blocking(
-            self.encode_serial(inputs, options),
-            self.resolve_padding(&options.padding).cloned(),
-        );
+        EncodeHandle {
+            encodings: self.encode_now(inputs.into(), options),
+        }
+    }
+
+    fn encode_now(&self, inputs: Inputs, options: &EncodeOptions) -> Result<Vec<Encoding>> {
+        Ok(self
+            .encode_documents(&inputs.as_documents(), options)?
+            .into_documents())
+    }
+
+    /// Every document framed by its template into one buffer, with `offsets` marking each.
+    pub fn encode_documents(
+        &self,
+        documents: &[Document<'_>],
+        options: &EncodeOptions,
+    ) -> Result<Encoding> {
+        let padding = self.resolve_padding(&options.padding);
+        self.lay_out(documents, options.add_special_tokens, padding)
+    }
+
+    /// Encode borrowed texts, the common case of [`Self::encode_documents`].
+    pub fn encode_batch_flat(&self, inputs: &[&str], options: &EncodeOptions) -> Result<Encoding> {
+        let documents: Vec<Document<'_>> = inputs.iter().copied().map(Document::from).collect();
+        self.encode_documents(&documents, options)
+    }
+
+    /// Encode every document into one buffer, padded if asked.
+    fn lay_out(
+        &self,
+        documents: &[Document<'_>],
+        add_special_tokens: bool,
+        padding: Option<&PaddingParams>,
+    ) -> Result<Encoding> {
+        let post_processor = &self.inner.post_processor;
+        let template = |document: &Document<'_>| match document.pair {
+            Some(_) => &post_processor.pair,
+            None => &post_processor.single,
+        };
+        // Type ids need a buffer of their own; most templates tag every token 0 and need none.
+        let tagged = documents
+            .iter()
+            .any(|document| template(document).has_type_ids());
 
         #[cfg(feature = "parallelism")]
-        parallel::encode(self, inputs, options)
-    }
-
-    fn encode_serial(&self, inputs: Inputs, options: &EncodeOptions) -> Vec<Result<Encoding>> {
-        let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
-        match inputs {
-            Inputs::Single(input) => {
-                vec![self.encode_one(input, options, &mut scratch)]
-            }
-            Inputs::Batch(batch) => {
-                let mut output = Vec::with_capacity(batch.len());
-                for input in batch {
-                    output.push(self.encode_one(input, options, &mut scratch));
-                }
-                output
+        if !tagged
+            && documents.len() > 1
+            && documents.iter().all(|document| document.pair.is_none())
+        {
+            let total: usize = documents.iter().map(|d| d.text.len()).sum();
+            if total >= parallel::PARALLEL_MIN_BYTES
+                && let Some(batch) = parallel::encode_flat(
+                    self,
+                    documents,
+                    &post_processor.single,
+                    add_special_tokens,
+                    padding,
+                )?
+            {
+                return Ok(batch);
             }
         }
+
+        // Three bytes a token, not four: English BPE runs about 3.5, so a quarter left this
+        // buffer short and it doubled and copied itself on the way up.
+        let mut ids = Vec::with_capacity(
+            documents
+                .iter()
+                .map(|document| document.text.len())
+                .sum::<usize>()
+                / 3
+                + 16,
+        );
+        let mut type_ids = tagged.then(Vec::new);
+        let mut offsets = Vec::with_capacity(documents.len() + 1);
+        let mut scratch = self.scratch();
+        for document in documents {
+            offsets.push(ids.len() as u32);
+            self.frame(
+                *document,
+                template(document),
+                add_special_tokens,
+                &mut scratch,
+                &mut ids,
+                type_ids.as_mut(),
+            )?;
+        }
+        offsets.push(ids.len() as u32);
+        let mut batch = Encoding {
+            ids,
+            type_ids,
+            attention_mask: None,
+            offsets: Some(offsets),
+            lengths: None,
+        };
+        if let Some(params) = padding {
+            pad_flat(&mut batch, params)?;
+        }
+        Ok(batch)
     }
 
-    fn encode_one(
+    /// One scratch, for a caller that will encode many documents with it.
+    fn scratch(&self) -> ScratchGuard<'_> {
+        self.inner.scratch_pool.get(&self.inner.model)
+    }
+
+    /// One document into `ids`, framed by its template: `prefix A infix? B? suffix`.
+    pub(crate) fn frame<S: TokenSink>(
         &self,
-        input: Input,
-        options: &EncodeOptions,
+        document: Document<'_>,
+        template: &Template,
+        add_special_tokens: bool,
         scratch: &mut EncodeScratch,
-    ) -> Result<Encoding> {
-        match input {
-            Input::Single(seq) => {
-                let toks = self.encode_sequence_with(&seq, 0, scratch)?;
-                Ok(self.post_process(toks, None, options)?)
+        ids: &mut S,
+        mut type_ids: Option<&mut Vec<u8>>,
+    ) -> Result<()> {
+        fn specials<S: TokenSink>(
+            add: bool,
+            run: &[(PipelineToken, u8)],
+            ids: &mut S,
+            type_ids: &mut Option<&mut Vec<u8>>,
+        ) {
+            if !add {
+                return;
             }
-            // Each side of a pair is a sequence of its own, so both start at offset 0.
-            Input::Pair(s1, s2) => {
-                let a = self.encode_sequence_with(&s1, 0, scratch)?;
-                let b = self.encode_sequence_with(&s2, 0, scratch)?;
-                Ok(self.post_process(a, Some(b), options)?)
+            ids.extend(run.iter().map(|&(id, _)| id));
+            if let Some(out) = type_ids {
+                Extend::extend(*out, run.iter().map(|&(_, type_id)| type_id));
             }
         }
+
+        specials(add_special_tokens, &template.prefix, ids, &mut type_ids);
+        let start = ids.len();
+        self.encode_sequence_into(document.text, 0, scratch, ids)?;
+        if let Some(out) = type_ids.as_mut() {
+            out.resize(out.len() + (ids.len() - start), template.a_type_id);
+        }
+
+        if let Some(pair) = document.pair {
+            specials(add_special_tokens, &template.infix, ids, &mut type_ids);
+            let start = ids.len();
+            self.encode_sequence_into(pair, 0, scratch, ids)?;
+            if let Some(out) = type_ids.as_mut() {
+                let type_id = template.b_type_id.unwrap_or(template.a_type_id);
+                out.resize(out.len() + (ids.len() - start), type_id);
+            }
+        }
+
+        specials(add_special_tokens, &template.suffix, ids, &mut type_ids);
+        Ok(())
     }
 
-    /// Pick the template the input shape calls for and let it add the specials.
-    ///
-    /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside.
-    fn post_process(
-        &self,
-        s1: Vec<PipelineToken>,
-        s2: Option<Vec<PipelineToken>>,
-        options: &EncodeOptions,
-    ) -> Result<Encoding> {
-        let pp = &self.inner.post_processor;
-        let template = if s2.is_some() { &pp.pair } else { &pp.single };
-        Ok(if options.add_special_tokens {
-            template.post_process::<true>(s1, s2)
-        } else {
-            template.post_process::<false>(s1, s2)
-        })
-    }
-
-    /// Encode one sequence, appending its ids to `output`.
-    ///
-    /// Takes the buffer rather than returning one, so a caller that already owns somewhere to put
-    /// the ids -- [`Self::encode_into`] -- pays neither an allocation nor a copy for them.
-    ///
-    /// `offset` is where `input` starts in its sequence: the parallel encoder hands over slices of
-    /// a longer sequence, and `PrependBehavior::First` needs to know which slice opens it.
-    fn encode_sequence_into(
+    fn encode_sequence_into<S: TokenSink>(
         &self,
         input: &str,
         offset: usize,
         scratch: &mut EncodeScratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut S,
     ) -> Result<()> {
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
@@ -701,7 +876,7 @@ impl PipelineTokenizer {
                                     pre_tokenizer_scratch,
                                     pre_tokens,
                                 )?;
-                                output.reserve(pre_tokens.len());
+                                let _ = output.room(pre_tokens.len());
                                 #[cfg(debug_assertions)]
                                 for pre_token in pre_tokens.iter() {
                                     let range = pre_token.range();
@@ -732,17 +907,6 @@ impl PipelineTokenizer {
     }
 
     /// [`Self::encode_sequence_into`] into a fresh buffer, for the callers that want one back.
-    fn encode_sequence_with(
-        &self,
-        input: &str,
-        offset: usize,
-        scratch: &mut EncodeScratch,
-    ) -> Result<Vec<PipelineToken>> {
-        let mut output = Vec::with_capacity(input.len() / 4);
-        self.encode_sequence_into(input, offset, scratch, &mut output)?;
-        Ok(output)
-    }
-
     /// Encode `input`, appending its ids to `out`.
     ///
     /// The entry point that allocates nothing per call: no `Encoding`, no `Vec<Encoding>` from the
@@ -758,16 +922,16 @@ impl PipelineTokenizer {
         out: &mut Vec<PipelineToken>,
     ) -> Result<()> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
-        let template = &self.inner.post_processor.single;
-        // Would the template just reproduce the sequence? Nothing to add, nothing to tag.
-        let reproduces_sequence =
-            !template.has_type_ids() && (!options.add_special_tokens || template.n_special() == 0);
-        if reproduces_sequence {
-            return self.encode_sequence_into(input, 0, &mut scratch, out);
-        }
-        let encoding = self.encode_one(Input::Single(input.to_owned()), options, &mut scratch)?;
-        out.extend_from_slice(encoding.ids());
-        Ok(())
+        // A template that adds nothing frames to exactly the sequence, so there is no special
+        // case for it: `frame` appends the same ids either way.
+        self.frame(
+            Document::from(input),
+            &self.inner.post_processor.single,
+            options.add_special_tokens,
+            &mut scratch,
+            out,
+            None,
+        )
     }
 
     /// Decode token ids back to a `String`.
@@ -920,11 +1084,11 @@ impl PipelineDecodeStream<'_> {
 pub trait Model {
     type Scratch: ModelScratch;
 
-    fn tokenize_pipeline(
+    fn tokenize_pipeline<S: TokenSink>(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut S,
     ) -> Result<()>;
 
     /// Every pre-token of a chunk in one call.
@@ -935,12 +1099,12 @@ pub trait Model {
     ///
     /// The default is the loop it replaces, so a model only overrides this if it has per-chunk
     /// work to hoist out of the loop.
-    fn tokenize_spans(
+    fn tokenize_spans<S: TokenSink>(
         &self,
         chunk: &str,
         spans: &[Span],
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut S,
     ) -> Result<()> {
         for span in spans {
             self.tokenize_pipeline(&chunk[span.range()], scratch, output)?;
@@ -987,11 +1151,11 @@ impl PipelineModel {
 impl Model for PipelineModel {
     type Scratch = PipelineModelScratch;
 
-    fn tokenize_pipeline(
+    fn tokenize_pipeline<S: TokenSink>(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut S,
     ) -> Result<()> {
         match (self, scratch) {
             (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
@@ -1013,12 +1177,12 @@ impl Model for PipelineModel {
         }
     }
 
-    fn tokenize_spans(
+    fn tokenize_spans<S: TokenSink>(
         &self,
         chunk: &str,
         spans: &[Span],
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut S,
     ) -> Result<()> {
         match (self, scratch) {
             (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
