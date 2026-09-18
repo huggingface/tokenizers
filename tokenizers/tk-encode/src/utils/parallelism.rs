@@ -75,6 +75,27 @@ fn lock() -> MaybeLockGuard {
     }
 }
 
+/// Ask the scheduler to keep this thread on a fast core.
+///
+/// An encode is latency-sensitive throughput work, but a thread spawned with the default class
+/// looks like anything else, and on a machine with both fast and efficient cores the scheduler is
+/// free to park it on a slow one -- where it becomes the straggler the whole batch waits for.
+///
+/// macOS has no thread pinning at all (`THREAD_AFFINITY_POLICY` is advisory and ignored on Apple
+/// silicon), so the quality-of-service class is the only lever: `USER_INITIATED` is the "someone
+/// is waiting for this" tier, which biases placement to the performance cores.
+///
+/// TODO: on Linux, pin each worker to its own core with `sched_setaffinity` instead -- that is a
+/// real placement guarantee rather than a hint, and it also stops the scheduler migrating a
+/// worker away from the caches it just warmed.
+fn prefer_fast_cores() {
+    #[cfg(target_vendor = "apple")]
+    // SAFETY: `pthread_set_qos_class_self_np` only sets a scheduling hint on the calling thread.
+    unsafe {
+        libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INITIATED, 0);
+    }
+}
+
 pub fn pool() -> Option<Arc<rayon::ThreadPool>> {
     register_fork_handler();
 
@@ -94,6 +115,15 @@ pub fn pool() -> Option<Arc<rayon::ThreadPool>> {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads)
             .thread_name(|i| format!("tk-encode-{i}"))
+            .spawn_handler(|thread| {
+                std::thread::Builder::new()
+                    .name(thread.name().unwrap_or("tk-encode").to_owned())
+                    .spawn(move || {
+                        prefer_fast_cores();
+                        thread.run();
+                    })
+                    .map(|_| ())
+            })
             .build()
             .ok()?;
         let slot = Slot {

@@ -43,6 +43,13 @@ pub use pre_tokenizer::{
 };
 pub use token_sink::{TokenSink, TokenSlot};
 
+/// Below this many tokens, laying a batch out across threads costs more than doing it here.
+///
+/// The pool's fixed cost is tens of microseconds; a batch of 100 short documents is two. Measured
+/// on a 20k-document batch, where the parallel split is twice as fast, and on a 100-document one,
+/// where it was three times slower.
+pub(crate) const PARALLEL_LAYOUT_MIN_TOKENS: usize = 64 * 1024;
+
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
 ///
@@ -56,6 +63,25 @@ impl PipelineToken {
     /// The vocabulary id this token stands for.
     pub const fn id(self) -> u32 {
         self.0
+    }
+
+    /// `n` zeroed tokens, for free.
+    ///
+    /// `vec![0u32; n]` is `alloc_zeroed`, which the allocator answers with pages that are already
+    /// zero -- no write at all. `vec![PipelineToken::from(0); n]` misses that specialisation and
+    /// writes every slot: 0.14 ms per 8M tokens against 0.001 ms.
+    pub fn zeroed(n: usize) -> Vec<Self> {
+        let zeroed: Vec<u32> = vec![0; n];
+        let mut zeroed = std::mem::ManuallyDrop::new(zeroed);
+        // SAFETY: `PipelineToken` is `#[repr(transparent)]` over `u32`, so the two have the same
+        // size, alignment and validity, and the allocation transfers unchanged.
+        unsafe {
+            Vec::from_raw_parts(
+                zeroed.as_mut_ptr().cast::<Self>(),
+                zeroed.len(),
+                zeroed.capacity(),
+            )
+        }
     }
 
     /// The ids of a whole slice, without copying it.
@@ -471,11 +497,30 @@ pub struct Encoding {
     /// allocated them. With offsets a whole batch costs a fixed handful, and it is the shape a
     /// serving stack wants anyway, having to assemble a contiguous batch for the model regardless.
     pub(crate) offsets: Option<Vec<u32>>,
+    /// Set when the documents do not sit back to back -- the workers write into regions sized
+    /// ahead of the encode, so what they do not use is a gap. `offsets` then holds each
+    /// document's start and this its length, instead of CSR's "starts, and the next one's start".
+    pub(crate) lengths: Option<Vec<u32>>,
 }
 
 impl Encoding {
-    /// A batch the caller already laid out contiguously. Only the parallel flat path builds one
-    /// this way; the serial loop fills `offsets` as it goes.
+    /// A batch the workers already laid out at a uniform stride, mask and all.
+    #[cfg(feature = "parallelism")]
+    pub(crate) fn padded(
+        ids: Vec<PipelineToken>,
+        attention_mask: Vec<u8>,
+        offsets: Vec<u32>,
+    ) -> Self {
+        Self {
+            ids,
+            type_ids: None,
+            attention_mask: Some(attention_mask),
+            offsets: Some(offsets),
+            lengths: None,
+        }
+    }
+
+    /// A batch the workers laid out contiguously, document after document.
     #[cfg(feature = "parallelism")]
     pub(crate) fn batch(ids: Vec<PipelineToken>, offsets: Vec<u32>) -> Self {
         debug_assert_eq!(
@@ -488,6 +533,7 @@ impl Encoding {
             type_ids: None,
             attention_mask: None,
             offsets: Some(offsets),
+            lengths: None,
         }
     }
 
@@ -514,9 +560,11 @@ impl Encoding {
 
     /// How many documents this holds. `1` unless it came from a batch path.
     pub fn n_documents(&self) -> usize {
-        self.offsets
-            .as_ref()
-            .map_or(1, |offsets| offsets.len().saturating_sub(1))
+        match (&self.offsets, &self.lengths) {
+            (_, Some(lengths)) => lengths.len(),
+            (Some(offsets), None) => offsets.len().saturating_sub(1),
+            (None, None) => 1,
+        }
     }
 
     /// Where document `i` sits in the flat buffers, or `None` when out of range.
@@ -524,9 +572,13 @@ impl Encoding {
     /// `type_ids` and `attention_mask` run the length of `ids`, so a caller reading one document
     /// out of a batch needs the range, not just the ids.
     pub fn document_range(&self, i: usize) -> Option<std::ops::Range<usize>> {
-        match &self.offsets {
-            None => (i == 0).then_some(0..self.ids.len()),
-            Some(offsets) => Some(*offsets.get(i)? as usize..*offsets.get(i + 1)? as usize),
+        match (&self.offsets, &self.lengths) {
+            (Some(starts), Some(lengths)) => {
+                let start = *starts.get(i)? as usize;
+                Some(start..start + *lengths.get(i)? as usize)
+            }
+            (Some(offsets), None) => Some(*offsets.get(i)? as usize..*offsets.get(i + 1)? as usize),
+            (None, _) => (i == 0).then_some(0..self.ids.len()),
         }
     }
 
@@ -556,17 +608,28 @@ impl Encoding {
     /// Slicing, not re-encoding: each document copies its own run out of the shared buffer. A
     /// caller that can read the batch as it stands should do that instead.
     pub fn into_documents(self) -> Vec<Self> {
-        (0..self.n_documents())
-            .map(|i| {
-                let range = self.document_range(i).expect("[BUG] document out of range");
-                Self {
-                    ids: self.ids[range.clone()].to_vec(),
-                    type_ids: self.type_ids.as_ref().map(|t| t[range.clone()].to_vec()),
-                    attention_mask: self.attention_mask.as_ref().map(|m| m[range].to_vec()),
-                    offsets: None,
-                }
-            })
-            .collect()
+        let cut = |i: usize| {
+            let range = self.document_range(i).expect("[BUG] document out of range");
+            Self {
+                ids: self.ids[range.clone()].to_vec(),
+                type_ids: self.type_ids.as_ref().map(|t| t[range.clone()].to_vec()),
+                attention_mask: self.attention_mask.as_ref().map(|m| m[range].to_vec()),
+                offsets: None,
+                lengths: None,
+            }
+        };
+        let documents = self.n_documents();
+
+        // One allocation per document, so for a batch of short ones this is the same shape of
+        // work as the encode and wants the same threads.
+        #[cfg(feature = "parallelism")]
+        if self.ids.len() >= PARALLEL_LAYOUT_MIN_TOKENS
+            && let Some(pool) = crate::parallelism::pool()
+        {
+            use rayon::prelude::*;
+            return pool.install(|| (0..documents).into_par_iter().map(cut).collect());
+        }
+        (0..documents).map(cut).collect()
     }
 
     /// Each document's ids in turn.
@@ -659,11 +722,8 @@ impl PipelineTokenizer {
         documents: &[Document<'_>],
         options: &EncodeOptions,
     ) -> Result<Encoding> {
-        let mut batch = self.encode_documents_unpadded(documents, options.add_special_tokens)?;
-        if let Some(params) = self.resolve_padding(&options.padding) {
-            pad_flat(&mut batch, params)?;
-        }
-        Ok(batch)
+        let padding = self.resolve_padding(&options.padding);
+        self.lay_out(documents, options.add_special_tokens, padding)
     }
 
     /// Encode borrowed texts, the common case of [`Self::encode_documents`].
@@ -672,10 +732,14 @@ impl PipelineTokenizer {
         self.encode_documents(&documents, options)
     }
 
-    fn encode_documents_unpadded(
+    /// Encode every document into one buffer, padded if asked.
+    ///
+    /// The pool pads as it lays the batch out, so only the serial route needs a pass of its own.
+    fn lay_out(
         &self,
         documents: &[Document<'_>],
         add_special_tokens: bool,
+        padding: Option<&PaddingParams>,
     ) -> Result<Encoding> {
         let post_processor = &self.inner.post_processor;
         let template = |document: &Document<'_>| match document.pair {
@@ -692,11 +756,15 @@ impl PipelineTokenizer {
             && documents.len() > 1
             && documents.iter().all(|document| document.pair.is_none())
         {
-            let texts: Vec<&str> = documents.iter().map(|document| document.text).collect();
-            let total: usize = texts.iter().map(|text| text.len()).sum();
+            let total: usize = documents.iter().map(|d| d.text.len()).sum();
             if total >= parallel::PARALLEL_MIN_BYTES
-                && let Some(batch) =
-                    parallel::encode_flat(self, &texts, &post_processor.single, add_special_tokens)?
+                && let Some(batch) = parallel::encode_flat(
+                    self,
+                    documents,
+                    &post_processor.single,
+                    add_special_tokens,
+                    padding,
+                )?
             {
                 return Ok(batch);
             }
@@ -724,12 +792,17 @@ impl PipelineTokenizer {
             )?;
         }
         offsets.push(ids.len() as u32);
-        Ok(Encoding {
+        let mut batch = Encoding {
             ids,
             type_ids,
             attention_mask: None,
             offsets: Some(offsets),
-        })
+            lengths: None,
+        };
+        if let Some(params) = padding {
+            pad_flat(&mut batch, params)?;
+        }
+        Ok(batch)
     }
 
     /// One scratch, for a caller that will encode many documents with it.
