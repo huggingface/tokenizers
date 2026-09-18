@@ -99,9 +99,6 @@ mutation lands on an orphaned component. This is the same class of race
 as `dict[k] = v` interleaved with `dict.clear()` — coordinate with a Python
 lock if you need the compound to be atomic.
 
-For the full thread-safety analysis, see
-[`docs/free-threading-audit.md`](./docs/free-threading-audit.md).
-
 ### Load a pretrained tokenizer from the Hub
 
 ```python
