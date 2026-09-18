@@ -1,5 +1,5 @@
 [package]
-name = "bitsplit"
+name = "bitcanon"
 version = "0.1.0-dev.0"
 edition = "2024"
 rust-version = "1.89" # AVX-512 VBMI intrinsics (simd_avx_classify) are stable only since 1.89
@@ -10,7 +10,7 @@ authors = [
 ]
 homepage = "https://github.com/huggingface/tokenizers"
 repository = "https://github.com/huggingface/tokenizers"
-documentation = "https://docs.rs/bitsplit/"
+documentation = "https://docs.rs/bitcanon/"
 license = "Apache-2.0"
 keywords = ["tokenizer", "nlp", "pretokenizer", "simd", "unicode"]
 categories = ["text-processing", "parsing"]
@@ -21,13 +21,13 @@ exclude = ["benches/data/"]
 all-features = true
 
 [lib]
-name = "bitsplit"
+name = "bitcanon"
 path = "src/lib.rs"
 
 [dependencies]
 ahash = "0.8"
 # NOTE: classify tables live in src/classify/atom_tables.rs (committed, generated). Regenerate after any atom
-# scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — bitsplit builds clean.
+# scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — bitcanon builds clean.
 
 # onig is C (Oniguruma) and has no wasi libc to build against, so the parity oracle is gated off wasm32.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]

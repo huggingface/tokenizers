@@ -14,10 +14,12 @@ stubs:
 	ruff check --fix --select I python/tokenizers/tokenizers.pyi
 	ruff format python/tokenizers/tokenizers.pyi
 
-test: develop $(TESTS_RESOURCES)
+test-data: $(TESTS_RESOURCES)
+
+test: develop test-data
 	python -m pytest -s -v tests
 
-examples: develop $(TESTS_RESOURCES)
+examples: develop test-data
 	for example in examples/*.py; do python $$example; done
 
 $(DATA_DIR)/%:

@@ -7,7 +7,7 @@ use crate::{AUX_SLASH, Span};
 
 /// Mistral tekken pre-tokenization.
 #[must_use]
-pub fn bitsplit_tekken(
+pub fn bitcanon_tekken(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],

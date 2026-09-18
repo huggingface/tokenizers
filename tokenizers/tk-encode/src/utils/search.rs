@@ -5,7 +5,7 @@
 //! matcher here is what lets those two be genuinely separate types rather than one type wearing
 //! two hats.
 
-use bitsplit::literal::Literal;
+use bitcanon::literal::Literal;
 
 use crate::tokenizer::Result;
 use crate::tokenizer::pattern::Pattern;

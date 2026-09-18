@@ -137,7 +137,7 @@ pub fn classify(text: &[u8], tags: &mut [u8]) {
     // check guards every arch path below.
     assert!(
         tags.len() >= text.len(),
-        "bitsplit::classify: `tags` shorter than `text`"
+        "bitcanon::classify: `tags` shorter than `text`"
     );
     #[cfg(target_arch = "aarch64")]
     // SAFETY: `tags.len() >= text.len()` (asserted above); NEON vld1q/vst1q are alignment-free.

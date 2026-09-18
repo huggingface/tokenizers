@@ -1,14 +1,14 @@
 use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::Result;
 
-use bitsplit::classes::class_runs_into;
-use bitsplit::classify::mask;
+use bitcanon::classes::class_runs_into;
+use bitcanon::classify::mask;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct BertPreTokenizer;
 
-// SAFETY: the spans come from an `bitsplit` fsm, which splits only at character boundaries of `text`.
-// See `bitsplit` docs.
+// SAFETY: the spans come from an `bitcanon` fsm, which splits only at character boundaries of `text`.
+// See `bitcanon` docs.
 unsafe impl pipeline::PreTokenizer for BertPreTokenizer {
     #[inline(never)]
     fn pre_tokenize(
@@ -18,7 +18,7 @@ unsafe impl pipeline::PreTokenizer for BertPreTokenizer {
         out: &mut Vec<pipeline::Span>,
     ) -> Result<()> {
         // Bert pre-tokenization = drop whitespace runs, isolate each punctuation char, keep every other
-        // run. One `bitsplit` SIMD classify (bytes → atom tags) + the class-runs FSM, byte-exact with
+        // run. One `bitcanon` SIMD classify (bytes → atom tags) + the class-runs FSM, byte-exact with
         // the legacy `char::is_whitespace` / `is_punc` split above (see the tests).
         scratch.split_on_bits(
             text.as_bytes(),

@@ -67,17 +67,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
-name = "bitflags"
-version = "2.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
-
-[[package]]
-name = "bitsplit"
+name = "bitcanon"
 version = "0.1.0-dev.0"
 dependencies = [
  "ahash",
 ]
+
+[[package]]
+name = "bitflags"
+version = "2.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
 
 [[package]]
 name = "bitvec"
@@ -1181,7 +1181,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 name = "tk-convert"
 version = "0.1.0-dev.0"
 dependencies = [
- "bitsplit",
+ "bitcanon",
  "serde_json",
  "thiserror",
 ]
@@ -1191,7 +1191,7 @@ name = "tk-encode"
 version = "0.1.0-dev.0"
 dependencies = [
  "ahash",
- "bitsplit",
+ "bitcanon",
  "dary_heap",
  "itertools 0.15.0",
  "libc",
@@ -1217,7 +1217,7 @@ name = "tk-serialize"
 version = "0.1.0-dev.0"
 dependencies = [
  "base64 0.22.1",
- "bitsplit",
+ "bitcanon",
  "hifijson",
  "tk-encode",
 ]
