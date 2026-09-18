@@ -27,7 +27,7 @@ use self::padding::write_padding;
 use self::post_processors::write_post_processor;
 use self::pre_tokenizers::write_pre_tokenizer;
 use self::truncation::write_truncation;
-use self::writer::Out;
+use self::writer::{Out, escape_into};
 use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::tokenizer::Result;
 
@@ -42,6 +42,13 @@ pub fn post_processor_to_json(
     let mut out = Out::new();
     write_post_processor(&mut out, post_processor)?;
     Ok(out.finish())
+}
+
+/// Write one string as the JSON literal `to_json` writes, quotes and escapes included.
+pub fn str_to_json(value: &str) -> String {
+    let mut out = String::new();
+    escape_into(&mut out, value);
+    out
 }
 
 /// Write a `tokenizer.json` as a string.

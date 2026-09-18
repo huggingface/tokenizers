@@ -1,5 +1,5 @@
 //! The parsed tree and its accessors. `hifijson` does the parsing; the float arithmetic that
-//! reproduces `serde_json`'s rounding lives in [`crate::vendored`].
+//! reproduces `serde_json`'s rounding lives in `vendored.rs`.
 
 use std::borrow::Cow;
 use std::fmt;
@@ -71,6 +71,10 @@ impl<'a> Json<'a> {
         self.get("type")?.as_str()
     }
 
+    pub fn is_null(&self) -> bool {
+        matches!(self.0, Raw::Null)
+    }
+
     pub fn as_str(&self) -> Option<&str> {
         match &self.0 {
             Raw::String(s) => Some(&**s),
@@ -81,6 +85,14 @@ impl<'a> Json<'a> {
     pub fn as_bool(&self) -> Option<bool> {
         match &self.0 {
             Raw::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+
+    /// A number's text as written in the file, so `1.0` and `1` stay distinct.
+    pub fn number_literal(&self) -> Option<&'a str> {
+        match &self.0 {
+            Raw::Number((digits, _)) => Some(digits),
             _ => None,
         }
     }

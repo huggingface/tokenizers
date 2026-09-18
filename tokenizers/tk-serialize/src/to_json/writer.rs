@@ -189,7 +189,7 @@ impl<const N: usize> ArrayStr<N> {
 
 /// Control characters below `0x20` without a short escape become `\u00XX`; `hifijson` rejects raw
 /// ones. Nothing above `0x7F` is escaped -- JSON strings are UTF-8 already.
-fn escape_into(out: &mut String, value: &str) {
+pub(super) fn escape_into(out: &mut String, value: &str) {
     out.push('"');
     for c in value.chars() {
         match c {

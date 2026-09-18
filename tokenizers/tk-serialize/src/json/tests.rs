@@ -248,3 +248,18 @@ fn reads_a_tokenizer_json_shaped_document() {
     // A `dropout: null` field reads as absent, which is how the BC default works.
     assert!(model.field("dropout").is_none());
 }
+
+#[test]
+fn is_null_holds_for_null_alone() {
+    assert!(p("null").is_null());
+    assert!(!p("false").is_null());
+    assert!(!p("0").is_null());
+    assert!(!p("{}").is_null());
+}
+
+#[test]
+fn number_literal_is_the_text_as_written() {
+    assert_eq!(p("1.0").number_literal(), Some("1.0"));
+    assert_eq!(p("-1.5e2").number_literal(), Some("-1.5e2"));
+    assert_eq!(p("\"1\"").number_literal(), None);
+}

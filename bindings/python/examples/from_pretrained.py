@@ -16,6 +16,8 @@ repo_id = sys.argv[1] if len(sys.argv) > 1 else "openai-community/gpt2"
 revision = sys.argv[2] if len(sys.argv) > 2 else "main"
 
 tokenizer = Tokenizer.from_pretrained(repo_id, revision=revision)
+print(tokenizer)
+
 
 encoding = tokenizer.encode("Hello there, how are you?")
 print(f"{repo_id}@{revision}")

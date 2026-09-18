@@ -361,8 +361,7 @@ impl Tokenizer {
 
     fn __repr__(&self) -> PyResult<String> {
         let file = tk_serialize::to_json(&self.pipeline).map_err(err)?;
-        let file: serde_json::Map<String, serde_json::Value> =
-            serde_json::from_str(&file).map_err(err)?;
+        let file = tk_serialize::json::Json::parse(&file).map_err(err)?;
         let padding = self
             .padding()?
             .map_or_else(|| "None".to_owned(), |padding| padding.__repr__());
