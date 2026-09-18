@@ -1224,7 +1224,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers-python"
-version = "0.24.0"
+version = "1.0.0rc0"
 dependencies = [
  "numpy",
  "pyo3",

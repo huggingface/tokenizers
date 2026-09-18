@@ -1,12 +1,11 @@
 [package]
 name = "tk-serialize"
-version = "1.0.0-rc.0"
+version = "0.1.0-rc.0"
 edition = "2024"
 authors = [
-  "Anthony MOI <m.anthony.moi@gmail.com>",
-  "Nicolas Patry <patry.nicolas@protonmail.com>",
-  "Arthur Zucker <arthur@huggingface.co",
-  "Luc Georges <luc@huggingface.co",
+  "Arthur Zucker <arthur@huggingface.co>",
+  "Luc Georges <luc@huggingface.co>",
+  "Simon Brandeis <simon@huggingface.co>",
 ]
 homepage = "https://github.com/huggingface/tokenizers"
 repository = "https://github.com/huggingface/tokenizers"

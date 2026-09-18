@@ -1,11 +1,11 @@
 [package]
 name = "tk-convert"
-version = "1.0.0-rc.0"
+version = "0.1.0-rc.0"
 edition = "2024"
 authors = [
-  "Arthur Zucker <arthur@huggingface.co",
-  "Luc Georges <luc@huggingface.co",
-  "Simon Brandeis <simon@huggingface.co",
+  "Arthur Zucker <arthur@huggingface.co>",
+  "Luc Georges <luc@huggingface.co>",
+  "Simon Brandeis <simon@huggingface.co>",
 ]
 homepage = "https://github.com/huggingface/tokenizers"
 repository = "https://github.com/huggingface/tokenizers"
@@ -34,7 +34,7 @@ thiserror = "2"
 bitsplit = { path = "../bitsplit" }
 
 # Latest released tokenizers, the independent id/decode oracle `tests/oracle.rs` compares against.
-tokenizers-release = { package = "tokenizers", version = "=0.23.1", optional = true }
+tokenizers-release = { package = "tokenizers", version = "=0.23.2", optional = true }
 
 [features]
 default = []

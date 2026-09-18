@@ -5,11 +5,11 @@ exclude = ["tk-train"]
 
 [package]
 authors = [
-  "Arthur Zucker <arthur@huggingface.co",
+  "Arthur Zucker <arthur@huggingface.co>",
   "Nicolas Patry <patry.nicolas@protonmail.com>",
   "Anthony MOI <m.anthony.moi@gmail.com>",
-  "Luc Georges <luc@huggingface.co",
-  "Simon Brandeis <simon@huggingface.co",
+  "Luc Georges <luc@huggingface.co>",
+  "Simon Brandeis <simon@huggingface.co>",
 ]
 edition = "2024"
 name = "tokenizers"
@@ -33,12 +33,7 @@ description = """
 Fastest implementation of the most used tokenizers in AI. """
 autotests = false
 autobenches = false
-exclude = [
-  "rust-toolchain",
-  "target/*",
-  "Cargo.lock",
-  "data/*",
-]
+exclude = ["rust-toolchain", "target/*", "Cargo.lock", "data/*"]
 
 [package.metadata.docs.rs]
 all-features = true
