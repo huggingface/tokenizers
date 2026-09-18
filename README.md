@@ -150,6 +150,20 @@ unpredictable branch disappears.
 
 Ships byte-exact grammars for gpt2 / ByteLevel, cl100k, o200k, tekken, deepseek and kimi-k2.
 
+**Why it is custom, and not a regex engine you could swap in.** The grammars never look at raw
+bytes. They run on the tag stream `classify` emits — one `Atom` byte per codepoint, whose *low*
+nibble is one of 16 coarse classes (`Letter`, `NumWord`, `Newline`, `Space`, `Mark`, `Punct`,
+`Apostrophe`, …) and whose *high* nibble carries a refinement. That split is the whole trick: o200k
+needs letter case, so `Letter` refines into `UpperLetter` / `LowerLetter`, while gpt2 — which does
+not care — masks the refinement off for free (`& 0x0F` before a 16-entry SIMD LUT). One classifier
+feeds every grammar, and a grammar pays only for the distinctions it actually asked for. A stock
+regex engine has no such shared vocabulary to compile against.
+
+**Zero Unicode dependencies at runtime.** Those tables are committed source, baked offline by
+`bitmap_gen` (below) from `unicode-properties`. `bitsplit`'s entire runtime dependency list is
+`ahash` — no `unicode-*` crate, no build script, so nothing that ships carries a Unicode table
+crate or rebuilds one.
+
 **Why separate:** it is a regex compiler, not a tokenizer — an independent artifact with its own
 test surface, where every vectorised kernel is validated byte-for-byte against one scalar oracle.
 Keeping it out of `tk-encode` is what makes "SIMD is pure speed, never correctness" checkable
@@ -191,10 +205,15 @@ They have opposite constraints, so they get opposite dependency budgets.
 <summary><b><code>bitmap_gen</code></b> — dev-only table generator</summary>
 
 `cargo run -p bitmap_gen` regenerates `bitsplit`'s committed classify tables from
-`unicode-properties`.
+`unicode-properties`, emitting one `Atom` tag per codepoint.
 
-**Why separate:** the Unicode tables are baked and committed, so the generator is never linked into
-anything that ships. Not published.
+**Why separate — this is what buys the zero Unicode dependency.** `unicode-properties` is a
+dependency of *this* crate and of nothing else: the tables it produces are checked into
+`bitsplit/src/classify/atom_tables.rs` as ordinary source, so the Unicode data is resolved once, at
+development time, by a crate that is never linked into anything that ships and is never published.
+No build script either — `bitsplit` compiles with no code generation step, and a release binary
+contains the tags without containing a Unicode crate to derive them. The release workflow re-runs
+the generator and fails if the committed table differs, so "baked" cannot silently mean "stale".
 </details>
 
 <details>
