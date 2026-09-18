@@ -11,12 +11,9 @@
     <a href="https://github.com/huggingface/tokenizers/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue&cachedrop"></a>
 </p>
 
-The fastest tokenizer library on the world's text, and the only fast one that runs **every** model
-— BPE, Unigram, WordPiece and WordLevel, from one `tokenizer.json`. Tokenization should be light
-and should scale with your workflow: your GPUs should never sit idle waiting on the CPU.
+The fastest tokenizer library on all language, all models, all hardwares.
 
-**v1 is in release candidate.** `1.0.0-rc.0` is on crates.io and PyPI, and the write-up with the
-full measurement set is here: **[tokenizers v1](https://huggingface-tokenizers-v1.static.hf.space/index.html)**.
+**v1' release candidate.** `1.0.0-rc.0` is on crates.io and PyPI, and the associated blog post can be found here: **[tokenizers v1](https://huggingface-tokenizers-v1.static.hf.space/index.html)**.
 
 <p align="center">
   <a href="https://huggingface-tokenizers-v1.static.hf.space/index.html">
@@ -27,19 +24,13 @@ full measurement set is here: **[tokenizers v1](https://huggingface-tokenizers-v
 
 # To come for v1
 
-The rc ships the fast path: load a `tokenizer.json`, encode, decode, batch. What is **not** back
-yet is the part of the old API that let you *assemble* a tokenizer from its components. Today the
-Python package exports exactly three classes — `Tokenizer`, `Encoding`, `Padding`. Restoring the
-component surface on the new pipeline is the remaining v1 work.
+As we work toward v1, we are gonna bring back the entire python API that allows `transformers`' style of interacting with a tokenizer object:
 
-### The target API
+## The target python API
 
 ```python
 from tokenizers import Tokenizer, decoders, models, normalizers, pre_tokenizers, processors
-
 tokenizer = Tokenizer(models.BPE())
-
-# every stage is an assignable attribute, as in 0.x
 tokenizer.normalizer = normalizers.Sequence([normalizers.NFD(), normalizers.Lowercase()])
 tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
 tokenizer.model = models.BPE.from_file("vocab.json", "merges.txt")
@@ -48,12 +39,10 @@ tokenizer.post_processor = processors.TemplateProcessing(
     special_tokens=[("[CLS]", 1), ("[SEP]", 2)],
 )
 tokenizer.decoder = decoders.ByteLevel()
-
-# and reading one back
-tokenizer.pre_tokenizer            # -> ByteLevel(add_prefix_space=False)
+tokenizer.pre_tokenizer
 ```
 
-Training comes back with it:
+## Training 
 
 ```python
 from tokenizers.trainers import BpeTrainer
@@ -63,7 +52,7 @@ tokenizer.train(files=["wiki.train.raw", "wiki.valid.raw"], trainer=trainer)
 tokenizer.save("tokenizer.json")
 ```
 
-### What the rc actually gives you today
+## What the rc actually gives you today
 
 ```python
 from tokenizers import Tokenizer
@@ -80,8 +69,14 @@ tokenizer.padding = None                             # get/set padding
 
 ### Remaining before 1.0.0
 
-- 🚧 clean up legacy code
-- 🚧 reduce redundant CI benchmarks by comparing against `main` only
+- Improve `bitsplit`
+- Bring training back
+- Apply performance improvement to trainer
+- Bring back offset output
+- cpp / java / go bindings
+- GPU encode / decode
+- Unroll more regex
+- `bitnorm`: more performance from optimized normalization
 
 ### After 1.0.0
 
@@ -89,89 +84,19 @@ tokenizer.padding = None                             # get/set padding
   device: upload the vocabulary once, compute output positions in parallel, gather the bytes on the
   GPU. An optional component aimed at large batches, subject to prototyping and measurement.
 
-Already landed for the rc: the workspace split, `bitsplit` (bitstream pre-tokenization replacing
-the regex and then the FSMs, [#2201](https://github.com/huggingface/tokenizers/pull/2201)
-[#2317](https://github.com/huggingface/tokenizers/pull/2317)), the `WordCache`
-([#2262](https://github.com/huggingface/tokenizers/pull/2262)), `FlatCache` / MPHF `RankStore` /
-incremental merging / `BucketVocabStore`
-([#2190](https://github.com/huggingface/tokenizers/pull/2190)
-[#2188](https://github.com/huggingface/tokenizers/pull/2188)), scratch-buffer model state
-([#2175](https://github.com/huggingface/tokenizers/pull/2175)
-[#2183](https://github.com/huggingface/tokenizers/pull/2183)), `STAGE_POST` post-processing
-([#2182](https://github.com/huggingface/tokenizers/pull/2182)), batched model calls
-([#2304](https://github.com/huggingface/tokenizers/pull/2304)) and the rewritten decoder.
-
 ## Performance
 
-Single thread, the closest competitor is [gigatoken](https://github.com/marcelroed/gigatoken), and
-we are narrowly ahead of it. At 8 threads it is ahead of us.
-
-| single thread | median MB/s | × 0.23.1 |
-|---|---:|---:|
-| **tokenizers v1** | **131.2** | **15.1×** |
-| gigatoken | 128.7 | 14.8× |
-| fastokens | 60.6 | 7.0× |
-| wordchipper | 50.7 | 5.8× |
-| tiktoken | 28.8 | 3.3× |
-| kitoken | 26.8 | 3.1× |
-| tokie | 25.9 | 3.0× |
-| tokenizers 0.23.1 | 8.7 | 1.0× |
-
-Threading is the other story. The curve, 1 → 2 → 4 → 8 workers, on its own smaller cell set
-(6 models, English and Chinese — so the 1-thread column here is not the table above):
-
-| | 1 | 2 | 4 | 8 | % of linear |
-|---|---:|---:|---:|---:|---:|
-| gigatoken | 168 | 296 | 517 | **918** | 72% |
-| **tokenizers v1** | 147 | 276 | 473 | 836 | 70% |
-| tokie | 52 | 102 | 179 | 327 | 79% |
-| wordchipper | 41 | 78 | 144 | 264 | 67% |
-| tiktoken | 26 | 52 | 96 | 172 | 83% |
-| fastokens | 51 | 82 | 130 | 163 | 39% |
-| kitoken | 23 | 45 | 86 | 161 | 85% |
-| tokenizers 0.23.1 | 8 | 15 | 27 | 46 | 74% |
-
-That is **15.1×** over `tokenizers` 0.23.1 single thread and **18×** at 8 threads.
-
-**Where we lose:** multi-threaded throughput, and scaling efficiency — 70% of linear against
-gigatoken's 72%, and behind `kitoken` (85%), `tiktoken` (83%) and `tokie` (79%), which scale better
-from a much lower base. The single-thread lead is 1.9%, which is a lead and not a rout.
+Single thread, the closest competitor is [gigatoken](https://github.com/marcelroed/gigatoken), kudos to the authors!
+In all fairness, they are still faster when the cache is unbound, but on the same cache size, tokenizers performs better!
+We are gonna work a bit on unbound cache performances to make sure we leverage their ideas. 
 
 ### Against 0.23.1, by model and by language
 
-Every model family gets at least **10.9×**, and gpt2 gets **34.5×**:
-
-| model | × | model | × |
-|---|---:|---|---:|
-| gpt2 | 34.5 | qwen2 | 14.8 |
-| llama-3 | 27.9 | minimax | 14.7 |
-| glm-5.2 | 22.6 | gpt-oss | 12.0 |
-| deepseek-v4 | 15.1 | nemotron-3 | 10.9 |
-
-By corpus, English **29.8×** down to Chinese **6.8×** — Hindi 16.1, Amharic 15.3, Hebrew 14.1,
-Bengali 13.4, Greek 12.6, Arabic 12.2, Tamil 11.2, Georgian 11.2, Korean 10.1, Thai 9.6,
-Japanese 7.6, Russian 7.1.
-
 ### Latency and decode
-
-Short-string latency at 512 bytes, warm, 1000 samples: **2.1–3.6 µs p50** and 3.4–5.7 µs p99
-across the eight model families.
-
-Decoding was rewritten to write bytes straight into a reusable buffer: **306–429 MB/s** against
-0.23.1's 36–57, a **5.9–8.9×** range.
-
-<sub>Apple M4 Max, one complete report, warm, median of 5. <code>1.0.0-rc.0 (tokenizers-rc0 @
-5c3727a9)</code> vs <code>tokenizers 0.23.1</code>. The cross-engine medians are over the cells
-<em>every</em> implementation both ran and id-verified — 85 of 176 for single thread (8 models),
-10 of 16 at 8 threads (6 models, English and Chinese). The 0.23.1 comparisons are over all
-176/176 matched, id-verified model/corpus cells. Full method, per-cell data and the interactive
-charts: <a href="https://huggingface-tokenizers-v1.static.hf.space/index.html">the v1
-write-up</a>.</sub>
 
 ## tokbench
 
-Every number above comes from **[tokbench](https://github.com/huggingface/tokbench)**, a
-standalone cross-engine benchmark we built because there was no honest way to compare these
+Every number above comes from **[tokbench](https://github.com/huggingface/tokbench)**, a standalone cross-engine benchmark we built because there was no honest way to compare these
 libraries.
 
 It exists to remove the two ways tokenizer benchmarks usually mislead:
@@ -184,12 +109,11 @@ It exists to remove the two ways tokenizer benchmarks usually mislead:
   becomes a column: engines that decline non-Latin scripts, or quietly differ on them, show up as
   declined or mismatched cells instead of as speed.
 
-This also means our own losses are on the page — the 8-thread gap above is tokbench's number, not
-a caveat we volunteered. Run it yourself:
+Run it yourself:
 [huggingface/tokbench](https://github.com/huggingface/tokbench).
 
 <a name="footprint"></a>
-## Footprint
+## Rust crate size
 
 ```
 make slim-size      # tk-encode + tk-serialize, minsize profile, stripped
