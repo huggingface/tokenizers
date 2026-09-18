@@ -540,3 +540,8 @@ fn role_to_token_survives_a_round_trip() {
             .is_empty()
     );
 }
+
+#[test]
+fn str_to_json_quotes_and_escapes_like_the_writer() {
+    assert_eq!(str_to_json("a\"b\\c\n"), r#""a\"b\\c\n""#);
+}

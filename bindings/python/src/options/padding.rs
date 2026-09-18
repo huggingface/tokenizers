@@ -162,7 +162,7 @@ impl Padding {
 
     pub(crate) fn __repr__(&self) -> String {
         format!(
-            "Padding(direction={:?}, pad_id={}, pad_type_id={}, pad_token={:?}, length={}, pad_to_multiple_of={})",
+            "Padding(\n    direction={:?},\n    pad_id={},\n    pad_type_id={},\n    pad_token={:?},\n    length={},\n    pad_to_multiple_of={},\n)",
             self.0.direction.as_ref(),
             self.pad_id(),
             self.pad_type_id(),
