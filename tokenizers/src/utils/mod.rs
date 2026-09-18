@@ -51,7 +51,7 @@ macro_rules! impl_enum_from (
 );
 
 /// Implement `serde::{Serialize, Serializer}` with `#[serde(tag = "type")]` attribute for a given struct.
-/// Panic when a json string being deserilized misses field `type`.
+/// Panic when a json string being deserialized misses field `type`.
 ///
 /// # Examples
 ///
