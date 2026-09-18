@@ -13,6 +13,13 @@
 
 The fastest tokenizer library on all language, all models, all hardwares.
 
+# Installation
+
+```bash
+pip install --pre tokenizers
+```
+
+
 # To come for v1
 
 As we work toward v1, we are gonna bring back the entire python API that allows `transformers`' style of interacting with a tokenizer object:
