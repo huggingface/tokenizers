@@ -384,6 +384,14 @@ fn byte_level_ignore_merges_whole_word() {
 }
 
 #[test]
+fn byte_level_id_to_token_spells_the_projected_alphabet() {
+    let pipeline = byte_level_bpe(&[(" he", 300)], &[], true).unwrap();
+    assert_eq!(pipeline.id_to_token(300).as_deref(), Some("Ġhe"));
+    assert_eq!(pipeline.id_to_token(0xC3).as_deref(), Some("Ã"));
+    assert_eq!(pipeline.id_to_token(301), None);
+}
+
+#[test]
 fn byte_level_requires_full_byte_coverage() {
     // An ASCII-only vocab covers no control/high bytes: building the
     // byte-level pipeline must be a build error, not a panic.

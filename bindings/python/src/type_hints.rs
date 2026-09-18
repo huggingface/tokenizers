@@ -9,6 +9,8 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyString};
 use pyo3::{Borrowed, PyTypeInfo, type_hint_identifier, type_hint_subscript, type_hint_union};
 
+use crate::encoding::Encoding;
+
 /// New type to implement PyO3 introspection traits on
 pub struct U32Array<'py>(pub Bound<'py, PyArray1<u32>>);
 
@@ -27,11 +29,13 @@ impl<'py> IntoPyObject<'py> for U32Array<'py> {
     }
 }
 
-/// Inputs for `Tokenizer.decode`, typed `Sequence[int] | NDArray[numpy.integer[Any]]`.
+/// The `ids` argument of `Tokenizer.decode` and `Tokenizer.decode_tokens`, typed
+/// `Encoding | Sequence[int] | NDArray[numpy.integer[Any]]`.
 ///
-/// A `uint32` numpy array is read in place, no copy.
+/// An `Encoding` and a `uint32` numpy array are read in place, no copy.
 /// Any other sequence is copied into a `Vec<u32>` one element at a time.
 pub enum TokenIds<'py> {
+    Encoding(Bound<'py, Encoding>),
     Array(PyReadonlyArray1<'py, u32>),
     Copied(Vec<u32>),
 }
@@ -40,6 +44,7 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
     type Error = PyErr;
 
     const INPUT_TYPE: PyStaticExpr = type_hint_union!(
+        <Bound<'static, Encoding> as FromPyObject<'static, 'static>>::INPUT_TYPE,
         type_hint_subscript!(
             type_hint_identifier!("collections.abc", "Sequence"),
             type_hint_identifier!("builtins", "int")
@@ -54,6 +59,9 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
     );
 
     fn extract(obj: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+        if let Ok(encoding) = obj.extract::<Bound<'py, Encoding>>() {
+            return Ok(Self::Encoding(encoding));
+        }
         if let Ok(array) = obj.extract::<PyReadonlyArray1<u32>>() {
             return Ok(match array.as_slice() {
                 Ok(_) => Self::Array(array),
@@ -67,6 +75,7 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
 impl TokenIds<'_> {
     pub fn as_slice(&self) -> &[u32] {
         match self {
+            Self::Encoding(encoding) => encoding.get().ids(),
             Self::Array(array) => array.as_slice().expect("contiguous, checked in extract"),
             Self::Copied(ids) => ids,
         }

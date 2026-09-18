@@ -185,6 +185,39 @@ impl Tokenizer {
         Ok(Encoding::from(&encodings[0]))
     }
 
+    /// Encodes the given text and returns the string representation of each token.
+    ///
+    /// Shorthand for `decode_tokens(encode(text))`.
+    /// If you also need to access token ids, use `encode(text)`.
+    ///
+    /// Args:
+    ///     text: str
+    ///         The text to tokenize.
+    ///     add_special_tokens: bool
+    ///          Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+    ///     padding: `Padding` or `None`
+    ///         Padding options. Pass `None` to disable padding.
+    ///         When omitted, defaults to the padding options configured on the tokenizer.
+    ///
+    /// Returns:
+    ///     list[str]
+    #[pyo3(signature = (text, *, add_special_tokens=true, padding=PaddingArg::InheritConfig))]
+    fn tokenize(
+        &self,
+        py: Python<'_>,
+        text: String,
+        add_special_tokens: bool,
+        padding: PaddingArg,
+    ) -> PyResult<Vec<String>> {
+        let options = self.make_options(add_special_tokens, padding)?;
+        py.detach(|| -> tk_encode::Result<Vec<String>> {
+            let encodings = self.pipeline.encode(text, &options).wait()?;
+            let ids: Vec<u32> = encodings[0].ids().iter().map(|token| token.id()).collect();
+            Ok(self.pipeline.decode_tokens(&ids, false))
+        })
+        .map_err(err)
+    }
+
     /// Encodes a batch of text.
     /// The encodings come back in input order.
     ///
@@ -219,7 +252,7 @@ impl Tokenizer {
     ///
     /// Args:
     ///     ids:
-    ///         The ids to decode, a numpy array or any sequence of ints.
+    ///         The ids to decode, an `Encoding`, a numpy array or any sequence of ints.
     ///     skip_special_tokens: bool
     ///         Whether special tokens should not be added to the decoded text.
     ///
@@ -236,6 +269,27 @@ impl Tokenizer {
         // py.detach releases the GIL
         py.detach(|| self.pipeline.decode(ids, skip_special_tokens))
             .map_err(err)
+    }
+
+    /// Converts token ids to their string representation. This does NOT apply the decoder.
+    ///
+    /// Args:
+    ///     ids:
+    ///         The ids to convert, an `Encoding`, a numpy array or any sequence of ints.
+    ///     skip_special_tokens: bool
+    ///         Whether to skip special tokens
+    ///
+    /// Returns:
+    ///     list[str]
+    #[pyo3(signature = (ids, skip_special_tokens=false))]
+    fn decode_tokens(
+        &self,
+        py: Python<'_>,
+        ids: TokenIds<'_>,
+        skip_special_tokens: bool,
+    ) -> Vec<String> {
+        let ids = ids.as_slice();
+        py.detach(|| self.pipeline.decode_tokens(ids, skip_special_tokens))
     }
 
     /// Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
