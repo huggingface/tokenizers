@@ -1,19 +1,18 @@
-
 # Note:  Not runnable yet, Python bindings do not expose training.
 """Train a parity-aware BPE tokenizer over several languages at once.
 
- `ParityBpeTrainer` takes one iterator per language and balances merges across them, so a
- low-resource language is not left far worse compressed than a high-resource one. It needs
- a per-language signal to do that, supplied either as a parallel dev set (`dev_iterators=`)
- or as target compression rates (`ratio=`). Both are shown below.
+`ParityBpeTrainer` takes one iterator per language and balances merges across them, so a
+low-resource language is not left far worse compressed than a high-resource one. It needs
+a per-language signal to do that, supplied either as a parallel dev set (`dev_iterators=`)
+or as target compression rates (`ratio=`). Both are shown below.
 
- Per-language corpora are not something you are likely to have on disk, so the data comes
- from the Hub: training text from `wikimedia/wikipedia`, and a parallel dev set from
- `openlanguagedata/flores_plus` (997 sentences per language, aligned across languages).
+Per-language corpora are not something you are likely to have on disk, so the data comes
+from the Hub: training text from `wikimedia/wikipedia`, and a parallel dev set from
+`openlanguagedata/flores_plus` (997 sentences per language, aligned across languages).
 
- FLORES+ is gated: accept the terms at
- https://huggingface.co/datasets/openlanguagedata/flores_plus and run `huggingface-cli login`
- before running the dev-set demo. The ratio demo needs neither.
+FLORES+ is gated: accept the terms at
+https://huggingface.co/datasets/openlanguagedata/flores_plus and run `huggingface-cli login`
+before running the dev-set demo. The ratio demo needs neither.
 """
 
 # import datasets

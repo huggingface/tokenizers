@@ -13,6 +13,7 @@ mod normalizers;
 mod padding;
 mod post_processors;
 mod pre_tokenizers;
+mod truncation;
 mod writer;
 
 #[cfg(all(test, feature = "deserialize"))]
@@ -25,7 +26,8 @@ use self::normalizers::write_normalizer;
 use self::padding::write_padding;
 use self::post_processors::write_post_processor;
 use self::pre_tokenizers::write_pre_tokenizer;
-use self::writer::Out;
+use self::truncation::write_truncation;
+use self::writer::{Out, escape_into};
 use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::tokenizer::Result;
 
@@ -42,6 +44,13 @@ pub fn post_processor_to_json(
     Ok(out.finish())
 }
 
+/// Write one string as the JSON literal `to_json` writes, quotes and escapes included.
+pub fn str_to_json(value: &str) -> String {
+    let mut out = String::new();
+    escape_into(&mut out, value);
+    out
+}
+
 /// Write a `tokenizer.json` as a string.
 pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
     let mut out = Out::new();
@@ -49,8 +58,8 @@ pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
     let normalizers = tokenizer.get_normalizers();
     out.obj_open();
     out.field_str("version", "2.0");
-    // TODO: this is REQUIRED for v1
-    out.field_null("truncation");
+    out.key("truncation");
+    write_truncation(&mut out, tokenizer.get_truncation());
     out.key("padding");
     write_padding(&mut out, tokenizer.get_padding());
     // Which token plays which role, so this file can stand in for a `tokenizer_config.json`.

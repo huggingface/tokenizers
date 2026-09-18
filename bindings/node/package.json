@@ -51,7 +51,7 @@
     "format:toml": "taplo format",
     "format:rs": "cargo fmt",
     "lint": "prettier . --check",
-    "test": "node --test \"lib/**/*.test.ts\" \"examples/**/*.test.ts\"",
+    "test": "node --test \"test/**/*.test.ts\"",
     "version": "napi version"
   },
   "devDependencies": {

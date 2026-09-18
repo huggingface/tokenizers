@@ -19,8 +19,9 @@ LLAMA3 = DATA / "llama-3-tokenizer.json"
 
 
 # Loading a file takes over a second on the debug build `make develop` installs, so the tests share
-# one tokenizer per file. The padding is its only mutable state; each test starts from none.
-@pytest.fixture(scope="session")
+# one tokenizer per file. Padding and truncation are its only mutable state; each test starts
+# from none.
+@pytest.fixture
 def shared_gpt2():
     return Tokenizer.from_file(GPT2)
 
@@ -44,18 +45,21 @@ def shared_llama3():
 def gpt2(shared_gpt2):
     yield shared_gpt2
     shared_gpt2.padding = None
+    shared_gpt2.truncation = None
 
 
 @pytest.fixture
 def bert(shared_bert):
     yield shared_bert
     shared_bert.padding = None
+    shared_bert.truncation = None
 
 
 @pytest.fixture
 def wiki(shared_wiki):
     yield shared_wiki
     shared_wiki.padding = None
+    shared_wiki.truncation = None
 
 
 @pytest.fixture
@@ -76,5 +80,19 @@ def padded_wiki(tmp_path):
         "pad_token": "[PAD]",
     }
     path = tmp_path / "padded.json"
+    path.write_text(json.dumps(declared))
+    return path
+
+
+@pytest.fixture
+def truncated_wiki(tmp_path):
+    declared = json.loads(WIKI.read_text())
+    declared["truncation"] = {
+        "direction": "Right",
+        "max_length": 4,
+        "strategy": "LongestFirst",
+        "stride": 0,
+    }
+    path = tmp_path / "truncated.json"
     path.write_text(json.dumps(declared))
     return path

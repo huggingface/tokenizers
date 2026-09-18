@@ -1,16 +1,21 @@
 use std::convert::Infallible;
 
-use pyo3::inspect::{PyStaticConstant, PyStaticExpr};
 use pyo3::prelude::*;
-use pyo3::types::{PyString, PyType};
-use pyo3::{Borrowed, type_hint_identifier, type_hint_subscript};
+
+use pyo3::types::PyType;
+use pyo3::{
+    Borrowed, Bound, FromPyObject, IntoPyObject, PyAny, PyResult, Python,
+    inspect::{PyStaticConstant, PyStaticExpr},
+    type_hint_identifier, type_hint_subscript,
+    types::PyString,
+};
 use tk_encode::{PaddingDirection, PaddingParams, PaddingStrategy};
 
 use crate::error::err;
 
 #[pyclass(frozen, eq, hash, module = "tokenizers")]
 #[derive(Debug, PartialEq, Hash)]
-/// Padding options
+/// A class exposing padding options to Python consumers
 pub struct Padding(PaddingParams);
 
 impl Padding {
@@ -20,29 +25,6 @@ impl Padding {
 
     pub(crate) fn from(params: PaddingParams) -> Self {
         Self(params)
-    }
-}
-
-/// Sentinel type used to differentiate tok.encode(text, padding=None) from tok.encode(text)
-/// (explicit None = disabled vs omitted = default)
-#[derive(PartialEq, Hash)]
-pub enum PaddingArg {
-    InheritConfig,
-    Off,
-    With(PaddingParams),
-}
-
-impl FromPyObject<'_, '_> for PaddingArg {
-    type Error = PyErr;
-
-    const INPUT_TYPE: PyStaticExpr =
-        <Option<PyRef<'static, Padding>> as FromPyObject<'static, 'static>>::INPUT_TYPE;
-
-    fn extract(obj: Borrowed<'_, '_, PyAny>) -> Result<Self, Self::Error> {
-        Ok(match obj.extract::<Option<PyRef<'_, Padding>>>()? {
-            None => Self::Off,
-            Some(padding) => Self::With(padding.params().clone()),
-        })
     }
 }
 
@@ -180,7 +162,7 @@ impl Padding {
 
     pub(crate) fn __repr__(&self) -> String {
         format!(
-            "Padding(direction={:?}, pad_id={}, pad_type_id={}, pad_token={:?}, length={}, pad_to_multiple_of={})",
+            "Padding(\n    direction={:?},\n    pad_id={},\n    pad_type_id={},\n    pad_token={:?},\n    length={},\n    pad_to_multiple_of={},\n)",
             self.0.direction.as_ref(),
             self.pad_id(),
             self.pad_type_id(),

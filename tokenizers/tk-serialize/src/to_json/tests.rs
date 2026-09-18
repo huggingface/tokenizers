@@ -22,7 +22,8 @@ fn config(slots: &[(&str, &str)]) -> String {
     };
     format!(
         r#"{{"version": "2.0", "added_tokens": {}, "normalizer": {}, "pre_tokenizer": {},
-            "post_processor": {}, "decoder": {}, "model": {}, "padding": {}}}"#,
+            "post_processor": {}, "decoder": {}, "model": {}, "padding": {},
+            "truncation": {}}}"#,
         slot("added_tokens", "[]"),
         slot("normalizer", "null"),
         slot("pre_tokenizer", "null"),
@@ -30,6 +31,7 @@ fn config(slots: &[(&str, &str)]) -> String {
         slot("decoder", "null"),
         slot("model", BPE_MODEL),
         slot("padding", "null"),
+        slot("truncation", "null"),
     )
 }
 
@@ -333,6 +335,18 @@ fn the_canonical_shape_is_tagged_versioned_and_null_where_absent() {
     assert_eq!(field_of(&bare, "padding"), serde_json::Value::Null);
 }
 
+/// The four fields a `truncation` block carries, in the spellings the file uses rather than
+/// `TruncationDirection`'s lowercase `AsRef<str>`. `stride` is here because the pipeline keeps only
+/// the first window and so never acts on it, which is exactly how a hardcoded `0` would go
+/// unnoticed: `{OnlySecond, max_length 384, stride 128}` is the SQuAD recipe 318 Hub configs ship.
+#[test]
+fn a_truncation_block_reads_and_writes_back_unchanged() {
+    let declared = r#"{"direction": "Left", "max_length": 384,
+        "strategy": "OnlySecond", "stride": 128}"#;
+
+    assert_eq!(written("truncation", declared), json(declared));
+}
+
 /// On *bits*, not text: the writer emits the shortest spelling of the double **our parser
 /// produced**, which for `-3.8403830528259277` is not the correctly-rounded reading of those digits.
 #[cfg(feature = "unigram")]
@@ -525,4 +539,9 @@ fn role_to_token_survives_a_round_trip() {
             .get_role_to_token()
             .is_empty()
     );
+}
+
+#[test]
+fn str_to_json_quotes_and_escapes_like_the_writer() {
+    assert_eq!(str_to_json("a\"b\\c\n"), r#""a\"b\\c\n""#);
 }

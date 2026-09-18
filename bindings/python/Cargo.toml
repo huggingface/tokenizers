@@ -43,9 +43,7 @@ tk-serialize = { path = "../../tokenizers/tk-serialize", features = [
   "wordlevel",
   "unicode-scripts",
 ] }
-tk-convert = { path = "../../tokenizers/tk-convert", default-features = false }
-# `Tokenizer.__repr__` renders the `tokenizer.json` the pipeline writes.
-serde_json = "1.0"
+tk-convert   = { path = "../../tokenizers/tk-convert", default-features = false }
 
 [build-dependencies]
 pyo3-build-config = "=0.29"

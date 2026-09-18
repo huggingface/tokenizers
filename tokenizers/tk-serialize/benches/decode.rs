@@ -7,7 +7,8 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use tk_encode::pipeline::{EncodeOptions, PipelineTokenizer};
+use tk_encode::pipeline::EncodeOptions;
+use tk_encode::pipeline::PipelineTokenizer;
 
 const BATCH_SIZE: usize = 1_000;
 // How many tokens to run through streaming decode pipeline
