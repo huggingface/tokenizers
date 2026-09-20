@@ -11,6 +11,7 @@ on:
   push:
     tags:
       - v*
+  workflow_dispatch:
 
 jobs:
   build:
@@ -65,7 +66,7 @@ jobs:
     name: build - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -75,7 +76,7 @@ jobs:
           targets: ${{ matrix.settings.target }}
 
       - name: Setup node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v6
         if: ${{ !matrix.settings.docker }}
         with:
           node-version: lts/*
@@ -133,9 +134,9 @@ jobs:
     needs: build
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Setup node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v6
         with:
           node-version: lts/*
           cache: yarn
@@ -144,12 +145,12 @@ jobs:
         working-directory: ./bindings/node
         run: yarn install --immutable
       - name: Download macOS x86_64 artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: bindings-x86_64-apple-darwin
           path: ./bindings/node/artifacts
       - name: Download macOS aarch64 artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: bindings-aarch64-apple-darwin
           path: ./bindings/node/artifacts
@@ -171,16 +172,15 @@ jobs:
           if-no-files-found: error
 
   publish:
-    # Skip the npm publish step on rc tags — `napi prepublish` would try
-    # to create a GitHub release and call `npm publish` for each
-    # per-platform sub-package, both of which need stable-version /
-    # write-permission setup we only want on real releases. rc tags still
-    # exercise the build + universal-macOS jobs (so the matrix is tested
-    # end-to-end), they just don't push to the registry.
-    if: ${{ !contains(github.ref, 'rc') }}
+    # Tag pushes only: this workflow also runs on workflow_dispatch, and a dispatch would
+    # otherwise push whatever version package.json happens to hold. rc tags DO publish now —
+    # they just don't take the `latest` dist-tag (see --tag in the Publish step below).
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     permissions:
-      # `napi prepublish` creates a GitHub Release; needs contents=write.
-      contents: write
+      # npm provenance signing needs id-token=write; the publish itself
+      # authenticates via NODE_AUTH_TOKEN (NPM_TOKEN secret), set up by
+      # actions/setup-node with registry-url.
+      contents: read
       id-token: write
     name: Publish
     environment: release
@@ -189,9 +189,9 @@ jobs:
       - build
       - universal-macOS
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Setup node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v6
         with:
           node-version: lts/*
           cache: yarn
@@ -201,7 +201,7 @@ jobs:
         working-directory: ./bindings/node
         run: yarn install --immutable
       - name: Download all artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           path: ./bindings/node/artifacts
       - name: Create missing npm/<triple> dirs
@@ -214,12 +214,23 @@ jobs:
         run: npx napi create-npm-dirs
 
       - name: Move artifacts
+        # `napi artifacts` copies every discovered `.node` binary into the
+        # root workspace (in addition to the per-platform npm/<triple>/
+        # directories). Because package.json `files` includes `*.node`,
+        # those root-level binaries are what `npm pack` will include.
         working-directory: ./bindings/node
         run: yarn artifacts
-      - name: List packages
+      - name: Verify package contents
         working-directory: ./bindings/node
-        run: ls -R ./npm
-        shell: bash
+        run: npm pack --dry-run --ignore-scripts
       - name: Publish
         working-directory: ./bindings/node
-        run: npm publish --access public --provenance
+        # npm has no prerelease exclusion the way cargo and PyPI do: an untagged rc becomes
+        # what plain `npm install tokenizers` serves. Keep rc off `latest`.
+        run: |
+          TAG=latest
+          [[ "$GITHUB_REF" == *rc* ]] && TAG=rc
+          npm publish --access public --provenance --ignore-scripts --tag "$TAG"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

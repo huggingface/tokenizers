@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="392" viewBox="0 0 700 392"
+     role="img" aria-labelledby="t d" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title id="t">Single-thread tokenization throughput, median MB/s</title>
+  <desc id="d">tokenizers v1 131.2 MB/s, gigatoken 128.7, fastokens 60.6, wordchipper 50.7, tiktoken 28.8, kitoken 26.8, tokie 25.9, tokenizers 0.23.1 8.7. Apple M4 Max, median over the 85 model-by-corpus cells every engine ran and id-verified.</desc>
+  <!-- Light theme lives in presentation attributes so a renderer with no CSS support
+       still draws the correct chart; the dark theme is a class override below. -->
+  <style>
+    @media (prefers-color-scheme: dark) {
+      .surface { fill: #1a1a19; }
+      .title   { fill: #ffffff; }
+      .sub     { fill: #898781; }
+      .name    { fill: #c3c2b7; }
+      .name-hi { fill: #ffffff; }
+      .val     { fill: #c3c2b7; }
+      .val-hi  { fill: #ffffff; }
+      .mult    { fill: #898781; }
+      .rule    { stroke: #383835; }
+      .b-ours  { fill: #3987e5; }
+      .b-rival { fill: #d95926; }
+      .b       { fill: #6f6d67; }
+    }
+  </style>
+
+  <rect class="surface" width="700" height="392" rx="6" fill="#fcfcfb"/>
+
+  <text class="title" x="24" y="34" fill="#0b0b0b" font-size="17" font-weight="600">Single-thread tokenization throughput</text>
+  <text class="sub" x="24" y="54" fill="#898781" font-size="11.5">median MB/s · Apple M4 Max · the 85 model×corpus cells every engine ran <tspan font-style="italic">and</tspan> id-verified</text>
+
+  <line class="rule" x1="156.5" y1="76" x2="156.5" y2="356" stroke="#c3c2b7" stroke-width="1"/>
+
+  <!-- tokenizers v1 — 131.2 -->
+  <text class="name-hi" x="146" y="99" fill="#0b0b0b" font-size="13" font-weight="600" text-anchor="end">tokenizers v1</text>
+  <path class="b-ours" d="M156 84 H512 a4 4 0 0 1 4 4 V100 a4 4 0 0 1 -4 4 H156 Z" fill="#2a78d6"/>
+  <text class="val-hi" x="526" y="99" fill="#0b0b0b" font-size="13" font-weight="700">131.2</text>
+  <text class="mult" x="574" y="99" fill="#898781" font-size="11.5">15.1× v0.23.1</text>
+
+  <!-- gigatoken — 128.7 -->
+  <text class="name" x="146" y="133" fill="#52514e" font-size="13" text-anchor="end">gigatoken</text>
+  <path class="b-rival" d="M156 118 H505 a4 4 0 0 1 4 4 V134 a4 4 0 0 1 -4 4 H156 Z" fill="#eb6834"/>
+  <text class="val" x="519" y="133" fill="#52514e" font-size="12.5">128.7</text>
+  <text class="mult" x="567" y="133" fill="#898781" font-size="11.5">14.8×</text>
+
+  <!-- fastokens — 60.6 -->
+  <text class="name" x="146" y="167" fill="#52514e" font-size="13" text-anchor="end">fastokens</text>
+  <path class="b" d="M156 152 H318 a4 4 0 0 1 4 4 V168 a4 4 0 0 1 -4 4 H156 Z" fill="#a9a7a0"/>
+  <text class="val" x="332" y="167" fill="#52514e" font-size="12.5">60.6</text>
+
+  <!-- wordchipper — 50.7 -->
+  <text class="name" x="146" y="201" fill="#52514e" font-size="13" text-anchor="end">wordchipper</text>
+  <path class="b" d="M156 186 H291 a4 4 0 0 1 4 4 V202 a4 4 0 0 1 -4 4 H156 Z" fill="#a9a7a0"/>
+  <text class="val" x="305" y="201" fill="#52514e" font-size="12.5">50.7</text>
+
+  <!-- tiktoken — 28.8 -->
+  <text class="name" x="146" y="235" fill="#52514e" font-size="13" text-anchor="end">tiktoken</text>
+  <path class="b" d="M156 220 H231 a4 4 0 0 1 4 4 V236 a4 4 0 0 1 -4 4 H156 Z" fill="#a9a7a0"/>
+  <text class="val" x="245" y="235" fill="#52514e" font-size="12.5">28.8</text>
+
+  <!-- kitoken — 26.8 -->
+  <text class="name" x="146" y="269" fill="#52514e" font-size="13" text-anchor="end">kitoken</text>
+  <path class="b" d="M156 254 H225 a4 4 0 0 1 4 4 V270 a4 4 0 0 1 -4 4 H156 Z" fill="#a9a7a0"/>
+  <text class="val" x="239" y="269" fill="#52514e" font-size="12.5">26.8</text>
+
+  <!-- tokie — 25.9 -->
+  <text class="name" x="146" y="303" fill="#52514e" font-size="13" text-anchor="end">tokie</text>
+  <path class="b" d="M156 288 H223 a4 4 0 0 1 4 4 V304 a4 4 0 0 1 -4 4 H156 Z" fill="#a9a7a0"/>
+  <text class="val" x="237" y="303" fill="#52514e" font-size="12.5">25.9</text>
+
+  <!-- tokenizers 0.23.1 — 8.7 -->
+  <text class="name" x="146" y="337" fill="#52514e" font-size="13" text-anchor="end">tokenizers 0.23.1</text>
+  <path class="b" d="M156 322 H176 a4 4 0 0 1 4 4 V338 a4 4 0 0 1 -4 4 H156 Z" fill="#a9a7a0"/>
+  <text class="val" x="190" y="337" fill="#52514e" font-size="12.5">8.7</text>
+  <text class="mult" x="222" y="337" fill="#898781" font-size="11.5">the version you are probably running today</text>
+
+  <text class="sub" x="24" y="376" fill="#898781" font-size="11.5">Measured by tokbench — one timing loop, one process, one id-verification gate: wrong ids are never ranked.</text>
+</svg>
