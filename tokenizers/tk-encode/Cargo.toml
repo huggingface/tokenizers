@@ -1,6 +1,6 @@
 [package]
 name = "tk-encode"
-version = "0.1.0-dev.0"
+version = "0.1.0-dev.2"
 edition = "2024"
 authors = [
   "Anthony MOI <m.anthony.moi@gmail.com>",
@@ -29,7 +29,7 @@ path = "src/lib.rs"
 
 [dependencies]
 ############ Required dependencies ###############################
-bitcannon = { path = "../bitcannon", version = "0.1.0-dev.0" }
+bitcannon = { path = "../bitcannon", version = "0.1.0-dev.2" }
 rand = "0.10"
 ptr_hash = { version = "2.0.2", default-features = false }
 unicode_categories = "0.1"
