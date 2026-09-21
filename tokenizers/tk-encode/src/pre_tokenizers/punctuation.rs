@@ -1,8 +1,8 @@
 use crate::pipeline::{self, PreTokenizerScratch};
 use crate::tokenizer::{Result, SplitDelimiterBehavior};
 use SplitDelimiterBehavior::{Isolated, Removed};
-use bitcanon::classes::class_runs_into;
-use bitcanon::classify::mask;
+use bitcannon::classes::class_runs_into;
+use bitcannon::classify::mask;
 use unicode_categories::UnicodeCategories;
 
 pub(crate) fn is_punc(x: char) -> bool {
@@ -28,7 +28,7 @@ impl Default for Punctuation {
 }
 
 // SAFETY: both routes cut only at character boundaries of `text`.
-// The class-runs route is an `bitcanon` fsm.
+// The class-runs route is an `bitcannon` fsm.
 // the merge behaviors go through `pipeline::split_delimiter`, which takes its offsets from `str::char_indices`.
 unsafe impl pipeline::PreTokenizer for Punctuation {
     fn pre_tokenize(

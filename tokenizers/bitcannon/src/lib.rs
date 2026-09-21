@@ -1,4 +1,4 @@
-//! `bitcanon` — GPT-family pre-tokenization as a **bitstream program**, replacing the scalar FSMs.
+//! `bitcannon` — GPT-family pre-tokenization as a **bitstream program**, replacing the scalar FSMs.
 //!
 //! Follows *Interleaved Bitstream Execution for Multi-Pattern Regex Matching on GPUs*
 //! (MICRO'25, doi 10.1145/3725843.3756052). The paper's two ideas that carry over to a CPU:
@@ -21,7 +21,7 @@
 //! builder folds those 16 atoms into a grammar-specific **dense 3-bit code** and extracts 3
 //! bit-planes of it; every class stream is then a 2–3 op boolean function of the planes.
 //!
-//! Grammars: [`bitcanon_deepseek`], [`bitcanon_byte_level`] (GPT-2), [`bitcanon_cl100k`]. All three
+//! Grammars: [`bitcannon_deepseek`], [`bitcannon_byte_level`] (GPT-2), [`bitcannon_cl100k`]. All three
 //! byte-exact with the oniguruma oracle over a block-phase sweep — see `tests/parity.rs`.
 
 /// Declares a grammar's block-local class streams, and with them the two carried shifts every
@@ -203,12 +203,12 @@ pub mod models;
 pub mod regexes;
 mod simd;
 
-pub use models::cl100k::{bitcanon_cl100k, bitcanon_qwen};
-pub use models::deepseek::bitcanon_deepseek;
-pub use models::gpt2::bitcanon_byte_level;
-pub use models::kimi::bitcanon_kimi;
-pub use models::o200k::bitcanon_o200k;
-pub use models::tekken::bitcanon_tekken;
+pub use models::cl100k::{bitcannon_cl100k, bitcannon_qwen};
+pub use models::deepseek::bitcannon_deepseek;
+pub use models::gpt2::bitcannon_byte_level;
+pub use models::kimi::bitcannon_kimi;
+pub use models::o200k::bitcannon_o200k;
+pub use models::tekken::bitcannon_tekken;
 
 /// A token span: byte offsets `[start, end)` into the input. `#[repr(C)]` so the output buffer has a
 /// stable `[start, end]` layout — the pipeline reuses it with zero conversion, and it can be
@@ -734,11 +734,11 @@ pub fn build_only(text: &[u8], tags: &[u8]) -> u64 {
     acc
 }
 
-/// Convenience wrapper: classify + deepseek bitcanon over caller-owned scratch.
+/// Convenience wrapper: classify + deepseek bitcannon over caller-owned scratch.
 #[must_use]
 pub fn pre_tokenize(text: &[u8], tags: &mut [u8], starts: &mut [u64], out: &mut [Span]) -> usize {
     classify::classify(text, tags);
-    bitcanon_deepseek(text, tags, starts, out)
+    bitcannon_deepseek(text, tags, starts, out)
 }
 
 #[cfg(test)]

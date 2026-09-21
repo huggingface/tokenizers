@@ -1,11 +1,11 @@
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use std::sync::LazyLock;
 
-// The GPT-2 pre-tokenize regex is the canonical spec in bitcanon (single source of truth); re-export
+// The GPT-2 pre-tokenize regex is the canonical spec in bitcannon (single source of truth); re-export
 // under the historical name so call sites are unchanged. `pub` because the `ByteLevel` pre-tokenizer
 // lowering -- which rewrites a `use_regex` ByteLevel into a `Split` on exactly this pattern -- lives
 // in `tk-convert`.
-pub use bitcanon::regexes::GPT2 as GPT2_REGEX_STR;
+pub use bitcannon::regexes::GPT2 as GPT2_REGEX_STR;
 
 /// Maps each byte to its GPT-2 byte-level unicode character, indexed by the byte value.
 ///

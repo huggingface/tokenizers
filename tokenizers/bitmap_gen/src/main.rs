@@ -1,11 +1,11 @@
-//! Regenerate bitcanon's committed classify tables:
+//! Regenerate bitcannon's committed classify tables:
 //!   cargo run -p bitmap_gen [-- <out_path>]
-//! Default `out_path` = ../bitcanon/src/classify/atom_tables.rs. `generate_atom_tables` self-validates every
+//! Default `out_path` = ../bitcannon/src/classify/atom_tables.rs. `generate_atom_tables` self-validates every
 //! codepoint against the reference `atom()`, so an inconsistent scheme change fails HERE, not at ship.
 fn main() {
     let default = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../bitcanon/src/classify/atom_tables.rs"
+        "/../bitcannon/src/classify/atom_tables.rs"
     );
     let out = std::env::args()
         .nth(1)

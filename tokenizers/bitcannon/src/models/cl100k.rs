@@ -14,7 +14,7 @@ use crate::{
 
 /// cl100k_base / Llama-3 / GLM-4.6 — rule 3 is `\p{N}{1,3}`.
 #[must_use]
-pub fn bitcanon_cl100k(
+pub fn bitcannon_cl100k(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],
@@ -26,7 +26,7 @@ pub fn bitcanon_cl100k(
 
 /// Qwen2 / Qwen3 — cl100k character-for-character except rule 3 is a bare `\p{N}`.
 #[must_use]
-pub fn bitcanon_qwen(
+pub fn bitcannon_qwen(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],

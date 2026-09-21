@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use bitcanon::Span;
+use bitcannon::Span;
 
 use crate::pipeline::{Model, PipelineModel, PipelineModelScratch, PreTokenizerScratch};
 
