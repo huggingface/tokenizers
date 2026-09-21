@@ -20,13 +20,10 @@ documentation = "https://docs.rs/tokenizers/"
 license = "Apache-2.0"
 keywords = [
   "tokenizer",
-  "NLP",
   "huggingface",
   "BPE",
   "WordPiece",
-  "SIMD",
-  "bitstream",
-  "regex",
+  "LLM"
 ]
 readme = "./README.md"
 description = """
