@@ -2,8 +2,7 @@
 
 ## Opening an issue
 
-**An issue without a reproducer will be closed.** "The tokenizer is wrong" or
-"this is slow" is not a bug report. We need:
+**A bug without a reproducer will have a very low chance to be looked out.** "The tokenizer is wrong" or "this is slow" is not a bug report. We need:
 
 - **An actual `tokenizer.json`** — a Hub repo id we can download, or the file
   attached. Not a description of it, not a screenshot, not a snippet of the
@@ -17,6 +16,8 @@
 Short runnable snippet, please. If we cannot paste it into a terminal and see
 your bug, it is not a reproducer.
 
+We don't want 500 lines long AI description of the issues. So as much as possible, please speak with code, minimal and let's make sure we don't waste each other's time!
+
 ## Opening a pull request
 
 **You are responsible for the code you push.** If you cannot explain every line
@@ -24,16 +25,14 @@ of your diff, why it is correct, and what it breaks if it is wrong — do not op
 it as ready for review.
 
 - **No AI slop.** Using a model to help is fine. Opening a PR you have not read,
-  do not understand, and cannot defend is not. Plausible-looking diffs that no
-  human has thought about cost us more time than the bug did, and they get
-  closed without a review.
+  do not understand, and cannot defend is not. 
 - **Keep it a draft** until you are genuinely committed to understanding the
   codebase and proposing a proper fix. A draft is free. A PR marked ready for
-  review is a claim that you have done the work.
+  review is a claim that you have done the work, and we as we strive to review contributions, we'll focus on the ones that are the easiest to review, understand and read. Usually, that's when you put the effort to clean the PR, the description, the comments, etc. 
 - **Fix the cause, not the symptom.** A patch that makes your case pass while
   leaving the underlying bug in place will not be merged.
 - **Tests come with the fix.** A bug fix without a regression test is
-  incomplete.
+  incomplete. But adding a bunch of unitary tests is never gonna be a great solution. 
 - Keep the diff focused. Unrelated reformatting, renames and drive-by
   refactors make a change unreviewable.
 
@@ -42,11 +41,9 @@ it as ready for review.
 Anything claiming to be faster must come with numbers, and the numbers must come
 from [tokbench](https://github.com/huggingface/tokbench). Run it on your own
 machine, before and after, and paste both results into the PR along with your
-CPU model and OS.
+CPU model and OS. This unsures any update to the benchmark engine is shipped to all the engines we compare to.
 
-We will not merge a speedup on the strength of a microbenchmark you wrote for
-your own patch, or on reasoning about why it should be faster. Tokenizer
-performance is dominated by cache behaviour and input script — changes that look
+Tokenizer performance is dominated by cache behaviour and input script — changes that look
 obviously good are routinely neutral or negative once measured across the
 matrix. Byte-exactness of output ids is non-negotiable: a faster tokenizer that
 moves a single id is a broken tokenizer.
