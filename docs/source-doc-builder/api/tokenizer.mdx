@@ -6,13 +6,25 @@
 
 [[autodoc]] tokenizers.Tokenizer
     - all
-    - decoder
-    - model
-    - normalizer
+    - decode
+    - decode_tokens
+    - encode
+    - encode_batch
+    - from_file
+    - from_pretrained
     - padding
-    - post_processor
-    - pre_tokenizer
+    - tokenize
     - truncation
+
+## Padding
+
+[[autodoc]] tokenizers.Padding
+    - all
+
+## Truncation
+
+[[autodoc]] tokenizers.Truncation
+    - all
 </python>
 <rust>
 The Rust API Reference is available directly on the [Docs.rs](https://docs.rs/tokenizers/latest/tokenizers/) website.
