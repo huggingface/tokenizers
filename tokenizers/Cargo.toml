@@ -23,7 +23,6 @@ keywords = [
   "huggingface",
   "BPE",
   "WordPiece",
-  "LLM"
 ]
 readme = "./README.md"
 description = """
