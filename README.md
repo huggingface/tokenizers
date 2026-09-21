@@ -43,7 +43,9 @@ Encoding(ids=[128000, 9906, 11, 379, 65948, 0, 2650, 527, 499, 27623, 223, 949],
 
 # Performances
 
-PLACEHODER
+
+<img width="1238" height="677" alt="image" src="https://github.com/user-attachments/assets/49c672aa-f7c3-4eb5-a89c-99703f8ee38f" />
+For more details, checkout https://huggingface-tokenizers-v1.static.hf.space/index.html.
 
 # Bindings
 
