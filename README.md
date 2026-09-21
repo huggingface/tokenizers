@@ -80,82 +80,54 @@ As we work toward v1, we are gonna bring back the entire python API that allows 
 # Crate details
 
 ## Crate size
-
+If you want the minimal crate size, we recommend you to use this:
 ```
 make slim-size      # tk-encode + tk-serialize, minsize profile, stripped
                     # → 332799 bytes gzipped
 ```
 
-Gzipped is the only honest number: Mach-O segments are 16 KiB-quantised, so the on-disk size of a
-small binary is mostly padding. `make slimest` goes lower still (`minsize` plus a `std` rebuilt
-without unwinding, nightly). The badge at the top is this number, measured on macOS — a stripped
-ELF gzips to something slightly different.
-
 ## Sub-crates
 
 <details>
-<summary><b><code>tk-encode</code></b> — the inference half</summary>
+<summary><b><code>tk-encode</code></b> — the inference engine</summary>
 
-The model engines (BPE, Unigram, WordPiece, WordLevel) and the full pipeline: `Normalizer`,
+The models (BPE, Unigram, WordPiece, WordLevel) and the full pipeline: `Normalizer`,
 `PreTokenizer`, `Model`, `PostProcessor`, `Decoder`.
 
-**Why separate:** inference is the only half that ships to production. Splitting it from training
-means a serving binary never links a trainer, a corpus reader or a progress bar — which is most of
-the 325 KB story.
+**Why separate:** you don't need all features to serve a model in production settings. Splitting it from training
+means a serving binary never links a trainer, a corpus reader, legacy converters, etc.
 </details>
 
 <details>
-<summary><b><code>bitcannon</code></b> — SIMD pre-tokenization</summary>
+<summary><b><code>bitcannon</code></b> — bitstream pre-tokenization</summary>
 
-Unicode atom classification plus pre-tokenization as a **bitstream program** rather than a scalar
-FSM. Follows *Interleaved Bitstream Execution for Multi-Pattern Regex Matching on GPUs*
-(MICRO'25, [10.1145/3725843.3756052](https://doi.org/10.1145/3725843.3756052)): compile the grammar
-into character-class bitstreams (one bit per input byte) plus boolean ops and carry-propagating
-adds, so 64 input bytes are decided per 64-bit register op, branchlessly. The FSM's per-token
-unpredictable branch disappears.
+Unicode tag classification plus pre-tokenization as a **bitstream program**. Follows *Interleaved Bitstream Execution for Multi-Pattern Regex Matching on GPUs*
+(MICRO'25, [10.1145/3725843.3756052](https://doi.org/10.1145/3725843.3756052)) but we added our own algorithm to make sure we don't need a parabix engine. 
+Characters are first classified into "tags", which use a sparse table generated when compiling `bitcannon`. This means there are 0 depencencies to the heavy unicode tables.
 
 Ships byte-exact grammars for gpt2 / ByteLevel, cl100k, o200k, tekken, deepseek and kimi-k2.
+The classes or tags each have a high and low nibble (encoded on a u8), and carry refinement when needed. Using u8 tags allows us to leverage less bitsream, meaning have a simpler / faster pre tokenization.
 
-**Why it is custom, and not a regex engine you could swap in.** The grammars never look at raw
-bytes. They run on the tag stream `classify` emits — one `Atom` byte per codepoint, whose *low*
-nibble is one of 16 coarse classes (`Letter`, `NumWord`, `Newline`, `Space`, `Mark`, `Punct`,
-`Apostrophe`, …) and whose *high* nibble carries a refinement. That split is the whole trick: o200k
-needs letter case, so `Letter` refines into `UpperLetter` / `LowerLetter`, while gpt2 — which does
-not care — masks the refinement off for free (`& 0x0F` before a 16-entry SIMD LUT). One classifier
-feeds every grammar, and a grammar pays only for the distinctions it actually asked for. A stock
-regex engine has no such shared vocabulary to compile against.
-
-**Zero Unicode dependencies at runtime.** Those tables are committed source, baked offline by
-`bitmap_gen` (below) from `unicode-properties`. `bitcannon`'s entire runtime dependency list is
-`ahash` — no `unicode-*` crate, no build script, so nothing that ships carries a Unicode table
-crate or rebuilds one.
-
-**Why separate:** it is a regex compiler, not a tokenizer — an independent artifact with its own
-test surface, where every vectorised kernel is validated byte-for-byte against one scalar oracle.
-Keeping it out of `tk-encode` is what makes "SIMD is pure speed, never correctness" checkable
-rather than aspirational.
+**Why separate:** we just thought it might be useful to some people someday. As far as we know, this implementation is the fastest for every single pretokenizer regex on CPU.
 </details>
 
 <details>
 <summary><b><code>tk-serialize</code></b> — the reader</summary>
 
-`from_json_file` turns a canonical `tokenizer.json` into a `PipelineTokenizer`. **No serde
-anywhere.**
+`from_json_file` turns a canonical `tokenizer.json` into a `PipelineTokenizer`.
 
-**Why separate:** serde's derive chain was a large, unconditional dependency sitting in front of
-the one thing every user does exactly once. Reading a config is not the same job as encoding text,
-and it should not tax it.
+**Why separate:** this just makes it optional for some usecases!
 </details>
 
 <details>
 <summary><b><code>tk-convert</code></b> — the upgrade pass</summary>
 
-`canonicalize_file` rewrites a `tokenizer.json` written by any older version of this library into
+`canonicalize_file` rewrites legacy a `tokenizer.json` written by any older version of this library into
 the canonical form the reader accepts. A pure JSON→JSON rewrite; it depends on nothing but
 `std::path` and `serde_json`.
 
 **Why separate:** every config ever published stays readable without the runtime carrying a decade
-of compatibility branches. `cargo tree -p tk-convert -e normal` is 8 nodes.
+of compatibility branches. But, the legacy code amounted to quite a lot of the final crate size. Disabling it allows on device builds to be smaller.
 </details>
 
 <details>
@@ -170,8 +142,7 @@ They have opposite constraints, so they get opposite dependency budgets.
 <details>
 <summary><b><code>bitmap_gen</code></b> — dev-only table generator</summary>
 
-`cargo run -p bitmap_gen` regenerates `bitcannon`'s committed classify tables from
-`unicode-properties`, emitting one `Atom` tag per codepoint.
+`cargo run -p bitmap_gen` regenerates `bitcannon`'s committed classify tables from `unicode-properties`, emitting one `Atom` tag per codepoint.
 
 **Why separate — this is what buys the zero Unicode dependency.** `unicode-properties` is a
 dependency of *this* crate and of nothing else: the tables it produces are checked into
