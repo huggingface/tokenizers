@@ -20,7 +20,7 @@ jobs:
     # Must match the "Environment" field on each crate's crates.io Trusted Publishing
     # entry (leave that field blank there and any environment is accepted).
     environment:
-      name: crates-io
+      name: release
       url: https://crates.io/crates/tokenizers
     runs-on: ubuntu-latest
     steps:
