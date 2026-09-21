@@ -22,8 +22,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with: { components: rustfmt, clippy }
-      - run: cargo fmt -p bitcannon -p bitmap_gen -- --check
-      - run: cargo clippy -p bitcannon --all-targets -- -D warnings
+      # fmt and clippy are NOT here: rust.yml already runs `cargo fmt --all` and
+      # `cargo clippy --workspace --all-targets --all-features` on every PR.
+      # This is the integration tests -- rust.yml only runs --lib and --doc, so
+      # tests/classes.rs and tests/parity.rs run nowhere else.
       - run: cargo test -p bitcannon          # unit + parity gates (cl100k/deepseek/byte_level vs onig)
       # committed classify tables must match the generator
       - run: cargo run -p bitmap_gen && git diff --exit-code -- bitcannon/src/classify/atom_tables.rs
