@@ -64,15 +64,40 @@ As we work toward v1, we are gonna bring back the entire python API that allows 
 
 ## TODOS:
 
-- Improve `bitcannon`: we want to rewrite it a bit.
+### Python Bindings
+
 - Bring training back: this should be easy, but we want the perfs gains to come as well.
+- Batch encoding API with zero-copy views on encoded ids
+- dlpack API for torch / JAX / numpy interop.
+- Composition: edit components of the pipeline (`tokenizer.normalizer = [...]`).
+- `tokenizer.save` to persist a modified or trained tokenizer on disk.
+- `role_to_token` override.
+- Accept pair input for `encode` / `encode_batch`.
 - Bring back offset output: this should be useful for people training.
-- cpp / java / go bindings: there is a draft for C, we want to work on other bindings as well.
-- Unroll more regex: we need to cover the most used ones, we might have missed one or two.
+- Windowing / stride in encode.
+- `decode_stream`.
+
+### Rust core
+
 - `bitnorm`: more performance from optimized normalization, as this will bring breaking changes we want to make sure it gets to v1.
+- Windowing (truncation with stride).
+- Improve training performance
+- Improve decode performance
+- Offset tracking
+- Padding: 2D flat buffer
+- Wordcache: `shrn` vs emulated movemask
+- Fix ModernBERT / OLMo load failure ("64-bit hash collision").
+- Unroll more regex: we need to cover the most used ones, we might have missed one or two.
+
+### Other
+
+- C & C++ bindings for loading, encode and decode APIs
+
 
 ## After 1.0.0
 
+- Improve / rewrite the `bitcannon` crate
+- Java, Go, Swift... bindings, supported by the C bindings
 - `tk-devices` — exploratory GPU encoding and batch decoding that keeps text and ids on the
   device: upload the vocabulary once, compute output positions in parallel, gather the bytes on the
   GPU. An optional component aimed at large batches, subject to prototyping and measurement.
