@@ -1,62 +1,198 @@
 # Quicktour
 
-Let's have a quick look at the 🤗 Tokenizers library. The library provides an
-implementation of today's most used tokenizers that is both easy to use and
-blazing fast.
-
 <Tip warning={true}>
 
-This release is read-only. A tokenizer is loaded from a `tokenizer.json` and
-used to encode and decode; it cannot be built from its components, edited,
-saved, or trained. See
-[`REQUIRED_FOR_V1.md`](https://github.com/huggingface/tokenizers/blob/main/REQUIRED_FOR_V1.md)
-for what is deferred and why.
+Not supported by the rc0 bindings yet. rc0 loads a `tokenizer.json` and encodes and
+decodes with it — building a tokenizer from its components, editing one, saving one
+and training are not exposed. They are coming soon, along with the other bindings.
+See [`REQUIRED_FOR_V1.md`](https://github.com/huggingface/tokenizers/blob/main/REQUIRED_FOR_V1.md) for the full list.
 
 </Tip>
 
-## Loading a tokenizer
+Let's have a quick look at the 🤗 Tokenizers library features. The
+library provides an implementation of today's most used tokenizers that
+is both easy to use and blazing fast.
 
-Everything starts from a `tokenizer.json`. In Python you can pull one straight
-from the Hugging Face Hub, or read one off disk:
+## Build a tokenizer from scratch
+
+To illustrate how fast the 🤗 Tokenizers library is, let's train a new
+tokenizer on [wikitext-103](https://www.salesforce.com/blog/the-wikitext-long-term-dependency-language-modeling-dataset/)
+(516M of text) in just a few seconds. First things first, you will need
+to download this dataset and unzip it with:
+
+``` bash
+wget https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-103-raw-v1.zip
+unzip wikitext-103-raw-v1.zip
+```
+
+### Training the tokenizer
+
+In this tour, we will build and train a Byte-Pair Encoding (BPE)
+tokenizer. For more information about the different type of tokenizers,
+check out this [guide](https://huggingface.co/transformers/tokenizer_summary.html) in
+the 🤗 Transformers documentation. Here, training the tokenizer means it
+will learn merge rules by:
+
+-   Start with all the characters present in the training corpus as
+    tokens.
+-   Identify the most common pair of tokens and merge it into one token.
+-   Repeat until the vocabulary (e.g., the number of tokens) has reached
+    the size we want.
+
+The main API of the library is the `class` `Tokenizer`, here is how
+we instantiate one with a BPE model:
 
 <tokenizerslangcontent>
 <python>
 ```python
 from tokenizers import Tokenizer
-
-tokenizer = Tokenizer.from_pretrained("bert-base-uncased")
-# or, from a local file:
-tokenizer = Tokenizer.from_file("tokenizer.json")
+from tokenizers.models import BPE
+tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
 ```
 </python>
 <rust>
 ```rust
-let tokenizer = tokenizers::from_json_file("tokenizer.json")?;
+use tokenizers::models::bpe::BPE;
+let mut tokenizer: TokenizerImpl<
+    BPE,
+    NormalizerWrapper,
+    PreTokenizerWrapper,
+    PostProcessorWrapper,
+    DecoderWrapper,
+> = TokenizerImpl::new(
+    BPE::builder()
+        .unk_token("[UNK]".to_string())
+        .build()
+        .unwrap(),
+);
 ```
 </rust>
-<node>
-```js
-const { PipelineTokenizer } = require('tokenizers')
-
-const tokenizer = PipelineTokenizer.fromFile('tokenizer.json')
-```
-</node>
 </tokenizerslangcontent>
 
-`from_pretrained` takes the usual Hub arguments — `revision` to pin a commit,
-branch or tag, and `token` to reach a private or gated repository:
+To train our tokenizer on the wikitext files, we will need to
+instantiate a [trainer]{.title-ref}, in this case a
+`BpeTrainer`
 
 <tokenizerslangcontent>
 <python>
 ```python
-tokenizer = Tokenizer.from_pretrained("my-org/my-model", revision="v1.0", token=True)
+from tokenizers.trainers import BpeTrainer
+trainer = BpeTrainer(special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
 ```
 </python>
+<rust>
+```rust
+use tokenizers::models::bpe::BpeTrainer;
+let mut trainer = BpeTrainer::builder()
+    .special_tokens(vec![
+        AddedToken::from("[UNK]", true),
+        AddedToken::from("[CLS]", true),
+        AddedToken::from("[SEP]", true),
+        AddedToken::from("[PAD]", true),
+        AddedToken::from("[MASK]", true),
+    ])
+    .build();
+```
+</rust>
 </tokenizerslangcontent>
 
-## Encoding
+We can set the training arguments like `vocab_size` or `min_frequency` (here
+left at their default values of 30,000 and 0) but the most important
+part is to give the `special_tokens` we
+plan to use later on (they are not used at all during training) so that
+they get inserted in the vocabulary.
 
-Encode a text with the `encode` method:
+<Tip>
+
+The order in which you write the special tokens list matters: here `"[UNK]"` will get the ID 0,
+`"[CLS]"` will get the ID 1 and so forth.
+
+</Tip>
+
+We could train our tokenizer right now, but it wouldn't be optimal.
+Without a pre-tokenizer that will split our inputs into words, we might
+get tokens that overlap several words: for instance we could get an
+`"it is"` token since those two words
+often appear next to each other. Using a pre-tokenizer will ensure no
+token is bigger than a word returned by the pre-tokenizer. Here we want
+to train a subword BPE tokenizer, and we will use the easiest
+pre-tokenizer possible by splitting on whitespace.
+
+<tokenizerslangcontent>
+<python>
+```python
+from tokenizers.pre_tokenizers import Whitespace
+tokenizer.pre_tokenizer = Whitespace()
+```
+</python>
+<rust>
+```rust
+use tokenizers::pre_tokenizers::whitespace::Whitespace;
+tokenizer.with_pre_tokenizer(Some(Whitespace {}));
+```
+</rust>
+</tokenizerslangcontent>
+
+Now, we can just call the `Tokenizer.train` method with any list of files we want to use:
+
+<tokenizerslangcontent>
+<python>
+```python
+files = [f"data/wikitext-103-raw/wiki.{split}.raw" for split in ["test", "train", "valid"]]
+tokenizer.train(files, trainer)
+```
+</python>
+<rust>
+```rust
+let files = vec![
+    "data/wikitext-103-raw/wiki.train.raw".into(),
+    "data/wikitext-103-raw/wiki.test.raw".into(),
+    "data/wikitext-103-raw/wiki.valid.raw".into(),
+];
+tokenizer.train_from_files(&mut trainer, files)?;
+```
+</rust>
+</tokenizerslangcontent>
+
+This should only take a few seconds to train our tokenizer on the full
+wikitext dataset! To save the tokenizer in one file that contains all
+its configuration and vocabulary, just use the
+`Tokenizer.save` method:
+
+<tokenizerslangcontent>
+<python>
+```python
+tokenizer.save("data/tokenizer-wiki.json")
+```
+</python>
+<rust>
+```rust
+tokenizer.save("data/tokenizer-wiki.json", false)?;
+```
+</rust>
+</tokenizerslangcontent>
+
+and you can reload your tokenizer from that file with the
+`Tokenizer.from_file`
+`classmethod`:
+
+<tokenizerslangcontent>
+<python>
+```python
+tokenizer = Tokenizer.from_file("data/tokenizer-wiki.json")
+```
+</python>
+<rust>
+```rust
+let mut tokenizer = Tokenizer::from_file("data/tokenizer-wiki.json")?;
+```
+</rust>
+</tokenizerslangcontent>
+
+### Using the tokenizer
+
+Now that we have trained a tokenizer, we can use it on any text we want
+with the `Tokenizer.encode` method:
 
 <tokenizerslangcontent>
 <python>
@@ -66,206 +202,382 @@ output = tokenizer.encode("Hello, y'all! How are you 😁 ?")
 </python>
 <rust>
 ```rust
-use tk_encode::pipeline::EncodeOptions;
-
-let output = tokenizer
-    .encode("Hello, y'all! How are you 😁 ?", &EncodeOptions::default())
-    .wait()?;
+let output = tokenizer.encode("Hello, y'all! How are you 😁 ?", true)?;
 ```
 </rust>
-<node>
-```js
-// Returns a Uint32Array of ids, not an object: a JS Array costs one napi value
-// per token, which on token-dense input is 13x the encode itself.
-const ids = tokenizer.encode("Hello, y'all! How are you 😁 ?")
-```
-</node>
 </tokenizerslangcontent>
 
-In Python and Rust this returns an `Encoding`, carrying everything your model
-needs. The `ids` are the index of each token in the tokenizer's vocabulary:
+This applied the full pipeline of the tokenizer on the text, returning
+an `Encoding` object. To learn more
+about this pipeline, and how to apply (or customize) parts of it, check out [this page](https://github.com/huggingface/tokenizers/blob/main/docs/source-doc-builder/pipeline.mdx).
+
+This `Encoding` object then has all the
+attributes you need for your deep learning model (or other). The
+`tokens` attribute contains the
+segmentation of your text in tokens:
+
+<tokenizerslangcontent>
+<python>
+```python
+print(output.tokens)
+# ["Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?"]
+```
+</python>
+<rust>
+```rust
+println!("{:?}", output.get_tokens());
+// ["Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?",]
+```
+</rust>
+</tokenizerslangcontent>
+
+Similarly, the `ids` attribute will
+contain the index of each of those tokens in the tokenizer's
+vocabulary:
 
 <tokenizerslangcontent>
 <python>
 ```python
 print(output.ids)
-print(output.type_ids)
-print(output.attention_mask)
+# [27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35]
 ```
 </python>
 <rust>
 ```rust
-let encoding = &output[0];
-println!("{:?}", encoding.ids().iter().map(|t| t.id()).collect::<Vec<_>>());
-println!("{:?}", encoding.type_ids());
-println!("{:?}", encoding.attention_mask());
+println!("{:?}", output.get_ids());
+// [27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35]
 ```
 </rust>
 </tokenizerslangcontent>
 
-Python also exposes each of these as a numpy array — `ids_array`,
-`type_ids_array` and `attention_mask_array` — which is what you want when the
-next stop is a tensor.
-
-By default the tokenizer's post-processor adds the special tokens its config
-defines, such as `[CLS]` and `[SEP]`. Pass `add_special_tokens=False` to skip
-that, and `encode_special_tokens=True` to send special tokens written in the
-text through the model rather than matching them in the added vocabulary:
+An important feature of the 🤗 Tokenizers library is that it comes with
+full alignment tracking, meaning you can always get the part of your
+original sentence that corresponds to a given token. Those are stored in
+the `offsets` attribute of our
+`Encoding` object. For instance, let's
+assume we would want to find back what caused the
+`"[UNK]"` token to appear, which is the
+token at index 9 in the list, we can just ask for the offset at the
+index:
 
 <tokenizerslangcontent>
 <python>
 ```python
-output = tokenizer.encode("Hello, y'all!", add_special_tokens=False)
+print(output.offsets[9])
+# (26, 27)
 ```
 </python>
 <rust>
 ```rust
-let output = tokenizer
-    .encode("Hello, y'all!", &EncodeOptions::no_specials())
-    .wait()?;
+println!("{:?}", output.get_offsets()[9]);
+// (26, 30)
 ```
 </rust>
-<node>
-```js
-const ids = tokenizer.encode("Hello, y'all!", { addSpecialTokens: false })
-```
-</node>
 </tokenizerslangcontent>
 
-## Decoding
-
-`decode` turns ids back into text, and `decode_tokens` gives you the individual
-token strings without running the decoder:
+and those are the indices that correspond to the emoji in the original
+sentence:
 
 <tokenizerslangcontent>
 <python>
 ```python
-tokenizer.decode(output)
-# "hello, y'all!"
-
-tokenizer.decode_tokens(output)
-# ["[CLS]", "hello", ",", "y", "'", "all", "!", "[SEP]"]
+sentence = "Hello, y'all! How are you 😁 ?"
+sentence[26:27]
+# "😁"
 ```
 </python>
 <rust>
 ```rust
-let ids: Vec<u32> = encoding.ids().iter().map(|t| t.id()).collect();
-println!("{}", tokenizer.decode(&ids, true)?);
-println!("{:?}", tokenizer.decode_tokens(&ids, false));
+let sentence = "Hello, y'all! How are you 😁 ?";
+println!("{}", &sentence[26..30]);
+// "😁"
 ```
 </rust>
-<node>
-The Node binding encodes only; it has no decode method.
-</node>
 </tokenizerslangcontent>
 
-`Tokenizer.tokenize` is shorthand for `decode_tokens(encode(text))` when you
-only care about the token strings:
+### Post-processing
+
+We might want our tokenizer to automatically add special tokens, like
+`"[CLS]"` or `"[SEP]"`. To do this, we use a post-processor.
+`TemplateProcessing` is the most
+commonly used, you just have to specify a template for the processing of
+single sentences and pairs of sentences, along with the special tokens
+and their IDs.
+
+When we built our tokenizer, we set `"[CLS]"` and `"[SEP]"` in positions 1
+and 2 of our list of special tokens, so this should be their IDs. To
+double-check, we can use the `Tokenizer.token_to_id` method:
 
 <tokenizerslangcontent>
 <python>
 ```python
-tokenizer.tokenize("Hello, y'all!")
-# ["[CLS]", "hello", ",", "y", "'", "all", "!", "[SEP]"]
-```
-</python>
-</tokenizerslangcontent>
-
-## Encoding a batch
-
-<tokenizerslangcontent>
-<python>
-```python
-output = tokenizer.encode_batch(["Hello, y'all!", "How are you 😁 ?"])
-print(output[1].ids)
+tokenizer.token_to_id("[SEP]")
+# 2
 ```
 </python>
 <rust>
 ```rust
-let output = tokenizer
-    .encode(vec!["Hello, y'all!", "How are you 😁 ?"], &EncodeOptions::default())
-    .wait()?;
+println!("{}", tokenizer.token_to_id("[SEP]").unwrap());
+// 2
 ```
 </rust>
-<node>
-The Node binding encodes one text per call. For a tight loop, `encodeBytesInto`
-writes into a `Uint32Array` you own, avoiding both the JS string copy and a
-fresh `ArrayBuffer` per call:
-
-```js
-const out = new Uint32Array(512)
-const n = tokenizer.encodeBytesInto(Buffer.from("Hello, y'all!"), out)
-// the first n entries of `out` are the ids
-```
-</node>
 </tokenizerslangcontent>
 
-## Padding and truncation
-
-Padding brings every encoding in a batch up to the same length — by default the
-length of the longest item. Truncation caps it. Both can be set once on the
-tokenizer, or per call:
+Here is how we can set the post-processing to give us the traditional
+BERT inputs:
 
 <tokenizerslangcontent>
 <python>
 ```python
-from tokenizers import Padding, Truncation
-
-tokenizer.padding = Padding(pad_id=0, pad_token="[PAD]")
-tokenizer.truncation = Truncation(max_length=512)
-
-# or for one call only, overriding whatever is configured:
-output = tokenizer.encode_batch(
-    ["Hello, y'all!", "How are you 😁 ?"],
-    padding=Padding(length=16),
-    truncation=None,
+from tokenizers.processors import TemplateProcessing
+tokenizer.post_processor = TemplateProcessing(
+    single="[CLS] $A [SEP]",
+    pair="[CLS] $A [SEP] $B:1 [SEP]:1",
+    special_tokens=[
+        ("[CLS]", tokenizer.token_to_id("[CLS]")),
+        ("[SEP]", tokenizer.token_to_id("[SEP]")),
+    ],
 )
 ```
 </python>
 <rust>
 ```rust
-use tk_encode::pipeline::Override;
-use tk_encode::utils::padding::PaddingParams;
-
-let options = EncodeOptions {
-    padding: Override::With(PaddingParams {
-        pad_id: 0,
-        pad_token: "[PAD]".to_string(),
-        ..PaddingParams::default()
-    }),
-    ..EncodeOptions::default()
-};
+use tokenizers::processors::template::TemplateProcessing;
+let special_tokens = vec![
+    ("[CLS]", tokenizer.token_to_id("[CLS]").unwrap()),
+    ("[SEP]", tokenizer.token_to_id("[SEP]").unwrap()),
+];
+tokenizer.with_post_processor(Some(
+    TemplateProcessing::builder()
+        .try_single("[CLS] $A [SEP]")
+        .unwrap()
+        .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
+        .unwrap()
+        .special_tokens(special_tokens)
+        .build()?,
+));
 ```
 </rust>
-<node>
-```js
-const ids = tokenizer.encode("Hello, y'all!", {
-  padding: { padId: 0, padToken: '[PAD]', length: 16 },
-  truncation: { maxLength: 512 },
-})
-```
-</node>
 </tokenizerslangcontent>
 
-Padding shows up in the `attention_mask`, which is `0` at every padded
-position:
+Let's go over this snippet of code in more details. First we specify
+the template for single sentences: those should have the form
+`"[CLS] $A [SEP]"` where
+`$A` represents our sentence.
+
+Then, we specify the template for sentence pairs, which should have the
+form `"[CLS] $A [SEP] $B [SEP]"` where
+`$A` represents the first sentence and
+`$B` the second one. The
+`:1` added in the template represent the `type IDs` we want for each part of our input: it defaults
+to 0 for everything (which is why we don't have
+`$A:0`) and here we set it to 1 for the
+tokens of the second sentence and the last `"[SEP]"` token.
+
+Lastly, we specify the special tokens we used and their IDs in our
+tokenizer's vocabulary.
+
+To check out this worked properly, let's try to encode the same
+sentence as before:
 
 <tokenizerslangcontent>
 <python>
 ```python
-output = tokenizer.encode_batch(["Hello, y'all!", "Hi"])
-print(output[1].attention_mask)
+output = tokenizer.encode("Hello, y'all! How are you 😁 ?")
+print(output.tokens)
+# ["[CLS]", "Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?", "[SEP]"]
 ```
 </python>
+<rust>
+```rust
+let output = tokenizer.encode("Hello, y'all! How are you 😁 ?", true)?;
+println!("{:?}", output.get_tokens());
+// ["[CLS]", "Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?", "[SEP]"]
+```
+</rust>
 </tokenizerslangcontent>
 
-Set either property to `None` to switch it off:
+To check the results on a pair of sentences, we just pass the two
+sentences to `Tokenizer.encode`:
 
 <tokenizerslangcontent>
 <python>
 ```python
-tokenizer.padding = None
-tokenizer.truncation = None
+output = tokenizer.encode("Hello, y'all!", "How are you 😁 ?")
+print(output.tokens)
+# ["[CLS]", "Hello", ",", "y", "'", "all", "!", "[SEP]", "How", "are", "you", "[UNK]", "?", "[SEP]"]
+```
+</python>
+<rust>
+```rust
+let output = tokenizer.encode(("Hello, y'all!", "How are you 😁 ?"), true)?;
+println!("{:?}", output.get_tokens());
+// ["[CLS]", "Hello", ",", "y", "'", "all", "!", "[SEP]", "How", "are", "you", "[UNK]", "?", "[SEP]"]
+```
+</rust>
+</tokenizerslangcontent>
+
+You can then check the type IDs attributed to each token is correct with
+
+<tokenizerslangcontent>
+<python>
+```python
+print(output.type_ids)
+# [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
+```
+</python>
+<rust>
+```rust
+println!("{:?}", output.get_type_ids());
+// [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
+```
+</rust>
+</tokenizerslangcontent>
+
+If you save your tokenizer with `Tokenizer.save`, the post-processor will be saved along.
+
+### Encoding multiple sentences in a batch
+
+To get the full speed of the 🤗 Tokenizers library, it's best to
+process your texts by batches by using the
+`Tokenizer.encode_batch` method:
+
+<tokenizerslangcontent>
+<python>
+```python
+output = tokenizer.encode_batch(["Hello, y'all!", "How are you 😁 ?"])
+```
+</python>
+<rust>
+```rust
+let output = tokenizer.encode_batch(vec!["Hello, y'all!", "How are you 😁 ?"], true)?;
+```
+</rust>
+</tokenizerslangcontent>
+
+The output is then a list of `Encoding`
+objects like the ones we saw before. You can process together as many
+texts as you like, as long as it fits in memory.
+
+To process a batch of sentences pairs, pass two lists to the
+`Tokenizer.encode_batch` method: the
+list of sentences A and the list of sentences B:
+
+<tokenizerslangcontent>
+<python>
+```python
+output = tokenizer.encode_batch(
+    [["Hello, y'all!", "How are you 😁 ?"], ["Hello to you too!", "I'm fine, thank you!"]]
+)
+```
+</python>
+<rust>
+```rust
+let output = tokenizer.encode_batch(
+    vec![
+        ("Hello, y'all!", "How are you 😁 ?"),
+        ("Hello to you too!", "I'm fine, thank you!"),
+    ],
+    true,
+)?;
+```
+</rust>
+</tokenizerslangcontent>
+
+When encoding multiple sentences, you can automatically pad the outputs
+to the longest sentence present by using
+`Tokenizer.enable_padding`, with the
+`pad_token` and its ID (which we can
+double-check the id for the padding token with
+`Tokenizer.token_to_id` like before):
+
+<tokenizerslangcontent>
+<python>
+```python
+tokenizer.enable_padding(pad_id=3, pad_token="[PAD]")
+```
+</python>
+<rust>
+```rust
+use tokenizers::PaddingParams;
+tokenizer.with_padding(Some(PaddingParams {
+    pad_id: 3,
+    pad_token: "[PAD]".to_string(),
+    ..PaddingParams::default()
+}));
+```
+</rust>
+</tokenizerslangcontent>
+
+We can set the `direction` of the padding
+(defaults to the right) or a given `length` if we want to pad every sample to that specific number (here
+we leave it unset to pad to the size of the longest text).
+
+<tokenizerslangcontent>
+<python>
+```python
+output = tokenizer.encode_batch(["Hello, y'all!", "How are you 😁 ?"])
+print(output[1].tokens)
+# ["[CLS]", "How", "are", "you", "[UNK]", "?", "[SEP]", "[PAD]"]
+```
+</python>
+<rust>
+```rust
+let output = tokenizer.encode_batch(vec!["Hello, y'all!", "How are you 😁 ?"], true)?;
+println!("{:?}", output[1].get_tokens());
+// ["[CLS]", "How", "are", "you", "[UNK]", "?", "[SEP]", "[PAD]"]
+```
+</rust>
+</tokenizerslangcontent>
+
+In this case, the `attention mask` generated by the
+tokenizer takes the padding into account:
+
+<tokenizerslangcontent>
+<python>
+```python
+print(output[1].attention_mask)
+# [1, 1, 1, 1, 1, 1, 1, 0]
+```
+</python>
+<rust>
+```rust
+println!("{:?}", output[1].get_attention_mask());
+// [1, 1, 1, 1, 1, 1, 1, 0]
+```
+</rust>
+</tokenizerslangcontent>
+
+## Pretrained
+
+<tokenizerslangcontent>
+<python>
+### Using a pretrained tokenizer
+
+You can load any tokenizer from the Hugging Face Hub as long as a
+`tokenizer.json` file is available in the repository.
+
+```python
+from tokenizers import Tokenizer
+
+tokenizer = Tokenizer.from_pretrained("bert-base-uncased")
+```
+
+### Importing a pretrained tokenizer from legacy vocabulary files
+
+You can also import a pretrained tokenizer directly in, as long as you
+have its vocabulary file. For instance, here is how to import the
+classic pretrained BERT tokenizer:
+
+```python
+from tokenizers import Tokenizer
+tokenizer = Tokenizer.from_file("bert-base-uncased-vocab.txt", lowercase=True)
+```
+
+as long as you have downloaded the file `bert-base-uncased-vocab.txt` with
+
+```bash
+hf download hf://google-bert/bert-base-uncased/vocab.txt
 ```
 </python>
 </tokenizerslangcontent>

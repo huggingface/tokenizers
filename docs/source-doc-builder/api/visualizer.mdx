@@ -1,4 +1,4 @@
-# Tokenizer
+# Visualizer
 
 <Tip warning={true}>
 
@@ -11,17 +11,14 @@ See [`REQUIRED_FOR_V1.md`](https://github.com/huggingface/tokenizers/blob/main/R
 
 <tokenizerslangcontent>
 <python>
-## Tokenizer
+## Annotation
 
-[[autodoc]] tokenizers.Tokenizer
-    - all
-    - decoder
-    - model
-    - normalizer
-    - padding
-    - post_processor
-    - pre_tokenizer
-    - truncation
+[[autodoc]] tokenizers.tools.Annotation
+
+## EncodingVisualizer
+
+[[autodoc]] tokenizers.tools.EncodingVisualizer
+    -  __call__
 </python>
 <rust>
 The Rust API Reference is available directly on the [Docs.rs](https://docs.rs/tokenizers/latest/tokenizers/) website.

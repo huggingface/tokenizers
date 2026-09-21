@@ -1,0 +1,129 @@
+# Training from memory
+
+<Tip warning={true}>
+
+Not supported by the rc0 bindings yet. rc0 loads a `tokenizer.json` and encodes and
+decodes with it — building a tokenizer from its components, editing one, saving one
+and training are not exposed. They are coming soon, along with the other bindings.
+See [`REQUIRED_FOR_V1.md`](https://github.com/huggingface/tokenizers/blob/main/REQUIRED_FOR_V1.md) for the full list.
+
+</Tip>
+
+In the [Quicktour](quicktour), we saw how to build and train a
+tokenizer using text files, but we can actually use any Python Iterator.
+In this section we'll see a few different ways of training our
+tokenizer.
+
+For all the examples listed below, we'll use the same [`~tokenizers.Tokenizer`] and
+[`~tokenizers.trainers.Trainer`], built as
+following:
+
+```python
+from tokenizers import Tokenizer, decoders, models, normalizers, pre_tokenizers, trainers
+tokenizer = Tokenizer(models.Unigram())
+tokenizer.normalizer = normalizers.NFKC()
+tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
+tokenizer.decoder = decoders.ByteLevel()
+trainer = trainers.UnigramTrainer(
+    vocab_size=20000,
+    initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
+    special_tokens=["<PAD>", "<BOS>", "<EOS>"],
+)
+```
+
+This tokenizer is based on the [`~tokenizers.models.Unigram`] model. It
+takes care of normalizing the input using the NFKC Unicode normalization
+method, and uses a [`~tokenizers.pre_tokenizers.ByteLevel`] pre-tokenizer with the corresponding decoder.
+
+For more information on the components used here, you can check
+[here](components).
+
+## The most basic way
+
+As you probably guessed already, the easiest way to train our tokenizer
+is by using a `List`{.interpreted-text role="obj"}:
+
+```python
+# First few lines of the "Zen of Python" https://www.python.org/dev/peps/pep-0020/
+data = [
+    "Beautiful is better than ugly."
+    "Explicit is better than implicit."
+    "Simple is better than complex."
+    "Complex is better than complicated."
+    "Flat is better than nested."
+    "Sparse is better than dense."
+    "Readability counts."
+]
+tokenizer.train_from_iterator(data, trainer=trainer)
+```
+
+Easy, right? You can use anything working as an iterator here, be it a
+`List`{.interpreted-text role="obj"}, `Tuple`{.interpreted-text
+role="obj"}, or a `np.Array`{.interpreted-text role="obj"}. Anything
+works as long as it provides strings.
+
+## Using the 🤗 Datasets library
+
+An awesome way to access one of the many datasets that exist out there
+is by using the 🤗 Datasets library. For more information about it, you
+should check [the official documentation
+here](https://huggingface.co/docs/datasets/).
+
+Let's start by loading our dataset:
+
+```python
+import datasets  # type: ignore[import-not-found]
+dataset = datasets.load_dataset("Salesforce/wikitext", "wikitext-103-raw-v1", split="train+test+validation")
+```
+
+The next step is to build an iterator over this dataset. The easiest way
+to do this is probably by using a generator:
+
+```python
+def batch_iterator(batch_size=1000):
+    # Only keep the text column to avoid decoding the rest of the columns unnecessarily
+    tok_dataset = dataset.select_columns("text")
+    for batch in tok_dataset.iter(batch_size):
+        yield batch["text"]
+```
+
+As you can see here, for improved efficiency we can actually provide a
+batch of examples used to train, instead of iterating over them one by
+one. By doing so, we can expect performances very similar to those we
+got while training directly from files.
+
+With our iterator ready, we just need to launch the training. In order
+to improve the look of our progress bars, we can specify the total
+length of the dataset:
+
+```python
+tokenizer.train_from_iterator(batch_iterator(), trainer=trainer, length=len(dataset))
+```
+
+And that's it!
+
+## Using gzip files
+
+Since gzip files in Python can be used as iterators, it is extremely
+simple to train on such files:
+
+```python
+import gzip
+with gzip.open("data/my-file.0.gz", "rt") as f:
+    tokenizer.train_from_iterator(f, trainer=trainer)
+```
+
+Now if we wanted to train from multiple gzip files, it wouldn't be much
+harder:
+
+```python
+files = ["data/my-file.0.gz", "data/my-file.1.gz", "data/my-file.2.gz"]
+def gzip_iterator():
+    for path in files:
+        with gzip.open(path, "rt") as f:
+            for line in f:
+                yield line
+tokenizer.train_from_iterator(gzip_iterator(), trainer=trainer)
+```
+
+And voilà!

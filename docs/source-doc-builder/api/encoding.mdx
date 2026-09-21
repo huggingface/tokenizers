@@ -1,5 +1,14 @@
 # Encoding
 
+<Tip warning={true}>
+
+Not supported by the rc0 bindings yet. rc0 loads a `tokenizer.json` and encodes and
+decodes with it — building a tokenizer from its components, editing one, saving one
+and training are not exposed. They are coming soon, along with the other bindings.
+See [`REQUIRED_FOR_V1.md`](https://github.com/huggingface/tokenizers/blob/main/REQUIRED_FOR_V1.md) for the full list.
+
+</Tip>
+
 <tokenizerslangcontent>
 <python>
 ## Encoding
@@ -7,16 +16,18 @@
 [[autodoc]] tokenizers.Encoding
     - all
     - attention_mask
-    - attention_mask_array
     - ids
-    - ids_array
+    - n_sequences
+    - offsets
+    - overflowing
+    - sequence_ids
+    - special_tokens_mask
+    - tokens
     - type_ids
-    - type_ids_array
+    - word_ids
+    - words
 </python>
 <rust>
 The Rust API Reference is available directly on the [Docs.rs](https://docs.rs/tokenizers/latest/tokenizers/) website.
 </rust>
-<node>
-The node API has not been documented yet.
-</node>
 </tokenizerslangcontent>

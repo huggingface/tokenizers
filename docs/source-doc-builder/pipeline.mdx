@@ -1,0 +1,504 @@
+# The tokenization pipeline
+
+<Tip warning={true}>
+
+Not supported by the rc0 bindings yet. rc0 loads a `tokenizer.json` and encodes and
+decodes with it — building a tokenizer from its components, editing one, saving one
+and training are not exposed. They are coming soon, along with the other bindings.
+See [`REQUIRED_FOR_V1.md`](https://github.com/huggingface/tokenizers/blob/main/REQUIRED_FOR_V1.md) for the full list.
+
+</Tip>
+
+When calling `Tokenizer.encode` or
+`Tokenizer.encode_batch`, the input
+text(s) go through the following pipeline:
+
+-   `normalization`
+-   `pre-tokenization`
+-   `model`
+-   `post-processing`
+
+We'll see in details what happens during each of those steps in detail,
+as well as when you want to `decode <decoding>` some token ids, and how the 🤗 Tokenizers library allows you
+to customize each of those steps to your needs. If you're already
+familiar with those steps and want to learn by seeing some code, jump to
+`our BERT from scratch example <example>`.
+
+For the examples that require a `Tokenizer` we will use the tokenizer we trained in the
+`quicktour`, which you can load with:
+
+<tokenizerslangcontent>
+<python>
+```python
+from tokenizers import Tokenizer
+tokenizer = Tokenizer.from_file("data/tokenizer-wiki.json")
+```
+</python>
+<rust>
+```rust
+use tokenizers::Tokenizer;
+let mut tokenizer = Tokenizer::from_file("data/tokenizer-wiki.json")?;
+```
+</rust>
+</tokenizerslangcontent>
+
+## Normalization
+
+Normalization is, in a nutshell, a set of operations you apply to a raw
+string to make it less random or "cleaner". Common operations include
+stripping whitespace, removing accented characters or lowercasing all
+text. If you're familiar with [Unicode
+normalization](https://unicode.org/reports/tr15), it is also a very
+common normalization operation applied in most tokenizers.
+
+Each normalization operation is represented in the 🤗 Tokenizers library
+by a `Normalizer`, and you can combine
+several of those by using a `normalizers.Sequence`. Here is a normalizer applying NFD Unicode normalization
+and removing accents as an example:
+
+<tokenizerslangcontent>
+<python>
+```python
+from tokenizers import normalizers
+from tokenizers.normalizers import NFD, StripAccents
+normalizer = normalizers.Sequence([NFD(), StripAccents()])
+```
+</python>
+<rust>
+```rust
+use tokenizers::normalizers::{
+    strip::StripAccents, unicode::NFD, utils::Sequence as NormalizerSequence,
+};
+let normalizer = NormalizerSequence::new(vec![NFD.into(), StripAccents.into()]);
+```
+</rust>
+</tokenizerslangcontent>
+
+You can manually test that normalizer by applying it to any string:
+
+<tokenizerslangcontent>
+<python>
+```python
+normalizer.normalize_str("Héllò hôw are ü?")
+# "Hello how are u?"
+```
+</python>
+<rust>
+```rust
+use tokenizers::{NormalizedString, Normalizer};
+let mut normalized = NormalizedString::from("Héllò hôw are ü?");
+normalizer.normalize(&mut normalized)?;
+println!("{}", normalized.get());
+// "Hello how are u?"
+```
+</rust>
+</tokenizerslangcontent>
+
+When building a `Tokenizer`, you can
+customize its normalizer by just changing the corresponding attribute:
+
+<tokenizerslangcontent>
+<python>
+```python
+tokenizer.normalizer = normalizer
+```
+</python>
+<rust>
+```rust
+tokenizer.with_normalizer(Some(normalizer)).unwrap();
+```
+</rust>
+</tokenizerslangcontent>
+
+Of course, if you change the way a tokenizer applies normalization, you
+should probably retrain it from scratch afterward.
+
+## Pre-Tokenization
+
+Pre-tokenization is the act of splitting a text into smaller objects
+that give an upper bound to what your tokens will be at the end of
+training. A good way to think of this is that the pre-tokenizer will
+split your text into "words" and then, your final tokens will be parts
+of those words.
+
+An easy way to pre-tokenize inputs is to split on spaces and
+punctuations, which is done by the
+`pre_tokenizers.Whitespace`
+pre-tokenizer:
+
+<tokenizerslangcontent>
+<python>
+```python
+from tokenizers.pre_tokenizers import Whitespace
+pre_tokenizer = Whitespace()
+pre_tokenizer.pre_tokenize_str("Hello! How are you? I'm fine, thank you.")
+# [("Hello", (0, 5)), ("!", (5, 6)), ("How", (7, 10)), ("are", (11, 14)), ("you", (15, 18)),
+#  ("?", (18, 19)), ("I", (20, 21)), ("'", (21, 22)), ('m', (22, 23)), ("fine", (24, 28)),
+#  (",", (28, 29)), ("thank", (30, 35)), ("you", (36, 39)), (".", (39, 40))]
+```
+</python>
+<rust>
+```rust
+use tokenizers::pre_tokenizers::whitespace::Whitespace;
+use tokenizers::{OffsetReferential, OffsetType, PreTokenizedString, PreTokenizer};
+let pre_tokenizer = Whitespace {};
+let mut pre_tokenized = PreTokenizedString::from("Hello! How are you? I'm fine, thank you.");
+pre_tokenizer.pre_tokenize(&mut pre_tokenized)?;
+println!(
+    "{:?}",
+    pre_tokenized.get_splits(OffsetReferential::Original, OffsetType::Byte)
+);
+// [("Hello", (0, 5), None), ("!", (5, 6), None), ("How", (7, 10), None),
+//  ("are", (11, 14), None), ("you", (15, 18), None), ("?", (18, 19), None),
+//  ("I", (20, 21), None), ("\'", (21, 22), None), ("m", (22, 23), None),
+//  ("fine", (24, 28), None), (",", (28, 29), None), ("thank", (30, 35), None),
+//  ("you", (36, 39), None), (".", (39, 40), None)]
+```
+</rust>
+</tokenizerslangcontent>
+
+The output is a list of tuples, with each tuple containing one word and
+its span in the original sentence (which is used to determine the final
+`offsets` of our `Encoding`). Note that splitting on
+punctuation will split contractions like `"I'm"` in this example.
+
+You can combine together any `PreTokenizer` together. For instance, here is a pre-tokenizer that will
+split on space, punctuation and digits, separating numbers in their
+individual digits:
+
+<tokenizerslangcontent>
+<python>
+```python
+from tokenizers import pre_tokenizers
+from tokenizers.pre_tokenizers import Digits
+pre_tokenizer = pre_tokenizers.Sequence([Whitespace(), Digits(individual_digits=True)])
+pre_tokenizer.pre_tokenize_str("Call 911!")
+# [("Call", (0, 4)), ("9", (5, 6)), ("1", (6, 7)), ("1", (7, 8)), ("!", (8, 9))]
+```
+</python>
+<rust>
+```rust
+use tokenizers::pre_tokenizers::{digits::Digits, sequence::Sequence};
+let pre_tokenizer = Sequence::new(vec![Whitespace {}.into(), Digits::new(true).into()]);
+let mut pre_tokenized = PreTokenizedString::from("Call 911!");
+pre_tokenizer.pre_tokenize(&mut pre_tokenized)?;
+println!(
+    "{:?}",
+    pre_tokenized.get_splits(OffsetReferential::Original, OffsetType::Byte)
+);
+```
+</rust>
+</tokenizerslangcontent>
+
+As we saw in the `quicktour`, you can
+customize the pre-tokenizer of a `Tokenizer` by just changing the corresponding attribute:
+
+<tokenizerslangcontent>
+<python>
+```python
+tokenizer.pre_tokenizer = pre_tokenizer
+```
+</python>
+<rust>
+```rust
+tokenizer.with_pre_tokenizer(Some(pre_tokenizer));
+```
+</rust>
+</tokenizerslangcontent>
+
+Of course, if you change the way the pre-tokenizer, you should probably
+retrain your tokenizer from scratch afterward.
+
+## Model
+
+Once the input texts are normalized and pre-tokenized, the
+`Tokenizer` applies the model on the
+pre-tokens. This is the part of the pipeline that needs training on your
+corpus (or that has been trained if you are using a pretrained
+tokenizer).
+
+The role of the model is to split your "words" into tokens, using the
+rules it has learned. It's also responsible for mapping those tokens to
+their corresponding IDs in the vocabulary of the model.
+
+This model is passed along when initializing the
+`Tokenizer` so you already know how to
+customize this part. Currently, the 🤗 Tokenizers library supports:
+
+-   `models.BPE`
+-   `models.Unigram`
+-   `models.WordLevel`
+-   `models.WordPiece`
+
+For more details about each model and its behavior, you can check
+[here](components#models)
+
+## Post-Processing
+
+Post-processing is the last step of the tokenization pipeline, to
+perform any additional transformation to the
+`Encoding` before it's returned, like
+adding potential special tokens.
+
+As we saw in the quick tour, we can customize the post processor of a
+`Tokenizer` by setting the
+corresponding attribute. For instance, here is how we can post-process
+to make the inputs suitable for the BERT model:
+
+<tokenizerslangcontent>
+<python>
+```python
+from tokenizers.processors import TemplateProcessing
+tokenizer.post_processor = TemplateProcessing(
+    single="[CLS] $A [SEP]",
+    pair="[CLS] $A [SEP] $B:1 [SEP]:1",
+    special_tokens=[("[CLS]", 1), ("[SEP]", 2)],
+)
+```
+</python>
+<rust>
+```rust
+use tokenizers::processors::template::TemplateProcessing;
+tokenizer.with_post_processor(Some(
+    TemplateProcessing::builder()
+        .try_single("[CLS] $A [SEP]")
+        .unwrap()
+        .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
+        .unwrap()
+        .special_tokens(vec![("[CLS]", 1), ("[SEP]", 2)])
+        .build()
+        .unwrap(),
+));
+```
+</rust>
+</tokenizerslangcontent>
+
+Note that contrarily to the pre-tokenizer or the normalizer, you don't
+need to retrain a tokenizer after changing its post-processor.
+
+## All together: a BERT tokenizer from scratch
+
+Let's put all those pieces together to build a BERT tokenizer. First,
+BERT relies on WordPiece, so we instantiate a new
+`Tokenizer` with this model:
+
+<tokenizerslangcontent>
+<python>
+```python
+from tokenizers import Tokenizer
+from tokenizers.models import WordPiece
+bert_tokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
+```
+</python>
+<rust>
+```rust
+use tokenizers::Tokenizer;
+use tokenizers::models::wordpiece::WordPiece;
+let mut bert_tokenizer = Tokenizer::new(
+    WordPiece::builder()
+        .unk_token("[UNK]".to_string())
+        .build()
+        .unwrap(),
+);
+```
+</rust>
+</tokenizerslangcontent>
+
+Then we know that BERT preprocesses texts by removing accents and
+lowercasing. We also use a unicode normalizer:
+
+<tokenizerslangcontent>
+<python>
+```python
+from tokenizers import normalizers
+from tokenizers.normalizers import NFD, Lowercase, StripAccents
+bert_tokenizer.normalizer = normalizers.Sequence([NFD(), Lowercase(), StripAccents()])
+```
+</python>
+<rust>
+```rust
+use tokenizers::normalizers::utils::Sequence as NormalizerSequence;
+use tokenizers::normalizers::{strip::StripAccents, unicode::NFD, utils::Lowercase};
+bert_tokenizer
+    .with_normalizer(Some(NormalizerSequence::new(vec![
+        NFD.into(),
+        Lowercase.into(),
+        StripAccents.into(),
+    ])))
+    .unwrap();
+```
+</rust>
+</tokenizerslangcontent>
+
+The pre-tokenizer is just splitting on whitespace and punctuation:
+
+<tokenizerslangcontent>
+<python>
+```python
+from tokenizers.pre_tokenizers import Whitespace
+bert_tokenizer.pre_tokenizer = Whitespace()
+```
+</python>
+<rust>
+```rust
+use tokenizers::pre_tokenizers::whitespace::Whitespace;
+bert_tokenizer.with_pre_tokenizer(Some(Whitespace {}));
+```
+</rust>
+</tokenizerslangcontent>
+
+And the post-processing uses the template we saw in the previous
+section:
+
+<tokenizerslangcontent>
+<python>
+```python
+from tokenizers.processors import TemplateProcessing
+bert_tokenizer.post_processor = TemplateProcessing(
+    single="[CLS] $A [SEP]",
+    pair="[CLS] $A [SEP] $B:1 [SEP]:1",
+    special_tokens=[
+        ("[CLS]", 1),
+        ("[SEP]", 2),
+    ],
+)
+```
+</python>
+<rust>
+```rust
+use tokenizers::processors::template::TemplateProcessing;
+bert_tokenizer.with_post_processor(Some(
+    TemplateProcessing::builder()
+        .try_single("[CLS] $A [SEP]")
+        .unwrap()
+        .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
+        .unwrap()
+        .special_tokens(vec![("[CLS]", 1), ("[SEP]", 2)])
+        .build()
+        .unwrap(),
+));
+```
+</rust>
+</tokenizerslangcontent>
+
+We can use this tokenizer and train on it on wikitext like in the
+`quicktour`:
+
+<tokenizerslangcontent>
+<python>
+```python
+from tokenizers.trainers import WordPieceTrainer
+trainer = WordPieceTrainer(vocab_size=30522, special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
+files = [f"data/wikitext-103-raw/wiki.{split}.raw" for split in ["test", "train", "valid"]]
+bert_tokenizer.train(files, trainer)
+bert_tokenizer.save("data/bert-wiki.json")
+```
+</python>
+<rust>
+```rust
+use tokenizers::models::{TrainerWrapper, wordpiece::WordPieceTrainer};
+let mut trainer: TrainerWrapper = WordPieceTrainer::builder()
+    .vocab_size(30_522)
+    .special_tokens(vec![
+        AddedToken::from("[UNK]", true),
+        AddedToken::from("[CLS]", true),
+        AddedToken::from("[SEP]", true),
+        AddedToken::from("[PAD]", true),
+        AddedToken::from("[MASK]", true),
+    ])
+    .build()
+    .into();
+let files = vec![
+    "data/wikitext-103-raw/wiki.train.raw".into(),
+    "data/wikitext-103-raw/wiki.test.raw".into(),
+    "data/wikitext-103-raw/wiki.valid.raw".into(),
+];
+bert_tokenizer.train_from_files(&mut trainer, files)?;
+bert_tokenizer.save("data/bert-wiki.json", false)?;
+```
+</rust>
+</tokenizerslangcontent>
+
+## Decoding
+
+On top of encoding the input texts, a `Tokenizer` also has an API for decoding, that is converting IDs
+generated by your model back to a text. This is done by the methods
+`Tokenizer.decode` (for one predicted text) and `Tokenizer.decode_batch` (for a batch of predictions).
+
+The `decoder` will first convert the IDs back to tokens
+(using the tokenizer's vocabulary) and remove all special tokens, then
+join those tokens with spaces:
+
+<tokenizerslangcontent>
+<python>
+```python
+output = tokenizer.encode("Hello, y'all! How are you 😁 ?")
+print(output.ids)
+# [1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2]
+tokenizer.decode([1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2])
+# "Hello , y ' all ! How are you ?"
+```
+</python>
+<rust>
+```rust
+let output = tokenizer.encode("Hello, y'all! How are you 😁 ?", true)?;
+println!("{:?}", output.get_ids());
+// [1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2]
+let decoded = tokenizer.decode(
+    &[1, 27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35, 2],
+    true,
+)?;
+println!("{decoded}");
+// "Hello , y ' all ! How are you ?"
+```
+</rust>
+</tokenizerslangcontent>
+
+If you used a model that added special characters to represent subtokens
+of a given "word" (like the `"##"` in
+WordPiece) you will need to customize the `decoder` to treat
+them properly. If we take our previous `bert_tokenizer` for instance the
+default decoding will give:
+
+<tokenizerslangcontent>
+<python>
+```python
+output = bert_tokenizer.encode("Welcome to the 🤗 Tokenizers library.")
+print(output.tokens)
+# ["[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library", ".", "[SEP]"]
+bert_tokenizer.decode(output.ids)
+# "welcome to the tok ##eni ##zer ##s library ."
+```
+</python>
+<rust>
+```rust
+let output = bert_tokenizer.encode("Welcome to the 🤗 Tokenizers library.", true)?;
+println!("{:?}", output.get_tokens());
+// ["[CLS]", "welcome", "to", "the", "[UNK]", "tok", "##eni", "##zer", "##s", "library", ".", "[SEP]"]
+let decoded = bert_tokenizer.decode(output.get_ids(), true)?;
+println!("{decoded}");
+// "welcome to the tok ##eni ##zer ##s library ."
+```
+</rust>
+</tokenizerslangcontent>
+
+But by changing it to a proper decoder, we get:
+
+<tokenizerslangcontent>
+<python>
+```python
+from tokenizers import decoders
+bert_tokenizer.decoder = decoders.WordPiece()
+bert_tokenizer.decode(output.ids)
+# "welcome to the tokenizers library."
+```
+</python>
+<rust>
+```rust
+use tokenizers::decoders::wordpiece::WordPiece as WordPieceDecoder;
+bert_tokenizer.with_decoder(Some(WordPieceDecoder::default()));
+let decoded = bert_tokenizer.decode(output.get_ids(), true)?;
+// "welcome to the tokenizers library."
+```
+</rust>
+</tokenizerslangcontent>

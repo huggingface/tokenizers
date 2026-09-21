@@ -1,0 +1,47 @@
+# Input Sequences
+
+<Tip warning={true}>
+
+Not supported by the rc0 bindings yet. rc0 loads a `tokenizer.json` and encodes and
+decodes with it — building a tokenizer from its components, editing one, saving one
+and training are not exposed. They are coming soon, along with the other bindings.
+See [`REQUIRED_FOR_V1.md`](https://github.com/huggingface/tokenizers/blob/main/REQUIRED_FOR_V1.md) for the full list.
+
+</Tip>
+
+<tokenizerslangcontent>
+<python>
+These types represent all the different kinds of sequence that can be used as input of a Tokenizer.
+Globally, any sequence can be either a string or a list of strings, according to the operating
+mode of the tokenizer: `raw text` vs `pre-tokenized`.
+
+## TextInputSequence[[tokenizers.TextInputSequence]]
+
+<code>tokenizers.TextInputSequence</code>
+
+A `str` that represents an input sequence
+
+## PreTokenizedInputSequence[[tokenizers.PreTokenizedInputSequence]]
+
+<code>tokenizers.PreTokenizedInputSequence</code>
+
+A pre-tokenized input sequence. Can be one of:
+- A `List` of `str`
+- A `Tuple` of `str`
+
+alias of `Union[List[str], Tuple[str]]`.
+
+## InputSequence[[tokenizers.InputSequence]]
+
+<code>tokenizers.InputSequence</code>
+
+Represents all the possible types of input sequences for encoding. Can be:
+- When `is_pretokenized=False`: [TextInputSequence](#tokenizers.TextInputSequence)
+- When `is_pretokenized=True`: [PreTokenizedInputSequence](#tokenizers.PreTokenizedInputSequence)
+
+alias of `Union[str, List[str], Tuple[str]]`.
+</python>
+<rust>
+The Rust API Reference is available directly on the [Docs.rs](https://docs.rs/tokenizers/latest/tokenizers/) website.
+</rust>
+</tokenizerslangcontent>

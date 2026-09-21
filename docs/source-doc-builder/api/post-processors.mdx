@@ -1,4 +1,4 @@
-# Tokenizer
+# Post-processors
 
 <Tip warning={true}>
 
@@ -9,19 +9,20 @@ See [`REQUIRED_FOR_V1.md`](https://github.com/huggingface/tokenizers/blob/main/R
 
 </Tip>
 
+Every post-processor is a template. `BertProcessing`, `RobertaProcessing`, `ByteLevel` and a
+`Sequence` of post-processors were spellings of one, so a `tokenizer.json` using any of them is
+rewritten into a `TemplateProcessing` when it is converted, and there is no separate class for
+them.
+
 <tokenizerslangcontent>
 <python>
-## Tokenizer
+## PostProcessor
 
-[[autodoc]] tokenizers.Tokenizer
-    - all
-    - decoder
-    - model
-    - normalizer
-    - padding
-    - post_processor
-    - pre_tokenizer
-    - truncation
+[[autodoc]] tokenizers.processors.PostProcessor
+
+## TemplateProcessing
+
+[[autodoc]] tokenizers.processors.TemplateProcessing
 </python>
 <rust>
 The Rust API Reference is available directly on the [Docs.rs](https://docs.rs/tokenizers/latest/tokenizers/) website.

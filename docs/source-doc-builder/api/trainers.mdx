@@ -1,4 +1,4 @@
-# Tokenizer
+# Trainers
 
 <Tip warning={true}>
 
@@ -11,17 +11,25 @@ See [`REQUIRED_FOR_V1.md`](https://github.com/huggingface/tokenizers/blob/main/R
 
 <tokenizerslangcontent>
 <python>
-## Tokenizer
+## BpeTrainer
 
-[[autodoc]] tokenizers.Tokenizer
-    - all
-    - decoder
-    - model
-    - normalizer
-    - padding
-    - post_processor
-    - pre_tokenizer
-    - truncation
+[[autodoc]] tokenizers.trainers.BpeTrainer
+
+## ParityBpeTrainer
+
+[[autodoc]] tokenizers.trainers.ParityBpeTrainer
+
+## UnigramTrainer
+
+[[autodoc]] tokenizers.trainers.UnigramTrainer
+
+## WordLevelTrainer
+
+[[autodoc]] tokenizers.trainers.WordLevelTrainer
+
+## WordPieceTrainer
+
+[[autodoc]] tokenizers.trainers.WordPieceTrainer
 </python>
 <rust>
 The Rust API Reference is available directly on the [Docs.rs](https://docs.rs/tokenizers/latest/tokenizers/) website.
