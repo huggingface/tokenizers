@@ -82,11 +82,8 @@ As we work toward v1, we are gonna bring back the entire python API that allows 
 # Crate details
 
 ## Crate size
-If you want the minimal crate size, we recommend you to use this:
-```
-make slim-size      # tk-encode + tk-serialize, minsize profile, stripped
-                    # → 332799 bytes gzipped
-```
+
+<img width="784" height="945" alt="image" src="https://github.com/user-attachments/assets/3cd1d537-2a39-4f1c-8863-c79c28c880a7" />
 
 ## Sub-crates
 
