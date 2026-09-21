@@ -45,6 +45,17 @@ Encoding(ids=[128000, 9906, 11, 379, 65948, 0, 2650, 527, 499, 27623, 223, 949],
 
 PLACEHODER
 
+# Bindings
+
+| | status |
+|---|---|
+| [Rust](tokenizers) | ✅ reference implementation |
+| [Python](bindings/python) | ✅ |
+| [Node.js](bindings/node) | ✅ |
+| C / C++ / Java / Go/ etc | 🚧 planned |
+| [Ruby](https://github.com/ankane/tokenizers-ruby) | community, external repo |
+
+
 # v1.0.0 roadmap:
 
 As we work toward v1, we are gonna bring back the entire python API that allows `transformers`' style of interacting with a tokenizer object:
@@ -177,16 +188,6 @@ the generator and fails if the committed table differs, so "baked" cannot silent
 A thin re-export so existing `tokenizers::…` paths keep working. Depend on this one unless you know
 you want less.
 </details>
-
-## Bindings
-
-| | status |
-|---|---|
-| [Rust](tokenizers) | ✅ reference implementation |
-| [Python](bindings/python) | ✅ |
-| [Node.js](bindings/node) | ✅ |
-| C / C++ | 🚧 planned |
-| [Ruby](https://github.com/ankane/tokenizers-ruby) | community, external repo |
 
 ## Hardware
 
