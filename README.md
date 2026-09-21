@@ -92,7 +92,6 @@ As we work toward v1, we are gonna bring back the entire python API that allows 
 ### Other
 
 - C & C++ bindings for loading, encode and decode APIs
-- NodeJS bindings with an equivalent API surface (load, encode and decode)
 
 
 ## After 1.0.0
