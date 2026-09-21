@@ -1,0 +1,84 @@
+# Node
+
+The Node binding is encode-only. It loads a `tokenizer.json` and turns text into
+token ids; it does not decode, and it does not build, edit, save or train
+tokenizers.
+
+## Installation
+
+```bash
+npm install tokenizers
+```
+
+## Loading a tokenizer
+
+```js
+const { PipelineTokenizer } = require('tokenizers')
+
+const tokenizer = PipelineTokenizer.fromFile('tokenizer.json')
+```
+
+The file is put through the legacy `1.0` → canonical `2.0` upgrade on the way in,
+so tokenizers already on disk keep loading.
+
+## Encoding
+
+`encode` returns a `Uint32Array` of ids rather than an object: a JS `Array` costs
+one napi value per token, which on token-dense input is 13x the encode itself.
+
+```js
+const ids = tokenizer.encode("Hello, y'all! How are you 😁 ?")
+```
+
+For a tight loop, `encodeBytesInto` writes into a `Uint32Array` you own. That drops
+the two remaining per-call costs — the JS string → UTF-8 copy, and a fresh
+`ArrayBuffer` every call — and returns how many ids it wrote:
+
+```js
+const out = new Uint32Array(512)
+const n = tokenizer.encodeBytesInto(Buffer.from("Hello, y'all!"), out)
+// out.subarray(0, n) holds the ids
+```
+
+## Options
+
+Both methods take an optional second argument. A field left out keeps the
+tokenizer's own behaviour.
+
+```js
+const ids = tokenizer.encode("Hello, y'all!", {
+  addSpecialTokens: true,
+  encodeSpecialTokens: false,
+  padding: { padId: 0, padToken: '[PAD]', length: 16 },
+  truncation: { maxLength: 512 },
+})
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `addSpecialTokens` | `true` | Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`. |
+| `encodeSpecialTokens` | `false` | Whether a special token written in the text goes through the model (`true`) or becomes its added-vocabulary id. |
+| `padding` | configured | Padding for this call, replacing the tokenizer's configured padding. `false` disables it. |
+| `truncation` | configured | Truncation for this call, replacing the tokenizer's configured truncation. `false` disables it. |
+
+### `padding`
+
+Replaces the configured padding as a whole, so a field left out takes the default
+below, not the configured value.
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `direction` | `right` | Whether pad tokens are appended right or prepended left. |
+| `padId` | `0` | The id of the padding token. |
+| `padTypeId` | `0` | The type id of the padding token. |
+| `padToken` | `[PAD]` | The text of the padding token. |
+| `length` | batch longest | Pads every encoding to exactly this many tokens. |
+| `padToMultipleOf` | — | Rounds the padded length up to a multiple of this. |
+
+### `truncation`
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `maxLength` | required | The maximum number of tokens, including special tokens, to keep. |
+| `strategy` | `longest_first` | Which sequence of a pair is truncated: `longest_first`, `only_first` or `only_second`. |
+| `direction` | `right` | Whether to truncate at the end of the sequence or at its beginning. |

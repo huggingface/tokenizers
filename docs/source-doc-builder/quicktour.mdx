@@ -1,5 +1,14 @@
 # Quicktour
 
+<Tip warning={true}>
+
+Not supported by the rc0 bindings yet. rc0 loads a `tokenizer.json` and encodes and
+decodes with it — building a tokenizer from its components, editing one, saving one
+and training are not exposed. They are coming soon, along with the other bindings.
+See [`REQUIRED_FOR_V1.md`](https://github.com/huggingface/tokenizers/blob/main/REQUIRED_FOR_V1.md) for the full list.
+
+</Tip>
+
 Let's have a quick look at the 🤗 Tokenizers library features. The
 library provides an implementation of today's most used tokenizers that
 is both easy to use and blazing fast.
@@ -35,32 +44,29 @@ we instantiate one with a BPE model:
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START init_tokenizer",
-"end-before": "END init_tokenizer",
-"dedent": 8}
-</literalinclude>
+```python
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
+tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_init_tokenizer",
-"end-before": "END quicktour_init_tokenizer",
-"dedent": 4}
-</literalinclude>
+```rust
+use tokenizers::models::bpe::BPE;
+let mut tokenizer: TokenizerImpl<
+    BPE,
+    NormalizerWrapper,
+    PreTokenizerWrapper,
+    PostProcessorWrapper,
+    DecoderWrapper,
+> = TokenizerImpl::new(
+    BPE::builder()
+        .unk_token("[UNK]".to_string())
+        .build()
+        .unwrap(),
+);
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START init_tokenizer",
-"end-before": "END init_tokenizer",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 To train our tokenizer on the wikitext files, we will need to
@@ -69,32 +75,25 @@ instantiate a [trainer]{.title-ref}, in this case a
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START init_trainer",
-"end-before": "END init_trainer",
-"dedent": 8}
-</literalinclude>
+```python
+from tokenizers.trainers import BpeTrainer
+trainer = BpeTrainer(special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_init_trainer",
-"end-before": "END quicktour_init_trainer",
-"dedent": 4}
-</literalinclude>
+```rust
+use tokenizers::models::bpe::BpeTrainer;
+let mut trainer = BpeTrainer::builder()
+    .special_tokens(vec![
+        AddedToken::from("[UNK]", true),
+        AddedToken::from("[CLS]", true),
+        AddedToken::from("[SEP]", true),
+        AddedToken::from("[PAD]", true),
+        AddedToken::from("[MASK]", true),
+    ])
+    .build();
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START init_trainer",
-"end-before": "END init_trainer",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 We can set the training arguments like `vocab_size` or `min_frequency` (here
@@ -121,64 +120,38 @@ pre-tokenizer possible by splitting on whitespace.
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START init_pretok",
-"end-before": "END init_pretok",
-"dedent": 8}
-</literalinclude>
+```python
+from tokenizers.pre_tokenizers import Whitespace
+tokenizer.pre_tokenizer = Whitespace()
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_init_pretok",
-"end-before": "END quicktour_init_pretok",
-"dedent": 4}
-</literalinclude>
+```rust
+use tokenizers::pre_tokenizers::whitespace::Whitespace;
+tokenizer.with_pre_tokenizer(Some(Whitespace {}));
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START init_pretok",
-"end-before": "END init_pretok",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 Now, we can just call the `Tokenizer.train` method with any list of files we want to use:
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START train",
-"end-before": "END train",
-"dedent": 8}
-</literalinclude>
+```python
+files = [f"data/wikitext-103-raw/wiki.{split}.raw" for split in ["test", "train", "valid"]]
+tokenizer.train(files, trainer)
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_train",
-"end-before": "END quicktour_train",
-"dedent": 4}
-</literalinclude>
+```rust
+let files = vec![
+    "data/wikitext-103-raw/wiki.train.raw".into(),
+    "data/wikitext-103-raw/wiki.test.raw".into(),
+    "data/wikitext-103-raw/wiki.valid.raw".into(),
+];
+tokenizer.train_from_files(&mut trainer, files)?;
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START train",
-"end-before": "END train",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 This should only take a few seconds to train our tokenizer on the full
@@ -188,32 +161,15 @@ its configuration and vocabulary, just use the
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START save",
-"end-before": "END save",
-"dedent": 8}
-</literalinclude>
+```python
+tokenizer.save("data/tokenizer-wiki.json")
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_save",
-"end-before": "END quicktour_save",
-"dedent": 4}
-</literalinclude>
+```rust
+tokenizer.save("data/tokenizer-wiki.json", false)?;
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START save",
-"end-before": "END save",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 and you can reload your tokenizer from that file with the
@@ -222,32 +178,15 @@ and you can reload your tokenizer from that file with the
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START reload_tokenizer",
-"end-before": "END reload_tokenizer",
-"dedent": 12}
-</literalinclude>
+```python
+tokenizer = Tokenizer.from_file("data/tokenizer-wiki.json")
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_reload_tokenizer",
-"end-before": "END quicktour_reload_tokenizer",
-"dedent": 4}
-</literalinclude>
+```rust
+let mut tokenizer = Tokenizer::from_file("data/tokenizer-wiki.json")?;
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START reload_tokenizer",
-"end-before": "END reload_tokenizer",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 ### Using the tokenizer
@@ -257,32 +196,15 @@ with the `Tokenizer.encode` method:
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START encode",
-"end-before": "END encode",
-"dedent": 8}
-</literalinclude>
+```python
+output = tokenizer.encode("Hello, y'all! How are you 😁 ?")
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_encode",
-"end-before": "END quicktour_encode",
-"dedent": 4}
-</literalinclude>
+```rust
+let output = tokenizer.encode("Hello, y'all! How are you 😁 ?", true)?;
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START encode",
-"end-before": "END encode",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 This applied the full pipeline of the tokenizer on the text, returning
@@ -296,32 +218,17 @@ segmentation of your text in tokens:
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START print_tokens",
-"end-before": "END print_tokens",
-"dedent": 8}
-</literalinclude>
+```python
+print(output.tokens)
+# ["Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?"]
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_print_tokens",
-"end-before": "END quicktour_print_tokens",
-"dedent": 4}
-</literalinclude>
+```rust
+println!("{:?}", output.get_tokens());
+// ["Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?",]
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START print_tokens",
-"end-before": "END print_tokens",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 Similarly, the `ids` attribute will
@@ -330,32 +237,17 @@ vocabulary:
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START print_ids",
-"end-before": "END print_ids",
-"dedent": 8}
-</literalinclude>
+```python
+print(output.ids)
+# [27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35]
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_print_ids",
-"end-before": "END quicktour_print_ids",
-"dedent": 4}
-</literalinclude>
+```rust
+println!("{:?}", output.get_ids());
+// [27253, 16, 93, 11, 5097, 5, 7961, 5112, 6218, 0, 35]
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START print_ids",
-"end-before": "END print_ids",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 An important feature of the 🤗 Tokenizers library is that it comes with
@@ -370,32 +262,17 @@ index:
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START print_offsets",
-"end-before": "END print_offsets",
-"dedent": 8}
-</literalinclude>
+```python
+print(output.offsets[9])
+# (26, 27)
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_print_offsets",
-"end-before": "END quicktour_print_offsets",
-"dedent": 4}
-</literalinclude>
+```rust
+println!("{:?}", output.get_offsets()[9]);
+// (26, 30)
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START print_offsets",
-"end-before": "END print_offsets",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 and those are the indices that correspond to the emoji in the original
@@ -403,32 +280,19 @@ sentence:
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START use_offsets",
-"end-before": "END use_offsets",
-"dedent": 8}
-</literalinclude>
+```python
+sentence = "Hello, y'all! How are you 😁 ?"
+sentence[26:27]
+# "😁"
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_use_offsets",
-"end-before": "END quicktour_use_offsets",
-"dedent": 4}
-</literalinclude>
+```rust
+let sentence = "Hello, y'all! How are you 😁 ?";
+println!("{}", &sentence[26..30]);
+// "😁"
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START use_offsets",
-"end-before": "END use_offsets",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 ### Post-processing
@@ -446,32 +310,17 @@ double-check, we can use the `Tokenizer.token_to_id` method:
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START check_sep",
-"end-before": "END check_sep",
-"dedent": 8}
-</literalinclude>
+```python
+tokenizer.token_to_id("[SEP]")
+# 2
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_check_sep",
-"end-before": "END quicktour_check_sep",
-"dedent": 4}
-</literalinclude>
+```rust
+println!("{}", tokenizer.token_to_id("[SEP]").unwrap());
+// 2
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START check_sep",
-"end-before": "END check_sep",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 Here is how we can set the post-processing to give us the traditional
@@ -479,32 +328,36 @@ BERT inputs:
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START init_template_processing",
-"end-before": "END init_template_processing",
-"dedent": 8}
-</literalinclude>
+```python
+from tokenizers.processors import TemplateProcessing
+tokenizer.post_processor = TemplateProcessing(
+    single="[CLS] $A [SEP]",
+    pair="[CLS] $A [SEP] $B:1 [SEP]:1",
+    special_tokens=[
+        ("[CLS]", tokenizer.token_to_id("[CLS]")),
+        ("[SEP]", tokenizer.token_to_id("[SEP]")),
+    ],
+)
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_init_template_processing",
-"end-before": "END quicktour_init_template_processing",
-"dedent": 4}
-</literalinclude>
+```rust
+use tokenizers::processors::template::TemplateProcessing;
+let special_tokens = vec![
+    ("[CLS]", tokenizer.token_to_id("[CLS]").unwrap()),
+    ("[SEP]", tokenizer.token_to_id("[SEP]").unwrap()),
+];
+tokenizer.with_post_processor(Some(
+    TemplateProcessing::builder()
+        .try_single("[CLS] $A [SEP]")
+        .unwrap()
+        .try_pair("[CLS] $A [SEP] $B:1 [SEP]:1")
+        .unwrap()
+        .special_tokens(special_tokens)
+        .build()?,
+));
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START init_template_processing",
-"end-before": "END init_template_processing",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 Let's go over this snippet of code in more details. First we specify
@@ -529,32 +382,19 @@ sentence as before:
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START print_special_tokens",
-"end-before": "END print_special_tokens",
-"dedent": 8}
-</literalinclude>
+```python
+output = tokenizer.encode("Hello, y'all! How are you 😁 ?")
+print(output.tokens)
+# ["[CLS]", "Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?", "[SEP]"]
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_print_special_tokens",
-"end-before": "END quicktour_print_special_tokens",
-"dedent": 4}
-</literalinclude>
+```rust
+let output = tokenizer.encode("Hello, y'all! How are you 😁 ?", true)?;
+println!("{:?}", output.get_tokens());
+// ["[CLS]", "Hello", ",", "y", "'", "all", "!", "How", "are", "you", "[UNK]", "?", "[SEP]"]
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START print_special_tokens",
-"end-before": "END print_special_tokens",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 To check the results on a pair of sentences, we just pass the two
@@ -562,64 +402,36 @@ sentences to `Tokenizer.encode`:
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START print_special_tokens_pair",
-"end-before": "END print_special_tokens_pair",
-"dedent": 8}
-</literalinclude>
+```python
+output = tokenizer.encode("Hello, y'all!", "How are you 😁 ?")
+print(output.tokens)
+# ["[CLS]", "Hello", ",", "y", "'", "all", "!", "[SEP]", "How", "are", "you", "[UNK]", "?", "[SEP]"]
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_print_special_tokens_pair",
-"end-before": "END quicktour_print_special_tokens_pair",
-"dedent": 4}
-</literalinclude>
+```rust
+let output = tokenizer.encode(("Hello, y'all!", "How are you 😁 ?"), true)?;
+println!("{:?}", output.get_tokens());
+// ["[CLS]", "Hello", ",", "y", "'", "all", "!", "[SEP]", "How", "are", "you", "[UNK]", "?", "[SEP]"]
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START print_special_tokens_pair",
-"end-before": "END print_special_tokens_pair",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 You can then check the type IDs attributed to each token is correct with
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START print_type_ids",
-"end-before": "END print_type_ids",
-"dedent": 8}
-</literalinclude>
+```python
+print(output.type_ids)
+# [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_print_type_ids",
-"end-before": "END quicktour_print_type_ids",
-"dedent": 4}
-</literalinclude>
+```rust
+println!("{:?}", output.get_type_ids());
+// [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START print_type_ids",
-"end-before": "END print_type_ids",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 If you save your tokenizer with `Tokenizer.save`, the post-processor will be saved along.
@@ -632,32 +444,15 @@ process your texts by batches by using the
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START encode_batch",
-"end-before": "END encode_batch",
-"dedent": 8}
-</literalinclude>
+```python
+output = tokenizer.encode_batch(["Hello, y'all!", "How are you 😁 ?"])
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_encode_batch",
-"end-before": "END quicktour_encode_batch",
-"dedent": 4}
-</literalinclude>
+```rust
+let output = tokenizer.encode_batch(vec!["Hello, y'all!", "How are you 😁 ?"], true)?;
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START encode_batch",
-"end-before": "END encode_batch",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 The output is then a list of `Encoding`
@@ -670,32 +465,23 @@ list of sentences A and the list of sentences B:
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START encode_batch_pair",
-"end-before": "END encode_batch_pair",
-"dedent": 8}
-</literalinclude>
+```python
+output = tokenizer.encode_batch(
+    [["Hello, y'all!", "How are you 😁 ?"], ["Hello to you too!", "I'm fine, thank you!"]]
+)
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_encode_batch_pair",
-"end-before": "END quicktour_encode_batch_pair",
-"dedent": 4}
-</literalinclude>
+```rust
+let output = tokenizer.encode_batch(
+    vec![
+        ("Hello, y'all!", "How are you 😁 ?"),
+        ("Hello to you too!", "I'm fine, thank you!"),
+    ],
+    true,
+)?;
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START encode_batch_pair",
-"end-before": "END encode_batch_pair",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 When encoding multiple sentences, you can automatically pad the outputs
@@ -707,32 +493,20 @@ double-check the id for the padding token with
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START enable_padding",
-"end-before": "END enable_padding",
-"dedent": 8}
-</literalinclude>
+```python
+tokenizer.enable_padding(pad_id=3, pad_token="[PAD]")
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_enable_padding",
-"end-before": "END quicktour_enable_padding",
-"dedent": 4}
-</literalinclude>
+```rust
+use tokenizers::PaddingParams;
+tokenizer.with_padding(Some(PaddingParams {
+    pad_id: 3,
+    pad_token: "[PAD]".to_string(),
+    ..PaddingParams::default()
+}));
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START enable_padding",
-"end-before": "END enable_padding",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 We can set the `direction` of the padding
@@ -741,32 +515,19 @@ we leave it unset to pad to the size of the longest text).
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START print_batch_tokens",
-"end-before": "END print_batch_tokens",
-"dedent": 8}
-</literalinclude>
+```python
+output = tokenizer.encode_batch(["Hello, y'all!", "How are you 😁 ?"])
+print(output[1].tokens)
+# ["[CLS]", "How", "are", "you", "[UNK]", "?", "[SEP]", "[PAD]"]
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_print_batch_tokens",
-"end-before": "END quicktour_print_batch_tokens",
-"dedent": 4}
-</literalinclude>
+```rust
+let output = tokenizer.encode_batch(vec!["Hello, y'all!", "How are you 😁 ?"], true)?;
+println!("{:?}", output[1].get_tokens());
+// ["[CLS]", "How", "are", "you", "[UNK]", "?", "[SEP]", "[PAD]"]
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START print_batch_tokens",
-"end-before": "END print_batch_tokens",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 In this case, the `attention mask` generated by the
@@ -774,38 +535,24 @@ tokenizer takes the padding into account:
 
 <tokenizerslangcontent>
 <python>
-<literalinclude>
-{"path": "../../bindings/python/tests/documentation/test_quicktour.py",
-"language": "python",
-"start-after": "START print_attention_mask",
-"end-before": "END print_attention_mask",
-"dedent": 8}
-</literalinclude>
+```python
+print(output[1].attention_mask)
+# [1, 1, 1, 1, 1, 1, 1, 0]
+```
 </python>
 <rust>
-<literalinclude>
-{"path": "../../tokenizers/tests/documentation.rs",
-"language": "rust",
-"start-after": "START quicktour_print_attention_mask",
-"end-before": "END quicktour_print_attention_mask",
-"dedent": 4}
-</literalinclude>
+```rust
+println!("{:?}", output[1].get_attention_mask());
+// [1, 1, 1, 1, 1, 1, 1, 0]
+```
 </rust>
-<node>
-<literalinclude>
-{"path": "../../bindings/node/examples/documentation/quicktour.test.ts",
-"language": "js",
-"start-after": "START print_attention_mask",
-"end-before": "END print_attention_mask",
-"dedent": 8}
-</literalinclude>
-</node>
 </tokenizerslangcontent>
 
 ## Pretrained
 
 <tokenizerslangcontent>
 <python>
+
 ### Using a pretrained tokenizer
 
 You can load any tokenizer from the Hugging Face Hub as long as a
@@ -824,15 +571,14 @@ have its vocabulary file. For instance, here is how to import the
 classic pretrained BERT tokenizer:
 
 ```python
-from tokenizers import BertWordPieceTokenizer
-
-tokenizer = BertWordPieceTokenizer("bert-base-uncased-vocab.txt", lowercase=True)
+from tokenizers import Tokenizer
+tokenizer = Tokenizer.from_file("bert-base-uncased-vocab.txt", lowercase=True)
 ```
 
 as long as you have downloaded the file `bert-base-uncased-vocab.txt` with
 
 ```bash
-wget https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-vocab.txt
+hf download hf://google-bert/bert-base-uncased/vocab.txt
 ```
 </python>
 </tokenizerslangcontent>
