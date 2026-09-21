@@ -9,7 +9,7 @@ use crate::{AUX_SLASH, Span};
 
 /// o200k_base / GPT-4o — and byte-for-byte the same regex Llama-4, gpt-oss and MiniMax-M2 ship.
 #[must_use]
-pub fn bitsplit_o200k(
+pub fn bitcanon_o200k(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],

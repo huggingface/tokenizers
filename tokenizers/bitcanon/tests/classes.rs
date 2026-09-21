@@ -2,8 +2,8 @@
 //! FSM it replaced. Truncating the corpus at every char boundary walks every construct through
 //! every block phase, which is the only thing that exercises the cross-block carries.
 
-use bitsplit::Span;
-use bitsplit::classify::{CONT, char_len, classify, in_mask, mask};
+use bitcanon::Span;
+use bitcanon::classify::{CONT, char_len, classify, in_mask, mask};
 
 /// The scalar class-run FSM, verbatim from `classes.rs` before the bitstream port.
 fn reference(text: &[u8], tags: &[u8], dropm: u16, isolatem: u16, keepa: u16) -> Vec<Span> {
@@ -47,7 +47,7 @@ fn check<const D: u16, const I: u16, const K: u16>(name: &str, text: &[u8]) {
     let words = text.len().div_ceil(64) + 1;
     let (mut st, mut fk) = (vec![0u64; words], vec![0u64; words]);
     let mut got = vec![Span::default(); text.len() + 1];
-    let k = bitsplit::classes::class_runs_into::<D, I, K>(text, &tags, &mut st, &mut fk, &mut got);
+    let k = bitcanon::classes::class_runs_into::<D, I, K>(text, &tags, &mut st, &mut fk, &mut got);
     assert_eq!(
         &got[..k],
         &want[..],

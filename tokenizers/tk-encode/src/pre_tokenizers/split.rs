@@ -1,6 +1,6 @@
 use crate::pipeline;
 use crate::utils::{Grammar, SysRegex, recognize};
-use bitsplit::literal::Literal;
+use bitcanon::literal::Literal;
 
 use crate::tokenizer::{
     Result, SplitDelimiterBehavior,
@@ -53,7 +53,7 @@ pub struct Split {
     pub search: Search,
     pub behavior: SplitDelimiterBehavior,
     pub invert: bool,
-    /// Native `bitsplit` FSM for a recognized GPT regex (gpt2 / cl100k-Llama-3 / o200k), used on the
+    /// Native `bitcanon` FSM for a recognized GPT regex (gpt2 / cl100k-Llama-3 / o200k), used on the
     /// pipeline path when `behavior == Isolated && !invert` (how these regexes always ship). Byte-exact
     /// with `regex`; `None` falls back to `regex`.
     fsm: Option<Grammar>,
@@ -157,7 +157,7 @@ impl Split {
     }
 }
 
-// SAFETY: both routes cut only at character boundaries of `text`. The native route is a `bitsplit`
+// SAFETY: both routes cut only at character boundaries of `text`. The native route is a `bitcanon`
 // grammar, see "What the spans guarantee" in its docs. The search route forwards the offsets of
 // `Pattern::find_matches` through `pipeline::split_matches`, and every `Pattern` here reports
 // boundaries: a regex matches on a `&str`, and `Literal` holds the bytes of a `&str` pattern, which
@@ -170,7 +170,7 @@ unsafe impl pipeline::PreTokenizer for Split {
         out: &mut Vec<pipeline::Span>,
     ) -> Result<()> {
         // A recognized GPT regex in its only real usage -- `Isolated`, not inverted -- routes
-        // straight to the native bitsplit grammar. These regexes cover the whole input, so
+        // straight to the native bitcanon grammar. These regexes cover the whole input, so
         // `Isolated` == the match list, and the grammar is byte-exact with `regex` (see the tests).
         if let Some(grammar) = self
             .fsm
@@ -244,7 +244,7 @@ mod tests {
 
         // A recognised pattern still reports its family, so a caller can route it natively.
         let gpt2 = Split::native(
-            SplitPattern::Regex(bitsplit::regexes::GPT2.to_string()),
+            SplitPattern::Regex(bitcanon::regexes::GPT2.to_string()),
             SplitDelimiterBehavior::Isolated,
             false,
         )
