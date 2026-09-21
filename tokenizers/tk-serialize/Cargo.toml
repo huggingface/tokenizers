@@ -1,6 +1,6 @@
 [package]
 name = "tk-serialize"
-version = "0.1.0-dev.0"
+version = "0.1.0-rc.1"
 edition = "2024"
 authors = [
   "Arthur Zucker <arthur@huggingface.co>",
@@ -38,10 +38,10 @@ hifijson = "0.5.0"
 base64 = "0.22"
 # The runtime this crate builds. No `config`: the whole point is that reading a canonical
 # `tokenizer.json` needs no serde layer at all.
-tk-encode = { path = "../tk-encode", version = "0.1.0-dev.0", default-features = false }
+tk-encode = { path = "../tk-encode", version = "0.1.0-rc.1", default-features = false }
 # The GPT-2 pre-tokenizer pattern is a constant in `bitcannon`, and a `ByteLevel` pre-tokenizer is
 # spelled as a `Split` on it. Nothing else here reaches the FSM crate directly.
-bitcannon = { path = "../bitcannon", version = "0.1.0-dev.0" }
+bitcannon = { path = "../bitcannon", version = "0.1.0-rc.1" }
 
 [features]
 # Reading a canonical `tokenizer.json` into a `PipelineTokenizer`. On by default -- it is what the
