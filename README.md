@@ -43,6 +43,7 @@ Encoding(ids=[128000, 9906, 11, 379, 65948, 0, 2650, 527, 499, 27623, 223, 949],
 
 # Performances
 
+PLACEHODER
 
 To measure performances of `tokenizers`, we strongly advise to use `tokbench`.
 
