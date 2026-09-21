@@ -11,7 +11,7 @@
     <a href="https://github.com/huggingface/tokenizers/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue&cachedrop"></a>
 </p>
 
-The fastest tokenization library on all languages, all models, all hardwares. 
+The SOTA tokenization library on all languages, all models, all hardwares. 
 
 Our goal with `tokenizers` is to develop and maintain the industry's standard tokenization engine, making it the defacto place for everyone to contribute to the whole ecosystem.
 
@@ -45,57 +45,11 @@ Encoding(ids=[128000, 9906, 11, 379, 65948, 0, 2650, 527, 499, 27623, 223, 949],
 
 PLACEHODER
 
-To measure performances of `tokenizers`, we strongly advise to use `tokbench`.
-
-## tokbench
-
-**[tokbench](https://github.com/huggingface/tokbench)** is a standalone cross-engine benchmark we built because there was no honest way to compare most of the sota tokenization libraries.
-
-It exists to remove the two ways tokenizer benchmarks usually mislead:
-
-- **One timing loop, one process.** Every engine is measured by the same harness on the same bytes,
-  rather than each project quoting its own number from its own rig.
-- **An id-verification gate.** Every run is hashed and compared against the reference ids. An
-  engine that computes *different* ids is marked `mismatch` and is never ranked. Being fast at the
-  wrong answer is not a win, and this is where "supports every model" stops being a slogan and
-  becomes a column: engines that decline non-Latin scripts, or quietly differ on them, show up as
-  declined or mismatched cells instead of as speed.
-
-Run it yourself:
-[huggingface/tokbench](https://github.com/huggingface/tokbench).
-
-
-# To come for v1
+# v1.0.0 roadmap:
 
 As we work toward v1, we are gonna bring back the entire python API that allows `transformers`' style of interacting with a tokenizer object:
 
-## The target python API
-
-```python
-from tokenizers import Tokenizer, decoders, models, normalizers, pre_tokenizers, processors
-tokenizer = Tokenizer(models.BPE())
-tokenizer.normalizer = normalizers.Sequence([normalizers.NFD(), normalizers.Lowercase()])
-tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
-tokenizer.model = models.BPE.from_file("vocab.json", "merges.txt")
-tokenizer.post_processor = processors.TemplateProcessing(
-    single="[CLS] $A [SEP]",
-    special_tokens=[("[CLS]", 1), ("[SEP]", 2)],
-)
-tokenizer.decoder = decoders.ByteLevel()
-tokenizer.pre_tokenizer
-```
-
-## Training 
-
-```python
-from tokenizers.trainers import BpeTrainer
-
-trainer = BpeTrainer(special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]", "[MASK]"])
-tokenizer.train(files=["wiki.train.raw", "wiki.valid.raw"], trainer=trainer)
-tokenizer.save("tokenizer.json")
-```
-
-# TODOs remaining before 1.0.0
+## TODOS:
 
 - Improve `bitcannon`: we want to rewrite it a bit.
 - Bring training back: this should be easy, but we want the perfs gains to come as well.
@@ -104,7 +58,7 @@ tokenizer.save("tokenizer.json")
 - Unroll more regex: we need to cover the most used ones, we might have missed one or two.
 - `bitnorm`: more performance from optimized normalization, as this will bring breaking changes we want to make sure it gets to v1.
 
-### After 1.0.0
+## After 1.0.0
 
 - `tk-devices` — exploratory GPU encoding and batch decoding that keeps text and ids on the
   device: upload the vocabulary once, compute output positions in parallel, gather the bytes on the
@@ -255,18 +209,8 @@ aarch64 selects at compile time (NEON is baseline). x86_64 dispatches at runtime
 `simd128` target feature; without it, the scalar walk.
 </details>
 
-## Getting it
-
-```bash
-pip install --pre tokenizers
-```
-
-```toml
-[dependencies]
-tokenizers = "1.0.0-rc.0"
-```
-
 # Acknowledgements
+
 This work stands on the shoulders of a lot of open source projects. Thanks to all of them for their great work.
 
 [gigatoken](https://github.com/marcelroed/gigatoken),
