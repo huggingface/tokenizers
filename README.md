@@ -11,13 +11,57 @@
     <a href="https://github.com/huggingface/tokenizers/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue&cachedrop"></a>
 </p>
 
-The fastest tokenizer library on all language, all models, all hardwares.
+The fastest tokenization library on all languages, all models, all hardwares. 
+
+Our goal with `tokenizers` is to develop and maintain the industry's standard tokenization engine, making it the defacto place for everyone to contribute to the whole ecosystem.
+
+### Release candidate: v1.0.0.rc.0
+
+As we are switching from 0.23 to v1.0.0, the current library does not ship all features. If you are worried, check the [v1 features](#v1-features) section for more details of what we are bringing back.
+We will publish a blog about what breaking changes we introduced. We strived to keep them as small as possible.
 
 # Installation
 
 ```bash
 pip install --pre tokenizers
 ```
+
+# Usage
+
+```python
+>>> from tokenizers import Tokenizer
+>>> tokenizer = Tokenizer.from_pretrained("meta-llama/Llama-3.1-8B")   # or .from_file(path)
+>>> tokenizer.encode("Hello, y'all! How are you 😁 ?")
+Encoding(ids=[128000, 9906, 11, 379, 65948, 0, 2650, 527, 499, 27623, 223, 949], type_ids=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], attention_mask=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
+>>> tokenizer.tokenize("Hello")
+['<|begin_of_text|>', 'Hello']
+>>> tokenizer.decode([15339, 1917])
+'hello world'
+>>> tokenizer.decode_tokens(tokenizer.encode("Hello"))
+['<|begin_of_text|>', 'Hello']
+```
+
+# Performances
+
+
+To measure performances of `tokenizers`, we strongly advise to use `tokbench`.
+
+## tokbench
+
+**[tokbench](https://github.com/huggingface/tokbench)** is a standalone cross-engine benchmark we built because there was no honest way to compare most of the sota tokenization libraries.
+
+It exists to remove the two ways tokenizer benchmarks usually mislead:
+
+- **One timing loop, one process.** Every engine is measured by the same harness on the same bytes,
+  rather than each project quoting its own number from its own rig.
+- **An id-verification gate.** Every run is hashed and compared against the reference ids. An
+  engine that computes *different* ids is marked `mismatch` and is never ranked. Being fast at the
+  wrong answer is not a win, and this is where "supports every model" stops being a slogan and
+  becomes a column: engines that decline non-Latin scripts, or quietly differ on them, show up as
+  declined or mismatched cells instead of as speed.
+
+Run it yourself:
+[huggingface/tokbench](https://github.com/huggingface/tokbench).
 
 
 # To come for v1
@@ -50,31 +94,14 @@ tokenizer.train(files=["wiki.train.raw", "wiki.valid.raw"], trainer=trainer)
 tokenizer.save("tokenizer.json")
 ```
 
-## What the rc actually gives you today
+# TODOs remaining before 1.0.0
 
-```python
-from tokenizers import Tokenizer
-
-tokenizer = Tokenizer.from_pretrained("meta-llama/Llama-3.1-8B")   # or .from_file(path)
-
-tokenizer.encode("Hello, y'all! How are you 😁 ?")   # -> Encoding
-tokenizer.encode_batch([...])
-tokenizer.tokenize("Hello")                          # -> ["Hello"]
-tokenizer.decode([15339, 1917])
-tokenizer.decode_tokens(encoding)
-tokenizer.padding = None                             # get/set padding
-```
-
-### Remaining before 1.0.0
-
-- Improve `bitcannon`
-- Bring training back
-- Apply performance improvement to trainer
-- Bring back offset output
-- cpp / java / go bindings
-- GPU encode / decode
-- Unroll more regex
-- `bitnorm`: more performance from optimized normalization
+- Improve `bitcannon`: we want to rewrite it a bit.
+- Bring training back: this should be easy, but we want the perfs gains to come as well.
+- Bring back offset output: this should be useful for people training.
+- cpp / java / go bindings: there is a draft for C, we want to work on other bindings as well.
+- Unroll more regex: we need to cover the most used ones, we might have missed one or two.
+- `bitnorm`: more performance from optimized normalization, as this will bring breaking changes we want to make sure it gets to v1.
 
 ### After 1.0.0
 
@@ -82,36 +109,11 @@ tokenizer.padding = None                             # get/set padding
   device: upload the vocabulary once, compute output positions in parallel, gather the bytes on the
   GPU. An optional component aimed at large batches, subject to prototyping and measurement.
 
-## Performance
-
-Single thread, the closest competitor is [gigatoken](https://github.com/marcelroed/gigatoken), kudos to the authors!
-In all fairness, they are still faster when the cache is unbound, but on the same cache size, tokenizers performs better!
-We are gonna work a bit on unbound cache performances to make sure we leverage their ideas. 
-
-### Against 0.23.1, by model and by language
-
-### Latency and decode
-
-## tokbench
-
-Every number above comes from **[tokbench](https://github.com/huggingface/tokbench)**, a standalone cross-engine benchmark we built because there was no honest way to compare these
-libraries.
-
-It exists to remove the two ways tokenizer benchmarks usually mislead:
-
-- **One timing loop, one process.** Every engine is measured by the same harness on the same bytes,
-  rather than each project quoting its own number from its own rig.
-- **An id-verification gate.** Every run is hashed and compared against the reference ids. An
-  engine that computes *different* ids is marked `mismatch` and is never ranked. Being fast at the
-  wrong answer is not a win, and this is where "supports every model" stops being a slogan and
-  becomes a column: engines that decline non-Latin scripts, or quietly differ on them, show up as
-  declined or mismatched cells instead of as speed.
-
-Run it yourself:
-[huggingface/tokbench](https://github.com/huggingface/tokbench).
-
 <a name="footprint"></a>
-## Rust crate size
+
+# Crate details
+
+## Crate size
 
 ```
 make slim-size      # tk-encode + tk-serialize, minsize profile, stripped
@@ -123,7 +125,7 @@ small binary is mostly padding. `make slimest` goes lower still (`minsize` plus 
 without unwinding, nightly). The badge at the top is this number, measured on macOS — a stripped
 ELF gzips to something slightly different.
 
-## Crates
+## Sub-crates
 
 <details>
 <summary><b><code>tk-encode</code></b> — the inference half</summary>
@@ -263,7 +265,10 @@ pip install --pre tokenizers
 tokenizers = "1.0.0-rc.0"
 ```
 
-This work stands on a lot of open source. [gigatoken](https://github.com/marcelroed/gigatoken),
+# Acknowledgements
+This work stands on the shoulders of a lot of open source projects. Thanks to all of them for their great work.
+
+[gigatoken](https://github.com/marcelroed/gigatoken),
 [tiktoken](https://crates.io/crates/tiktoken-rs), [kitoken](https://crates.io/crates/kitoken),
 [tokie](https://crates.io/crates/tokie), [fastokens](https://crates.io/crates/fastokens),
 [wordchipper](https://crates.io/crates/wordchipper) and
