@@ -97,7 +97,6 @@ As we work toward v1, we are gonna bring back the entire python API that allows 
 ## After 1.0.0
 
 - Improve / rewrite the `bitcannon` crate
-- Full API surface in Node bindings
 - Java, Go, Swift... bindings, supported by the C bindings
 - `tk-devices` — exploratory GPU encoding and batch decoding that keeps text and ids on the
   device: upload the vocabulary once, compute output positions in parallel, gather the bytes on the
