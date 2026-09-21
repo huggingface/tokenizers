@@ -9,9 +9,9 @@
 //!   gaps; deepseek's three passes do leave gaps, hence `split_iso`.
 #![cfg(not(target_arch = "wasm32"))]
 
-use bitcanon::Span;
-use bitcanon::classify::classify;
-use bitcanon::regexes::{
+use bitcannon::Span;
+use bitcannon::classify::classify;
+use bitcannon::regexes::{
     CL100K, DEEPSEEK_BIG as DS_BIG, DEEPSEEK_CJK as DS_CJK, DEEPSEEK_NUM as DS_NUM, GPT2, KIMI_K2,
     O200K, TEKKEN,
 };
@@ -40,7 +40,7 @@ fn bs_deepseek(
     _l: &mut [u64],
     o: &mut [Span],
 ) -> usize {
-    bitcanon::bitcanon_deepseek(t, g, s, o)
+    bitcannon::bitcannon_deepseek(t, g, s, o)
 }
 fn bs_byte_level(
     t: &[u8],
@@ -50,7 +50,7 @@ fn bs_byte_level(
     _l: &mut [u64],
     o: &mut [Span],
 ) -> usize {
-    bitcanon::bitcanon_byte_level(t, g, s, f, o)
+    bitcannon::bitcannon_byte_level(t, g, s, f, o)
 }
 fn bs_cl100k(
     t: &[u8],
@@ -60,7 +60,7 @@ fn bs_cl100k(
     _l: &mut [u64],
     o: &mut [Span],
 ) -> usize {
-    bitcanon::bitcanon_cl100k(t, g, s, f, o)
+    bitcannon::bitcannon_cl100k(t, g, s, f, o)
 }
 fn bs_qwen(
     t: &[u8],
@@ -70,7 +70,7 @@ fn bs_qwen(
     _l: &mut [u64],
     o: &mut [Span],
 ) -> usize {
-    bitcanon::bitcanon_qwen(t, g, s, f, o)
+    bitcannon::bitcannon_qwen(t, g, s, f, o)
 }
 fn bs_o200k(
     t: &[u8],
@@ -80,7 +80,7 @@ fn bs_o200k(
     _l: &mut [u64],
     o: &mut [Span],
 ) -> usize {
-    bitcanon::bitcanon_o200k(t, g, s, f, _l, o)
+    bitcannon::bitcannon_o200k(t, g, s, f, _l, o)
 }
 fn bs_tekken(
     t: &[u8],
@@ -90,7 +90,7 @@ fn bs_tekken(
     _l: &mut [u64],
     o: &mut [Span],
 ) -> usize {
-    bitcanon::bitcanon_tekken(t, g, s, f, _l, o)
+    bitcannon::bitcannon_tekken(t, g, s, f, _l, o)
 }
 fn bs_kimi(
     t: &[u8],
@@ -100,7 +100,7 @@ fn bs_kimi(
     _l: &mut [u64],
     o: &mut [Span],
 ) -> usize {
-    bitcanon::bitcanon_kimi(t, g, s, f, _l, o)
+    bitcannon::bitcannon_kimi(t, g, s, f, _l, o)
 }
 
 fn spans(f: Split, s: &str) -> Vec<Span> {

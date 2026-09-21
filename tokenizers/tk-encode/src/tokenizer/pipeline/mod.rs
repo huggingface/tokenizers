@@ -34,7 +34,7 @@ mod scratch_pool;
 
 pub use scratch_pool::ModelScratch;
 
-pub use bitcanon::Span;
+pub use bitcannon::Span;
 
 mod normalizer;
 mod post_processor;

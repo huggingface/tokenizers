@@ -1,6 +1,6 @@
 //! DeepSeek-V3/V4 pre-tokenization: the `Sequence` of `\p{N}{1,3}` → `[一-龥぀-ゟ゠-ヿ]+` →
 //! the big regex, all `Isolated`, as one bitstream program. Byte-exact with
-//! `bitcanon::bitcanon_deepseek`.
+//! `bitcannon::bitcannon_deepseek`.
 
 use crate::{
     AUX_CJK, Anl, CODE_CONT, Digits, Out, Span, blocks, build_block, emit, later_in_run, scanthru,
@@ -110,10 +110,10 @@ fn cls(
 }
 
 /// Pre-tokenize `text` (well-formed UTF-8) with the DeepSeek grammar: writes token spans into `out`
-/// and returns the count. `tags` is `bitcanon::classify`'s output (len ≥ `text.len()`), `starts`
+/// and returns the count. `tags` is `bitcannon::classify`'s output (len ≥ `text.len()`), `starts`
 /// is scratch for the token-start bitmap (len ≥ `text.len().div_ceil(64)`).
 #[must_use]
-pub fn bitcanon_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut [Span]) -> usize {
+pub fn bitcannon_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mut [Span]) -> usize {
     let ntext = text.len();
     if ntext == 0 {
         return 0;

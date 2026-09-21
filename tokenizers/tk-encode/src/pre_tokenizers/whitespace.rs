@@ -4,7 +4,7 @@ use crate::tokenizer::Result;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Whitespace;
 
-use bitcanon::classify::mask;
+use bitcannon::classify::mask;
 
 impl Default for Whitespace {
     fn default() -> Self {
@@ -15,8 +15,8 @@ impl Default for Whitespace {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct WhitespaceSplit;
 
-// SAFETY: the spans come from an `bitcanon` fsm, which cuts only at character boundaries of `text`.
-// See "What the spans guarantee" in the `bitcanon` docs.
+// SAFETY: the spans come from an `bitcannon` fsm, which cuts only at character boundaries of `text`.
+// See "What the spans guarantee" in the `bitcannon` docs.
 unsafe impl pipeline::PreTokenizer for WhitespaceSplit {
     fn pre_tokenize(
         &self,
@@ -24,12 +24,12 @@ unsafe impl pipeline::PreTokenizer for WhitespaceSplit {
         scratch: &mut PreTokenizerScratch,
         out: &mut Vec<pipeline::Span>,
     ) -> Result<()> {
-        // drop whitespace runs, keep everything else as runs — bitcanon SIMD classify + class-runs FSM.
+        // drop whitespace runs, keep everything else as runs — bitcannon SIMD classify + class-runs FSM.
         // atom `WS` == `char::is_whitespace`, so byte-exact with the scalar path.
         scratch.split_on_bits(
             text.as_bytes(),
             |b, t, st, fk, _, o| {
-                bitcanon::classes::class_runs_into::<{ mask::WS }, 0, 0>(b, t, st, fk, o)
+                bitcannon::classes::class_runs_into::<{ mask::WS }, 0, 0>(b, t, st, fk, o)
             },
             out,
         );
@@ -51,8 +51,8 @@ pub fn is_word_char(ch: char) -> bool {
         || ch == '\u{200d}' // Zero-Width Joiner
 }
 
-// SAFETY: the spans come from an `bitcanon` fsm, which splits only at character boundaries of `text`.
-// See `bitcanon` docs.
+// SAFETY: the spans come from an `bitcannon` fsm, which splits only at character boundaries of `text`.
+// See `bitcannon` docs.
 unsafe impl pipeline::PreTokenizer for Whitespace {
     #[inline(never)]
     fn pre_tokenize(
@@ -62,11 +62,11 @@ unsafe impl pipeline::PreTokenizer for Whitespace {
         out: &mut Vec<pipeline::Span>,
     ) -> Result<()> {
         // `\w+|[^\w\s]+`: drop whitespace, cut at the word↔symbol boundary, each run one token —
-        // bitcanon classify + class-runs FSM (`WORD` = `\w`; keep-A = word, keep-B = symbol).
+        // bitcannon classify + class-runs FSM (`WORD` = `\w`; keep-A = word, keep-B = symbol).
         scratch.split_on_bits(
             text.as_bytes(),
             |b, t, st, fk, _, o| {
-                bitcanon::classes::class_runs_into::<{ mask::WS }, 0, { mask::WORD }>(
+                bitcannon::classes::class_runs_into::<{ mask::WS }, 0, { mask::WORD }>(
                     b, t, st, fk, o,
                 )
             },

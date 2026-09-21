@@ -1,11 +1,11 @@
 //! Dev-time only (depends on `unicode-properties`); nothing here is linked into the runtime crate.
 //! `cargo run -p bitmap_gen` calls [`generate_atom_tables`] and writes the committed
-//! `bitcanon/src/classify/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
+//! `bitcannon/src/classify/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
 //! fast3 / bmp_rle / astral)
 use std::fmt::Write as _;
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
-/// Script=Han, sorted and disjoint — the same table `bitcanon::han` carried, now baked into the
+/// Script=Han, sorted and disjoint — the same table `bitcannon::han` carried, now baked into the
 /// atom scheme instead of range-tested per byte at runtime. Extensions past Ext F are included
 /// because onig's `\p{Han}` has them; the parity gate pins this to the oracle's Unicode version.
 const HAN: &[(u32, u32)] = &[

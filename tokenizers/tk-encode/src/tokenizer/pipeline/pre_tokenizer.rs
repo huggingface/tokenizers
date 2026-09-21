@@ -13,8 +13,8 @@ use crate::pre_tokenizers::{
     whitespace::{Whitespace, WhitespaceSplit},
 };
 use crate::tokenizer::{Result, SplitDelimiterBehavior};
-use bitcanon::Span;
-use bitcanon::classify::classify;
+use bitcannon::Span;
+use bitcannon::classify::classify;
 
 /// Range-based pre-tokenization: yields spans into the input rather than owned
 /// substrings, so the pipeline can pre-tokenize without allocating.
@@ -43,7 +43,7 @@ pub unsafe trait PreTokenizer {
 /// The working buffers a [`PreTokenizer`] needs to split a text into pre-tokens.
 #[derive(Default)]
 pub struct PreTokenizerScratch {
-    /// One [`bitcanon`] atom tag per input byte, what [`bitcanon::classify::classify`] writes
+    /// One [`bitcannon`] atom tag per input byte, what [`bitcannon::classify::classify`] writes
     /// and the grammars read.
     tags: Vec<u8>,
     /// An intermediate buffer in which the FSM writes the Span before they get appended to the output
@@ -61,7 +61,7 @@ pub struct PreTokenizerScratch {
 }
 
 impl PreTokenizerScratch {
-    /// Tag every byte of `bytes` with its [`bitcanon`] atom class, run `fsm` over the tags, and
+    /// Tag every byte of `bytes` with its [`bitcannon`] atom class, run `fsm` over the tags, and
     /// append the spans to `out`.
     pub fn split_on_tags(
         &mut self,

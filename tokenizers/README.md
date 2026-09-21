@@ -18,7 +18,7 @@
 The 🤗 Tokenizers library.
 
 The implementation is split across crates (each built on internal engines — `tk_encode` on the
-`bitcanon` SIMD pre-tokenizer, and the shared `bitmap_gen` tables):
+`bitcannon` SIMD pre-tokenizer, and the shared `bitmap_gen` tables):
 
 - [`tk_encode`] — inference: the model engines and the full pipeline components
   ([`Normalizer`], [`PreTokenizer`], [`Model`], [`PostProcessor`], [`Decoder`]).

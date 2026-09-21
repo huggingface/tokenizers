@@ -1,15 +1,15 @@
-//! Recognize a known GPT pre-tokenization regex and route it to the byte-exact native `bitcanon`
+//! Recognize a known GPT pre-tokenization regex and route it to the byte-exact native `bitcannon`
 //! grammar, so those pre-tokenizers need no system-regex backend. An unrecognized pattern returns
 //! `None` and falls back to `SysRegex` (the optional fancy-regex backend).
 
-// The canonical regexes are the recognition keys; the single source of truth is `bitcanon::regexes`.
-use bitcanon::Span;
-use bitcanon::regexes::{GPT2, KIMI_K2, O200K, TEKKEN};
+// The canonical regexes are the recognition keys; the single source of truth is `bitcannon::regexes`.
+use bitcannon::Span;
+use bitcannon::regexes::{GPT2, KIMI_K2, O200K, TEKKEN};
 // cl100k is recognized structurally (see `cl100k_digit_cap`), so the exact pattern is only a test key.
 #[cfg(test)]
-use bitcanon::regexes::CL100K;
+use bitcannon::regexes::CL100K;
 
-/// A recognized GPT pre-tokenization regex and the `bitcanon` grammar that reproduces its
+/// A recognized GPT pre-tokenization regex and the `bitcannon` grammar that reproduces its
 /// `Isolated` split byte-for-byte. One variant per distinct regex; models sharing a regex share a
 /// variant (o200k covers Llama-4, gpt-oss and MiniMax-M2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,14 +41,14 @@ impl Grammar {
         out: &mut [Span],
     ) -> usize {
         match self {
-            Grammar::Gpt2 => bitcanon::bitcanon_byte_level(text, tags, starts, flag, out),
+            Grammar::Gpt2 => bitcannon::bitcannon_byte_level(text, tags, starts, flag, out),
             Grammar::Cl100k { digit_cap: 1 } => {
-                bitcanon::bitcanon_qwen(text, tags, starts, flag, out)
+                bitcannon::bitcannon_qwen(text, tags, starts, flag, out)
             }
-            Grammar::Cl100k { .. } => bitcanon::bitcanon_cl100k(text, tags, starts, flag, out),
-            Grammar::O200k => bitcanon::bitcanon_o200k(text, tags, starts, flag, later, out),
-            Grammar::Tekken => bitcanon::bitcanon_tekken(text, tags, starts, flag, later, out),
-            Grammar::Kimi => bitcanon::bitcanon_kimi(text, tags, starts, flag, later, out),
+            Grammar::Cl100k { .. } => bitcannon::bitcannon_cl100k(text, tags, starts, flag, out),
+            Grammar::O200k => bitcannon::bitcannon_o200k(text, tags, starts, flag, later, out),
+            Grammar::Tekken => bitcannon::bitcannon_tekken(text, tags, starts, flag, later, out),
+            Grammar::Kimi => bitcannon::bitcannon_kimi(text, tags, starts, flag, later, out),
         }
     }
 }
@@ -96,7 +96,7 @@ impl crate::tokenizer::pattern::Pattern for GrammarPattern {
         let bytes = inside.as_bytes();
         let n = bytes.len();
         let mut tags = vec![0u8; n];
-        bitcanon::classify::classify(bytes, &mut tags);
+        bitcannon::classify::classify(bytes, &mut tags);
         let words = n.div_ceil(64) + 1;
         let (mut starts, mut flag) = (vec![0u64; words], vec![0u64; words]);
         let mut later = vec![0u64; 2 * words];
@@ -112,7 +112,7 @@ impl crate::tokenizer::pattern::Pattern for GrammarPattern {
 }
 
 // deepseek-v3/v4's pre-tokenizer is a `Sequence` of these three Isolated `Split`s (+ a byte-map
-// `ByteLevel`), which `bitcanon::bitcanon_deepseek` collapses into one pass. Byte-exact with the
+// `ByteLevel`), which `bitcannon::bitcannon_deepseek` collapses into one pass. Byte-exact with the
 // shipped tokenizer.json — the big pattern carries LITERAL CR/LF, spliced in via `concat!`.
 const DS_NUM: &str = r"\p{N}{1,3}";
 const DS_CJK: &str = "[\u{4E00}-\u{9FA5}\u{3040}-\u{309F}\u{30A0}-\u{30FF}]+";
@@ -127,13 +127,13 @@ const DS_BIG: &str = concat!(
 );
 
 /// deepseek's three patterns, in order, exactly as the shipped config spells them. The copies in
-/// `bitcanon::regexes` escape CR/LF instead of embedding it, so the two are **not**
+/// `bitcannon::regexes` escape CR/LF instead of embedding it, so the two are **not**
 /// interchangeable and [`is_deepseek`] rejects the escaped form -- anything rebuilding these
 /// patterns must use this constant or it silently falls off the native FSM onto the regex fallback.
 pub const DEEPSEEK_PATTERNS: [&str; 3] = [DS_NUM, DS_CJK, DS_BIG];
 
 /// True iff three `Split` patterns are exactly deepseek's `[\p{N}{1,3}, CJK-range, big-regex]` prefix →
-/// `bitcanon::bitcanon_deepseek` reproduces the whole composed Isolated split in one pass.
+/// `bitcannon::bitcannon_deepseek` reproduces the whole composed Isolated split in one pass.
 pub fn is_deepseek(p0: &str, p1: &str, p2: &str) -> bool {
     p0 == DS_NUM && p1 == DS_CJK && p2 == DS_BIG
 }
@@ -142,7 +142,7 @@ pub fn is_deepseek(p0: &str, p1: &str, p2: &str) -> bool {
 mod tests {
     use super::*;
 
-    /// The trap [`DEEPSEEK_PATTERNS`] exists to close: `bitcanon::regexes::DEEPSEEK_BIG` spells
+    /// The trap [`DEEPSEEK_PATTERNS`] exists to close: `bitcannon::regexes::DEEPSEEK_BIG` spells
     /// CR/LF as the two-character escape `\r\n` inside a raw string, while the shipped configs (and
     /// so `DS_BIG`) embed real control characters. They are not interchangeable, and rebuilding from
     /// the wrong one silently drops off the native FSM onto the regex fallback.
@@ -151,10 +151,10 @@ mod tests {
         let [num, cjk, big] = DEEPSEEK_PATTERNS;
         assert!(is_deepseek(num, cjk, big));
 
-        let escaped = bitcanon::regexes::DEEPSEEK;
+        let escaped = bitcannon::regexes::DEEPSEEK;
         assert!(
             !is_deepseek(escaped[0], escaped[1], escaped[2]),
-            "bitcanon's escaped copies must NOT be mistaken for the shipped spelling"
+            "bitcannon's escaped copies must NOT be mistaken for the shipped spelling"
         );
         // Only the big one differs; the first two are identical in both.
         assert_eq!(num, escaped[0]);

@@ -1,10 +1,10 @@
-name: bitcanon
+name: bitcannon
 
 on:
   push:
-    paths: ["tokenizers/bitcanon/**", "tokenizers/bitmap_gen/**", ".github/workflows/bitcanon.yml"]
+    paths: ["tokenizers/bitcannon/**", "tokenizers/bitmap_gen/**", ".github/workflows/bitcannon.yml"]
   pull_request:
-    paths: ["tokenizers/bitcanon/**", "tokenizers/bitmap_gen/**", ".github/workflows/bitcanon.yml"]
+    paths: ["tokenizers/bitcannon/**", "tokenizers/bitmap_gen/**", ".github/workflows/bitcannon.yml"]
 
 defaults:
   run:
@@ -22,11 +22,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with: { components: rustfmt, clippy }
-      - run: cargo fmt -p bitcanon -p bitmap_gen -- --check
-      - run: cargo clippy -p bitcanon --all-targets -- -D warnings
-      - run: cargo test -p bitcanon          # unit + parity gates (cl100k/deepseek/byte_level vs onig)
+      - run: cargo fmt -p bitcannon -p bitmap_gen -- --check
+      - run: cargo clippy -p bitcannon --all-targets -- -D warnings
+      - run: cargo test -p bitcannon          # unit + parity gates (cl100k/deepseek/byte_level vs onig)
       # committed classify tables must match the generator
-      - run: cargo run -p bitmap_gen && git diff --exit-code -- bitcanon/src/classify/atom_tables.rs
+      - run: cargo run -p bitmap_gen && git diff --exit-code -- bitcannon/src/classify/atom_tables.rs
 
   # AVX-512 classify path — GitHub runners often lack AVX-512, so emulate it with Intel SDE and run the
   # SAME byte-exact test binaries under it.
@@ -48,7 +48,7 @@ jobs:
           echo "$PWD/${SDE_VER}" >> "$GITHUB_PATH"
       - name: Run tests under SDE (-future = AVX-512)
         run: |
-          cargo test -p bitcanon --no-run --message-format=json \
+          cargo test -p bitcannon --no-run --message-format=json \
             | jq -r 'select(.profile.test == true) | .executable | select(. != null)' \
             | while read -r bin; do echo "SDE: $bin"; sde64 -future -- "$bin"; done
 
@@ -66,4 +66,4 @@ jobs:
         env:
           RUSTFLAGS: "-C target-feature=+simd128"
           CARGO_TARGET_WASM32_WASIP1_RUNNER: "wasmtime run --"
-        run: cargo test -p bitcanon --target wasm32-wasip1
+        run: cargo test -p bitcannon --target wasm32-wasip1
