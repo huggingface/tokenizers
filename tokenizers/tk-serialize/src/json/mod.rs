@@ -95,6 +95,14 @@ impl<'a> Json<'a> {
         }
     }
 
+    /// An unsigned JSON integer literal, rejecting float/exponent spellings and overflow.
+    pub fn as_u32_integer(&self) -> Option<u32> {
+        match &self.0 {
+            Raw::Number((digits, _)) => digits.parse().ok(),
+            _ => None,
+        }
+    }
+
     /// Rejects fractions, negatives and anything past `u32::MAX`, so a malformed file cannot
     /// silently truncate an id.
     pub fn as_u32(&self) -> Option<u32> {

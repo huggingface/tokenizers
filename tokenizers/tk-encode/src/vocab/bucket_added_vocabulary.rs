@@ -243,6 +243,17 @@ impl AddedVocabulary {
             .or_else(|| self.normalized_vocab.token_to_id(token))
     }
 
+    /// Exact lookup across both stored vocabularies, without normalizing or stripping the input.
+    pub(crate) fn special_token_id(&self, token: &str) -> Option<u32> {
+        [
+            self.vocab.token_to_id(token),
+            self.normalized_vocab.token_to_id(token),
+        ]
+        .into_iter()
+        .flatten()
+        .find(|&id| self.token_metadata[id as usize].special)
+    }
+
     /// Return the string form of an added token used during **decoding**.
     ///
     /// For tokens that were normalized on the way *in* (e.g. byte-level encoding),
@@ -381,6 +392,18 @@ impl PipelinePatternMatcher for AddedVocabulary {
         search_offset: usize,
         normalized: bool,
     ) -> Option<((usize, usize), u32)> {
+        self.extract_next_with_policy(bytes, search_offset, normalized, self.encode_special_tokens)
+    }
+}
+
+impl AddedVocabulary {
+    pub(crate) fn extract_next_with_policy(
+        &self,
+        bytes: &[u8],
+        search_offset: usize,
+        normalized: bool,
+        skip_special: bool,
+    ) -> Option<((usize, usize), u32)> {
         let vocab = if normalized {
             &self.normalized_vocab
         } else {
@@ -396,7 +419,7 @@ impl PipelinePatternMatcher for AddedVocabulary {
             let mut match_start = search + start as usize;
             let mut match_end = match_start + len as usize;
             let metadata = &self.token_metadata[id as usize];
-            if self.encode_special_tokens && metadata.special {
+            if skip_special && metadata.special {
                 search = match_end;
                 continue;
             }

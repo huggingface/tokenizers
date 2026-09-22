@@ -27,6 +27,8 @@ use super::Result;
 #[cfg(feature = "parallelism")]
 mod parallel;
 mod scratch_pool;
+mod structured;
+pub use structured::EncodeSegment;
 
 pub use scratch_pool::ModelScratch;
 
@@ -641,8 +643,18 @@ impl PipelineTokenizer {
         scratch: &mut EncodeScratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
+        self.encode_sequence_into_with_matcher(input, scratch, output, &self.inner.added_vocabulary)
+    }
+
+    fn encode_sequence_into_with_matcher(
+        &self,
+        input: &str,
+        scratch: &mut EncodeScratch,
+        output: &mut Vec<PipelineToken>,
+        matcher: &impl PipelinePatternMatcher,
+    ) -> Result<()> {
         // First, we extract all special tokens from the non-normalized input
-        for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
+        for segment in SpecialSegmentIterator::new(input, matcher, false) {
             match segment {
                 Segment::SpecialToken(token) => {
                     output.push(PipelineToken::from(token));
@@ -651,9 +663,7 @@ impl PipelineTokenizer {
                     let normalized = normalize_all(&self.inner.normalizers, chunk)?;
 
                     // Extract special tokens from the normalized input
-                    for segment in
-                        SpecialSegmentIterator::new(&normalized, &self.inner.added_vocabulary, true)
-                    {
+                    for segment in SpecialSegmentIterator::new(&normalized, matcher, true) {
                         match segment {
                             Segment::SpecialToken(token) => {
                                 output.push(PipelineToken::from(token));
@@ -1184,7 +1194,7 @@ mod tests {
         assert_eq!(encodings[1].len(), 1);
     }
 
-    fn hello_bpe() -> PipelineBPE {
+    pub(super) fn hello_bpe() -> PipelineBPE {
         use crate::models::bpe::{BpeConfig, Merges, Vocab};
 
         let vocab: Vocab = [

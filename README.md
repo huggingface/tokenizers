@@ -85,3 +85,5 @@ print(output.tokens)
 
 Check the [documentation](https://huggingface.co/docs/tokenizers/index)
 or the [quicktour](https://huggingface.co/docs/tokenizers/quicktour) to learn more!
+
+For explicit ordinary/special input segments on rc0, see [structured inputs](docs/structured-inputs.md).
