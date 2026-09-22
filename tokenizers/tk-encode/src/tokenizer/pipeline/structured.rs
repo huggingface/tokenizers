@@ -24,20 +24,6 @@ impl EncodeSegment {
     }
 }
 
-struct OrdinaryMatcher<'a>(&'a BucketAddedVocabulary);
-
-impl PipelinePatternMatcher for OrdinaryMatcher<'_> {
-    fn extract_next(
-        &self,
-        input: &[u8],
-        offset: usize,
-        normalized: bool,
-    ) -> Option<((usize, usize), u32)> {
-        self.0
-            .extract_next_with_policy(input, offset, normalized, true)
-    }
-}
-
 impl PipelineTokenizer {
     /// Encode explicit text/special segments, then apply the normal post-processor and padding.
     /// Adjacent ordinary segments are coalesced before normalization and model encoding.
@@ -112,7 +98,10 @@ impl PipelineTokenizer {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         let mut output = Vec::new();
         let mut ordinary = String::new();
-        let matcher = OrdinaryMatcher(&self.inner.added_vocabulary);
+        let matcher = self
+            .inner
+            .ordinary_added_vocabulary
+            .get_or_init(|| self.inner.added_vocabulary.without_special_tokens());
         for (segment, id) in segments.iter().zip(ids) {
             if let Some(id) = id {
                 if !ordinary.is_empty() {
@@ -120,7 +109,7 @@ impl PipelineTokenizer {
                         &ordinary,
                         &mut scratch,
                         &mut output,
-                        &matcher,
+                        matcher,
                     )?;
                     ordinary.clear();
                 }
@@ -130,7 +119,7 @@ impl PipelineTokenizer {
             }
         }
         if !ordinary.is_empty() {
-            self.encode_sequence_into_with_matcher(&ordinary, &mut scratch, &mut output, &matcher)?;
+            self.encode_sequence_into_with_matcher(&ordinary, &mut scratch, &mut output, matcher)?;
         }
         self.post_process(output, None, add_special_tokens)
     }
@@ -247,6 +236,59 @@ mod tests {
                 .wait()
                 .is_err()
         );
+    }
+
+    #[test]
+    fn structured_special_matches_cannot_hide_overlapping_ordinary_added_tokens() {
+        let mut tk = pipeline(false);
+        let inner = Arc::get_mut(&mut tk.inner).unwrap();
+        inner
+            .added_vocabulary
+            .add_tokens(
+                [
+                    AddedToken::from("<outer<added>>", true),
+                    AddedToken::from("<added>suffix", true),
+                    AddedToken::from("<outer<n>>", true).normalized(true),
+                ],
+                8,
+                |_| None,
+                None::<&NormalizerChain>,
+            )
+            .unwrap();
+        for (text, ordinary_id) in [
+            ("<outer<added>>", 10),
+            ("<added>suffix", 10),
+            ("<outer<n>>", 9),
+        ] {
+            let encoded = ids(tk.encode_segments(&[EncodeSegment::text(text)], false));
+            assert!(
+                encoded[0].contains(&ordinary_id),
+                "ordinary token hidden in {text}: {encoded:?}"
+            );
+            assert!(encoded[0].iter().all(|id| *id < 12));
+        }
+    }
+
+    #[test]
+    fn structured_ordinary_added_tokens_preserve_unicode_word_boundaries() {
+        let mut tk = pipeline(false);
+        Arc::get_mut(&mut tk.inner)
+            .unwrap()
+            .added_vocabulary
+            .add_tokens(
+                [AddedToken::from("é", false)
+                    .normalized(false)
+                    .single_word(true)],
+                8,
+                |_| None,
+                None::<&NormalizerChain>,
+            )
+            .unwrap();
+        let encoded = ids(tk.encode_segments(&[EncodeSegment::text("éx é")], false));
+        assert_eq!(encoded[0].iter().filter(|&&id| id == 12).count(), 1);
+        // Neither adjacent occurrence has a left/right word boundary.
+        let encoded = ids(tk.encode_segments(&[EncodeSegment::text("éé")], false));
+        assert!(!encoded[0].contains(&12));
     }
 
     #[test]

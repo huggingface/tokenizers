@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::iter::Enumerate;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::vec::IntoIter;
 
 #[cfg(feature = "unigram")]
@@ -198,6 +198,8 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
 
 struct TokenizerInner {
     added_vocabulary: BucketAddedVocabulary,
+    /// Lazily built for structured text; shared by clones, never serialized.
+    ordinary_added_vocabulary: OnceLock<BucketAddedVocabulary>,
     normalizers: Vec<PipelineNormalizer>,
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
@@ -254,6 +256,7 @@ impl PipelineTokenizer {
         Self {
             inner: Arc::new(TokenizerInner {
                 added_vocabulary,
+                ordinary_added_vocabulary: OnceLock::new(),
                 normalizers,
                 pre_tokenizer,
                 model,
@@ -798,9 +801,8 @@ impl PipelineTokenizer {
                         .added_vocabulary
                         .simple_id_to_token(id)
                         .or_else(|| self.inner.model.id_to_token(id))
-                        .filter(|token| {
-                            !skip_special_tokens
-                                || !self.inner.added_vocabulary.is_special_token(token)
+                        .filter(|_| {
+                            !skip_special_tokens || !self.inner.added_vocabulary.is_special_id(id)
                         })
                 } else {
                     self.inner.model.id_to_token(id)
@@ -827,7 +829,7 @@ impl PipelineTokenizer {
             if id >= self.inner.added_id_min
                 && let Some(token) = self.inner.added_vocabulary.simple_id_to_token(id)
             {
-                if !skip_special_tokens || !self.inner.added_vocabulary.is_special_token(&token) {
+                if !skip_special_tokens || !self.inner.added_vocabulary.is_special_id(id) {
                     out.extend_from_slice(token.as_bytes());
                 }
                 continue;

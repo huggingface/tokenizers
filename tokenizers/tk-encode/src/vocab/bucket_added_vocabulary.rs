@@ -35,11 +35,11 @@ fn is_ws(cp: u32) -> bool {
         char::from_u32(cp).is_some_and(|c| c.is_whitespace())
     }
 }
-fn is_single_word(bytes: &[u8], search: usize, match_start: usize, match_end: usize) -> bool {
+fn is_single_word(bytes: &[u8], match_start: usize, match_end: usize) -> bool {
     // FIXME: we use chr conversion for now, this can be inproved by using bitmap.
     // This is the equivalent of `\w`, so its letters, numbers and underscore
     let s = unsafe { std::str::from_utf8_unchecked(bytes) };
-    let before_ok = s[search..match_start]
+    let before_ok = s[..match_start]
         .chars()
         .next_back()
         .is_none_or(|c| !is_word_char(c));
@@ -243,6 +243,33 @@ impl AddedVocabulary {
             .or_else(|| self.normalized_vocab.token_to_id(token))
     }
 
+    /// Build a matcher containing only ordinary added tokens. Filter before matching so an
+    /// excluded special cannot hide a shorter or overlapping ordinary token. Stored forms are
+    /// already normalized: do not replay them through `add_tokens` and normalize them twice.
+    pub(crate) fn without_special_tokens(&self) -> Self {
+        let ordinary = |vocab: &Buckets| {
+            Buckets::from_tokens(
+                vocab
+                    .get_vocab_bytes()
+                    .into_iter()
+                    .filter(|(_, id)| !self.token_metadata[*id as usize].special)
+                    .collect(),
+            )
+        };
+        Self {
+            encode_special_tokens: false,
+            token_metadata: self.token_metadata.clone(),
+            vocab: ordinary(&self.vocab),
+            normalized_vocab: ordinary(&self.normalized_vocab),
+        }
+    }
+
+    pub(crate) fn is_special_id(&self, id: u32) -> bool {
+        self.token_metadata
+            .get(id as usize)
+            .is_some_and(|metadata| metadata.special)
+    }
+
     /// Exact lookup across both stored vocabularies, without normalizing or stripping the input.
     pub(crate) fn special_token_id(&self, token: &str) -> Option<u32> {
         [
@@ -251,7 +278,7 @@ impl AddedVocabulary {
         ]
         .into_iter()
         .flatten()
-        .find(|&id| self.token_metadata[id as usize].special)
+        .find(|&id| self.is_special_id(id))
     }
 
     /// Return the string form of an added token used during **decoding**.
@@ -392,18 +419,6 @@ impl PipelinePatternMatcher for AddedVocabulary {
         search_offset: usize,
         normalized: bool,
     ) -> Option<((usize, usize), u32)> {
-        self.extract_next_with_policy(bytes, search_offset, normalized, self.encode_special_tokens)
-    }
-}
-
-impl AddedVocabulary {
-    pub(crate) fn extract_next_with_policy(
-        &self,
-        bytes: &[u8],
-        search_offset: usize,
-        normalized: bool,
-        skip_special: bool,
-    ) -> Option<((usize, usize), u32)> {
         let vocab = if normalized {
             &self.normalized_vocab
         } else {
@@ -419,13 +434,13 @@ impl AddedVocabulary {
             let mut match_start = search + start as usize;
             let mut match_end = match_start + len as usize;
             let metadata = &self.token_metadata[id as usize];
-            if skip_special && metadata.special {
+            if self.encode_special_tokens && metadata.special {
                 search = match_end;
                 continue;
             }
             // single_word: reject unless the token is a standalone word (neither neighbour
             // char is a word char). Checked on the raw byte bounds, before any strip.
-            if metadata.single_word && !is_single_word(bytes, search, match_start, match_end) {
+            if metadata.single_word && !is_single_word(bytes, match_start, match_end) {
                 search = match_start + 1;
                 continue;
             }

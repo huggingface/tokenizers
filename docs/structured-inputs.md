@@ -45,7 +45,8 @@ errors. For normalized registrations, rc0 stores the normalized spelling.
 Adjacent ordinary segments are concatenated before normalization and encoding, so
 producer-defined text boundaries do not prevent BPE merges. Special-token matching
 is disabled for ordinary segments in both raw and normalized passes. Non-special
-added-token matching uses the existing rc0 matcher. This changes no shared policy.
+added-token matching uses a lazily cached vocabulary with special entries removed
+before matching. This preserves shorter and overlapping ordinary added tokens. This changes no shared policy.
 Ordinary model encoding can still produce any id present in the model vocabulary;
 this API controls special-token matching, not a blanket ban on particular ids.
 
@@ -62,3 +63,12 @@ This revision targets `tokenizers-rc0`. It does not restore the removed
 rc0's ids, type ids and attention masks; offsets and truncation require upstream
 pipeline support. Renderer/Transformers integration and Python bindings remain
 follow-up work.
+
+To exercise the complete Rust/JSON path locally, run from `tokenizers/`:
+
+```bash
+cargo run --example structured_encode -- data/gpt2.json segments.json
+```
+
+The example accepts a legacy or canonical tokenizer config and prints the encoded
+ids as JSON. `segments.json` uses the schema shown above.
