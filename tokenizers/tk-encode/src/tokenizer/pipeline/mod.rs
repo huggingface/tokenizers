@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::iter::Enumerate;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::vec::IntoIter;
 
 #[cfg(feature = "unigram")]
@@ -27,6 +27,8 @@ use super::Result;
 #[cfg(feature = "parallelism")]
 mod parallel;
 mod scratch_pool;
+mod structured;
+pub use structured::EncodeSegment;
 
 pub use scratch_pool::ModelScratch;
 
@@ -196,6 +198,8 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
 
 struct TokenizerInner {
     added_vocabulary: BucketAddedVocabulary,
+    /// Lazily built for structured text; shared by clones, never serialized.
+    ordinary_added_vocabulary: OnceLock<BucketAddedVocabulary>,
     normalizers: Vec<PipelineNormalizer>,
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
@@ -252,6 +256,7 @@ impl PipelineTokenizer {
         Self {
             inner: Arc::new(TokenizerInner {
                 added_vocabulary,
+                ordinary_added_vocabulary: OnceLock::new(),
                 normalizers,
                 pre_tokenizer,
                 model,
@@ -641,8 +646,18 @@ impl PipelineTokenizer {
         scratch: &mut EncodeScratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
+        self.encode_sequence_into_with_matcher(input, scratch, output, &self.inner.added_vocabulary)
+    }
+
+    fn encode_sequence_into_with_matcher(
+        &self,
+        input: &str,
+        scratch: &mut EncodeScratch,
+        output: &mut Vec<PipelineToken>,
+        matcher: &impl PipelinePatternMatcher,
+    ) -> Result<()> {
         // First, we extract all special tokens from the non-normalized input
-        for segment in SpecialSegmentIterator::new(input, &self.inner.added_vocabulary, false) {
+        for segment in SpecialSegmentIterator::new(input, matcher, false) {
             match segment {
                 Segment::SpecialToken(token) => {
                     output.push(PipelineToken::from(token));
@@ -651,9 +666,7 @@ impl PipelineTokenizer {
                     let normalized = normalize_all(&self.inner.normalizers, chunk)?;
 
                     // Extract special tokens from the normalized input
-                    for segment in
-                        SpecialSegmentIterator::new(&normalized, &self.inner.added_vocabulary, true)
-                    {
+                    for segment in SpecialSegmentIterator::new(&normalized, matcher, true) {
                         match segment {
                             Segment::SpecialToken(token) => {
                                 output.push(PipelineToken::from(token));
@@ -788,9 +801,8 @@ impl PipelineTokenizer {
                         .added_vocabulary
                         .simple_id_to_token(id)
                         .or_else(|| self.inner.model.id_to_token(id))
-                        .filter(|token| {
-                            !skip_special_tokens
-                                || !self.inner.added_vocabulary.is_special_token(token)
+                        .filter(|_| {
+                            !skip_special_tokens || !self.inner.added_vocabulary.is_special_id(id)
                         })
                 } else {
                     self.inner.model.id_to_token(id)
@@ -817,7 +829,7 @@ impl PipelineTokenizer {
             if id >= self.inner.added_id_min
                 && let Some(token) = self.inner.added_vocabulary.simple_id_to_token(id)
             {
-                if !skip_special_tokens || !self.inner.added_vocabulary.is_special_token(&token) {
+                if !skip_special_tokens || !self.inner.added_vocabulary.is_special_id(id) {
                     out.extend_from_slice(token.as_bytes());
                 }
                 continue;
@@ -1184,7 +1196,7 @@ mod tests {
         assert_eq!(encodings[1].len(), 1);
     }
 
-    fn hello_bpe() -> PipelineBPE {
+    pub(super) fn hello_bpe() -> PipelineBPE {
         use crate::models::bpe::{BpeConfig, Merges, Vocab};
 
         let vocab: Vocab = [
