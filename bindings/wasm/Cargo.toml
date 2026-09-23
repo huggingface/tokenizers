@@ -34,6 +34,7 @@ getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] 
 getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
+js-sys = "0.3"
 wasm-bindgen-test = "0.3"
 
 [patch.crates-io]
