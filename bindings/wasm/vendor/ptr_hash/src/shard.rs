@@ -81,7 +81,7 @@ impl<
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
     ) -> Box<dyn Iterator<Item = Vec<Hx::H>> + 'a> {
         trace!("No sharding: collecting all {} hashes in memory.", self.n);
-        let start = std::time::Instant::now();
+        let start = Instant::now();
         let hashes = keys.map(|key| self.hash_key(key.borrow())).collect();
         log_duration("collect hash", start);
         Box::new(std::iter::once(hashes))
@@ -101,7 +101,7 @@ impl<
         );
         let it = (0..self.shards).map(move |shard| {
             trace!("Shard {shard:>3}/{:3}\r", self.shards);
-            let start = std::time::Instant::now();
+            let start = Instant::now();
             let hashes: Vec<_> = keys
                 .clone()
                 .map(|key| self.hash_key(key.borrow()))
@@ -152,7 +152,7 @@ impl<
                 let shard_range = first_shard..(first_shard + shards_on_disk).min(self.shards);
                 info!("Writing keys for shards {shard_range:?}/{}", self.shards);
 
-                let start = std::time::Instant::now();
+                let start = Instant::now();
 
                 // Create a file writer and count for each shard.
                 let writers = shard_range
@@ -202,7 +202,7 @@ impl<
                     .into_iter()
                     .zip(shard_range)
                     .map(move |((f, cnt), _shard)| {
-                        let start = std::time::Instant::now();
+                        let start = Instant::now();
                         let mut v = vec![Hx::H::default(); cnt];
                         let mut reader = BufReader::new(f);
                         let (pre, data, post) = unsafe { v.align_to_mut::<u8>() };

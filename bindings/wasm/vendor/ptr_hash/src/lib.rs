@@ -188,7 +188,8 @@ use rayon::prelude::*;
 pub use shard::Sharding;
 use stats::BucketStats;
 use std::array::from_fn;
-use std::{borrow::Borrow, default::Default, marker::PhantomData, time::Instant};
+use std::{borrow::Borrow, default::Default, marker::PhantomData};
+use web_time::Instant;
 
 use crate::{hash::*, pack::Packed, reduce::*, util::log_duration};
 
@@ -592,7 +593,7 @@ impl<
         &mut self,
         keys: impl ParallelIterator<Item = impl Borrow<Key>> + Clone + 'a,
     ) -> Option<BucketStats> {
-        let overall_start = std::time::Instant::now();
+        let overall_start = Instant::now();
         // Initialize arrays;
         let mut taken: Vec<BitVec> = vec![];
         let mut pilots: Vec<u8> = vec![];
@@ -643,7 +644,7 @@ impl<
                 izip!(shard_hashes, shard_pilots, shard_taken).enumerate()
             {
                 // Determine the buckets.
-                let start = std::time::Instant::now();
+                let start = Instant::now();
                 let Some((hashes, part_starts)) = self.sort_parts(shard, hashes) else {
                     trace!("Found duplicate hashes");
                     // Found duplicate hashes.
@@ -663,7 +664,7 @@ impl<
                 }
             }
 
-            let start = std::time::Instant::now();
+            let start = Instant::now();
             let remap = self.remap_free_slots(&taken);
             log_duration("remap free", start);
             if remap.is_err() {

@@ -33,6 +33,9 @@ tk-convert = { path = "../../tokenizers/tk-convert", default-features = false }
 getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
 getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 
+[patch.crates-io]
+# ptr_hash called Instant::now which crashes on web targets, the vendored source replaces it with a web-compatible lib
+ptr_hash = { path = "vendor/ptr_hash" }
 
 [profile.release]
 lto = true

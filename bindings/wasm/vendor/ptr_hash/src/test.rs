@@ -82,13 +82,13 @@ fn int_hash_speed() {
     let keys = (0..n as u64).map(|i| hash::C * i).collect::<Vec<_>>();
     let seed = black_box(132);
 
-    let start = std::time::Instant::now();
+    let start = Instant::now();
     for k in &keys {
         black_box(FastIntHash::hash(k, seed));
     }
     eprintln!("Time {:?}", start.elapsed());
 
-    let start = std::time::Instant::now();
+    let start = Instant::now();
     for k in &keys {
         black_box(StrongerIntHash::hash(k, seed));
     }
@@ -96,14 +96,14 @@ fn int_hash_speed() {
 
     #[cfg(feature = "gxhash")]
     {
-        let start = std::time::Instant::now();
+        let start = Instant::now();
         for k in &keys {
             black_box(GxInt::hash(k, seed));
         }
         eprintln!("Time {:?}", start.elapsed());
     }
 
-    let start = std::time::Instant::now();
+    let start = Instant::now();
     for k in &keys {
         black_box(Xxh3Int::hash(k, seed));
     }
