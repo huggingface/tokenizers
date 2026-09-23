@@ -1,4 +1,5 @@
 import init, { Tokenizer } from "tokenizers-wasm";
+import "../style.css";
 
 const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
