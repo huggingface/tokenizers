@@ -9,6 +9,8 @@ on:
   push:
     tags:
       - v*
+    branches:
+      - release/*
   workflow_dispatch:
 
 permissions: {}

@@ -4,6 +4,8 @@ on:
     tags:
       - v*
       # ^ trigger when a v* tag gets pushed
+    branches:
+      - release/*
   # Manual runs build and test everything but never publish: see the `if` on `publish`.
   workflow_dispatch:
 
