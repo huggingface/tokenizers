@@ -4,8 +4,6 @@ env:
   APP_NAME: tokenizers
   MACOSX_DEPLOYMENT_TARGET: '12.0'
 
-permissions:
-  contents: read
 
 on:
   push:
@@ -13,8 +11,12 @@ on:
       - v*
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   build:
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -130,6 +132,8 @@ jobs:
           if-no-files-found: error
 
   universal-macOS:
+    permissions:
+      contents: read
     name: Build universal macOS binary
     needs: build
     runs-on: macos-latest
