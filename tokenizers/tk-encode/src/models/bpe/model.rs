@@ -62,7 +62,8 @@ pub struct PipelineBPE {
 // A `PipelineBPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
 #[allow(clippy::large_enum_variant)]
 pub(super) enum Atoms {
-    /// The atoms are the 256 bytes; the symbol for each lives in `BpeTables::byte_internal`.
+    /// Present byte atoms live in `BpeTables::byte_internal`; missing atoms are `u32::MAX` and are
+    /// skipped during conversion.
     Bytes,
     Chars {
         byte_fallback: Option<[u32; 256]>,
