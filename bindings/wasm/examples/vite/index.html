@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tokenizers x WebAssembly</title>
+    <script type="module" src="./main.ts"></script>
+  </head>
+  <body>
+    <main>
+      <h1>Tokenizers x <mark>WebAssembly</mark></h1>
+
+      <div class="chips">
+        <button class="chip" data-model="openai-community/gpt2">gpt2 <small>BPE</small></button>
+        <button class="chip" data-model="google-bert/bert-base-uncased">bert-base-uncased <small>WordPiece</small></button>
+        <button class="chip" data-model="google-t5/t5-small">t5-small <small>Unigram</small></button>
+        <button class="chip" data-model="Qwen/Qwen3-0.6B">Qwen3-0.6B <small>BPE</small></button>
+      </div>
+      <p class="status" id="status">Loading…</p>
+
+      <form class="panel pad" id="form">
+        <label class="label" for="input">Text</label>
+        <textarea id="input" rows="5" spellcheck="false">Hello world! This text is tokenized in your browser.</textarea>
+        <button class="btn" id="encode" type="submit" disabled>Encode</button>
+      </form>
+
+      <div class="panel">
+        <div class="panel-head"><span>Tokens</span><span id="count"></span></div>
+        <div class="pad tokens" id="tokens"></div>
+      </div>
+    </main>
+  </body>
+</html>

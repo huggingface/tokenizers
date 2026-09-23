@@ -1,0 +1,6 @@
+/data
+/pkg
+/examples/*/node_modules
+/examples/*/dist
+# npm writes the registry it installed from into the lockfile, which may be a private mirror.
+/examples/*/package-lock.json

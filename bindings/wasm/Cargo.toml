@@ -1,0 +1,47 @@
+[package]
+name = "tokenizers-wasm"
+version = "0.1.0-dev.0"
+edition = "2024"
+authors = ["Simon Brandeis <simon@huggingface.co>"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+
+[dependencies]
+wasm-bindgen = "=0.2.128"
+tk-encode = { path = "../../tokenizers/tk-encode", default-features = false, features = [
+	"normalizers",
+	"bpe",
+	"unigram",
+	"wordpiece",
+	"wordlevel",
+	"unicode-scripts",
+] }
+tk-serialize = { path = "../../tokenizers/tk-serialize", features = [
+	"normalizers",
+	"bpe",
+	"unigram",
+	"wordpiece",
+	"wordlevel",
+	"unicode-scripts",
+] }
+tk-convert = { path = "../../tokenizers/tk-convert", default-features = false }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+# getrandom gets pulled in the dependency tree and need the wasm_js feature to work in the browser
+getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
+
+[dev-dependencies]
+js-sys = "0.3"
+wasm-bindgen-test = "0.3"
+
+[patch.crates-io]
+# ptr_hash called Instant::now which crashes on web targets, the vendored source replaces it with a web-compatible lib
+ptr_hash = { path = "vendor/ptr_hash" }
+
+[profile.release]
+lto = true
+opt-level = "s"
+codegen-units = 1
