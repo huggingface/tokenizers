@@ -1,0 +1,12 @@
+[package]
+name = "bitsplit"
+version = "0.1.0"
+edition = "2024"
+description = "A minimal implementation of the Parabix SIMD-based parallel bit stream text processing framework"
+license = "Apache-2.0"
+repository = "https://github.com/huggingface/tokenizers"
+authors = ["Arthur Zucker <arthur@huggingface.co>"]
+publish = true
+[dependencies]
+
+[workspace]
