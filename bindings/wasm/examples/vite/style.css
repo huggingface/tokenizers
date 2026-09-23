@@ -1,0 +1,235 @@
+:root {
+  --bg: #e9e6dd;
+  --surface: #fbf8f1;
+  --ink: #232323;
+  --soft: #55524b;
+  --muted: #8c8c8c;
+  --yellow: #ffd21e;
+  --blue: #3b7cf6;
+  --tint-blue: #dce7fb;
+  --tint-purple: #f1ddf8;
+  --tint-green: #ddefe3;
+  --tint-orange: #ffe7bf;
+  --display: "Chewy", "Source Sans 3", cursive;
+  --body: "Source Sans 3", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 17px/1.55 var(--body);
+}
+
+main {
+  display: grid;
+  gap: 22px;
+  max-width: 860px;
+  margin: auto;
+  padding: 40px 28px 80px;
+}
+
+h1 {
+  margin: 0;
+  font: 400 clamp(40px, 7vw, 72px) / 1 var(--display);
+  text-align: center;
+}
+
+mark {
+  padding: 0 0.1em;
+  border-radius: 4px;
+  background: var(--yellow);
+  color: inherit;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  font: 12.5px var(--mono);
+  color: var(--soft);
+  background: #fff;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: pointer;
+  transition: transform 0.08s;
+}
+
+.chip small {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.chip:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--ink);
+  color: var(--ink);
+}
+
+.chip.on {
+  background: var(--yellow);
+  color: var(--ink);
+}
+
+.chip:disabled {
+  cursor: wait;
+}
+
+.status {
+  margin: 0;
+  font: 12px var(--mono);
+  letter-spacing: 0.03em;
+  color: var(--soft);
+  text-align: center;
+}
+
+.panel {
+  overflow: hidden;
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.pad {
+  padding: 18px 22px;
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font: 11px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--yellow);
+  border-bottom: 2px solid var(--ink);
+}
+
+.label {
+  font: 11px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--soft);
+}
+
+textarea {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 14px 16px;
+  font: 17px/1.5 var(--body);
+  color: var(--ink);
+  background: #fff;
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  outline: none;
+  resize: vertical;
+}
+
+.btn {
+  margin-top: 14px;
+  padding: 9px 18px;
+  font: 13px var(--mono);
+  color: var(--ink);
+  background: var(--yellow);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: 3px 3px 0 var(--ink);
+  cursor: pointer;
+  transition: transform 0.08s, box-shadow 0.08s;
+}
+
+.btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+  transform: none;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+textarea:focus {
+  border-color: var(--blue);
+  box-shadow: 3px 3px 0 var(--blue);
+}
+
+.tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.tokens:empty::before {
+  content: "No tokens yet";
+  font: 14px var(--mono);
+  color: var(--muted);
+}
+
+.token {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2px 7px;
+  background: var(--tint-blue);
+  border: 1.5px solid var(--ink);
+  border-radius: 6px;
+}
+
+.token:nth-child(4n + 2) {
+  background: var(--tint-purple);
+}
+
+.token:nth-child(4n + 3) {
+  background: var(--tint-green);
+}
+
+.token:nth-child(4n + 4) {
+  background: var(--tint-orange);
+}
+
+.token:hover {
+  background: var(--yellow);
+}
+
+.token b {
+  font: 400 16px/1.4 var(--body);
+  white-space: pre;
+}
+
+.token small {
+  font: 10.5px var(--mono);
+  color: var(--soft);
+}
+
+@media (max-width: 640px) {
+  main {
+    padding: 28px 16px 60px;
+  }
+}

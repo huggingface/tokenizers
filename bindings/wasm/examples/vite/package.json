@@ -1,0 +1,17 @@
+{
+  "name": "tokenizers-wasm-example-vite",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --open",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "tokenizers-wasm": "file:../../pkg"
+  },
+  "devDependencies": {
+    "vite": "^8.3.0",
+    "typescript": "^7.0.2"
+  }
+}

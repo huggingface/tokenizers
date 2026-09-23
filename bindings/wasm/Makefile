@@ -1,4 +1,4 @@
-.PHONY: build test test-data examples node vite webpack style check-style
+.PHONY: build test test-data vite style check-style
 
 DATA_DIR = data
 HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
@@ -30,3 +30,8 @@ style:
 check-style:
 	cargo fmt --check
 	cargo clippy --all-targets -- -D warnings
+
+NPM_INSTALL = npm install --no-audit --no-fund
+
+vite: build
+	cd examples/vite && $(NPM_INSTALL) && npm run dev
