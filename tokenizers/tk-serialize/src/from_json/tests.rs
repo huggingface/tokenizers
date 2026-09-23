@@ -53,6 +53,43 @@ fn ids(text: &str, input: &str) -> Vec<u32> {
         .collect()
 }
 
+fn sparse_byte_level_config(
+    missing_byte: u8,
+    merge_ab: bool,
+    unk_token: Option<&str>,
+    byte_fallback: bool,
+) -> String {
+    use tk_encode::utils::byte_level::BYTES_CHAR_LOOKUP;
+
+    let mut vocab = serde_json::Map::new();
+    for byte in 0..=255u8 {
+        if byte != missing_byte {
+            vocab.insert(
+                BYTES_CHAR_LOOKUP[byte as usize].to_string(),
+                serde_json::json!(byte),
+            );
+        }
+    }
+    let mut merges = Vec::new();
+    if merge_ab {
+        vocab.insert("ab".into(), serde_json::json!(300));
+        merges.push(serde_json::json!(["a", "b"]));
+    }
+    if let Some(unk_token) = unk_token {
+        vocab.insert(unk_token.into(), serde_json::json!(300));
+    }
+    let model = serde_json::json!({
+        "type": "BPE",
+        "byte_level": true,
+        "unk_token": unk_token,
+        "byte_fallback": byte_fallback,
+        "vocab": vocab,
+        "merges": merges,
+    })
+    .to_string();
+    config(&[("model", &model)])
+}
+
 /// `(slot, json, text, ids)`: what a component does to an encode, which is the only thing a caller
 /// can observe. `ab` scoring better than `a`+`a` is what makes the Unigram row a lattice test.
 #[rustfmt::skip]
@@ -254,12 +291,35 @@ fn byte_level_is_a_model_field_not_a_pre_tokenizer() {
     let doc = Json::parse(&json).unwrap();
     let pretok = read_pre_tokenizer(doc.field("pre_tokenizer")).unwrap();
     assert!(matches!(pretok, PipelinePreTokenizer::None));
-    // Where the flag *does* land is the model, which then wants every byte to be an atom. The
-    // four-token vocab above is not one, so this is refused for that reason and no other.
-    assert!(
-        read_err(&json).contains("Byte atom"),
-        "not the byte-atom refusal"
-    );
+    // Where the flag *does* land is the model. Missing byte atoms are allowed and skipped during
+    // conversion, so even this tiny vocabulary remains usable.
+    assert_eq!(ids(&json, "abab"), vec![3]);
+    assert!(ids(&json, "\u{000B}").is_empty());
+}
+
+#[test]
+fn byte_level_drops_missing_atoms_and_merges_across_them() {
+    let without_vertical_tab = sparse_byte_level_config(0x0B, false, None, false);
+    assert!(ids(&without_vertical_tab, "\u{000B}").is_empty());
+    assert_eq!(ids(&without_vertical_tab, "a\u{000B}b"), vec![97, 98]);
+
+    let with_merge = sparse_byte_level_config(0x0B, true, None, false);
+    assert_eq!(ids(&with_merge, "a\u{000B}b"), vec![300]);
+}
+
+#[test]
+fn byte_level_can_omit_an_unreachable_invalid_utf8_byte() {
+    let without_c0 = sparse_byte_level_config(0xC0, false, None, false);
+    assert_eq!(ids(&without_c0, "Hello"), vec![72, 101, 108, 108, 111]);
+}
+
+#[test]
+fn byte_level_rejects_sparse_vocab_with_unk_or_byte_fallback() {
+    let with_unk = sparse_byte_level_config(0x0B, false, Some("<unk>"), false);
+    assert!(read_err(&with_unk).contains("Byte atom `0x0B`"));
+
+    let with_fallback = sparse_byte_level_config(0x0B, false, None, true);
+    assert!(read_err(&with_fallback).contains("Byte atom `0x0B`"));
 }
 
 /// One config per decoder variant, so a field rename fails here rather than silently producing a

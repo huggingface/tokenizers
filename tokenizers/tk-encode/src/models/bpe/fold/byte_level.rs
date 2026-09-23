@@ -1,7 +1,8 @@
 //! Which characters a byte-level vocab can emit as one token instead of as their individual bytes.
 //!
-//! A byte-level model's atoms are the 256 bytes, so the character え reaches the merge loop as
-//! three symbols that then merge back together.
+//! A byte-level model's atoms are the bytes present in its vocabulary. With complete coverage,
+//! the character え reaches the merge loop as three symbols that then merge back together.
+//! Missing byte atoms are skipped during conversion.
 //! If the assembly is *predetermined* we can skip it: seed the merge loop with the character's
 //! token directly.
 //!
