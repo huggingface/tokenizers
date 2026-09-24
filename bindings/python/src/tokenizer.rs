@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -60,6 +61,16 @@ impl Tokenizer {
     fn clone_truncation(&self) -> PyResult<Option<TruncationParams>> {
         Ok(self.truncation.lock().map_err(poison_err)?.clone())
     }
+
+    fn from_pipeline(pipeline: Pipeline) -> Self {
+        let padding = pipeline.get_padding().cloned();
+        let truncation = pipeline.get_truncation().cloned();
+        Self {
+            pipeline,
+            padding: Mutex::new(padding),
+            truncation: Mutex::new(truncation),
+        }
+    }
 }
 
 /// What `Tokenizer.__reduce__` gives to pickle
@@ -72,18 +83,17 @@ impl Tokenizer {
     /// Args:
     ///     path:
     ///         The file to read.
+    ///     role_to_token (`dict[str, str]`, *optional*):
+    ///         Replaces the `role_to_token` map the file declares. When omitted, the file's map is kept.
     #[staticmethod]
-    #[pyo3(signature = (path))]
-    fn from_file(path: PathBuf) -> PyResult<Self> {
+    #[pyo3(signature = (path, *, role_to_token=None))]
+    fn from_file(path: PathBuf, role_to_token: Option<BTreeMap<String, String>>) -> PyResult<Self> {
         let canonical = tk_convert::canonicalize_file(path).map_err(convert_err)?;
-        let pipeline: Pipeline = tk_serialize::from_json(&canonical).map_err(err)?;
-        let padding = pipeline.get_padding().cloned();
-        let truncation = pipeline.get_truncation().cloned();
-        Ok(Self {
-            pipeline,
-            padding: Mutex::new(padding),
-            truncation: Mutex::new(truncation),
-        })
+        let mut pipeline: Pipeline = tk_serialize::from_json(&canonical).map_err(err)?;
+        if let Some(role_to_token) = role_to_token {
+            pipeline = pipeline.with_role_to_token(role_to_token);
+        }
+        Ok(Self::from_pipeline(pipeline))
     }
 
     /// Instantiate a new `Tokenizer` from an existing file on the Hugging Face Hub.
@@ -112,6 +122,8 @@ impl Tokenizer {
     ///     subfolder (`str`, *optional*):
     ///         In case `tokenizer.json` is located inside a subfolder of the model repo on huggingface.co,
     ///         specify it here.
+    ///     role_to_token (`dict[str, str]`, *optional*):
+    ///         Overrides the `role_to_token` map defined by the tokenizer's config, if any
     ///
     /// Returns:
     ///     `Tokenizer`: The tokenizer the file describes.
@@ -132,7 +144,7 @@ impl Tokenizer {
     /// tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", local_files_only=True)
     /// ```
     #[staticmethod]
-    #[pyo3(signature = (identifier, revision="main", token=None, *, cache_dir=None, force_download=false, local_files_only=false, subfolder=None))]
+    #[pyo3(signature = (identifier, revision="main", token=None, *, cache_dir=None, force_download=false, local_files_only=false, subfolder=None, role_to_token=None))]
     #[allow(clippy::too_many_arguments)]
     fn from_pretrained(
         py: Python<'_>,
@@ -143,6 +155,7 @@ impl Tokenizer {
         force_download: bool,
         local_files_only: bool,
         subfolder: Option<&str>,
+        role_to_token: Option<BTreeMap<String, String>>,
     ) -> PyResult<Self> {
         let kwargs = PyDict::new(py);
         kwargs.set_item("repo_id", identifier)?;
@@ -159,7 +172,32 @@ impl Tokenizer {
             .getattr("hf_hub_download")?
             .call((), Some(&kwargs))?
             .extract()?;
-        Self::from_file(path)
+        Self::from_file(path, role_to_token)
+    }
+
+    /// A mapping of role (eg `eos_token`) to the corresponding token text.
+    ///
+    /// Returns a copy: editing does not change the tokenizer. Use `with_role_to_token` to mutate the tokenizer.
+    #[getter]
+    fn role_to_token(&self) -> BTreeMap<String, String> {
+        self.pipeline.get_role_to_token().clone()
+    }
+
+    /// Returns a new copy of the `Tokenizer` instance with `role_to_token`.
+    /// `self` is not mutated.
+    ///
+    /// Args:
+    ///     role_to_token (`dict[str, str]`):
+    ///         A mapping of role (eg `eos_token`) to the corresponding token text.
+    ///
+    /// Returns:
+    ///     `Tokenizer`
+    fn with_role_to_token(&self, role_to_token: BTreeMap<String, String>) -> PyResult<Self> {
+        Ok(Self {
+            pipeline: self.pipeline.with_role_to_token(role_to_token),
+            padding: Mutex::new(self.clone_padding()?),
+            truncation: Mutex::new(self.clone_truncation()?),
+        })
     }
 
     /// The padding applied to every encode, or `None`.
@@ -187,6 +225,32 @@ impl Tokenizer {
         *self.truncation.lock().map_err(poison_err)? =
             truncation.map(|truncation| truncation.params().clone());
         Ok(())
+    }
+
+    /// Returns the token representation (str) of the given token id, or None if it's not in the
+    /// vocabulary
+    ///
+    /// Args:
+    ///     id: int
+    ///         The token id to lookup
+    ///
+    /// Returns:
+    ///     The token's representation (`str`), or `None` if it's not in the vocabulary
+    fn id_to_token(&self, id: u32) -> Option<String> {
+        self.pipeline.id_to_token(id)
+    }
+
+    /// Returns the token id (int) of the given token string, or None if it's not in the
+    /// vocabulary
+    ///
+    /// Args:
+    ///     token: str
+    ///         The token to lookup
+    ///
+    /// Returns:
+    ///     The token's id (`int`), or `None` if it's not in the vocabulary
+    fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.pipeline.token_to_id(token)
     }
 
     /// Encodes the given text to token ids.
