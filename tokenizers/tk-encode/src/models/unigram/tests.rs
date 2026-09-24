@@ -1,5 +1,4 @@
 use crate::pipeline::Model;
-use crate::tokenizer::Token;
 
 use super::*;
 #[test]
@@ -55,21 +54,8 @@ fn test_populate_nodes() {
 
 #[test]
 fn test_encode() {
-    let sentencepieces = vec![
-        ("<unk>".to_string(), 0.0),
-        ("a".to_string(), 0.0),
-        ("b".to_string(), 0.0),
-        ("c".to_string(), 0.0),
-        ("d".to_string(), 0.0),
-        ("cd".to_string(), 1.0),
-        ("ab".to_string(), 2.0),
-        ("abc".to_string(), 5.0),
-        ("abcd".to_string(), 10.0),
-    ];
-
-    let model = Unigram::from(sentencepieces, Some(0), false).unwrap();
-    let result = model.encode("abcd").unwrap();
-    assert_eq!(result, vec!["abcd"]);
+    let model = Unigram::from(abcd_vocab(), Some(0), false).unwrap();
+    assert_eq!(pipeline_pieces(&model, "abcd"), ["abcd"]);
 }
 
 #[test]
@@ -91,39 +77,35 @@ fn test_encode2() {
 
     let mut model = Unigram::from(sentencepieces, Some(0), false).unwrap();
 
-    for is_optimized in &[true, false] {
-        model.set_optimized(*is_optimized);
-        println!("IsOptimized {is_optimized:?}");
-        assert_eq!(model.encode("abc").unwrap(), vec!["abc"]);
-        assert_eq!(model.encode("AB").unwrap(), vec!["AB"]);
+    for is_optimized in [true, false] {
+        model.set_optimized(is_optimized);
+        assert_eq!(pipeline_pieces(&model, "abc"), ["abc"]);
+        assert_eq!(pipeline_pieces(&model, "AB"), ["<unk>"]);
 
         model.set_fuse_unk(false);
-        assert_eq!(model.encode("AB").unwrap(), vec!["A", "B"]);
+        assert_eq!(pipeline_pieces(&model, "AB"), ["<unk>", "<unk>"]);
         model.set_fuse_unk(true);
-        assert_eq!(model.encode("AB").unwrap(), vec!["AB"]);
+        assert_eq!(pipeline_pieces(&model, "AB"), ["<unk>"]);
 
-        assert_eq!(model.encode("abcd").unwrap(), vec!["ab", "cd"]);
-        assert_eq!(model.encode("abcc").unwrap(), vec!["abc", "c"]);
+        assert_eq!(pipeline_pieces(&model, "abcd"), ["ab", "cd"]);
+        assert_eq!(pipeline_pieces(&model, "abcc"), ["abc", "c"]);
         assert_eq!(
-            model.encode("xabcabaabcdd").unwrap(),
-            vec!["x", "abc", "ab", "a", "ab", "cd", "d"]
+            pipeline_pieces(&model, "xabcabaabcdd"),
+            ["<unk>", "abc", "ab", "a", "ab", "cd", "<unk>"]
         );
         model.set_fuse_unk(false);
-        assert_eq!(
-            model.encode("xyz東京").unwrap(),
-            vec!["x", "y", "z", "東", "京"]
-        );
+        assert_eq!(pipeline_pieces(&model, "xyz東京"), ["<unk>"; 5]);
         model.set_fuse_unk(true);
-        assert_eq!(model.encode("xyz東京").unwrap(), vec!["xyz東京"]);
+        assert_eq!(pipeline_pieces(&model, "xyz東京"), ["<unk>"]);
 
         // User encoded in original version
-        assert_eq!(model.encode("ABC").unwrap(), vec!["ABC"]);
-        assert_eq!(model.encode("abABCcd").unwrap(), vec!["ab", "ABC", "cd"]);
+        assert_eq!(pipeline_pieces(&model, "ABC"), ["ABC"]);
+        assert_eq!(pipeline_pieces(&model, "abABCcd"), ["ab", "ABC", "cd"]);
         assert_eq!(
-            model.encode("ababcdabcdcd").unwrap(),
-            vec!["ab", "abcdabcd", "cd"]
+            pipeline_pieces(&model, "ababcdabcdcd"),
+            ["ab", "abcdabcd", "cd"]
         );
-        assert_eq!(model.encode("abqrcd").unwrap(), vec!["ab", "q", "r", "cd"]);
+        assert_eq!(pipeline_pieces(&model, "abqrcd"), ["ab", "q", "r", "cd"]);
     }
 }
 
@@ -137,25 +119,10 @@ fn test_unigram_bytefallback() {
         ("<0xA9>".to_string(), -0.03),
     ];
     let unigram = Unigram::from(sentencepieces, Some(0), true).unwrap();
-    let tokens: Vec<Token> = unigram.tokenize("é").unwrap();
-    assert_eq!(
-        tokens,
-        [
-            Token {
-                id: 1,
-                value: "<0xC3>".to_string(),
-                offsets: (0, 2)
-            },
-            Token {
-                id: 2,
-                value: "<0xA9>".to_string(),
-                offsets: (0, 2)
-            }
-        ]
-    );
+    assert_eq!(pipeline_pieces(&unigram, "é"), ["<0xC3>", "<0xA9>"]);
 
-    let tokens = unigram.tokenize("?é").unwrap();
-    assert_eq!(tokens[0].id, 0);
+    // `?` has no byte token, so the fused unknown piece falls back to `<unk>` as a whole.
+    assert_eq!(pipeline_pieces(&unigram, "?é"), ["<unk>"]);
 }
 
 /// Ids 0..=8 are `<unk>`, `a`, `b`, `c`, `d`, `cd`, `ab`, `abc`, `abcd`.
@@ -177,6 +144,16 @@ fn pipeline_ids(model: &Unigram, sequence: &str, scratch: &mut UnigramScratch) -
     let mut output = vec![];
     Model::tokenize_pipeline(model, sequence, scratch, &mut output).unwrap();
     output.iter().map(|token| token.id()).collect()
+}
+
+/// A fresh scratch every call: the tests flip `fuse_unk` and `is_optimized` between calls, and a
+/// warm cache would replay what the previous setting produced.
+fn pipeline_pieces(model: &Unigram, sequence: &str) -> Vec<String> {
+    let mut scratch = Model::init_scratch(model);
+    pipeline_ids(model, sequence, &mut scratch)
+        .into_iter()
+        .map(|id| model.id_to_token(id).unwrap())
+        .collect()
 }
 
 #[test]
