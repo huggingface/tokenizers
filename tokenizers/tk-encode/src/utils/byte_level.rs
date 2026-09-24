@@ -66,7 +66,7 @@ fn make_byte_char_lookup() -> [char; 256] {
     lookup
 }
 
-fn reverse_lookup(c: char) -> Vec<u8> {
+pub(crate) fn reverse_lookup(c: char) -> Vec<u8> {
     char_to_byte(c).map_or_else(|| c.to_string().into_bytes(), |b| vec![b])
 }
 

@@ -602,6 +602,16 @@ impl PipelineTokenizer {
         self.inner.truncation.as_ref()
     }
 
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
+        self.get_model().id_to_token(id)
+    }
+
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.get_added_vocabulary()
+            .token_to_id(token)
+            .or_else(|| self.get_model().token_to_id(token))
+    }
+
     /// Encode `input` into token ids.
     ///
     /// Special tokens are matched in two passes:
@@ -1038,6 +1048,18 @@ impl PipelineModel {
             Self::WordLevel(model) => model.id_to_token(id),
             #[cfg(feature = "wordpiece")]
             Self::WordPiece(model) => model.id_to_token(id),
+        }
+    }
+
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        match self {
+            Self::BPE(model) => model.token_to_id(token),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.token_to_id(token),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.token_to_id(token),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.token_to_id(token),
         }
     }
 }

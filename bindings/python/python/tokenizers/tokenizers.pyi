@@ -318,6 +318,18 @@ class Tokenizer:
         tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", local_files_only=True)
         ```
         """
+    def id_to_token(self, /, id: int) -> str | None:
+        """
+        Returns the token representation (str) of the given token id, or None if it's not in the
+        vocabulary
+
+        Args:
+            id: int
+                The token id to lookup
+
+        Returns:
+            The token's representation (`str`), or `None` if it's not in the vocabulary
+        """
     @property
     def padding(self, /) -> Padding | None:
         """
@@ -332,6 +344,18 @@ class Tokenizer:
         A mapping of role (eg `eos_token`) to the corresponding token text.
 
         Returns a copy: editing does not change the tokenizer. Use `with_role_to_token` to mutate the tokenizer.
+        """
+    def token_to_id(self, /, token: str) -> int | None:
+        """
+        Returns the token id (int) of the given token string, or None if it's not in the
+        vocabulary
+
+        Args:
+            token: str
+                The token to lookup
+
+        Returns:
+            The token's id (`int`), or `None` if it's not in the vocabulary
         """
     def tokenize(
         self,

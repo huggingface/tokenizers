@@ -227,6 +227,33 @@ impl Tokenizer {
         Ok(())
     }
 
+    /// Returns the token representation (str) of the given token id, or None if it's not in the
+    /// vocabulary
+    ///
+    /// Args:
+    ///     id: int
+    ///         The token id to lookup
+    ///
+    /// Returns:
+    ///     The token's representation (`str`), or `None` if it's not in the vocabulary
+    fn id_to_token(&self, id: u32) -> Option<String> {
+        self.pipeline.id_to_token(id)
+    }
+
+    /// Returns the token id (int) of the given token string, or None if it's not in the
+    /// vocabulary
+    ///
+    /// Args:
+    ///     token: str
+    ///         The token to lookup
+    ///
+    /// Returns:
+    ///     The token's id (`int`), or `None` if it's not in the vocabulary
+
+    fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.pipeline.token_to_id(token)
+    }
+
     /// Encodes the given text to token ids.
     ///
     /// Args:
