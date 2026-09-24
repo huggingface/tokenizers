@@ -24,18 +24,6 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Offsets = (usize, usize);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Token {
-    pub id: u32,
-    pub value: String,
-    pub offsets: (usize, usize),
-}
-impl Token {
-    pub fn new(id: u32, value: String, offsets: (usize, usize)) -> Self {
-        Self { id, value, offsets }
-    }
-}
-
 /// Defines the expected behavior for the delimiter of a Split Pattern
 /// When splitting on `'-'` for example, with input `the-final--countdown`:
 ///  - Removed => `[ "the", "final", "countdown" ]`
