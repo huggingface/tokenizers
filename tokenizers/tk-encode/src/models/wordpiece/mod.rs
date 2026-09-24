@@ -244,11 +244,7 @@ mod tests {
         .unwrap()
     }
 
-    fn pipeline_ids(
-        model: &WordPiece,
-        sequence: &str,
-        scratch: &mut WordPieceScratch,
-    ) -> Vec<u32> {
+    fn pipeline_ids(model: &WordPiece, sequence: &str, scratch: &mut WordPieceScratch) -> Vec<u32> {
         let mut output = vec![];
         pipeline::Model::tokenize_pipeline(model, sequence, scratch, &mut output).unwrap();
         output.iter().map(|token| token.id()).collect()

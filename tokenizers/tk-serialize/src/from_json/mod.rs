@@ -52,7 +52,7 @@ use self::pre_tokenizers::read_pre_tokenizer;
 use self::truncation::read_truncation;
 use crate::json::Json;
 use std::collections::BTreeMap;
-use tk_encode::models::bpe::{BpeConfig, BPE};
+use tk_encode::models::bpe::{BPE, BpeConfig};
 use tk_encode::pipeline::{
     NormalizerChain, PipelineModel, PipelineNormalizer, PipelinePreTokenizer, PipelineTokenizer,
 };

@@ -5,8 +5,8 @@ use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
 use crate::models::bpe::tables::BpeTables;
 use crate::models::bpe::{Error, MergeMap, Merges, Pair, Vocab};
 use crate::tokenizer::Result;
-use crate::utils::byte_level::{self};
 use crate::utils::DEFAULT_CACHE_CAPACITY;
+use crate::utils::byte_level::{self};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use std::str::from_utf8_unchecked;
 

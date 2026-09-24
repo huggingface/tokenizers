@@ -21,10 +21,9 @@ use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 use word::{WithFirstLastIterator, Word};
 
 use tk_encode::Result;
-use tk_encode::models::bpe::{Merges, Pair, PipelineBPE, BpeConfig, Vocab};
+use tk_encode::models::bpe::{Merges, Pair, BPE, BpeConfig, Vocab};
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
-use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -682,12 +681,12 @@ impl BpeTrainer {
 }
 
 impl Trainer for BpeTrainer {
-    type Model = PipelineBPE;
+    type Model = BPE;
 
     /// Train a BPE model
-    fn train(&self, model: &mut PipelineBPE) -> Result<Vec<AddedToken>> {
+    fn train(&self, model: &mut BPE) -> Result<Vec<AddedToken>> {
         let (vocab, merges, special_tokens) = self.do_train(&self.words)?;
-        *model = PipelineBPE::from_config(BpeConfig { vocab: vocab, merges: merges, ..self.model_options() })?;
+        *model = BPE::from_config(BpeConfig { vocab: vocab, merges: merges, ..self.model_options() })?;
         Ok(special_tokens)
     }
 

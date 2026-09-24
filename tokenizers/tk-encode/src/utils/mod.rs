@@ -32,5 +32,4 @@ pub mod truncation;
 // Re-export ProgressFormat for public API
 pub use progress::ProgressFormat;
 
-
 pub const DEFAULT_CACHE_CAPACITY: usize = 65536;

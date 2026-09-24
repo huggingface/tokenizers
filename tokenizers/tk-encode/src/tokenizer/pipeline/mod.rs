@@ -14,7 +14,7 @@ pub use crate::pipeline::encode_options::Override;
 use crate::utils::truncation::truncate_pair;
 use crate::{
     DecoderRuntime, PaddingParams, TruncationParams,
-    models::bpe::{BpeScratch, BPE},
+    models::bpe::{BPE, BpeScratch},
     pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     tokenizer::Decoder as _,
@@ -872,12 +872,7 @@ impl PipelineTokenizer {
     }
 
     /// Decode for a byte-level BPE, whose vocab entries are already decoded raw bytes.
-    fn decode_byte_level(
-        &self,
-        bpe: &BPE,
-        ids: &[u32],
-        skip_special_tokens: bool,
-    ) -> String {
+    fn decode_byte_level(&self, bpe: &BPE, ids: &[u32], skip_special_tokens: bool) -> String {
         // Byte-level tokens average ~4 bytes
         let mut out: Vec<u8> = Vec::with_capacity(ids.len() * 4);
         for &id in ids {
