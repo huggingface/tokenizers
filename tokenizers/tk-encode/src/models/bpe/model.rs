@@ -49,7 +49,7 @@ fn content_start(bytes: &[u8]) -> usize {
 const _: () = assert!(size_of::<PipelineToken>() == size_of::<u32>());
 const _: () = assert!(align_of::<PipelineToken>() == align_of::<u32>());
 
-pub struct PipelineBPE {
+pub struct BPE {
     pub(super) atoms: Atoms,
     pub(super) tables: BpeTables,
     pub(super) affixes: Option<Affixes>,
@@ -71,7 +71,7 @@ pub(super) enum Atoms {
     },
 }
 
-impl PipelineBPE {
+impl BPE {
     /// True when this model was built with `byte_level`, which means
     /// [`byte_level::transform_vocab`] already turned every vocabulary entry into its
     /// **decoded raw bytes** at load time. Decoding is then a concatenation, and running a
@@ -182,7 +182,7 @@ pub struct BpeScratch {
 
 impl pipeline::ModelScratch for BpeScratch {}
 
-impl pipeline::Model for PipelineBPE {
+impl pipeline::Model for BPE {
     type Scratch = BpeScratch;
 
     fn tokenize_pipeline(

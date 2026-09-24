@@ -2,16 +2,15 @@ use super::{
     lattice::Lattice,
     trie::{Trie, TrieBuilder},
 };
-use crate::utils::word_cache::{Lookup, WordCache};
+use crate::utils::{
+    DEFAULT_CACHE_CAPACITY,
+    word_cache::{Lookup, WordCache},
+};
+use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use crate::{
     pipeline::{self, PipelineToken},
-    tokenizer::{Result, Token},
+    tokenizer::Result,
 };
-use crate::{
-    utils::cache::{Cache, MAX_LENGTH},
-    vocab::bucket_vocab_store::BucketVocabStore,
-};
-use std::collections::HashMap;
 
 use std::convert::TryInto;
 
@@ -21,7 +20,6 @@ pub(crate) type Vocab = Vec<(String, f64)>;
 pub struct Unigram {
     token_to_ids: BucketVocabStore,
     pub(crate) vocab: Vocab,
-    cache: Cache<String, Vec<String>>,
     trie: Trie<u8>,
     pub min_score: f64,
     pub(super) unk_id: Option<usize>,
@@ -34,37 +32,8 @@ pub struct Unigram {
 
     pub alpha: Option<f64>,
     pub nbest_size: Option<usize>,
-}
-impl PartialEq for Unigram {
-    fn eq(&self, other: &Self) -> bool {
-        self.unk_id == other.unk_id
-            && self.vocab == other.vocab
-            && self.alpha == other.alpha
-            && self.nbest_size == other.nbest_size
-    }
-}
 
-impl Clone for Unigram {
-    // `Clone` can't be derive because it's not implemented for `Cache`.
-    // To keep things simple when we clone, the new Unigram will start with a fresh cache.
-    fn clone(&self) -> Self {
-        let fresh_cache = self.cache.fresh();
-        Self {
-            vocab: self.vocab.clone(),
-            cache: fresh_cache,
-            token_to_ids: self.token_to_ids.clone(),
-            trie: self.trie.clone(),
-            min_score: self.min_score,
-            unk_id: self.unk_id,
-            bos_id: self.bos_id,
-            eos_id: self.eos_id,
-            fuse_unk: self.fuse_unk,
-            is_optimized: self.is_optimized,
-            byte_fallback: self.byte_fallback,
-            alpha: self.alpha,
-            nbest_size: self.nbest_size,
-        }
-    }
+    pub cache_capacity: Option<usize>,
 }
 
 impl std::fmt::Debug for Unigram {
@@ -149,18 +118,17 @@ impl Unigram {
             eos_id,
             unk_id,
             fuse_unk,
-            cache: Cache::default(),
             is_optimized,
             byte_fallback,
             alpha: None,
             nbest_size: None,
+            cache_capacity: Some(DEFAULT_CACHE_CAPACITY),
         })
     }
 
     #[cfg(test)]
     pub(super) fn set_fuse_unk(&mut self, fuse_unk: bool) {
         self.fuse_unk = fuse_unk;
-        self.cache = self.cache.fresh();
     }
 
     #[cfg(test)]
@@ -214,43 +182,6 @@ impl Unigram {
             }
             begin_pos += mblen
         }
-    }
-
-    /// This functions take a String, and will encode it in a Vec of Strings,
-    /// of the best tokenization available to the current model.
-    /// ```
-    /// use tk_encode::models::unigram::Unigram;
-    ///
-    /// let pieces = vec![
-    ///     ("<unk>".to_string(), 0.0),
-    ///     ("a".to_string(), 0.0),
-    ///     ("b".to_string(), 0.0),
-    ///     ("c".to_string(), 0.0),
-    ///     ("d".to_string(), 0.0),
-    ///     ("cd".to_string(), 1.0),
-    ///     ("ab".to_string(), 2.0),
-    ///     ("abc".to_string(), 5.0),
-    ///     ("abcd".to_string(), 10.0),
-    /// ];
-    /// let model = Unigram::from(pieces, Some(0), false).unwrap();
-    /// let result = model.encode("abcdacdxx").unwrap();
-    /// assert_eq!(result, vec!["abcd", "a", "cd", "xx"]);
-    /// ```
-    pub fn encode(&self, sentence: &str) -> Result<Vec<String>> {
-        if sentence.is_empty() {
-            return Ok(vec![]);
-        }
-        if self.samples() {
-            return self.encode_uncached(sentence);
-        }
-        if let Some(result) = self.cache.get(sentence) {
-            return Ok(result.to_vec());
-        }
-        let result = self.encode_uncached(sentence)?;
-        if sentence.len() < MAX_LENGTH {
-            self.cache.set(sentence.to_owned(), result.clone());
-        }
-        Ok(result)
     }
 
     /// Whether [`Unigram::alpha`] asks for a tokenization drawn at random from the
@@ -416,16 +347,6 @@ impl Unigram {
     pub fn vocab(&self) -> &[(String, f64)] {
         &self.vocab
     }
-
-    /// Clears the internal cache
-    pub fn clear_cache(&mut self) {
-        self.cache.clear();
-    }
-
-    /// Resize the cache
-    pub fn resize_cache(&mut self, capacity: usize) {
-        self.cache.resize(capacity);
-    }
 }
 
 /// Iterator to iterate of vocabulary of the model, and their relative score.
@@ -453,48 +374,8 @@ impl<'a> Iterator for UnigramIterator<'a> {
 /// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
 /// plain inherent methods now and every call site is unchanged.
 impl Unigram {
-    pub fn get_vocab(&self) -> HashMap<String, u32> {
-        self.token_to_ids.get_vocab().into_iter().collect()
-    }
-
     pub fn get_vocab_size(&self) -> usize {
         self.vocab.len()
-    }
-
-    pub fn tokenize(&self, sentence: &str) -> Result<Vec<Token>> {
-        let str_tokens = self.encode(sentence)?;
-        let mut offset = 0;
-        let mut tokens = Vec::with_capacity(str_tokens.len());
-        for string in str_tokens {
-            let len = string.len();
-            let offsets = (offset, offset + len);
-            let id: u32 = match self.token_to_ids.token_to_id(&string) {
-                Some(id) => id,
-                None => {
-                    if self.byte_fallback {
-                        let byte_tokens: Option<Vec<_>> = string
-                            .bytes()
-                            .map(|byte| -> Option<Token> {
-                                let byte_string = format!("<0x{byte:02X}>");
-                                let id = self.token_to_ids.token_to_id(&byte_string);
-                                id.map(|id| Token::new(id, byte_string, (offset, offset + len)))
-                            })
-                            .collect();
-                        if let Some(byte_tokens) = byte_tokens {
-                            for token in byte_tokens {
-                                tokens.push(token);
-                            }
-                            offset += len;
-                            continue;
-                        }
-                    }
-                    self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32
-                }
-            };
-            offset += len;
-            tokens.push(Token::new(id, string, offsets));
-        }
-        Ok(tokens)
     }
 
     pub fn token_to_id(&self, token: &str) -> Option<u32> {
@@ -518,10 +399,7 @@ impl pipeline::Model for Unigram {
 
     fn init_scratch(&self) -> Self::Scratch {
         Self::Scratch {
-            word_cache: match self.cache.capacity {
-                0 => None,
-                capacity => Some(WordCache::new(capacity)),
-            },
+            word_cache: self.cache_capacity.map(WordCache::new),
         }
     }
 

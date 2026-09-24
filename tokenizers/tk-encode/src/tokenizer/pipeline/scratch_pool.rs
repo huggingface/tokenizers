@@ -143,7 +143,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
-    use crate::models::bpe::PipelineBPE;
+    use crate::models::bpe::BPE;
     use crate::pipeline::{
         EncodeOptions, PipelineModel, PipelinePostProcessor, PipelinePreTokenizer,
         PipelineTokenizer,
@@ -153,7 +153,7 @@ mod tests {
     use crate::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
 
     /// A BPE model that merges "hello" into the single id 7.
-    fn hello_bpe() -> PipelineBPE {
+    fn hello_bpe() -> BPE {
         use crate::models::bpe::{BpeConfig, Merges, Vocab};
 
         let vocab: Vocab = [
@@ -175,7 +175,7 @@ mod tests {
             ("hel".to_string(), "l".to_string()),
             ("hell".to_string(), "o".to_string()),
         ];
-        PipelineBPE::from_config(BpeConfig {
+        BPE::from_config(BpeConfig {
             vocab,
             merges,
             ..BpeConfig::default()

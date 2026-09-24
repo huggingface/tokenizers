@@ -6,7 +6,7 @@ use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 use tk_encode::Result;
-use tk_encode::models::wordpiece::WordPiece;
+use tk_encode::models::wordpiece::WordPieceConfig;
 
 /// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom
 /// configuration.
@@ -168,14 +168,13 @@ impl WordPieceTrainer {
         WordPieceTrainerBuilder::default()
     }
 
-    pub fn train(&self, model: &mut WordPiece) -> Result<Vec<AddedToken>> {
+    pub fn train(&self, model: &mut WordPieceConfig) -> Result<Vec<AddedToken>> {
         // WordPiece reinterprets a trained BPE's vocabulary as its own pieces; the merge list has no
         // meaning here and is dropped. This used to go through `tk_convert`'s `from_bpe`, which
         // built a whole `BPE` to read its vocabulary back off -- `train_vocab` hands over the same
         // vocabulary without building anything.
         let (vocab, _merges, special_tokens) = self.bpe_trainer.train_vocab()?;
 
-        model.vocab_r = vocab.iter().map(|(t, id)| (*id, t.clone())).collect();
         model.vocab = vocab;
         // The continuing_subword_prefix is the only other option to be overridden by the trainer
         if let Some(prefix) = &self.bpe_trainer.continuing_subword_prefix {
@@ -187,9 +186,9 @@ impl WordPieceTrainer {
 }
 
 impl Trainer for WordPieceTrainer {
-    type Model = WordPiece;
+    type Model = WordPieceConfig;
 
-    fn train(&self, model: &mut WordPiece) -> Result<Vec<AddedToken>> {
+    fn train(&self, model: &mut WordPieceConfig) -> Result<Vec<AddedToken>> {
         self.train(model)
     }
 

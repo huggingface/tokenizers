@@ -52,7 +52,7 @@ use self::pre_tokenizers::read_pre_tokenizer;
 use self::truncation::read_truncation;
 use crate::json::Json;
 use std::collections::BTreeMap;
-use tk_encode::models::bpe::{BpeConfig, PipelineBPE};
+use tk_encode::models::bpe::{BPE, BpeConfig};
 use tk_encode::pipeline::{
     NormalizerChain, PipelineModel, PipelineNormalizer, PipelinePreTokenizer, PipelineTokenizer,
 };
@@ -137,7 +137,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
                 |v| v.len(),
                 |v, t| v.get(t).copied(),
                 |vocab| {
-                    Ok(PipelineModel::BPE(PipelineBPE::from_config(BpeConfig {
+                    Ok(PipelineModel::BPE(BPE::from_config(BpeConfig {
                         vocab,
                         merges,
                         ..options
@@ -151,9 +151,13 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
             normalizers,
             pre_tokenizer,
             read_wordpiece(model_cfg)?,
-            tk_encode::models::wordpiece::WordPiece::get_vocab_size,
-            tk_encode::models::wordpiece::WordPiece::token_to_id,
-            |wp| Ok(PipelineModel::WordPiece(wp.try_into()?)),
+            |config| config.vocab.len(),
+            |config, token| config.vocab.get(token).copied(),
+            |config| {
+                Ok(PipelineModel::WordPiece(
+                    tk_encode::models::wordpiece::WordPiece::from_config(config)?,
+                ))
+            },
         ),
         #[cfg(feature = "unigram")]
         "Unigram" => build(

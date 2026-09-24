@@ -34,7 +34,7 @@
 // Inference — re-exported from `tk-encode`.
 // ---------------------------------------------------------------------------
 pub use tk_encode::{
-    decoders, models, normalizers, pipeline, pre_tokenizers, processors, tokenizer, utils, vocab,
+    decoders, models, normalizers, pipeline, pre_tokenizers, tokenizer, utils, vocab,
 };
 
 // Mirror the v1 top-level re-exports (`pub use tokenizer::*;` etc.).
