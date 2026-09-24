@@ -6,7 +6,6 @@
 
 // The `Path` types are reachable only from `Model::save`.
 
-mod encoding;
 pub mod pattern;
 pub mod pipeline;
 
@@ -20,7 +19,6 @@ pub use crate::utils::padding::{PaddingDirection, PaddingParams, PaddingStrategy
 pub use crate::utils::truncation::{
     TruncationDirection, TruncationParams, TruncationStrategy, truncate_pair,
 };
-pub use encoding::*;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
