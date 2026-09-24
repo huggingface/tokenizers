@@ -249,7 +249,6 @@ impl Tokenizer {
     ///
     /// Returns:
     ///     The token's id (`int`), or `None` if it's not in the vocabulary
-
     fn token_to_id(&self, token: &str) -> Option<u32> {
         self.pipeline.token_to_id(token)
     }
