@@ -1,6 +1,6 @@
 //! The different functions used to go from the serialized json vocab / merges to building the BPE.
 
-use super::model::{Atoms, PipelineBPE, build_byte_to_gate};
+use super::model::{Atoms, BPE, build_byte_to_gate};
 use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
 use crate::models::bpe::tables::BpeTables;
 use crate::models::bpe::{Error, MergeMap, Merges, Pair, Vocab};
@@ -61,7 +61,7 @@ impl Default for BpeConfig {
     }
 }
 
-impl PipelineBPE {
+impl BPE {
     pub fn to_config(&self) -> Result<BpeConfig> {
         let byte_level = self.is_byte_level();
         // TODO: For now we keep serializing the old "printable" chars, but this costs nothing to

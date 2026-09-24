@@ -14,7 +14,7 @@ pub use crate::pipeline::encode_options::Override;
 use crate::utils::truncation::truncate_pair;
 use crate::{
     DecoderRuntime, PaddingParams, TruncationParams,
-    models::bpe::{BpeScratch, PipelineBPE},
+    models::bpe::{BpeScratch, BPE},
     pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     tokenizer::Decoder as _,
@@ -874,7 +874,7 @@ impl PipelineTokenizer {
     /// Decode for a byte-level BPE, whose vocab entries are already decoded raw bytes.
     fn decode_byte_level(
         &self,
-        bpe: &PipelineBPE,
+        bpe: &BPE,
         ids: &[u32],
         skip_special_tokens: bool,
     ) -> String {
@@ -1011,7 +1011,7 @@ pub trait Model {
     reason = "PipelineBPE holds a 1kB byte -> id lookup table"
 )]
 pub enum PipelineModel {
-    BPE(PipelineBPE),
+    BPE(BPE),
     #[cfg(feature = "unigram")]
     Unigram(Unigram),
     #[cfg(feature = "wordlevel")]
@@ -1791,7 +1791,7 @@ mod tests {
         assert_eq!(pipeline.decode(&[7, 4], false).unwrap(), "hello he");
     }
 
-    fn hello_bpe() -> PipelineBPE {
+    fn hello_bpe() -> BPE {
         use crate::models::bpe::{BpeConfig, Merges, Vocab};
 
         let vocab: Vocab = [
@@ -1813,7 +1813,7 @@ mod tests {
             ("hel".to_string(), "l".to_string()),
             ("hell".to_string(), "o".to_string()),
         ];
-        PipelineBPE::from_config(BpeConfig {
+        BPE::from_config(BpeConfig {
             vocab,
             merges,
             ..BpeConfig::default()
