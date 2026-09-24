@@ -1,18 +1,11 @@
 use crate::pipeline::{self, ModelScratch, PipelineToken};
-use crate::tokenizer::{Result, Token};
+use crate::tokenizer::Result;
 use ahash::AHashMap;
-use std::collections::HashMap;
-
-/// Only the tests name this now: reading a `vocab.json` into one is `tk-convert`'s job.
-#[cfg(test)]
-type Vocab = AHashMap<String, u32>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("WordLevel error: Missing [UNK] token from the vocabulary")]
     MissingUnkToken,
-    #[error("Bad vocabulary json file")]
-    BadVocabulary,
 }
 
 struct Config {
@@ -74,7 +67,6 @@ impl WordLevelBuilder {
     }
 }
 
-#[derive(PartialEq, Clone, Eq)]
 pub struct WordLevel {
     pub vocab: AHashMap<String, u32>,
     pub vocab_r: AHashMap<u32, String>,
@@ -106,38 +98,13 @@ impl Default for WordLevel {
     }
 }
 
-/// The model methods the pipeline and the readers call. These used to be the legacy
-/// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
-/// plain inherent methods now and every call site is unchanged.
 impl WordLevel {
-    pub fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
-        if let Some(&id) = self.vocab.get(token) {
-            Ok(vec![Token {
-                id,
-                value: token.to_owned(),
-                offsets: (0, token.len()),
-            }])
-        } else if let Some(&unk_id) = self.vocab.get(&self.unk_token) {
-            Ok(vec![Token {
-                id: unk_id,
-                value: self.unk_token.to_owned(),
-                offsets: (0, token.len()),
-            }])
-        } else {
-            Err(Box::new(Error::MissingUnkToken))
-        }
-    }
-
     pub fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab.get(token).copied()
     }
 
     pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(&id).cloned()
-    }
-
-    pub fn get_vocab(&self) -> HashMap<String, u32> {
-        self.vocab.clone().into_iter().collect()
     }
 
     pub fn get_vocab_size(&self) -> usize {
@@ -171,10 +138,17 @@ impl pipeline::Model for WordLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pipeline::Model;
+
+    fn pipeline_ids(model: &WordLevel, sequence: &str) -> Result<Vec<u32>> {
+        let mut output = vec![];
+        model.tokenize_pipeline(sequence, &mut model.init_scratch(), &mut output)?;
+        Ok(output.iter().map(|token| token.id()).collect())
+    }
 
     #[test]
     fn test_tokenize_unk() {
-        let vocab: Vocab = [("<unk>".into(), 0), ("a".into(), 1), ("b".into(), 2)]
+        let vocab: AHashMap<String, u32> = [("<unk>".into(), 0), ("a".into(), 1), ("b".into(), 2)]
             .iter()
             .cloned()
             .collect();
@@ -183,21 +157,18 @@ mod tests {
             .unk_token("<unk>".to_string())
             .build()
             .unwrap();
-        let tokens = wordlevel.tokenize("c").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 1)),]);
-
-        let tokens = wordlevel.tokenize("a").unwrap();
-        assert_eq!(tokens, vec![Token::new(1u32, "a".into(), (0, 1)),]);
+        assert_eq!(pipeline_ids(&wordlevel, "c").unwrap(), [0]);
+        assert_eq!(pipeline_ids(&wordlevel, "a").unwrap(), [1]);
     }
 
     #[test]
     fn test_tokenize_missing_unk_token() {
-        let vocab: Vocab = [("a".into(), 0), ("b".into(), 1)].iter().cloned().collect();
+        let vocab: AHashMap<String, u32> =
+            [("a".into(), 0), ("b".into(), 1)].iter().cloned().collect();
         let wordlevel = WordLevelBuilder::default().vocab(vocab).build().unwrap();
-        let tokens = wordlevel.tokenize("a").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "a".into(), (0, 1)),]);
+        assert_eq!(pipeline_ids(&wordlevel, "a").unwrap(), [0]);
 
-        let error = wordlevel.tokenize("c").err().unwrap();
+        let error = pipeline_ids(&wordlevel, "c").unwrap_err();
         assert!(error.is::<Error>());
     }
 }
