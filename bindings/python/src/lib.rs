@@ -3,6 +3,7 @@
 //! Encode text to token ids and decode token ids back to text
 mod encoding;
 mod error;
+mod input;
 mod options;
 mod repr;
 mod tokenizer;

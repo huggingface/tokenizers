@@ -184,7 +184,7 @@ class Tokenizer:
     def encode(
         self,
         /,
-        text: str,
+        input: str | tuple[str, str],
         *,
         add_special_tokens: bool = True,
         encode_special_tokens: bool = False,
@@ -215,7 +215,7 @@ class Tokenizer:
     def encode_batch(
         self,
         /,
-        texts: Sequence[str],
+        inputs: Sequence[str | tuple[str, str]],
         *,
         add_special_tokens: bool = True,
         encode_special_tokens: bool = False,
@@ -227,7 +227,7 @@ class Tokenizer:
         The encodings come back in input order.
 
         Args:
-            texts: List[str]
+            texts: List[str] or List[Tuple[str, str]]
                 The batch of text to encode.
             add_special_tokens: bool
                 Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
@@ -322,7 +322,7 @@ class Tokenizer:
     def tokenize(
         self,
         /,
-        text: str,
+        input: str | tuple[str, str],
         *,
         add_special_tokens: bool = True,
         encode_special_tokens: bool = False,
