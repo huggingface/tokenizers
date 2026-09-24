@@ -5,7 +5,7 @@ import huggingface_hub
 import pytest
 
 from conftest import WIKI
-from tokenizers import Padding, Tokenizer, Truncation
+from tokenizers import Tokenizer
 
 DECLARED = {"cls_token": "[CLS]", "sep_token": "[SEP]"}
 REPLACEMENT = {"eos_token": "[SEP]", "image_token": "<image>"}
@@ -50,6 +50,7 @@ def test_with_role_to_token(bert_config_with_roles):
     assert rebuilt.role_to_token == REPLACEMENT
     assert tokenizer.role_to_token == DECLARED
     assert rebuilt.encode("Hello there").ids == tokenizer.encode("Hello there").ids
+
 
 def test_pickle(wiki):
     rebuilt = wiki.with_role_to_token(REPLACEMENT)
