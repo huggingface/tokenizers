@@ -28,7 +28,7 @@ pub type MergeMap = AHashMap<Pair, (u32, u32)>;
 /// Re-exported from `utils::cache`, which is `pub(crate)`: the config-shaped `BPE` in `tk-convert`
 /// keeps a cache of its own and needs both numbers, and a second copy of them on that side would be
 /// a second answer to "how big is a BPE cache".
-pub use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
+pub use crate::utils::DEFAULT_CACHE_CAPACITY;
 
 /// Errors that can be encountered while using or constructing a `BPE` model.
 #[derive(thiserror::Error, Debug)]

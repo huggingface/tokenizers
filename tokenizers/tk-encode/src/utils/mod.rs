@@ -1,4 +1,3 @@
-pub(crate) mod cache;
 // `pub` because `Tokenizer::from_pretrained` — the only caller — lives in `tk-convert`.
 #[cfg(feature = "http")]
 pub mod from_pretrained;
@@ -32,3 +31,6 @@ pub mod truncation;
 
 // Re-export ProgressFormat for public API
 pub use progress::ProgressFormat;
+
+
+pub const DEFAULT_CACHE_CAPACITY: usize = 65536;

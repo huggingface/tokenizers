@@ -2,14 +2,14 @@ use super::{
     lattice::Lattice,
     trie::{Trie, TrieBuilder},
 };
-use crate::utils::word_cache::{Lookup, WordCache};
+use crate::utils::{
+    DEFAULT_CACHE_CAPACITY,
+    word_cache::{Lookup, WordCache},
+};
+use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use crate::{
     pipeline::{self, PipelineToken},
     tokenizer::{Result, Token},
-};
-use crate::{
-    utils::cache::{Cache, MAX_LENGTH},
-    vocab::bucket_vocab_store::BucketVocabStore,
 };
 use std::collections::HashMap;
 
@@ -21,7 +21,6 @@ pub(crate) type Vocab = Vec<(String, f64)>;
 pub struct Unigram {
     token_to_ids: BucketVocabStore,
     pub(crate) vocab: Vocab,
-    cache: Cache<String, Vec<String>>,
     trie: Trie<u8>,
     pub min_score: f64,
     pub(super) unk_id: Option<usize>,
@@ -34,6 +33,8 @@ pub struct Unigram {
 
     pub alpha: Option<f64>,
     pub nbest_size: Option<usize>,
+
+    pub cache_capacity: Option<usize>,
 }
 impl PartialEq for Unigram {
     fn eq(&self, other: &Self) -> bool {
@@ -48,10 +49,8 @@ impl Clone for Unigram {
     // `Clone` can't be derive because it's not implemented for `Cache`.
     // To keep things simple when we clone, the new Unigram will start with a fresh cache.
     fn clone(&self) -> Self {
-        let fresh_cache = self.cache.fresh();
         Self {
             vocab: self.vocab.clone(),
-            cache: fresh_cache,
             token_to_ids: self.token_to_ids.clone(),
             trie: self.trie.clone(),
             min_score: self.min_score,
@@ -63,6 +62,7 @@ impl Clone for Unigram {
             byte_fallback: self.byte_fallback,
             alpha: self.alpha,
             nbest_size: self.nbest_size,
+            cache_capacity: self.cache_capacity,
         }
     }
 }
@@ -149,18 +149,17 @@ impl Unigram {
             eos_id,
             unk_id,
             fuse_unk,
-            cache: Cache::default(),
             is_optimized,
             byte_fallback,
             alpha: None,
             nbest_size: None,
+            cache_capacity: Some(DEFAULT_CACHE_CAPACITY),
         })
     }
 
     #[cfg(test)]
     pub(super) fn set_fuse_unk(&mut self, fuse_unk: bool) {
         self.fuse_unk = fuse_unk;
-        self.cache = self.cache.fresh();
     }
 
     #[cfg(test)]
@@ -243,13 +242,7 @@ impl Unigram {
         if self.samples() {
             return self.encode_uncached(sentence);
         }
-        if let Some(result) = self.cache.get(sentence) {
-            return Ok(result.to_vec());
-        }
         let result = self.encode_uncached(sentence)?;
-        if sentence.len() < MAX_LENGTH {
-            self.cache.set(sentence.to_owned(), result.clone());
-        }
         Ok(result)
     }
 
@@ -416,16 +409,6 @@ impl Unigram {
     pub fn vocab(&self) -> &[(String, f64)] {
         &self.vocab
     }
-
-    /// Clears the internal cache
-    pub fn clear_cache(&mut self) {
-        self.cache.clear();
-    }
-
-    /// Resize the cache
-    pub fn resize_cache(&mut self, capacity: usize) {
-        self.cache.resize(capacity);
-    }
 }
 
 /// Iterator to iterate of vocabulary of the model, and their relative score.
@@ -518,10 +501,7 @@ impl pipeline::Model for Unigram {
 
     fn init_scratch(&self) -> Self::Scratch {
         Self::Scratch {
-            word_cache: match self.cache.capacity {
-                0 => None,
-                capacity => Some(WordCache::new(capacity)),
-            },
+            word_cache: self.cache_capacity.map(WordCache::new),
         }
     }
 

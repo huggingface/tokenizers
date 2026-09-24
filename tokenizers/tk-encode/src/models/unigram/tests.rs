@@ -266,13 +266,3 @@ fn sampling_is_never_cached() {
     let cache = scratch.word_cache.as_mut().unwrap();
     assert_eq!(cache.lookup(b"abcd").hit(), None);
 }
-
-#[test]
-fn a_capacity_of_zero_turns_the_cache_off() {
-    let mut model = Unigram::from(abcd_vocab(), Some(0), false).unwrap();
-    model.resize_cache(0);
-    let mut scratch = Model::init_scratch(&model);
-
-    assert_eq!(pipeline_ids(&model, "abcd", &mut scratch), [8]);
-    assert!(scratch.word_cache.is_none());
-}

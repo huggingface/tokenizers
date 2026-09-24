@@ -3,7 +3,7 @@
 
 use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::{Result, Token};
-use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
+use crate::utils::DEFAULT_CACHE_CAPACITY;
 use crate::utils::word_cache::{Lookup, WordCache};
 use ahash::AHashMap;
 use std::borrow::Cow;
