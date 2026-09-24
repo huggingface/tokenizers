@@ -1,7 +1,7 @@
 use tk_encode::models::bpe::PipelineBPE;
 use tk_encode::models::unigram::Unigram;
 use tk_encode::models::wordlevel::WordLevel;
-use tk_encode::models::wordpiece::WordPiece;
+use tk_encode::models::wordpiece::WordPieceConfig;
 
 use crate::Trainer;
 use crate::trainers::{
@@ -17,7 +17,7 @@ use crate::trainers::{
 #[allow(clippy::large_enum_variant)]
 pub enum ModelWrapper {
     BPE(PipelineBPE),
-    WordPiece(WordPiece),
+    WordPiece(WordPieceConfig),
     WordLevel(WordLevel),
     Unigram(Unigram),
 }
@@ -27,8 +27,8 @@ impl From<PipelineBPE> for ModelWrapper {
         Self::BPE(m)
     }
 }
-impl From<WordPiece> for ModelWrapper {
-    fn from(m: WordPiece) -> Self {
+impl From<WordPieceConfig> for ModelWrapper {
+    fn from(m: WordPieceConfig) -> Self {
         Self::WordPiece(m)
     }
 }
@@ -75,7 +75,7 @@ impl Trainable for WordLevel {
     }
 }
 
-impl Trainable for WordPiece {
+impl Trainable for WordPieceConfig {
     type Trainer = WordPieceTrainer;
     fn get_trainer(&self) -> WordPieceTrainer {
         WordPieceTrainer::builder().build()

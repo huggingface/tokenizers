@@ -151,9 +151,13 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
             normalizers,
             pre_tokenizer,
             read_wordpiece(model_cfg)?,
-            tk_encode::models::wordpiece::WordPiece::get_vocab_size,
-            tk_encode::models::wordpiece::WordPiece::token_to_id,
-            |wp| Ok(PipelineModel::WordPiece(wp.try_into()?)),
+            |config| config.vocab.len(),
+            |config, token| config.vocab.get(token).copied(),
+            |config| {
+                Ok(PipelineModel::WordPiece(
+                    tk_encode::models::wordpiece::WordPiece::from_config(config)?,
+                ))
+            },
         ),
         #[cfg(feature = "unigram")]
         "Unigram" => build(
