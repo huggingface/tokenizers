@@ -49,7 +49,7 @@ impl Encoding {
     /// The id of each token, as a list of ints.
     #[getter]
     pub(crate) fn ids(&self) -> &[u32] {
-        &self.get_ids()
+        self.get_ids()
     }
 
     /// The type id of each token, as a list of ints.
@@ -81,21 +81,21 @@ impl Encoding {
     /// A view over the encoding, not a copy.
     #[getter]
     fn ids_array<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
-        view(this, &this.get().ids())
+        view(this, this.get().ids())
     }
 
     /// The type id of each token, as a read-only `uint32` numpy array.
     /// A view over the encoding, not a copy.
     #[getter]
     fn type_ids_array<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
-        view(this, &this.get().type_ids())
+        view(this, this.get().type_ids())
     }
 
     /// Attention mask when the encoding is padded: 1 for token ids, 0 for padding tokens.
     /// A read-only `uint32` numpy array, a view over the encoding, not a copy.
     #[getter]
     fn attention_mask_array<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
-        view(this, &this.get().attention_mask())
+        view(this, this.get().attention_mask())
     }
 
     /// The number of tokens in the encoding
