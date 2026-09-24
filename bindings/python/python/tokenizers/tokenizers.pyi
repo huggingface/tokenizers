@@ -247,13 +247,15 @@ class Tokenizer:
             List[Encoding]
         """
     @staticmethod
-    def from_file(path: str | PathLike[str]) -> Tokenizer:
+    def from_file(path: str | PathLike[str], *, role_to_token: dict[str, str] | None = None) -> Tokenizer:
         """
         Loads a `tokenizer.json`.
 
         Args:
             path:
                 The file to read.
+            role_to_token (`dict[str, str]`, *optional*):
+                Replaces the `role_to_token` map the file declares. When omitted, the file's map is kept.
         """
     @staticmethod
     def from_pretrained(
@@ -265,6 +267,7 @@ class Tokenizer:
         force_download: bool = False,
         local_files_only: bool = False,
         subfolder: str | None = None,
+        role_to_token: dict[str, str] | None = None,
     ) -> Tokenizer:
         """
         Instantiate a new `Tokenizer` from an existing file on the Hugging Face Hub.
@@ -293,6 +296,8 @@ class Tokenizer:
             subfolder (`str`, *optional*):
                 In case `tokenizer.json` is located inside a subfolder of the model repo on huggingface.co,
                 specify it here.
+            role_to_token (`dict[str, str]`, *optional*):
+                Overrides the `role_to_token` map defined by the tokenizer's config, if any
 
         Returns:
             `Tokenizer`: The tokenizer the file describes.
@@ -321,6 +326,13 @@ class Tokenizer:
         """
     @padding.setter
     def padding(self, /, padding: Padding | None) -> None: ...
+    @property
+    def role_to_token(self, /) -> dict[str, str]:
+        """
+        A mapping of role (eg `eos_token`) to the corresponding token text.
+
+        Returns a copy: editing does not change the tokenizer. Use `with_role_to_token` to mutate the tokenizer.
+        """
     def tokenize(
         self,
         /,
@@ -363,6 +375,18 @@ class Tokenizer:
         """
     @truncation.setter
     def truncation(self, /, truncation: Truncation | None) -> None: ...
+    def with_role_to_token(self, /, role_to_token: dict[str, str]) -> Tokenizer:
+        """
+        Returns a new copy of the `Tokenizer` instance with `role_to_token`.
+        `self` is not mutated.
+
+        Args:
+            role_to_token (`dict[str, str]`):
+                A mapping of role (eg `eos_token`) to the corresponding token text.
+
+        Returns:
+            `Tokenizer`
+        """
 
 @final
 class Truncation:
