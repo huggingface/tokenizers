@@ -43,7 +43,6 @@ def test_pickle_encoding(bert):
     assert restored.attention_mask == encoding.attention_mask == [1, 1, 1, 1, 0, 0, 0, 0]
 
 
-
 def test_pickle_encoding_equals_original(bert):
     encoding = bert.encode("Hello there")
 
