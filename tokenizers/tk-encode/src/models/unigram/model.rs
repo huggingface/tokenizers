@@ -11,7 +11,6 @@ use crate::{
     pipeline::{self, PipelineToken},
     tokenizer::Result,
 };
-use std::collections::HashMap;
 
 use std::convert::TryInto;
 
@@ -35,36 +34,6 @@ pub struct Unigram {
     pub nbest_size: Option<usize>,
 
     pub cache_capacity: Option<usize>,
-}
-impl PartialEq for Unigram {
-    fn eq(&self, other: &Self) -> bool {
-        self.unk_id == other.unk_id
-            && self.vocab == other.vocab
-            && self.alpha == other.alpha
-            && self.nbest_size == other.nbest_size
-    }
-}
-
-impl Clone for Unigram {
-    // `Clone` can't be derive because it's not implemented for `Cache`.
-    // To keep things simple when we clone, the new Unigram will start with a fresh cache.
-    fn clone(&self) -> Self {
-        Self {
-            vocab: self.vocab.clone(),
-            token_to_ids: self.token_to_ids.clone(),
-            trie: self.trie.clone(),
-            min_score: self.min_score,
-            unk_id: self.unk_id,
-            bos_id: self.bos_id,
-            eos_id: self.eos_id,
-            fuse_unk: self.fuse_unk,
-            is_optimized: self.is_optimized,
-            byte_fallback: self.byte_fallback,
-            alpha: self.alpha,
-            nbest_size: self.nbest_size,
-            cache_capacity: self.cache_capacity,
-        }
-    }
 }
 
 impl std::fmt::Debug for Unigram {
@@ -405,10 +374,6 @@ impl<'a> Iterator for UnigramIterator<'a> {
 /// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
 /// plain inherent methods now and every call site is unchanged.
 impl Unigram {
-    pub fn get_vocab(&self) -> HashMap<String, u32> {
-        self.token_to_ids.get_vocab().into_iter().collect()
-    }
-
     pub fn get_vocab_size(&self) -> usize {
         self.vocab.len()
     }
