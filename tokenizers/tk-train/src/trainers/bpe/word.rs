@@ -1,4 +1,3 @@
-use ahash::AHashMap;
 use std::{iter, mem};
 use tk_encode::models::bpe::Pair;
 
@@ -50,16 +49,6 @@ pub(crate) struct Symbol {
     next: isize,
     len: usize,
 }
-impl Symbol {
-    /// Merges the current Symbol with the other one.
-    /// In order to update prev/next, we consider Self to be the Symbol on the left,
-    /// and other to be the next one on the right.
-    pub fn merge_with(&mut self, other: &Self, new_c: u32) {
-        self.c = new_c;
-        self.len += other.len;
-        self.next = other.next;
-    }
-}
 
 #[derive(Clone, Default)]
 pub struct Word {
@@ -86,20 +75,6 @@ impl std::fmt::Debug for Word {
 impl Word {
     pub fn new() -> Self {
         Word { symbols: vec![] }
-    }
-
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            symbols: Vec::with_capacity(capacity),
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.symbols.clear();
-    }
-
-    pub fn len_symbols(&self) -> usize {
-        self.symbols.len()
     }
 
     pub fn add(&mut self, c: u32, byte_len: usize) {
@@ -183,16 +158,6 @@ impl Word {
 
     pub fn get_chars_iter(&self) -> impl ExactSizeIterator<Item = u32> + '_ {
         self.symbols.iter().map(|s| s.c)
-    }
-
-    pub fn get_offsets_iter(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
-        let mut pos = 0;
-        self.symbols.iter().map(move |symbol| {
-            let new_pos = pos + symbol.len;
-            let offset = (pos, new_pos);
-            pos = new_pos;
-            offset
-        })
     }
 }
 
