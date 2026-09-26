@@ -287,15 +287,38 @@ fn rejects_unk_token_missing_from_vocab() {
 }
 
 #[test]
-fn byte_fallback_with_missing_codes_errors() {
-    // Incomplete <0xNN> coverage must be a build error, not a panic.
-    assert!(
-        hello(BpeConfig {
-            byte_fallback: true,
-            ..Default::default()
+fn byte_fallback_with_missing_codes_uses_unk() {
+    // Like Gemma, whose vocab has a literal tab token instead of <0x09>. As in tokenizers 0.x, a
+    // character falls back to bytes only if all of its codes exist; otherwise it is unk. 'é' is
+    // C3 A9, so it is unk even though <0xC3> exists.
+    let mut vocab = byte_fallback_vocab();
+    vocab.remove("<0x09>");
+    vocab.remove("<0xA9>");
+    for (unk_token, fuse_unk, input, want) in [
+        (Some("<unk>"), false, "h\té", vec![300, 400, 400]),
+        (Some("<unk>"), false, "ü", vec![0xC3, 0xBC]),
+        (Some("<unk>"), true, "h\té", vec![300, 400]),
+        // 0.x emits the byte tokens before a pending unk; this keeps the order of the text
+        (Some("<unk>"), true, "\tü\t", vec![400, 0xC3, 0xBC, 400]),
+        (None, false, "h\té", vec![300]),
+    ] {
+        let pipeline = PipelineBPE::from_config(BpeConfig {
+            vocab: vocab.clone(),
+            merges: vec![],
+            ..BpeConfig {
+                byte_fallback: true,
+                unk_token: unk_token.map(Into::into),
+                fuse_unk,
+                ..Default::default()
+            }
         })
-        .is_err()
-    );
+        .unwrap();
+        assert_eq!(
+            pipeline_ids(&pipeline, input),
+            want,
+            "{unk_token:?} {fuse_unk} {input:?}"
+        );
+    }
 }
 
 #[test]
