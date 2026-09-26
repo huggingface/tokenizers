@@ -128,6 +128,28 @@ impl<M: SinkMode> SymbolSink<M> {
             self.push(tables, byte_symbols.at(byte as usize));
         }
     }
+
+    /// Pushes `character` as its `<0xNN>` byte tokens, or nothing if the vocab lacks any of
+    /// them (`u32::MAX` in `byte_symbols`), returning whether it pushed.
+    fn push_char_fallback(
+        &mut self,
+        tables: &BpeTables,
+        byte_symbols: &[u32; 256],
+        character: char,
+    ) -> bool {
+        let mut buf = [0u8; 4];
+        let bytes = character.encode_utf8(&mut buf).as_bytes();
+        if bytes
+            .iter()
+            .any(|&byte| byte_symbols.at(byte as usize) == u32::MAX)
+        {
+            return false;
+        }
+        for &byte in bytes {
+            self.push(tables, byte_symbols.at(byte as usize));
+        }
+        true
+    }
 }
 
 impl PipelineBPE {
@@ -294,8 +316,9 @@ fn convert_affixed<M: SinkMode>(
     }
 }
 
-/// A character with no atom of its own: bytes if the model has `byte_fallback`, else `unk`.
-/// `in_unk_run` is true while the characters just before were all turned into `unk`.
+/// A character with no atom of its own: bytes if the model has `byte_fallback` and every one is
+/// in the vocab, else `unk`. `in_unk_run` is true while the characters just before were all
+/// turned into `unk`.
 #[inline(always)]
 fn push_unknown<M: SinkMode>(
     tables: &BpeTables,
@@ -311,8 +334,9 @@ fn push_unknown<M: SinkMode>(
             unk_token,
             fuse_unk,
         } => {
-            if let Some(fallback) = byte_fallback {
-                sink.push_char_bytes(tables, fallback, character);
+            if let Some(fallback) = byte_fallback
+                && sink.push_char_fallback(tables, fallback, character)
+            {
                 *in_unk_run = false;
             } else if let Some(unk) = unk_token {
                 // with fuse_unk the run already emitted its unk, so this character adds nothing
