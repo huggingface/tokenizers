@@ -237,8 +237,10 @@ impl PipelineBPE {
         let (vocab, atoms) = if byte_level {
             let mut vocab = BucketVocabStore::build(vocab.byte_content());
             vocab = byte_level::transform_vocab(vocab);
-            // every byte has to be an atom, or a word containing it could not be encoded at all
-            for b in 0u8..=255 {
+            // every byte a word can hold has to be an atom, or a word containing it could not be
+            // encoded at all. Words arrive as `&str`, so the 13 bytes valid UTF-8 never contains
+            // are exempt: published byte-level vocabularies routinely leave exactly those out.
+            for b in (0u8..=255).filter(|&b| occurs_in_utf8(b)) {
                 vocab
                     .get_bytes(&[b])
                     .ok_or(Error::ByteAtomOutOfVocabulary(b))?;
@@ -310,4 +312,10 @@ impl PipelineBPE {
         }
         Ok(built)
     }
+}
+
+/// Whether `b` can appear anywhere in a valid UTF-8 string: `0xC0`, `0xC1` and `0xF5..=0xFF` are
+/// never lead bytes and never continuation bytes, so no `&str` holds them.
+const fn occurs_in_utf8(b: u8) -> bool {
+    !matches!(b, 0xC0 | 0xC1 | 0xF5..=0xFF)
 }

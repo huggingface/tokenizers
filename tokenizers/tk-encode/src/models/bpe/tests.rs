@@ -391,6 +391,54 @@ fn byte_level_id_to_token_spells_the_projected_alphabet() {
     assert_eq!(pipeline.id_to_token(301), None);
 }
 
+/// The gpt2-shaped miniature again, with the atoms for `missing` left out of the vocab.
+fn byte_level_bpe_missing(missing: &[u8]) -> Result<PipelineBPE> {
+    let vocab: Vocab = (0..=255u8)
+        .filter(|b| !missing.contains(b))
+        .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
+        .collect();
+    PipelineBPE::from_config(BpeConfig {
+        vocab,
+        byte_level: true,
+        ..Default::default()
+    })
+}
+
+#[test]
+fn byte_level_exempts_bytes_no_utf8_string_holds() {
+    // 0xC0, 0xC1 and 0xF5..=0xFF are neither lead nor continuation bytes, so no `&str` can
+    // contain them; several published byte-level vocabs (ModernBERT-base, pythia) leave exactly
+    // those out and still have to load.
+    let unreachable: Vec<u8> = [0xC0, 0xC1].into_iter().chain(0xF5..=0xFF).collect();
+    let pipeline = byte_level_bpe_missing(&unreachable).unwrap();
+    assert_eq!(
+        pipeline_ids(&pipeline, "hé"),
+        vec![u32::from(b'h'), 0xC3, 0xA9]
+    );
+    assert_eq!(pipeline_ids(&pipeline, "\x00\x7f"), vec![0x00, 0x7f]);
+    // the highest scalar value uses the largest lead byte a string can hold, 0xF4
+    assert_eq!(
+        pipeline_ids(&pipeline, "\u{10FFFF}"),
+        vec![0xF4, 0x8F, 0xBF, 0xBF]
+    );
+}
+
+#[test]
+fn byte_level_still_requires_every_reachable_byte() {
+    // A byte that can occur has no fallback if its atom is missing, so that stays a build
+    // error naming the byte: a control byte, a continuation byte and a valid 4-byte lead.
+    for missing in [0x0Bu8, 0x80, 0xF1] {
+        let err = byte_level_bpe_missing(&[missing])
+            .err()
+            .map(|e| e.to_string())
+            .expect("a missing reachable atom must be refused");
+        assert!(
+            err.contains(&format!("Byte atom `{missing:#04X}`")),
+            "missing {missing:#04X}: {err}"
+        );
+    }
+}
+
 #[test]
 fn byte_level_requires_full_byte_coverage() {
     // An ASCII-only vocab covers no control/high bytes: building the
