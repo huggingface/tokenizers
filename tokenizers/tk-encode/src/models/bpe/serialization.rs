@@ -256,14 +256,14 @@ impl PipelineBPE {
             };
             let unk_token = unk_token.map(|external| to_internal(external).unwrap_or(u32::MAX));
             let fallback_lookup = if byte_fallback {
-                let mut fallback_lookup = [0u32; 256];
+                // A vocab may leave out some `<0xNN>` codes (Gemma spells tab as a literal token,
+                // never `<0x09>`). Those stay `u32::MAX`, and a character needing one becomes unk.
+                let mut fallback_lookup = [u32::MAX; 256];
                 for b in 0u8..=255 {
                     let code = format!("<{b:#04X}>");
-                    let external = vocab
-                        .token_to_id(&code)
-                        .ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
-                    fallback_lookup[b as usize] =
-                        to_internal(external).ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
+                    if let Some(internal) = vocab.token_to_id(&code).and_then(to_internal) {
+                        fallback_lookup[b as usize] = internal;
+                    }
                 }
                 Some(fallback_lookup)
             } else {
