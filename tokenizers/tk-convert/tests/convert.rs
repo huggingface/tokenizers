@@ -381,7 +381,7 @@ fn byte_level_add_prefix_space_survives_canonicalization_and_special_token_split
     );
     #[cfg(feature = "bench-baseline")]
     let released = tokenizers_release::Tokenizer::from_bytes(
-        &serde_json::to_vec(&value).expect("legacy config serializes"),
+        serde_json::to_vec(&value).expect("legacy config serializes"),
     )
     .expect("the released tokenizer reads this config");
     canonicalize_value(&mut value).expect("the supported ByteLevel setting canonicalizes");
