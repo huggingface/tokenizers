@@ -748,6 +748,16 @@ impl PipelineTokenizer {
                                 text: normalized_chunk,
                                 ..
                             } => {
+                                let prefixed_chunk;
+                                let normalized_chunk =
+                                    if self.inner.pre_tokenizer.adds_byte_level_prefix_space()
+                                        && !normalized_chunk.starts_with(' ')
+                                    {
+                                        prefixed_chunk = format!(" {normalized_chunk}");
+                                        prefixed_chunk.as_str()
+                                    } else {
+                                        normalized_chunk
+                                    };
                                 // A [`Span`] holds `u32` offsets, which breaks the `PreTokenizer` contract the
                                 // `str::get_unchecked` below relies on.
                                 // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),

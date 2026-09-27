@@ -47,6 +47,7 @@ fn write_one(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {
             out.field_bool("invert", split.invert);
             out.obj_close();
         }
+        PipelinePreTokenizer::ByteLevelPrefixSpace => bare(out, "ByteLevelPrefixSpace"),
         PipelinePreTokenizer::Whitespace(_) => bare(out, "Whitespace"),
         PipelinePreTokenizer::WhitespaceSplit(_) => bare(out, "WhitespaceSplit"),
         PipelinePreTokenizer::Bert(_) => bare(out, "BertPreTokenizer"),

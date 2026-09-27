@@ -52,6 +52,7 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
     Ok(match kind {
         "Metaspace" => return Err(unsupported("a `Metaspace` pre-tokenizer")),
         "ByteLevel" => return Err(unsupported("a `ByteLevel` pre-tokenizer")),
+        "ByteLevelPrefixSpace" => PipelinePreTokenizer::ByteLevelPrefixSpace,
         "Split" => PipelinePreTokenizer::Split(read_split(cfg)?),
         "Whitespace" => PipelinePreTokenizer::Whitespace(Whitespace),
         "WhitespaceSplit" => PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
