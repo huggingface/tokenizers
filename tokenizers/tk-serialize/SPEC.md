@@ -70,7 +70,8 @@ regex, or nothing at all where it said `use_regex: false`. If the old pre-tokeni
 `add_prefix_space: true`, a leading `ByteLevelPrefixSpace` marker preserves that operation at the
 same stage: after normalized special-token extraction and before pre-tokenization. The converter
 refuses this combination after earlier sequence pre-tokenizers, where it cannot yet preserve the
-legacy per-split behavior.
+legacy per-split behavior. The canonical reader accepts the marker only by itself or as the first
+member of a pre-tokenizer sequence; elsewhere its stage would be ambiguous.
 
 tk-convert rewrites a legacy `Metaspace` into that pair, and a legacy `ByteLevel` into the model
 flag plus that `Split`. Spelling it out beats folding it back: the

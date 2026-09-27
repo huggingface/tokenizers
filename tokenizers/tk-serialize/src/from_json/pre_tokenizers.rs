@@ -33,6 +33,13 @@ pub(super) fn read_pre_tokenizer(cfg: Option<&Json<'_>>) -> Result<PipelinePreTo
         if members.iter().any(|m| m.type_tag() == Some("Sequence")) {
             return Err("Nesting Sequence pre tokenizers is not supported".into());
         }
+        if members
+            .iter()
+            .enumerate()
+            .any(|(index, member)| member.type_tag() == Some("ByteLevelPrefixSpace") && index != 0)
+        {
+            return Err("ByteLevelPrefixSpace must be first in a pre-tokenizer Sequence".into());
+        }
         let mut built = Vec::with_capacity(members.len());
         for member in members {
             built.push(read_one_pre_tokenizer(member)?);
