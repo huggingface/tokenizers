@@ -172,6 +172,8 @@ pub enum PipelinePreTokenizer {
     Punctuation(Punctuation),
     Sequence(PipelineSequence),
     Split(SplitPretok),
+    /// Materializes legacy `ByteLevel.add_prefix_space` after special-token extraction.
+    ByteLevelPrefixSpace,
     #[cfg(feature = "unicode-scripts")]
     UnicodeScripts(crate::pre_tokenizers::unicode_scripts::UnicodeScripts),
     Whitespace(Whitespace),
@@ -203,10 +205,35 @@ unsafe impl PreTokenizer for PipelinePreTokenizer {
             Self::Punctuation(pretok) => pretok.pre_tokenize(text, scratch, out),
             Self::Sequence(pretok) => pretok.pre_tokenize(text, scratch, out),
             Self::Split(pretok) => pretok.pre_tokenize(text, scratch, out),
+            // `PipelineTokenizer` applies the prefix before invoking this pre-tokenizer. As a
+            // pipeline member, this marker is therefore an identity split.
+            Self::ByteLevelPrefixSpace => {
+                if !text.is_empty() {
+                    out.push(Span {
+                        start: 0,
+                        end: text.len() as u32,
+                    });
+                }
+                Ok(())
+            }
             #[cfg(feature = "unicode-scripts")]
             Self::UnicodeScripts(pretok) => pretok.pre_tokenize(text, scratch, out),
             Self::Whitespace(pretok) => pretok.pre_tokenize(text, scratch, out),
             Self::WhitespaceSplit(pretok) => pretok.pre_tokenize(text, scratch, out),
+        }
+    }
+}
+
+impl PipelinePreTokenizer {
+    /// Whether the first operation is the deferred ByteLevel prefix-space marker.
+    pub(crate) fn adds_byte_level_prefix_space(&self) -> bool {
+        match self {
+            Self::ByteLevelPrefixSpace => true,
+            Self::Sequence(sequence) => matches!(
+                sequence.pre_tokenizers().first(),
+                Some(Self::ByteLevelPrefixSpace)
+            ),
+            _ => false,
         }
     }
 }
@@ -435,6 +462,7 @@ mod tests {
             PipelinePreTokenizer::Punctuation(_) => "Punctuation",
             PipelinePreTokenizer::Sequence(_) => "Sequence",
             PipelinePreTokenizer::Split(_) => "Split",
+            PipelinePreTokenizer::ByteLevelPrefixSpace => "ByteLevelPrefixSpace",
             #[cfg(feature = "unicode-scripts")]
             PipelinePreTokenizer::UnicodeScripts(_) => "UnicodeScripts",
             PipelinePreTokenizer::Whitespace(_) => "Whitespace",
