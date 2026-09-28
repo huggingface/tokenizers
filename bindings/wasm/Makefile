@@ -11,14 +11,17 @@ BROWSER ?= firefox
 CHROMEDRIVER ?=
 WASM_PACK_TEST_FLAGS = --headless --$(BROWSER) $(if $(CHROMEDRIVER),--chromedriver $(CHROMEDRIVER))
 
+# Extra cargo flags, e.g. `CARGO_FLAGS=--locked` in CI.
+CARGO_FLAGS ?=
+
 # ES module package in pkg/, loadable from a browser without a bundler.
 build:
-	wasm-pack build --release --target web
+	wasm-pack build --release --target web -- $(CARGO_FLAGS)
 
 test-data: $(TESTS_RESOURCES)
 
 test: test-data
-	wasm-pack test $(WASM_PACK_TEST_FLAGS)
+	wasm-pack test $(WASM_PACK_TEST_FLAGS) -- $(CARGO_FLAGS)
 
 $(DATA_DIR)/%:
 	mkdir -p $(DATA_DIR)
@@ -29,7 +32,7 @@ style:
 
 check-style:
 	cargo fmt --check
-	cargo clippy --all-targets -- -D warnings
+	cargo clippy $(CARGO_FLAGS) --all-targets -- -D warnings
 
 NPM_INSTALL = npm install --no-audit --no-fund
 

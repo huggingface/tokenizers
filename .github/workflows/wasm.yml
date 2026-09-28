@@ -15,6 +15,10 @@ on:
 
 permissions: {}
 
+# Fail instead of silently updating Cargo.lock.
+env:
+  CARGO_FLAGS: --locked
+
 jobs:
   code-quality:
     permissions:
