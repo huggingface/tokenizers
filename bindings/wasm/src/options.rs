@@ -1,7 +1,7 @@
 //! This crate allows to pass plain javascript objects as arguments to Tokenizer.encode
-//! 
+//!
 //! The wasm_bindgen macro generates code to store the struct in the WebAssembly memory (outside of the JS space).
-//! 
+//!
 //! For a simpler UX, this code declares plain TypeScript interfaces that can be passed directly to Tokenizer.encode()
 //! instead of instantiating (and taking care of freeing) a wasm object.
 
@@ -85,7 +85,6 @@ export interface TruncationOptions {
   direction?: 'left' | 'right'
 }
 "#;
-
 
 /// This block allows rust / wasm to read from plain javascript objects
 #[wasm_bindgen]
@@ -244,7 +243,10 @@ mod tests {
 
     #[wasm_bindgen_test]
     fn test_empty_is_default() {
-        assert_eq!(parse_encode_options("{}").unwrap(), pipeline::EncodeOptions::default());
+        assert_eq!(
+            parse_encode_options("{}").unwrap(),
+            pipeline::EncodeOptions::default()
+        );
     }
 
     #[wasm_bindgen_test]
