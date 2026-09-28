@@ -30,7 +30,8 @@ $(DATA_DIR)/%:
 style:
 	cargo fmt
 
-check-style:
+# Clippy compiles the tests, which embed the fixtures.
+check-style: test-data
 	cargo fmt --check
 	cargo clippy $(CARGO_FLAGS) --all-targets -- -D warnings
 

@@ -46,8 +46,25 @@ jobs:
           workspaces: bindings/wasm
           shared-key: wasm
 
+      # Test fixtures are immutable — cache them so CI doesn't re-download
+      # from the Hub (and get rate-limited) on every run.
+      - name: Cache HF test data
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: bindings/wasm/data
+          key: hf-test-data-wasm-${{ hashFiles('bindings/wasm/Makefile') }}
+          restore-keys: hf-test-data-wasm-
+
+      # Provides `uvx`, used to run the huggingface_hub CLI that downloads
+      # test fixtures (see the Makefile) without a separate install step.
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      # Clippy runs on --all-targets, and the tests `include_str!` the fixtures.
       - name: Lint with RustFmt and Clippy
-        run: make check-style
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make check-style HF="uvx --from huggingface_hub hf"
 
   build:
     permissions:
