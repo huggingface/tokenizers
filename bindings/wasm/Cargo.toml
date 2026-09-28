@@ -30,16 +30,16 @@ tk-convert = { path = "../../tokenizers/tk-convert", default-features = false }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 # getrandom gets pulled in the dependency tree and need the wasm_js feature to work in the browser
-getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
-getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
+getrandom_03 = { package = "getrandom", version = "0.3", features = [
+	"wasm_js",
+] }
+getrandom_04 = { package = "getrandom", version = "0.4", features = [
+	"wasm_js",
+] }
 
 [dev-dependencies]
 js-sys = "0.3"
 wasm-bindgen-test = "0.3"
-
-[patch.crates-io]
-# ptr_hash called Instant::now which crashes on web targets, the vendored source replaces it with a web-compatible lib
-ptr_hash = { path = "vendor/ptr_hash" }
 
 [profile.release]
 lto = true
