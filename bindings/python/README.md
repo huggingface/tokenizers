@@ -25,12 +25,11 @@ encoding.ids             # [101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102]
 encoding.type_ids        # [0, 0, 0, 0, 0, 0, 0, 0, 0]
 encoding.attention_mask  # [1, 1, 1, 1, 1, 1, 1, 1, 1]
 
-# The same fields as numpy arrays: read-only views over the encoding, not copies. Reading one
-# costs nothing, and an array keeps its encoding alive for as long as the array exists.
+# The same fields as numpy arrays. Each read returns a new copy that the caller owns.
 encoding.ids_array             # array([101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102], dtype=uint32)
 encoding.type_ids_array        # array([0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=uint32)
 encoding.attention_mask_array  # array([1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=uint32)
-torch.from_numpy(encoding.ids_array)  # still no copy
+torch.from_numpy(encoding.ids_array)  # no-copy translation
 
 tokenizer.encode("Hello", add_special_tokens=False).ids  # no [CLS]/[SEP]
 tokenizer.decode(encoding.ids)                           # "hello there, how are you?"
