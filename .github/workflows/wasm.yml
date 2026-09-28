@@ -1,0 +1,142 @@
+name: Wasm
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - bindings/wasm/**
+      - tokenizers/**
+      - .github/workflows/wasm.yml
+  pull_request:
+    paths:
+      - bindings/wasm/**
+      - tokenizers/**
+      - .github/workflows/wasm.yml
+
+permissions: {}
+
+jobs:
+  code-quality:
+    permissions:
+      contents: read
+    name: Lint & format
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/wasm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        with:
+          workspaces: bindings/wasm
+          shared-key: wasm
+
+      - name: Lint with RustFmt and Clippy
+        run: make check-style
+
+  build:
+    permissions:
+      contents: read
+    name: Build bindings & React example
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/wasm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        with:
+          workspaces: bindings/wasm
+          shared-key: wasm-release
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29  # v2.87.21
+        with:
+          tool: wasm-pack@0.15.0
+
+      - name: Build bindings
+        run: make build
+
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: latest
+
+      - name: Build React example
+        working-directory: bindings/wasm/examples/react
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+  test:
+    permissions:
+      contents: read
+    name: Test (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, chrome]
+    defaults:
+      run:
+        working-directory: bindings/wasm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        with:
+          workspaces: bindings/wasm
+          shared-key: wasm
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29  # v2.87.21
+        with:
+          tool: wasm-pack@0.15.0
+
+      # Test fixtures are immutable — cache them so CI doesn't re-download
+      # from the Hub (and get rate-limited) on every run.
+      - name: Cache HF test data
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: bindings/wasm/data
+          key: hf-test-data-wasm-${{ hashFiles('bindings/wasm/Makefile') }}
+          restore-keys: hf-test-data-wasm-
+
+      # Provides `uvx`, used to run the huggingface_hub CLI that downloads
+      # test fixtures (see the Makefile) without a separate install step.
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      # The runner image ships Chrome with a matching chromedriver; the one wasm-pack
+      # downloads tracks the newest Chrome and can refuse the installed one.
+      - name: Run tests in headless ${{ matrix.browser }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          BROWSER: ${{ matrix.browser }}
+        run: |
+          if [ "$BROWSER" = chrome ]; then export CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver"; fi
+          make test HF="uvx --from huggingface_hub hf"
