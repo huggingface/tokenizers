@@ -1466,7 +1466,7 @@ impl ParityBpeTrainer {
                 .into_iter()
                 .map(|(_key, val)| (id_to_word[val as usize].to_string().into_bytes(), val))
                 .collect(),
-        );
+        )?;
         model.merges = merges
             .into_iter()
             .enumerate()

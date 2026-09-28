@@ -1,3 +1,5 @@
+use crate::Result;
+
 use super::bucket_vocab_store::BucketVocabStore;
 
 #[derive(Clone, PartialEq, Debug, Default)]
@@ -98,8 +100,8 @@ impl Buckets {
         tokens: Vec<(Vec<u8>, u32)>,
         first_byte_to_bucket_id: [u8; 256],
         buckets: Box<[Bucket]>,
-    ) -> Self {
-        let vocab = BucketVocabStore::build(tokens);
+    ) -> Result<Self> {
+        let vocab = BucketVocabStore::build(tokens)?;
         let mut new = Self {
             first_byte_to_bucket_id,
             lo16: [0; 16],
@@ -108,13 +110,13 @@ impl Buckets {
             vocab,
         };
         new.build_nibble_table();
-        new
+        Ok(new)
     }
 
     /// Used by the AddedVocabulary when a new token is added, we recreate the entire structure.
-    pub fn from_tokens(tokens: Vec<(Vec<u8>, u32)>) -> Self {
+    pub fn from_tokens(tokens: Vec<(Vec<u8>, u32)>) -> Result<Self> {
         if tokens.is_empty() {
-            return Self::new();
+            return Ok(Self::new());
         }
         // First we group tokens that have the same starting byte.
         let mut groups: Vec<Vec<u32>> = vec![Vec::new(); 256];
@@ -608,7 +610,7 @@ mod bench {
             .enumerate()
             .map(|(i, s)| (s.as_bytes().to_vec(), i as u32))
             .collect();
-        let b = Buckets::from_tokens(specials.clone());
+        let b = Buckets::from_tokens(specials.clone()).unwrap();
         let patterns: Vec<&Vec<u8>> = specials.iter().map(|(v, _)| v).collect();
         let pma: DoubleArrayAhoCorasick<usize> = DoubleArrayAhoCorasick::new(patterns).unwrap();
 
@@ -658,7 +660,8 @@ mod tests {
             vec![("ha".as_bytes().to_vec(), 0)],
             first_byte_to_bucket,
             Box::new([]),
-        );
+        )
+        .unwrap();
         fake_bucket.build_nibble_table();
         assert_eq!(fake_bucket.lo16, expected_lo16);
         assert_eq!(fake_bucket.hi16, expected_hi16);
@@ -683,7 +686,8 @@ mod tests {
                 next_byte_to_length_id,
                 Box::new([Box::new([7])]),
             )]),
-        );
+        )
+        .unwrap();
         assert_eq!(
             fake_vocab.match_bytes(b"This should be kwown<s><|eos|>"),
             Some((0, 23, 7))
@@ -730,7 +734,8 @@ mod tests {
                     Box::new([Box::new([5])]),
                 ),
             ]),
-        );
+        )
+        .unwrap();
 
         assert_eq!(fake_vocab.buckets.len(), 4);
         assert_eq!(fake_vocab.match_bytes(b"><|eos|>"), Some((0, 1, 7)));
