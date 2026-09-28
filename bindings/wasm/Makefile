@@ -33,8 +33,5 @@ check-style:
 
 NPM_INSTALL = npm install --no-audit --no-fund
 
-vite: build
-	cd examples/vite && $(NPM_INSTALL) && npm run dev
-
 react: build
 	cd examples/react && $(NPM_INSTALL) && npm run dev

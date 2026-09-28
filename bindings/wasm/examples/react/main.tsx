@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import init, { Tokenizer } from "tokenizers-wasm";
-import "../style.css";
+import "./style.css";
 
 const MODELS = [
   ["openai-community/gpt2", "BPE"],
