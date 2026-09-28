@@ -237,10 +237,12 @@ impl PipelineBPE {
         let (vocab, atoms) = if byte_level {
             // Byte-Level: atoms are raw bytes, we check that the vocabulary has all
             // UTF-8 reachable atoms. See [`is_reachable_utf8`] for details.
-            for byte in (0u8..=255).filter(is_reachable_utf8) {
-                if tables.byte_internal[byte as usize] == u32::MAX {
-                    return Err(Error::ByteAtomOutOfVocabulary(byte).into());
-                }
+            let missing: Vec<u8> = (0u8..=255)
+                .filter(is_reachable_utf8)
+                .filter(|&byte| tables.byte_internal[byte as usize] == u32::MAX)
+                .collect();
+            if !missing.is_empty() {
+                return Err(Error::ByteAtomOutOfVocabulary(missing).into());
             }
             // Build the vocab and return it
             let mut vocab = BucketVocabStore::build(vocab.byte_content());
