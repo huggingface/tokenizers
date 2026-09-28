@@ -7,7 +7,7 @@ HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
 # CI overrides with `uvx --from huggingface_hub hf`.
 HF ?= hf
 
-HF_REVISION ?= a6c4e9fcdc6e18f7ae3ef21253a28443e538c714
+HF_REVISION ?= 5f5c6524084c42a35c28c0184bea37ec2530fd7c
 
 $(DATA_DIR)/% :
 	$(dir_guard)
