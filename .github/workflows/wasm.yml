@@ -82,7 +82,7 @@ jobs:
       - name: Build React example
         working-directory: bindings/wasm/examples/react
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run build
 
   test:
