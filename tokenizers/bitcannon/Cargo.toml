@@ -24,8 +24,6 @@ all-features = true
 name = "bitcannon"
 path = "src/lib.rs"
 
-[dependencies]
-ahash = "0.8"
 # NOTE: classify tables live in src/classify/atom_tables.rs (committed, generated). Regenerate after any atom
 # scheme change with `cargo run -p bitmap_gen`. No build script / build-dep — bitcannon builds clean.
 
