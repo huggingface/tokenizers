@@ -60,7 +60,7 @@ impl Tokenizer {
     /// Decodes token ids back into text.
     ///
     /// @param ids - The ids to convert. Can be the result of {@link Tokenizer.encode}.
-    /// @param skip_special_tokens - Whether special tokens are ignored. `false` when not specified.
+    /// @param skip_special_tokens - Whether special tokens are ignored. `true` when not specified.
     /// @returns The decoded text.
     pub fn decode(
         &self,
