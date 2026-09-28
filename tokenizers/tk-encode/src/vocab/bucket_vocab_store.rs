@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use ahash::RandomState;
 use ptr_hash::{FastPtrHash, PtrHashParams, hash::NoHash};
@@ -218,27 +218,32 @@ impl BucketVocabStore {
             .map(|(s, _)| key_and_hash(s.as_slice()).1)
             .collect();
 
-        // 2. A perfect hash needs distinct keys. Collisions are astronomically unlikely
-        //    (~n^2/2^65); if one ever fires, switch the key type to u128. The byte check below makes
-        //    a collision a correct miss at query time, but it would drop a token at build, so guard.
+        let mut unique_entries: HashMap<u64, usize> = HashMap::with_capacity(n);
 
-        let mut seen = HashSet::with_capacity(n);
-        for k in &keys {
-            let overlap = seen.insert(*k);
-            if !overlap {
-                println!(
-                    "Either 2 keys are the same or 64-bit hash collision in vocab; rebuild with u128 keys: {:?}",
-                    tokens
-                        .iter()
-                        .map(|(s, _)| String::from_utf8_lossy(s))
-                        .collect::<Vec<_>>()
-                );
-            }
+        for (index, hash) in keys.iter().enumerate() {
+            let Some(&previous_index) = unique_entries.get(hash) else {
+                unique_entries.insert(*hash, index);
+                continue;
+            };
+            let ((previous_bytes, previous_id), (current_bytes, current_id)) =
+                (&tokens[previous_index], &tokens[index]);
+
+            // Hash collision: two different byte strings resolve to the same hash, panic
+            assert!(
+                previous_bytes == current_bytes,
+                "fatal: failed to build the vocabulary store: 64-bit hash collision for tokens {previous_id} and {current_id}; the store needs wider keys"
+            );
+
+            // Duplicate entries in the vocabulary: warn and continue
+            warn!(
+                "tokens {previous_id} and {current_id} both resolve to {:?}; {current_id} will take precedence",
+                String::from_utf8_lossy(current_bytes)
+            );
         }
 
         // 3. Build the (non-minimal) `FastPtrHash` via `PtrHashParams::default_fast()`; query with `.index()`.
         let params = PtrHashParams::default_fast();
-        let mphf = Mphf::new(&seen.into_iter().collect::<Vec<u64>>(), params);
+        let mphf = Mphf::new(&unique_entries.into_keys().collect::<Vec<u64>>(), params);
 
         // FastPtrHash is non-minimal: `index()` may return a slot up to `max_index()` (>= n),
         // so `entries` must be sized to cover the whole slot range. Slots never written by the
@@ -581,6 +586,14 @@ mod tests {
         let mut bytes = vocab.byte_content();
         bytes.sort();
         assert_eq!(bytes, vec![(b"hi".to_vec(), 0), (b"yo".to_vec(), 1)]);
+    }
+
+    #[test]
+    fn duplicate_bytes_in_vocab() {
+        let vocab = BucketVocabStore::build(vec![(b"  ".to_vec(), 245), (b"  ".to_vec(), 50276)]);
+        assert_eq!(vocab.get_bytes(b"  "), Some(50276));
+        assert_eq!(vocab.id_to_token_bytes(245), Some(&b"  "[..]));
+        assert_eq!(vocab.id_to_token_bytes(50276), Some(&b"  "[..]));
     }
 
     #[test]
