@@ -235,14 +235,17 @@ impl PipelineBPE {
                 .filter(|&internal| internal != u32::MAX)
         };
         let (vocab, atoms) = if byte_level {
+            // Byte-Level: atoms are raw bytes, we check that the vocabulary has all
+            // UTF-8 reachable atoms. See [`is_reachable_utf8`] for details.
+            for byte in (0u8..=255).filter(is_reachable_utf8) {
+                if tables.byte_internal[byte as usize] == u32::MAX {
+                    return Err(Error::ByteAtomOutOfVocabulary(byte).into());
+                }
+            }
+            // Build the vocab and return it
             let mut vocab = BucketVocabStore::build(vocab.byte_content());
             vocab = byte_level::transform_vocab(vocab);
-            // every byte has to be an atom, or a word containing it could not be encoded at all
-            for b in 0u8..=255 {
-                vocab
-                    .get_bytes(&[b])
-                    .ok_or(Error::ByteAtomOutOfVocabulary(b))?;
-            }
+
             (vocab, Atoms::Bytes)
         } else {
             let vocab = BucketVocabStore::build(vocab.byte_content());
@@ -310,4 +313,21 @@ impl PipelineBPE {
         }
         Ok(built)
     }
+}
+
+/// Whether `byte` can occur in a `&str`, which is guaranteed to ben a valid UTF-8 string
+fn is_reachable_utf8(byte: &u8) -> bool {
+    !matches!(
+        byte,
+        // Lead bytes that start a 2-bytes writing of a value that fits in a single 1 byte long UTF8 codepoint.
+        // UTF-8 only valid form is the shortest value, so those lead bytes are invalid UTF-8
+        0xC0 | 0xC1
+            // Lead byte for a four-byte character at U+140000 or above, past the last codepoint Unicode allows
+            | 0xF5..=0xF7
+            // Lead bytes for 5 and 6 character long codepoints, invalid
+            | 0xF8..=0xFD
+            // Not valid UTF-8 bytes
+            | 0xFE
+            | 0xFF
+    )
 }
