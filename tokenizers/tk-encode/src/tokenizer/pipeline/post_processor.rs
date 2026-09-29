@@ -1,6 +1,6 @@
 //! The post-processor half of the pipeline: the two [`Template`]s an encode adds its tokens from.
 
-use super::{Encoding, PipelineToken};
+use super::{Encoding, Layout, PipelineToken};
 
 #[inline]
 fn push_ids(run: &[(PipelineToken, u8)], out: &mut Vec<PipelineToken>) {
@@ -84,6 +84,22 @@ impl Template {
             out
         });
 
+        let special = |run: &[(PipelineToken, u8)]| if SPECIALS { run.len() as u32 } else { 0 };
+        let layout = Layout {
+            prefix: special(&self.prefix),
+            a: a_len as u32,
+            infix: if s2.is_some() {
+                special(&self.infix)
+            } else {
+                0
+            },
+            b: b_len as u32,
+            suffix: special(&self.suffix),
+            pad_left: 0,
+            pad_right: 0,
+            n_sequences: if s2.is_some() { 2 } else { 1 },
+        };
+
         let ids = match s2 {
             Some(b) => self.wrap_pair::<SPECIALS>(s1, b),
             None => {
@@ -100,7 +116,7 @@ impl Template {
                 ids
             }
         };
-        Encoding::new(ids, type_ids)
+        Encoding::new(ids, type_ids, layout)
     }
 
     #[inline(never)]

@@ -16,9 +16,12 @@ pub mod pipeline;
 // they are written against.
 pub use crate::decoders::{Decoder, DecoderRuntime};
 pub use crate::utils::iter::LinesWithEnding;
-pub use crate::utils::padding::{PaddingDirection, PaddingParams, PaddingStrategy, pad_encodings};
+pub use crate::utils::padding::{
+    PaddingDirection, PaddingParams, PaddingStrategy, pad_encoding, pad_encodings, pad_ids,
+};
 pub use crate::utils::truncation::{
-    TruncationDirection, TruncationParams, TruncationStrategy, truncate_pair,
+    Truncated, TruncationDirection, TruncationError, TruncationParams, TruncationStrategy, Window,
+    truncate_pair, truncate_windows,
 };
 pub use encoding::*;
 
