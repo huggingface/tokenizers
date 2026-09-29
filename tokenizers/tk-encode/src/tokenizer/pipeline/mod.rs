@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::iter::Enumerate;
+use std::ops::Range;
 use std::sync::Arc;
 use std::vec::IntoIter;
 
@@ -11,11 +12,11 @@ use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
 pub use crate::pipeline::encode_options::EncodeOptions;
 pub use crate::pipeline::encode_options::Override;
-use crate::utils::truncation::truncate_pair;
+use crate::utils::truncation::{Truncated, truncate_pair};
 use crate::{
     DecoderRuntime, PaddingParams, TruncationParams,
     models::bpe::{BpeScratch, PipelineBPE},
-    pad_encodings,
+    pad_encoding, pad_encodings, pad_ids,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     tokenizer::Decoder as _,
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
@@ -58,18 +59,38 @@ pub struct PipelineToken(u32);
 
 impl PipelineToken {
     /// The vocabulary id this token stands for.
+    #[inline]
     pub const fn id(self) -> u32 {
         self.0
+    }
+
+    /// A token slice as an id slice: the same bytes, since the type is `repr(transparent)`.
+    #[inline]
+    pub fn slice_as_u32(tokens: &[PipelineToken]) -> &[u32] {
+        // SAFETY: `PipelineToken` is `#[repr(transparent)]` over `u32`, so the two slices have
+        // the same length, alignment and bit pattern.
+        unsafe { std::slice::from_raw_parts(tokens.as_ptr().cast::<u32>(), tokens.len()) }
+    }
+
+    /// A token vector as an id vector, reusing the allocation.
+    pub fn vec_into_u32(tokens: Vec<PipelineToken>) -> Vec<u32> {
+        let mut tokens = std::mem::ManuallyDrop::new(tokens);
+        let (ptr, len, cap) = (tokens.as_mut_ptr(), tokens.len(), tokens.capacity());
+        // SAFETY: `PipelineToken` is `#[repr(transparent)]` over `u32`, so the allocation was
+        // made with `u32`'s layout, and `ManuallyDrop` hands ownership over exactly once.
+        unsafe { Vec::from_raw_parts(ptr.cast::<u32>(), len, cap) }
     }
 }
 
 impl From<u32> for PipelineToken {
+    #[inline]
     fn from(value: u32) -> Self {
         Self(value)
     }
 }
 
 impl From<PipelineToken> for u32 {
+    #[inline]
     fn from(value: PipelineToken) -> Self {
         value.0
     }
@@ -471,6 +492,59 @@ impl EncodeHandle {
     }
 }
 
+/// Where everything sits in an [`Encoding`]'s ids: `prefix | A | infix | B | suffix`, then the
+/// padding on one side. Every field is a length, so the layout doubles as the boundaries. This is
+/// what `special_tokens_mask`, `sequence_ids` and friends are derived from, so an encoding does
+/// not carry one buffer per mask the way the released `Encoding` did.
+///
+/// Lengths are `u32`: a chunk is already bounded to `u32::MAX` bytes before pre-tokenization,
+/// and there is never more than one token per byte.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Layout {
+    /// Template tokens before the first sequence.
+    pub prefix: u32,
+    /// Tokens of the first sequence.
+    pub a: u32,
+    /// Template tokens between the sequences; always 0 without a second sequence.
+    pub infix: u32,
+    /// Tokens of the second sequence; 0 without one, see `n_sequences`.
+    pub b: u32,
+    /// Template tokens after the last sequence.
+    pub suffix: u32,
+    /// Padding tokens before `prefix`.
+    pub pad_left: u32,
+    /// Padding tokens after `suffix`.
+    pub pad_right: u32,
+    /// 1 or 2; 0 only for an [`Encoding`] that was never post-processed.
+    pub n_sequences: u8,
+}
+
+impl Layout {
+    /// Token index range of sequence `seq` (0 for A, 1 for B).
+    pub fn sequence_range(&self, seq: usize) -> Option<Range<usize>> {
+        if seq >= usize::from(self.n_sequences) {
+            return None;
+        }
+        let a_start = (self.pad_left + self.prefix) as usize;
+        let a_end = a_start + self.a as usize;
+        Some(if seq == 0 {
+            a_start..a_end
+        } else {
+            let b_start = a_end + self.infix as usize;
+            b_start..b_start + self.b as usize
+        })
+    }
+
+    pub fn len(&self) -> usize {
+        (self.pad_left + self.prefix + self.a + self.infix + self.b + self.suffix + self.pad_right)
+            as usize
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Encoding {
     pub(crate) ids: Vec<PipelineToken>,
@@ -478,6 +552,9 @@ pub struct Encoding {
     pub(crate) type_ids: Option<Vec<u8>>,
     /// `None` if the encoding is not padded (mask is all ones)
     pub(crate) attention_mask: Option<Vec<u8>>,
+    pub(crate) layout: Layout,
+    /// The windows truncation cut off, see [`Self::overflowing`].
+    pub(crate) overflowing: Vec<Encoding>,
 }
 
 impl Encoding {
@@ -486,15 +563,24 @@ impl Encoding {
             ids: Vec::new(),
             type_ids: None,
             attention_mask: None,
+            layout: Layout::default(),
+            overflowing: Vec::new(),
         }
     }
 
-    fn new(ids: Vec<PipelineToken>, type_ids: Option<Vec<u8>>) -> Self {
+    fn new(ids: Vec<PipelineToken>, type_ids: Option<Vec<u8>>, layout: Layout) -> Self {
         debug_assert!(type_ids.as_ref().is_none_or(|t| t.len() == ids.len()));
+        debug_assert_eq!(
+            layout.len(),
+            ids.len(),
+            "[BUG] layout does not cover the ids"
+        );
         Self {
             ids,
             type_ids,
             attention_mask: None,
+            layout,
+            overflowing: Vec::new(),
         }
     }
 }
@@ -512,6 +598,30 @@ impl Encoding {
         &self.ids
     }
 
+    /// The ids as plain `u32`s: the same slice, since a [`PipelineToken`] is one.
+    pub fn ids_u32(&self) -> &[u32] {
+        PipelineToken::slice_as_u32(&self.ids)
+    }
+
+    /// The ids as an owned `Vec<u32>`, without copying: for a caller that wants to hand the
+    /// buffer somewhere else (a Python list, a numpy array) rather than borrow it.
+    pub fn into_ids(self) -> Vec<u32> {
+        PipelineToken::vec_into_u32(self.ids)
+    }
+
+    /// `(ids, type_ids, attention_mask, overflowing)`, all moved out. `type_ids` is `None` when
+    /// every token has type id 0 and `attention_mask` is `None` when nothing is padded, the same
+    /// contract as the borrowing accessors.
+    #[allow(clippy::type_complexity)]
+    pub fn into_parts(self) -> (Vec<u32>, Option<Vec<u8>>, Option<Vec<u8>>, Vec<Encoding>) {
+        (
+            PipelineToken::vec_into_u32(self.ids),
+            self.type_ids,
+            self.attention_mask,
+            self.overflowing,
+        )
+    }
+
     pub fn type_ids(&self) -> Option<&[u8]> {
         self.type_ids.as_deref()
     }
@@ -519,8 +629,64 @@ impl Encoding {
     pub fn attention_mask(&self) -> Option<&[u8]> {
         self.attention_mask.as_deref()
     }
+
+    pub fn layout(&self) -> &Layout {
+        &self.layout
+    }
+
+    /// How many sequences went in: 1, or 2 for a pair.
+    pub fn n_sequences(&self) -> usize {
+        usize::from(self.layout.n_sequences)
+    }
+
+    /// The windows truncation cut off, each post-processed like the encoding itself (the same
+    /// template, type ids and padding). Empty unless truncation removed something. With a
+    /// `stride` the windows overlap; see `truncate_windows` for their shape and order.
+    pub fn overflowing(&self) -> &[Encoding] {
+        &self.overflowing
+    }
+
+    /// Moves the overflowing windows out, leaving none.
+    pub fn take_overflowing(&mut self) -> Vec<Encoding> {
+        std::mem::take(&mut self.overflowing)
+    }
+
+    /// Token index range of sequence `seq` (0 for A, 1 for B), or `None` past the last one.
+    pub fn sequence_range(&self, seq: usize) -> Option<Range<usize>> {
+        self.layout.sequence_range(seq)
+    }
+
+    /// Which sequence the token at `index` came from, or `None` for a template token, a
+    /// padding token, or an index past the end.
+    pub fn token_to_sequence(&self, index: usize) -> Option<usize> {
+        (0..self.n_sequences())
+            .find(|&seq| self.layout.sequence_range(seq).unwrap().contains(&index))
+    }
+
+    /// One entry per token: the sequence it came from, `None` for template and padding tokens.
+    pub fn sequence_ids(&self) -> Vec<Option<usize>> {
+        let mut out = vec![None; self.ids.len()];
+        for seq in 0..self.n_sequences() {
+            out[self.layout.sequence_range(seq).unwrap()].fill(Some(seq));
+        }
+        out
+    }
+
+    /// One entry per token: 1 for a token the template or the padding added, 0 for a token
+    /// of the input. Added tokens matched *inside* the input count as input, the way released
+    /// `tokenizers` reported them.
+    pub fn special_tokens_mask(&self) -> Vec<u8> {
+        let mut out = vec![1; self.ids.len()];
+        for seq in 0..self.n_sequences() {
+            out[self.layout.sequence_range(seq).unwrap()].fill(0);
+        }
+        out
+    }
 }
-/// Iterator yields results in completion order
+/// Iterator yields results in completion order.
+///
+/// A fixed padding length is applied to each result as it comes out; `BatchLongest` needs every
+/// result to know its length, so only [`EncodeHandle::wait`] can apply that one.
 pub struct HandleIter {
     handle: EncodeHandle,
 }
@@ -529,11 +695,18 @@ impl Iterator for HandleIter {
     type Item = (usize, Result<Encoding>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        match &mut self.handle.state {
+        let (seq, result) = match &mut self.handle.state {
             HandleState::Blocking(it) => it.next(),
             #[cfg(feature = "parallelism")]
             HandleState::Streaming(it) => it.next(),
-        }
+        }?;
+        let result = match (result, &self.handle.padding) {
+            (Ok(mut encoding), Some(params)) => {
+                pad_encoding(&mut encoding, params).map(|()| encoding)
+            }
+            (result, _) => result,
+        };
+        Some((seq, result))
     }
 }
 
@@ -677,7 +850,9 @@ impl PipelineTokenizer {
 
     /// Pick the template the input shape calls for and let it add the specials.
     ///
-    /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside.
+    /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside. Every
+    /// window truncation cut off goes through the same template, so an overflowing window is a
+    /// complete encoding: specials, type ids and all.
     fn post_process(
         &self,
         s1: Vec<PipelineToken>,
@@ -692,12 +867,23 @@ impl PipelineTokenizer {
             0
         };
         let truncation = self.resolve_truncation(&options.truncation);
-        let (s1, s2) = truncate_pair(s1, s2, truncation, num_added_specials)?;
-        Ok(if options.add_special_tokens {
-            template.post_process::<true>(s1, s2)
-        } else {
-            template.post_process::<false>(s1, s2)
-        })
+        let Truncated {
+            first,
+            second,
+            overflowing,
+        } = truncate_pair(s1, s2, truncation, num_added_specials)?;
+        let apply = |a, b| {
+            if options.add_special_tokens {
+                template.post_process::<true>(a, b)
+            } else {
+                template.post_process::<false>(a, b)
+            }
+        };
+        let mut encoding = apply(first, second);
+        if !overflowing.is_empty() {
+            encoding.overflowing = overflowing.into_iter().map(|(a, b)| apply(a, b)).collect();
+        }
+        Ok(encoding)
     }
 
     /// Encode one sequence, appending its ids to `output`.
@@ -822,7 +1008,9 @@ impl PipelineTokenizer {
     /// encode-only caller in a loop -- a server, a benchmark -- wants this one.
     ///
     /// Falls back to the general path when the post-processor actually has something to add
-    /// around the sequence, since that has to assemble a whole `Encoding` anyway.
+    /// around the sequence, since that has to assemble a whole `Encoding` anyway. Padding is
+    /// applied to what was appended, the way [`Self::encode`] pads a batch of one: `BatchLongest`
+    /// is then the sequence's own length, rounded up by `pad_to_multiple_of`.
     pub fn encode_into(
         &self,
         input: &str,
@@ -831,14 +1019,20 @@ impl PipelineTokenizer {
     ) -> Result<()> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         let template = &self.inner.post_processor.single;
+        let start = out.len();
         let reproduces_sequence = self.resolve_truncation(&options.truncation).is_none()
             && !template.has_type_ids()
             && (!options.add_special_tokens || template.n_special() == 0);
         if reproduces_sequence {
-            return self.encode_sequence_into(input, 0, options, &mut scratch, out);
+            self.encode_sequence_into(input, 0, options, &mut scratch, out)?;
+        } else {
+            let encoding =
+                self.encode_one(Input::Single(input.to_owned()), options, &mut scratch)?;
+            out.extend_from_slice(encoding.ids());
         }
-        let encoding = self.encode_one(Input::Single(input.to_owned()), options, &mut scratch)?;
-        out.extend_from_slice(encoding.ids());
+        if let Some(params) = self.resolve_padding(&options.padding) {
+            pad_ids(out, start, params);
+        }
         Ok(())
     }
 
@@ -1127,10 +1321,10 @@ impl ModelScratch for PipelineModelScratch {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PaddingStrategy;
     use crate::tokenizer::{TruncationDirection, TruncationStrategy};
     use crate::utils::truncation::TruncationError;
     use crate::vocab::bucket_added_vocabulary::AddedToken;
+    use crate::{PaddingDirection, PaddingStrategy};
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
     impl PipelinePatternMatcher for FixedMatcher {
@@ -1854,5 +2048,205 @@ mod tests {
 
     fn hello_pipeline_with_truncation(truncation: TruncationParams) -> PipelineTokenizer {
         hello_pipeline_with(PipelinePostProcessor::default(), None, Some(truncation))
+    }
+
+    // Every window truncation cuts off is post-processed like the encoding itself, so a window
+    // carries the template's specials and type ids (released 0.23 left the type ids off the
+    // overflow, issue #1908).
+    #[test]
+    fn overflowing_windows_are_complete_encodings() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(5, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(
+                tokens(1..=4),
+                Some(tokens(11..=14)),
+                &EncodeOptions::default(),
+            )
+            .unwrap();
+
+        // Three specials leave room for 2 tokens, one per side, so the windows are 1 token
+        // wide on each side. They combine as released 0.23 did: each A window against the kept
+        // B, then against each B window, then the kept A against each B window.
+        assert_eq!(ids(&encoding), [CLS, 1, SEP, 11, SEP]);
+        let windows: Vec<Vec<u32>> = encoding.overflowing().iter().map(ids).collect();
+        assert_eq!(windows.len(), 3 * (1 + 3) + 3);
+        assert_eq!(windows[0], [CLS, 2, SEP, 11, SEP]);
+        assert_eq!(windows[1], [CLS, 2, SEP, 12, SEP]);
+        assert_eq!(windows[4], [CLS, 3, SEP, 11, SEP]);
+        assert_eq!(windows[12], [CLS, 1, SEP, 12, SEP]);
+        for window in encoding.overflowing() {
+            assert_eq!(window.type_ids().unwrap(), [0, 0, 0, 1, 1]);
+            assert_eq!(window.special_tokens_mask(), [1, 0, 1, 0, 1]);
+            assert_eq!(window.n_sequences(), 2);
+            assert!(window.overflowing().is_empty(), "windows are flat");
+        }
+    }
+
+    // `encode_into` pads what it appended, and only that: the caller's earlier ids stay put.
+    // `BatchLongest` on a single sequence only rounds up to the multiple.
+    #[test]
+    fn encode_into_pads_what_it_appended() {
+        let pipeline = hello_pipeline_with_padding(PaddingParams {
+            strategy: PaddingStrategy::Fixed(4),
+            direction: PaddingDirection::Left,
+            pad_id: PAD,
+            ..PaddingParams::default()
+        });
+        let mut out = tokens([42]);
+        pipeline
+            .encode_into("hello", &EncodeOptions::no_specials(), &mut out)
+            .unwrap();
+        assert_eq!(out, tokens([42, PAD, PAD, PAD, 7]));
+
+        let pipeline = hello_pipeline_with_padding(PaddingParams {
+            strategy: PaddingStrategy::BatchLongest,
+            pad_to_multiple_of: Some(4),
+            pad_id: PAD,
+            ..PaddingParams::default()
+        });
+        let mut out = Vec::new();
+        pipeline
+            .encode_into("hello", &EncodeOptions::no_specials(), &mut out)
+            .unwrap();
+        assert_eq!(out, tokens([7, PAD, PAD, PAD]));
+        let encoded = pipeline
+            .encode("hello", &EncodeOptions::no_specials())
+            .wait()
+            .unwrap();
+        assert_eq!(out, encoded[0].ids(), "same as a batch of one");
+    }
+
+    #[test]
+    fn a_stride_makes_single_sequence_windows_overlap() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            Some(TruncationParams {
+                max_length: 5,
+                stride: 1,
+                ..TruncationParams::default()
+            }),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::default())
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 1, 2, 3, SEP]);
+        let windows: Vec<Vec<u32>> = encoding.overflowing().iter().map(ids).collect();
+        assert_eq!(
+            windows,
+            [
+                vec![CLS, 3, 4, 5, SEP],
+                vec![CLS, 5, 6, 7, SEP],
+                vec![CLS, 7, 8, SEP],
+            ]
+        );
+        // No truncation happened: no windows, and no allocation for them.
+        let short = pipeline
+            .post_process(tokens(1..=2), None, &EncodeOptions::default())
+            .unwrap();
+        assert!(short.overflowing().is_empty());
+        assert_eq!(short.overflowing.capacity(), 0);
+    }
+
+    // A stride the room cannot fit is an error at the first input that would need it, with the
+    // room (max_length minus the specials) in the message, since that is the number to fix.
+    #[test]
+    fn a_stride_without_room_is_an_error() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            Some(TruncationParams {
+                max_length: 5,
+                stride: 3,
+                ..TruncationParams::default()
+            }),
+        );
+
+        let err = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::default())
+            .unwrap_err();
+        assert!(matches!(
+            err.downcast_ref::<TruncationError>(),
+            Some(TruncationError::StrideTooLarge { stride: 3, room: 3 })
+        ));
+    }
+
+    // The layout is what `special_tokens_mask`, `sequence_ids` and `token_to_sequence` are read
+    // off, and padding moves everything by its own count.
+    #[test]
+    fn masks_and_sequence_ids_follow_the_layout() {
+        let pipeline = hello_pipeline_with(bert_post_processor(), Some(pad_to(8)), None);
+
+        let encodings = pipeline
+            .encode(("he", "hello"), &EncodeOptions::default())
+            .wait()
+            .unwrap();
+        let encoding = &encodings[0];
+
+        assert_eq!(ids(encoding), [CLS, 4, SEP, 7, SEP, PAD, PAD, PAD]);
+        assert_eq!(encoding.n_sequences(), 2);
+        assert_eq!(encoding.special_tokens_mask(), [1, 0, 1, 0, 1, 1, 1, 1]);
+        assert_eq!(
+            encoding.sequence_ids(),
+            [None, Some(0), None, Some(1), None, None, None, None]
+        );
+        assert_eq!(encoding.sequence_range(0), Some(1..2));
+        assert_eq!(encoding.sequence_range(1), Some(3..4));
+        assert_eq!(encoding.sequence_range(2), None);
+        assert_eq!(encoding.token_to_sequence(3), Some(1));
+        assert_eq!(encoding.token_to_sequence(4), None);
+        assert_eq!(encoding.token_to_sequence(80), None);
+
+        // Without specials the same input is all sequence.
+        let bare = pipeline
+            .encode("hello", &EncodeOptions::no_specials())
+            .wait()
+            .unwrap();
+        assert_eq!(bare[0].special_tokens_mask(), [0, 1, 1, 1, 1, 1, 1, 1]);
+        assert_eq!(bare[0].n_sequences(), 1);
+    }
+
+    // Iterating the handle pads a fixed length as results come out; `BatchLongest` needs the
+    // whole batch and is only applied by `wait`.
+    #[test]
+    fn iterating_the_handle_pads_fixed_lengths_only() {
+        let pipeline = hello_pipeline_with_padding(pad_to(4));
+        let padded: Vec<Encoding> = pipeline
+            .encode(vec!["he", "hello"], &EncodeOptions::no_specials())
+            .into_iter()
+            .map(|(_, result)| result.unwrap())
+            .collect();
+        assert!(padded.iter().all(|e| e.len() == 4));
+
+        let pipeline = hello_pipeline_with_padding(PaddingParams {
+            strategy: PaddingStrategy::BatchLongest,
+            ..PaddingParams::default()
+        });
+        let lengths: Vec<usize> = pipeline
+            .encode(vec!["he", "hello"], &EncodeOptions::no_specials())
+            .into_iter()
+            .map(|(_, result)| result.unwrap().len())
+            .collect();
+        assert_eq!(lengths, [1, 1]);
+    }
+
+    // The ids come out of an encoding without a copy, and read as `u32` in place.
+    #[test]
+    fn ids_are_handed_out_without_a_copy() {
+        let encodings = hello_pipeline()
+            .encode("hello", &EncodeOptions::no_specials())
+            .wait()
+            .unwrap();
+        let encoding = encodings.into_iter().next().unwrap();
+        let address = encoding.ids().as_ptr().cast::<u32>();
+        assert_eq!(encoding.ids_u32().as_ptr(), address);
+        let (ids, type_ids, attention_mask, overflowing) = encoding.into_parts();
+        assert_eq!(ids.as_ptr(), address);
+        assert_eq!(ids, [7]);
+        assert!(type_ids.is_none() && attention_mask.is_none() && overflowing.is_empty());
     }
 }

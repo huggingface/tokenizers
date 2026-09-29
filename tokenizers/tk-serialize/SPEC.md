@@ -9,8 +9,9 @@ A `1.0` file is a *legacy* file. tk-convert turns one into a `2.0` file; this cr
 ```text
 {                                        ← key order is exact, as written
   "version"        : "2.0"
-  "truncation"     : null                  encode-time settings, never read
-  "padding"        : null
+  "truncation"     : Truncation | null     encode-time settings the tokenizer applies
+  "padding"        : Padding | null        by default; each `encode` may override them
+  "role_to_token"  : {role: token} | null  "eos_token" → "</s>", …
   "added_tokens"   : [ AddedToken, … ]
   "normalizer"     : Component | null
   "pre_tokenizer"  : Component | null
@@ -19,6 +20,25 @@ A `1.0` file is a *legacy* file. tk-convert turns one into a `2.0` file; this cr
   "model"          : Model
 }
 ```
+
+## Truncation and padding
+
+```text
+Truncation { "direction": "Left"|"Right",          ← absent means "Right"
+             "max_length": int,
+             "strategy": "LongestFirst"|"OnlyFirst"|"OnlySecond",
+             "stride": int }                       ← 0 < stride < max_length, or 0
+
+Padding    { "strategy": "BatchLongest" | {"Fixed": int},
+             "direction": "Left"|"Right",
+             "pad_to_multiple_of": int | null,     ← absent means null
+             "pad_id": int, "pad_type_id": int (≤ 255), "pad_token": str }
+```
+
+Truncation runs before the post-processor adds its specials, whose count is taken off
+`max_length`. What it cuts off comes back as the encoding's `overflowing` windows, each
+post-processed and padded like the encoding itself; a `stride` makes consecutive windows share
+that many tokens. A `stride` with no room to advance is refused at read time.
 
 ## Pipeline
 

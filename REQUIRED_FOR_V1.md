@@ -125,10 +125,19 @@ read path; `from_pretrained` needs a pipeline-native equivalent — `tk-encode` 
 
 ## 6. Truncation and padding on the object model
 
-`with_truncation` / `with_padding` and the `TruncationParams` / `PaddingParams` config types. The
-pipeline currently *swallows* truncation and padding declared in a `tokenizer.json` rather than
-erroring, which is the more dangerous of the two behaviours — a config that asks for truncation gets
-silently untruncated output. Worth fixing before v1 even if the feature itself lands later.
+**Done.** `truncation` and `padding` in a `tokenizer.json` are read into `TruncationParams` /
+`PaddingParams`, applied by every `encode` (and overridable per call through
+`EncodeOptions::{truncation, padding}` with `Override::{InheritConfig, Off, With}`), and written
+back by `to_json`. `stride` is honoured: what truncation cuts off comes back as
+`Encoding::overflowing`, one complete post-processed and padded encoding per window — which also
+closes the released crate's "template type ids missing on overflow" bug (#1908). A `stride` with no
+room to advance is a read-time error. What is still missing is the *setter* half — a
+`with_truncation` / `with_padding` on a mutable object — which is §1.
+
+The `Encoding` itself carries `type_ids`, `attention_mask`, `overflowing`, `n_sequences`,
+`sequence_ids`, `special_tokens_mask` and `token_to_sequence` (the last four derived from a
+per-encoding layout, so they cost no buffer). Offsets, `tokens` and word ids are not there: they
+need alignment tracking through the normalizers, which the pipeline does not do.
 
 ## 7. The cross-reader id oracle
 
