@@ -1,0 +1,63 @@
+[package]
+name = "tk-convert"
+version = "0.1.0-dev.0"
+edition = "2024"
+authors = [
+  "Arthur Zucker <arthur@huggingface.co>",
+  "Luc Georges <luc@huggingface.co>",
+  "Simon Brandeis <simon@huggingface.co>",
+]
+homepage = "https://github.com/huggingface/tokenizers"
+repository = "https://github.com/huggingface/tokenizers"
+documentation = "https://docs.rs/tokenizers/"
+license = "Apache-2.0"
+keywords = ["tokenizer", "NLP", "huggingface", "BPE", "WordPiece"]
+description = """
+The legacy `tokenizer.json` upgrade pass of the 🤗 Tokenizers library: a JSON→JSON
+rewrite that turns a config written by any older version into the canonical form
+`tk-serialize`'s reader accepts.
+"""
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lib]
+name = "tk_convert"
+path = "src/lib.rs"
+
+[dependencies]
+serde_json = "1.0"
+thiserror = "2"
+# The GPT-2 pattern a `ByteLevel` lowers to. `bitcannon::regexes` is the single source of truth for
+# it -- tk-encode's runtime recognizer reads the same const -- so a copy here could drift and cost
+# the FSM fast path without changing any test.
+bitcannon = { path = "../bitcannon", version = "0.1.0-dev.0" }
+
+# Latest released tokenizers, the independent id/decode oracle `tests/oracle.rs` compares against.
+tokenizers-release = { package = "tokenizers", version = "=0.23.2", optional = true }
+
+[features]
+default = []
+bench-baseline = ["dep:tokenizers-release"]
+
+[dev-dependencies]
+# No version pins on these two: cargo strips path dev-deps when packaging, and tk-serialize
+# dev-depends back on us, so a pin here would publish a requirement cycle that cannot resolve.
+tk-serialize = { path = "../tk-serialize", features = [
+  "bpe",
+  "unigram",
+  "wordpiece",
+  "wordlevel",
+  "normalizers",
+  "unicode-scripts",
+  "fancy-regex",
+  # The moved round-trip gate writes a config back out.
+  "serialize",
+] }
+tk-encode = { path = "../tk-encode", default-features = false, features = [
+  "fancy-regex",
+  # The oracle's long case must reach the parallel encoder, not the serial path.
+  "parallelism",
+] }
+criterion = "0.8"
+rayon = "1.12"
