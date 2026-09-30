@@ -26,7 +26,7 @@ The implementation is split across crates (each built on internal engines — `t
   [`pipeline::PipelineTokenizer`], with no serde anywhere.
 - [`tk_convert`] — the upgrade pass: [`canonicalize_file`] rewrites a `tokenizer.json` written by
   an older version into the canonical form that reader accepts.
-- [`tk_train`] — Types and traits to train tokenizers (gated by the `train` feature).
+- `tk_train` — Types and traits to train tokenizers (gated by the `train` feature).
 
 This `tokenizers` crate is a thin umbrella that re-exports them so existing `tokenizers::…`
 paths keep working.

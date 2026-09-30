@@ -23,7 +23,7 @@ pyo3 = { version = "=0.29", default-features = false, features = [
 numpy = "=0.29"
 # Renamed: this crate's own lib is `tokenizers` too.
 tk = { package = "tokenizers", path = "../../tokenizers", default-features = false, features = [
-  # Needed for __repr__
+  # `to_json`, for `__repr__` and pickling.
   "serialize",
   "parallelism",
   "normalizers",
