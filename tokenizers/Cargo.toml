@@ -1,7 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["bitmap_gen", "bitcannon", "tk-encode", "tk-serialize", "tk-convert"]
-exclude = ["tk-train"]
+members = ["bitmap_gen", "bitcannon", "tk-encode", "tk-serialize", "tk-convert", "tk-train"]
 
 [package]
 authors = [
@@ -64,10 +63,15 @@ tk-serialize = { path = "tk-serialize", version = "0.1.0-dev.0", default-feature
   "wordlevel",
   "unicode-scripts",
 ] }
+tk-train = { path = "tk-train", version = "0.1.0-dev.0", default-features = false, optional = true }
 
 [features]
 default = ["progressbar"]
-progressbar = ["tk-encode/progressbar"]
+progressbar = ["tk-encode/progressbar", "tk-train?/progressbar"]
+train = ["dep:tk-train"]
+# The C++ suffix array for Unigram training. Without it, `UnigramTrainer` uses esaxx-rs's pure-Rust one.
+esaxx_fast = ["train", "tk-train/esaxx_fast"]
+parity-aware-bpe = ["train", "tk-train/parity-aware-bpe"]
 regex = ["tk-encode/fancy-regex"]
 http = ["tk-encode/http"]
 unstable_wasm = ["tk-encode/unstable_wasm"]

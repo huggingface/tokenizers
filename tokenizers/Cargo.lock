@@ -3207,6 +3207,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "tk-train"
+version = "0.1.0-dev.0"
+dependencies = [
+ "ahash",
+ "assert_approx_eq",
+ "compact_str",
+ "dary_heap",
+ "esaxx-rs",
+ "indicatif",
+ "itertools 0.14.0",
+ "log",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tk-convert",
+ "tk-encode",
+]
+
+[[package]]
 name = "tokenizers"
 version = "0.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3252,6 +3272,7 @@ dependencies = [
  "tk-convert",
  "tk-encode",
  "tk-serialize",
+ "tk-train",
  "tracing",
  "tracing-subscriber",
 ]
