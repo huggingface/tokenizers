@@ -1,6 +1,6 @@
 //! Utils to render Tokenizers.__repr__
 
-use tk_serialize::json::Json;
+use tk::json::Json;
 
 /// How many items of a list are shown before `...`. A dict shows every field.
 const MAX_PROPERTIES_SHOWN: usize = 5;
@@ -143,5 +143,5 @@ fn newline(indent: usize, out: &mut String) {
 }
 
 fn write_str(s: &str, out: &mut String) {
-    out.push_str(&tk_serialize::str_to_json(s));
+    out.push_str(&tk::str_to_json(s));
 }

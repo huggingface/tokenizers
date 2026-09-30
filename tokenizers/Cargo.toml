@@ -41,37 +41,39 @@ path = "src/lib.rs"
 bench = false
 
 [dependencies]
-tk-encode = { path = "tk-encode", version = "0.1.0-dev.0", default-features = false, features = [
-  "parallelism",
-  "normalizers",
-  "bpe",
-  "unigram",
-  "wordpiece",
-  "wordlevel",
-  "unicode-scripts",
-] }
+tk-encode = { path = "tk-encode", version = "0.1.0-dev.0", default-features = false }
 tk-convert = { path = "tk-convert", version = "0.1.0-dev.0", default-features = false }
-# The reader and the writer. Same component features as `tk-encode` above: the reader has one match
-# arm per component, so a component compiled out of the runtime cannot be read into it either.
 tk-serialize = { path = "tk-serialize", version = "0.1.0-dev.0", default-features = false, features = [
   "deserialize",
-  "serialize",
+] }
+
+# Everything is on by default; a binding that wants a smaller build turns defaults off and picks.
+# The component features go through `tk-serialize`, which forwards each one to `tk-encode`: the
+# reader has one match arm per component, so the two crates must never disagree on the set.
+[features]
+default = [
+  "progressbar",
   "parallelism",
+  "serialize",
   "normalizers",
   "bpe",
   "unigram",
   "wordpiece",
   "wordlevel",
   "unicode-scripts",
-] }
-
-[features]
-default = ["progressbar"]
+]
+bpe = ["tk-serialize/bpe"]
+unigram = ["tk-serialize/unigram"]
+wordpiece = ["tk-serialize/wordpiece"]
+wordlevel = ["tk-serialize/wordlevel"]
+normalizers = ["tk-serialize/normalizers"]
+unicode-scripts = ["tk-serialize/unicode-scripts"]
+parallelism = ["tk-serialize/parallelism"]
+serialize = ["tk-serialize/serialize"]
 progressbar = ["tk-encode/progressbar"]
-regex = ["tk-encode/fancy-regex"]
+regex = ["tk-serialize/fancy-regex"]
 http = ["tk-encode/http"]
 unstable_wasm = ["tk-encode/unstable_wasm"]
-
 
 [dev-dependencies]
 criterion = "0.8"

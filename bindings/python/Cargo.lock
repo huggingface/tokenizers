@@ -1049,9 +1049,9 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smallvec"
-version = "1.15.2"
+version = "1.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
+checksum = "f9395f0f0eee849a9b707b2f06bb92a6a422090e2123bb2ef8e87a0e61892a8e"
 
 [[package]]
 name = "spm_precompiled"
@@ -1164,18 +1164,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.12.0"
+version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb4ebadaa0af04fab11ae01eb5f9fdb5f9c5b875506e210e71c07873528baa7f"
-dependencies = [
- "tinyvec_macros",
-]
-
-[[package]]
-name = "tinyvec_macros"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tk-convert"
@@ -1223,15 +1214,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokenizers"
+version = "1.0.0-dev.0"
+dependencies = [
+ "tk-convert",
+ "tk-encode",
+ "tk-serialize",
+]
+
+[[package]]
 name = "tokenizers-python"
 version = "1.0.0-dev.0"
 dependencies = [
  "numpy",
  "pyo3",
  "pyo3-build-config",
- "tk-convert",
- "tk-encode",
- "tk-serialize",
+ "tokenizers",
 ]
 
 [[package]]

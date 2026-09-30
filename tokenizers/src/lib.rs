@@ -40,6 +40,7 @@ pub use tk_encode::{
 // Mirror the v1 top-level re-exports (`pub use tokenizer::*;` etc.).
 pub use tk_encode::tokenizer::*;
 pub use tk_encode::utils::ProgressFormat;
+#[cfg(feature = "parallelism")]
 pub use tk_encode::utils::parallelism;
 
 #[cfg(feature = "http")]
@@ -48,9 +49,9 @@ pub use tk_encode::FromPretrainedParameters;
 // ---------------------------------------------------------------------------
 // The reader and the writer — re-exported from `tk-serialize`.
 // ---------------------------------------------------------------------------
-pub use tk_serialize::{
-    from_json, from_json_file, post_processor_from_json, post_processor_to_json, to_json,
-};
+pub use tk_serialize::{from_json, from_json_file, json, post_processor_from_json};
+#[cfg(feature = "serialize")]
+pub use tk_serialize::{post_processor_to_json, str_to_json, to_json};
 
 // ---------------------------------------------------------------------------
 // The legacy-config upgrade pass — all that is left of the config layer.
