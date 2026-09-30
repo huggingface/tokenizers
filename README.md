@@ -26,6 +26,17 @@ We will publish a blog about what breaking changes we introduced. We strived to 
 pip install --pre tokenizers
 ```
 
+For Rust, add the crate to your `Cargo.toml`:
+
+```toml
+[dependencies]
+tokenizers = "1.0.0"
+```
+
+Training (`train`) and downloading from the Hub (`http`) are opt-in features. The crate's
+[Using the crate](tokenizers/README.md#using-the-crate) section lists every feature and how to
+build a smaller binary.
+
 # Usage
 
 ```python

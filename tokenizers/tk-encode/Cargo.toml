@@ -68,7 +68,6 @@ normalizers = [
 ]
 unicode-scripts = []
 http = ["hf-hub"]
-unstable_wasm = ["fancy-regex"]
 parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
 
 [dev-dependencies]

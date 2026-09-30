@@ -77,7 +77,6 @@ esaxx_fast = ["train", "unigram", "tk-train/esaxx_fast"]
 parity-aware-bpe = ["train", "bpe", "tk-train/parity-aware-bpe"]
 regex = ["tk-serialize/fancy-regex"]
 http = ["tk-encode/http"]
-unstable_wasm = ["tk-encode/unstable_wasm"]
 
 [dev-dependencies]
 criterion = "0.8"
