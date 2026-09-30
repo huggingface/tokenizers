@@ -57,25 +57,13 @@ jobs:
         uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18  # v1.0.5
 
       # One command, not one step per crate: `--workspace` publishes the members in dependency
-      # order (bitcannon, then tk-encode/tk-convert, then tk-serialize, then tokenizers) and waits
-      # for each to appear on the index before starting the next, so tk-serialize can resolve the
-      # tk-encode it just uploaded. bitmap_gen is skipped for us: it is `publish = false`.
+      # order (bitcannon, then tk-encode/tk-convert, then tk-serialize/tk-train, then tokenizers)
+      # and waits for each to appear on the index before starting the next, so tk-serialize can
+      # resolve the tk-encode it just uploaded. bitmap_gen is skipped for us: it is `publish = false`.
       # No rc gate: a caret requirement never resolves a prerelease unless asked for by name.
       - name: Publish workspace crates
         working-directory: ./tokenizers
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: cargo publish --workspace ${{ !startsWith(github.ref, 'refs/tags/v') && '--dry-run' || '' }}
-
-      # tk-train is `exclude`d from the workspace, so `--workspace` never sees it, and it cannot
-      # even be packaged until tk-encode and tk-convert are live: from outside the workspace its
-      # path deps resolve their version pins against the registry. It goes last, on its own.
-      # Tags only: with nothing on the registry yet it cannot even be packaged, so a manual run
-      # has no dry-run for it.
-      - name: Publish tk-train
-        if: startsWith(github.ref, 'refs/tags/v')
-        working-directory: ./tokenizers/tk-train
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-        run: cargo publish
 
