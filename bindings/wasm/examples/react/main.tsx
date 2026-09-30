@@ -18,14 +18,11 @@ function App() {
   useEffect(() => {
     let loaded: Tokenizer | undefined;
     let cancelled = false;
-    fetch(`https://huggingface.co/${model}/resolve/main/tokenizer.json`)
-      .then((response) => response.text())
-      .then((json) => {
-        if (cancelled) return;
-        loaded = Tokenizer.from_json(json);
-        setTokenizer(loaded);
-      });
-    // Tokenizers live in WebAssembly memory, so free the previous one instead of waiting for the GC.
+    Tokenizer.from_pretrained(model).then((tok) => {
+      if (cancelled) return;
+      loaded = tok;
+      setTokenizer(loaded);
+    });
     return () => {
       cancelled = true;
       setTokenizer(undefined);

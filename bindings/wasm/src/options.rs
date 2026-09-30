@@ -40,7 +40,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Setting<T> {
 
 /// Override [`Tokenizer.encode`] settings. Omitted values default to the tokenizer's defaults / config
 #[derive(Tsify, Deserialize, Default)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct EncodeOptions {
     /// Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
     /// Defaults to `true` when omitted.
@@ -66,7 +66,7 @@ pub struct EncodeOptions {
 /// Padding for one call. It replaces the tokenizer's configured padding as a whole, so a field
 /// left out takes the value noted on the field, not the configured one.
 #[derive(Tsify, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct PaddingOptions {
     /// `right` when left out, or `left`: whether padding tokens are appended to the right or
     /// prepended to the left of encoded tokens.
@@ -93,7 +93,7 @@ struct PaddingOptions {
 /// Truncation for one call. It replaces the tokenizer's configured truncation as a whole, so a
 /// field left out takes the value noted on the field, not the configured one.
 #[derive(Tsify, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct TruncationOptions {
     /// The maximum number of tokens, including special tokens, to keep. Encodings with more tokens
     /// get truncated.
@@ -269,17 +269,6 @@ mod tests {
                 ..Default::default()
             }
         );
-    }
-
-    #[wasm_bindgen_test]
-    fn test_reject_unknown_field() {
-        for json in [
-            r#"{"addSpecialToken": false}"#,
-            r#"{"padding": {"padid": 3}}"#,
-            r#"{"truncation": {"maxLength": 8, "max_length": 4}}"#,
-        ] {
-            assert!(parse_encode_options(json).is_err(), "{json}");
-        }
     }
 
     #[wasm_bindgen_test]

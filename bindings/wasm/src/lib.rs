@@ -5,10 +5,12 @@ use tsify::Ts;
 
 use wasm_bindgen::prelude::*;
 
+mod hub;
 mod options;
 
 use options::convert_encode_options;
 
+pub use hub::PretrainedOptions;
 pub use options::EncodeOptions;
 
 #[wasm_bindgen]
@@ -36,6 +38,27 @@ impl Tokenizer {
         let canonical = canonicalize_str(json)?;
         let tok = from_json(&canonical).map_err(js_err)?;
         Ok(Self(tok))
+    }
+
+    /// Downloads `tokenizer.json` from a repo on the Hugging Face Hub and loads it.
+    ///
+    /// @param repoName - The id of a model repo, such as `"openai-community/gpt2"`.
+    /// @param options - See {@link PretrainedOptions}.
+    /// @returns The tokenizer.
+    /// @throws If the download fails, or the file does not describe a tokenizer.
+    ///
+    /// @example
+    /// ```ts
+    /// using tokenizer = await Tokenizer.from_pretrained("openai-community/gpt2");
+    /// using pinned = await Tokenizer.from_pretrained("openai-community/gpt2", { revision: "607a30d" });
+    /// using private = await Tokenizer.from_pretrained("user/private-model", { token: "hf_xxxxxxxxxxxxxxxxxxxxxxxx" });
+    /// ```
+    pub async fn from_pretrained(
+        repo_name: String,
+        options: Option<Ts<PretrainedOptions>>,
+    ) -> Result<Tokenizer, JsValue> {
+        let json = hub::fetch_tokenizer_json(&repo_name, options).await?;
+        Ok(Self::from_json(&json)?)
     }
 
     /// Encodes the given text to token ids.
