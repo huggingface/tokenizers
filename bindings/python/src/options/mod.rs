@@ -8,7 +8,7 @@ use pyo3::Borrowed;
 use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 
-use tk_encode::{PaddingParams, TruncationParams};
+use tk::{PaddingParams, TruncationParams};
 
 /// Sentinel type used to differentiate tok.encode(text, padding=None) from tok.encode(text)
 /// (explicit None = disabled vs omitted = default)

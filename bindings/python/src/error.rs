@@ -2,7 +2,7 @@ use std::sync::PoisonError;
 
 use pyo3::PyErr;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use tk_convert::ConvertError;
+use tk::ConvertError;
 
 /// Convert a rust error to a Python ValueError
 pub(crate) fn err<E: std::fmt::Display>(e: E) -> PyErr {

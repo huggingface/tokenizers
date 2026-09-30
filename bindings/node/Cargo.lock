@@ -730,9 +730,7 @@ dependencies = [
  "napi",
  "napi-build",
  "napi-derive",
- "tk-convert",
- "tk-encode",
- "tk-serialize",
+ "tokenizers",
 ]
 
 [[package]]
@@ -1239,6 +1237,15 @@ dependencies = [
  "bitcannon",
  "hifijson",
  "tk-encode",
+]
+
+[[package]]
+name = "tokenizers"
+version = "1.0.0-dev.2"
+dependencies = [
+ "tk-convert",
+ "tk-encode",
+ "tk-serialize",
 ]
 
 [[package]]

@@ -3,12 +3,12 @@ use std::sync::Mutex;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
-use tk_encode::PaddingParams;
-use tk_encode::TruncationParams;
-use tk_encode::pipeline::Input;
-use tk_encode::pipeline::Inputs;
-use tk_encode::pipeline::PipelineToken;
-use tk_encode::pipeline::{EncodeOptions, Override, PipelineTokenizer as Pipeline};
+use tk::PaddingParams;
+use tk::TruncationParams;
+use tk::pipeline::Input;
+use tk::pipeline::Inputs;
+use tk::pipeline::PipelineToken;
+use tk::pipeline::{EncodeOptions, Override, PipelineTokenizer as Pipeline};
 
 use crate::encoding::Encoding;
 use crate::error::{convert_err, err, poison_err};
@@ -79,8 +79,8 @@ impl Tokenizer {
     #[staticmethod]
     #[pyo3(signature = (path))]
     fn from_file(path: PathBuf) -> PyResult<Self> {
-        let canonical = tk_convert::canonicalize_file(path).map_err(convert_err)?;
-        let pipeline: Pipeline = tk_serialize::from_json(&canonical).map_err(err)?;
+        let canonical = tk::canonicalize_file(path).map_err(convert_err)?;
+        let pipeline: Pipeline = tk::from_json(&canonical).map_err(err)?;
         let padding = pipeline.get_padding().cloned();
         let truncation = pipeline.get_truncation().cloned();
         Ok(Self {
@@ -277,7 +277,7 @@ impl Tokenizer {
             padding,
             truncation,
         )?;
-        py.detach(|| -> tk_encode::Result<Vec<String>> {
+        py.detach(|| -> tk::Result<Vec<String>> {
             let encodings = self.pipeline.encode(input, &options).wait()?;
             let ids: Vec<u32> = PipelineToken::cast_slice(encodings[0].ids()).to_vec();
             Ok(self.pipeline.decode_tokens(&ids, false))
@@ -376,7 +376,7 @@ impl Tokenizer {
 
     /// Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
     fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<(Bound<'py, PyAny>, UnpickleArguments)> {
-        let json = tk_serialize::to_json(&self.pipeline).map_err(err)?;
+        let json = tk::to_json(&self.pipeline).map_err(err)?;
         Ok((
             py.get_type::<Self>().getattr("_unpickle")?,
             (json, self.padding()?, self.truncation()?),
@@ -390,7 +390,7 @@ impl Tokenizer {
         padding: Option<PyRef<'_, Padding>>,
         truncation: Option<PyRef<'_, Truncation>>,
     ) -> PyResult<Self> {
-        let pipeline: Pipeline = tk_serialize::from_json(json).map_err(err)?;
+        let pipeline: Pipeline = tk::from_json(json).map_err(err)?;
         Ok(Self {
             pipeline,
             padding: Mutex::new(padding.map(|padding| padding.params().clone())),
@@ -399,8 +399,8 @@ impl Tokenizer {
     }
 
     fn __repr__(&self) -> PyResult<String> {
-        let file = tk_serialize::to_json(&self.pipeline).map_err(err)?;
-        let file = tk_serialize::json::Json::parse(&file).map_err(err)?;
+        let file = tk::to_json(&self.pipeline).map_err(err)?;
+        let file = tk::json::Json::parse(&file).map_err(err)?;
         let padding = self
             .padding()?
             .map_or_else(|| "None".to_owned(), |padding| padding.__repr__());
