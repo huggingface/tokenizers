@@ -52,5 +52,4 @@ console.log(tokenizer.decode_tokens(ids)); // ["Hello", "Ġworld", "!"]
 console.log(tokenizer.decode(ids)); // "Hello world!"
 ```
 
-The package loads its WebAssembly module on import, and the garbage collector frees a tokenizer once it is unreachable.
-To release its memory right away, call `tokenizer.free()` or declare it with `using`.
+The package loads its WebAssembly module on import, and the garbage collector frees the tokenizer object once it is unreachable.
