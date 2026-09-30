@@ -44,7 +44,7 @@ unigram = ["tk-encode/unigram", "dep:esaxx-rs"]
 wordpiece = ["bpe", "tk-encode/wordpiece"]
 wordlevel = ["tk-encode/wordlevel"]
 esaxx_fast = ["unigram", "esaxx-rs/cpp"]
-progressbar = ["dep:indicatif", "tk-encode/progressbar"]
+progressbar = ["dep:indicatif"]
 parity-aware-bpe = ["bpe"]
 
 [dev-dependencies]

@@ -3167,7 +3167,6 @@ dependencies = [
  "dary_heap",
  "fancy-regex",
  "hf-hub",
- "indicatif",
  "libc",
  "log",
  "memchr",

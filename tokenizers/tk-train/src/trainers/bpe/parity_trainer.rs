@@ -1,4 +1,5 @@
 use super::{Pair, WithFirstLastIterator, Word};
+use crate::progress::{ProgressBar, ProgressStyle};
 use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
@@ -9,7 +10,6 @@ use std::collections::{HashSet, VecDeque};
 use tk_encode::Result;
 use tk_encode::models::bpe::{Merges, Vocab};
 use tk_encode::parallelism::*;
-use tk_encode::utils::progress::{ProgressBar, ProgressStyle};
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 
 #[derive(Debug, Eq)]

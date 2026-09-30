@@ -40,7 +40,6 @@ pub use tk_encode::{
 
 // Mirror the v1 top-level re-exports (`pub use tokenizer::*;` etc.).
 pub use tk_encode::tokenizer::*;
-pub use tk_encode::utils::ProgressFormat;
 #[cfg(feature = "parallelism")]
 pub use tk_encode::utils::parallelism;
 
@@ -66,4 +65,4 @@ pub use tk_convert::{
 // Training — re-exported from `tk-train`, behind the `train` feature.
 // ---------------------------------------------------------------------------
 #[cfg(feature = "train")]
-pub use tk_train::{ModelWrapper, Trainable, Trainer, TrainerWrapper, trainers};
+pub use tk_train::{ModelWrapper, ProgressFormat, Trainable, Trainer, TrainerWrapper, trainers};
