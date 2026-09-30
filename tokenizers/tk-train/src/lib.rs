@@ -10,6 +10,14 @@
 //! replaces that type -- the pipeline tokenizer hands out its model by shared
 //! reference only. Drive a trainer directly instead: `feed`, then `train`.
 
+#[cfg(not(any(
+    feature = "bpe",
+    feature = "unigram",
+    feature = "wordpiece",
+    feature = "wordlevel"
+)))]
+compile_error!("tk-train needs at least one model feature: bpe, unigram, wordpiece or wordlevel");
+
 pub mod added_token_serde;
 mod trainable;
 mod trainer;
