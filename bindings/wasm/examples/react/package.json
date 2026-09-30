@@ -1,5 +1,5 @@
 {
-  "name": "tokenizers-wasm-example-react",
+  "name": "tokenizers-web-example-react",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
   "dependencies": {
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "tokenizers-wasm": "file:../../pkg"
+    "tokenizers-web": "file:../../pkg"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",

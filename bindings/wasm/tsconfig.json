@@ -4,5 +4,5 @@
     "strict": true,
     "noEmit": true
   },
-  "include": ["pkg/tokenizers_wasm.d.ts"]
+  "include": ["pkg/index.d.ts"]
 }

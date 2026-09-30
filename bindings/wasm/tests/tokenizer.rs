@@ -6,7 +6,7 @@
 
 use tk_encode::pipeline::{EncodeOptions as CoreOptions, Override, PipelineTokenizer};
 use tk_encode::{PaddingDirection, PaddingParams, PaddingStrategy};
-use tokenizers_wasm::{EncodeOptions, Tokenizer};
+use tokenizers_web::{EncodeOptions, Tokenizer};
 use tsify::Ts;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};

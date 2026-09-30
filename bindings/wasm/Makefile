@@ -18,8 +18,12 @@ NPM_CI = npm ci --no-audit --no-fund
 CARGO_FLAGS ?=
 
 # ES module package in pkg/, loadable from a browser without a bundler.
+# The js/ entry points initialize the wasm module on import, so users never call init().
 build:
 	wasm-pack build --release --target web -- $(CARGO_FLAGS)
+	cp js/* pkg/
+	cd pkg && npm pkg set main=index.js types=index.d.ts 'files[]=index.js' 'files[]=node.js' 'files[]=index.d.ts' 'sideEffects[]=./index.js' 'sideEffects[]=./node.js' && \
+	npm pkg set --json exports='{".": {"types": "./index.d.ts", "node": "./node.js", "default": "./index.js"}}'
 
 test-data: $(TESTS_RESOURCES)
 

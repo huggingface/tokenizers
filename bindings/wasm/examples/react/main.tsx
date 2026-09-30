@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import init, { Tokenizer } from "tokenizers-wasm";
+import { Tokenizer } from "tokenizers-web";
 import "./style.css";
 
 const MODELS = [
@@ -16,17 +16,14 @@ function App() {
   const [text, setText] = useState("Hello world! This text is tokenized in your browser.");
 
   useEffect(() => {
-    let loaded: Tokenizer | undefined;
     let cancelled = false;
     Tokenizer.from_pretrained(model).then((tok) => {
       if (cancelled) return;
-      loaded = tok;
-      setTokenizer(loaded);
+      setTokenizer(tok);
     });
     return () => {
       cancelled = true;
       setTokenizer(undefined);
-      loaded?.free();
     };
   }, [model]);
 
@@ -79,5 +76,4 @@ function App() {
   );
 }
 
-await init();
 createRoot(document.getElementById("root")!).render(<App />);

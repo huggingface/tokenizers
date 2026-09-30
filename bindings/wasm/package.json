@@ -1,5 +1,5 @@
 {
-  "name": "tokenizers-wasm-dev",
+  "name": "tokenizers-web-dev",
   "private": true,
   "scripts": {
     "format": "prettier . -w",

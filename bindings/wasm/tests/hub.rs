@@ -12,7 +12,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
 use web_sys::{Headers, RequestInit, Response};
 
-use tokenizers_wasm::Tokenizer;
+use tokenizers_web::Tokenizer;
 
 wasm_bindgen_test_configure!(run_in_browser);
 

@@ -16,9 +16,8 @@ pub use options::EncodeOptions;
 #[wasm_bindgen]
 /// A tokenizer loaded from a `tokenizer.json`.
 ///
-/// It lives in WebAssembly memory.
-/// Call {@link Tokenizer.free | free()} to free the object when you are done using it, or
-/// declare it with `using` to free it at the end of the scope.
+/// It lives in WebAssembly memory, which the garbage collector frees once the tokenizer is unreachable.
+/// To free it right away, call {@link Tokenizer.free | free()} or declare it with `using`.
 ///
 /// @example
 /// ```ts
