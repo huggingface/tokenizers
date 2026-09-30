@@ -50,8 +50,8 @@
 //! one remaining job (`canonicalize_file`, re-exported by the `tokenizers` umbrella crate). What an
 //! authoring surface would have to add back is `REQUIRED_FOR_V1.md` at the repository root.
 //!
-//! Training is not part of the shipped crate either. `tk-train` is in the tree and builds on its
-//! own, but it is `exclude`d from the workspace and nothing in `tokenizers` depends on it.
+//! Training is not part of this crate either: it lives in `tk-train`, which nothing in
+//! `tokenizers` depends on yet.
 //!
 //! # Additional information
 //!
