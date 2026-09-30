@@ -3184,7 +3184,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-normalization",
- "unicode-normalization-alignments",
  "unicode-segmentation",
  "unicode_categories",
  "wide",
