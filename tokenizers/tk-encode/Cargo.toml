@@ -33,9 +33,7 @@ bitcannon = { path = "../bitcannon", version = "0.1.0-dev.0" }
 rand = "0.10"
 ptr_hash = { version = "2.0.2", default-features = false }
 unicode_categories = "0.1"
-itertools = "0.15"
 log = "0.4"
-paste = "1.0.15"
 thiserror = "2"
 ahash = "0.8.12"
 dary_heap = "0.3.9"
@@ -44,10 +42,8 @@ wide = "1.6.1"
 ########### Optional dependencies ############################
 rayon = { version = "1.12", optional = true }
 rayon-cond = { version = "0.4", optional = true }
-unicode-normalization-alignments = { version = "0.1", optional = true }
 # Only `normalizers/precompiled.rs` reaches it, which is `normalizers`-gated.
 unicode-segmentation = { version = "1.13", optional = true }
-indicatif = { version = "0.18", optional = true }
 spm_precompiled = { version = "0.1.4", optional = true }
 hf-hub = { version = "1.0.0", features = [
   "blocking",
@@ -67,12 +63,10 @@ wordpiece = ["dep:yada"]
 wordlevel = []
 normalizers = [
   "dep:unicode-normalization",
-  "dep:unicode-normalization-alignments",
   "dep:spm_precompiled",
   "dep:unicode-segmentation",
 ]
 unicode-scripts = []
-progressbar = ["indicatif"]
 http = ["hf-hub"]
 unstable_wasm = ["fancy-regex"]
 parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]

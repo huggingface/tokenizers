@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use crate::pipeline;
 use crate::tokenizer::Result;
 #[cfg(feature = "normalizers")]
-use unicode_normalization_alignments::char::is_combining_mark;
+use unicode_normalization::char::is_combining_mark;
 
 /// Both fields are required, which is the *only* thing that rejects a tag-less object here.
 #[derive(Copy, Clone, Debug)]
@@ -70,6 +70,24 @@ mod tests {
             ("", ""),
             ("å ç ñ", "å ç ñ"),
             ("     hello", "     hello"),
+        ] {
+            assert_eq!(
+                &*pipeline::Normalizer::normalize(&n, input, 0).unwrap(),
+                expected,
+                "input={input:?}"
+            );
+        }
+    }
+
+    /// Released tokenizers classifies marks with Unicode 9 tables; we use Unicode 17.
+    #[test]
+    fn strip_accents_follows_current_unicode() {
+        let n = StripAccents;
+        for (input, expected) in [
+            // U+07FD NKO DANTAYALAN, a combining mark since Unicode 11.
+            ("a\u{07FD}b", "ab"),
+            // U+1CF2 VEDIC SIGN ARDHAVISARGA, reclassified as a letter in Unicode 10.
+            ("a\u{1CF2}b", "a\u{1CF2}b"),
         ] {
             assert_eq!(
                 &*pipeline::Normalizer::normalize(&n, input, 0).unwrap(),

@@ -58,6 +58,8 @@ For more details, checkout https://huggingface-tokenizers-v1.static.hf.space/ind
 | [Ruby](https://github.com/ankane/tokenizers-ruby) | community, external repo |
 
 
+<a name="v1-features"></a>
+
 # v1.0.0 roadmap:
 
 As we work toward v1, we are gonna bring back the entire python API that allows `transformers`' style of interacting with a tokenizer object:
@@ -158,6 +160,10 @@ of compatibility branches. But, the legacy code amounted to quite a lot of the f
 <summary><b><code>tk-train</code></b> — the training half</summary>
 
 The `Trainer` trait, every concrete `*Trainer`, `TrainerWrapper` and the `Trainable` extension.
+
+The `tokenizers` crate re-exports it behind the `train` feature, which is off by default. It
+trains only the models whose feature is on (`bpe`, `unigram`, `wordpiece`, `wordlevel`). Add
+`esaxx_fast` for the C++ suffix array behind Unigram training.
 
 **Why separate:** training is a batch job on a workstation; inference is a hot loop in a server.
 They have opposite constraints, so they get opposite dependency budgets.

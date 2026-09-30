@@ -13,6 +13,7 @@
 //!   [`pipeline::PipelineTokenizer`], with no serde anywhere.
 //! - [`tk_convert`] — the upgrade pass: [`canonicalize_file`] rewrites a `tokenizer.json` written by
 //!   an older version into the canonical form that reader accepts.
+//! - `tk_train` — Types and traits to train tokenizers (gated by the `train` feature).
 //!
 //! This `tokenizers` crate is a thin umbrella that re-exports them so existing `tokenizers::…`
 //! paths keep working.
@@ -20,9 +21,9 @@
 //! ## What rc0 does not have
 //!
 //! The `Tokenizer` object model — `Tokenizer::new`, the component setters, `add_tokens`,
-//! `save`, `from_pretrained`, truncation and padding — and the trainers are **not** in this
-//! release. [`pipeline::PipelineTokenizer`] is read-only: it encodes and decodes what a
-//! `tokenizer.json` describes and has no way to be built up or written back out. See
+//! `save`, `from_pretrained`, truncation and padding — is **not** in this release.
+//! [`pipeline::PipelineTokenizer`] is read-only: it encodes and decodes what a `tokenizer.json`
+//! describes and has no way to be built up or written back out. See
 //! `REQUIRED_FOR_V1.md` at the repository root for the full list and why each one is deferred.
 //!
 //! ## Tokenization example
@@ -39,7 +40,6 @@ pub use tk_encode::{
 
 // Mirror the v1 top-level re-exports (`pub use tokenizer::*;` etc.).
 pub use tk_encode::tokenizer::*;
-pub use tk_encode::utils::ProgressFormat;
 #[cfg(feature = "parallelism")]
 pub use tk_encode::utils::parallelism;
 
@@ -60,3 +60,9 @@ pub use tk_convert::{
     ConvertError, canonicalize_file, canonicalize_post_processor, canonicalize_str,
     canonicalize_value, convert,
 };
+
+// ---------------------------------------------------------------------------
+// Training — re-exported from `tk-train`, behind the `train` feature.
+// ---------------------------------------------------------------------------
+#[cfg(feature = "train")]
+pub use tk_train::{ModelWrapper, ProgressFormat, Trainable, Trainer, TrainerWrapper, trainers};

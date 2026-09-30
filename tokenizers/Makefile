@@ -61,17 +61,22 @@ publish :
 
 # `cfg` gates on enum variants, so a combination can break on its own.
 MODEL_FEATURES = bpe,unigram,wordpiece,wordlevel,normalizers
+MODEL_FEATURES_TRAIN = bpe,unigram,wordpiece,wordlevel
 
 .PHONY : all-checks
 all-checks : lint test doc feature-matrix oracle
 
-# tk-encode under each feature combination; `lint` and `test` are blind to these. Needs cargo-hack.
+# tk-encode and tk-train under each feature combination; `lint` and `test` are blind to these. Needs cargo-hack.
 .PHONY : feature-matrix
 feature-matrix : $(SHARED_RESOURCES)
 	cargo hack --package tk-encode --feature-powerset --depth 2 \
 	  --include-features $(MODEL_FEATURES) clippy --all-targets -- -D warnings
 	cargo hack --package tk-encode --each-feature \
 	  --include-features $(MODEL_FEATURES) test --lib
+	cargo hack --package tk-train --feature-powerset --at-least-one-of $(MODEL_FEATURES_TRAIN) \
+	  clippy --all-targets -- -D warnings
+	cargo hack --package tk-train --feature-powerset --depth 1 --at-least-one-of $(MODEL_FEATURES_TRAIN) \
+	  test --lib
 
 # ---- size profiling (opt-in, not part of all-checks) ----
 
