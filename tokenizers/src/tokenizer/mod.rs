@@ -106,11 +106,14 @@ pub trait PostProcessor {
         };
         encodings.iter_mut().enumerate().for_each(|(i, encoding)| {
             encoding.set_sequence_id(i);
+            encoding.set_type_ids(vec![i as u32; encoding.len()]);
             encoding
                 .get_overflowing_mut()
                 .iter_mut()
-                .for_each(|encoding| encoding.set_sequence_id(i));
-            encoding.set_type_ids(vec![i as u32; encoding.len()]);
+                .for_each(|encoding| {
+                    encoding.set_sequence_id(i);
+                    encoding.set_type_ids(vec![i as u32; encoding.len()]);
+                });
         });
 
         let encodings = self.process_encodings(encodings, add_special_tokens)?;
