@@ -1,7 +1,7 @@
 use numpy::ndarray::ArrayView1;
 use numpy::{PyArray1, PyArrayMethods};
 use pyo3::prelude::*;
-use tk_encode::pipeline::Encoding as PipelineEncoding;
+use tk::pipeline::Encoding as PipelineEncoding;
 
 use crate::type_hints::U32Array;
 
