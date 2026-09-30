@@ -657,12 +657,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "947f833aaa585cf12b8ec7c0476c98784c49f33b861376ffc84ed92adebf2aba"
 
 [[package]]
-name = "paste"
-version = "1.0.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
 name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1193,11 +1187,9 @@ dependencies = [
  "ahash",
  "bitcannon",
  "dary_heap",
- "itertools 0.15.0",
  "libc",
  "log",
  "memchr",
- "paste",
  "ptr_hash",
  "rand",
  "rayon",
