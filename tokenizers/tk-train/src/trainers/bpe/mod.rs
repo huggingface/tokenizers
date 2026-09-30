@@ -20,10 +20,10 @@ use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 // private to `tk-encode`.
 use word::{WithFirstLastIterator, Word};
 
+use crate::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 use tk_encode::Result;
 use tk_encode::models::bpe::{BpeConfig, Merges, Pair, PipelineBPE, Vocab};
 use tk_encode::parallelism::*;
-use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -220,9 +220,8 @@ pub struct BpeTrainer {
     pub show_progress: bool,
     /// Progress output format (Indicatif, JsonLines, or Silent)
     ///
-    /// `ProgressFormat` is a `tk-encode` type and carries no serde of its own; `tk-convert` used to
-    /// own its on-disk shape, and that layer is gone. It only decides how progress is *displayed*,
-    /// so it is skipped rather than given a shape here, and falls back to its `Default`.
+    /// Skipped when (de)serializing, and read back as its `Default`: it only decides how progress
+    /// is displayed.
     #[serde(skip)]
     pub progress_format: ProgressFormat,
     /// A list of special tokens that the model should know of
