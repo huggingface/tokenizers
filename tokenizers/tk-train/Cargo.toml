@@ -22,16 +22,8 @@ name = "tk_train"
 path = "src/lib.rs"
 
 [dependencies]
-# Every trainer needs its model, and the training extension goes through `Tokenizer`, so the
-# training half wants the full inference surface -- `tk-encode`'s slim defaults are for consumers
-# that only encode.
 tk-encode = { path = "../tk-encode", version = "0.1.0-dev.2", default-features = false, features = [
   "parallelism",
-  "normalizers",
-  "bpe",
-  "unigram",
-  "wordpiece",
-  "wordlevel",
 ] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -41,14 +33,19 @@ dary_heap = { version = "0.3.6", features = ["serde"] }
 log = "0.4"
 itertools = "0.14"
 thiserror = "2"
-esaxx-rs = { version = "0.1.10", default-features = false, features = [] }
+esaxx-rs = { version = "0.1.10", default-features = false, optional = true }
 indicatif = { version = "0.18", optional = true }
 
 [features]
-default = ["progressbar", "esaxx_fast"]
-esaxx_fast = ["esaxx-rs/cpp"]
-progressbar = ["indicatif", "tk-encode/progressbar"]
-parity-aware-bpe = []
+default = ["progressbar", "bpe", "unigram", "wordpiece", "wordlevel"]
+bpe = ["tk-encode/bpe"]
+unigram = ["tk-encode/unigram", "dep:esaxx-rs"]
+# The WordPiece trainer runs the BPE one and keeps only its vocabulary.
+wordpiece = ["bpe", "tk-encode/wordpiece"]
+wordlevel = ["tk-encode/wordlevel"]
+esaxx_fast = ["unigram", "esaxx-rs/cpp"]
+progressbar = ["dep:indicatif", "tk-encode/progressbar"]
+parity-aware-bpe = ["bpe"]
 
 [dev-dependencies]
 tempfile = "3.10"
