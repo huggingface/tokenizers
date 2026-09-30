@@ -1,4 +1,4 @@
-.PHONY: build test test-data vite react style check-style check-types
+.PHONY: build test test-package test-data vite react style check-style check-types
 
 DATA_DIR = data
 HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
@@ -25,6 +25,14 @@ test-data: $(TESTS_RESOURCES)
 
 test: test-data
 	wasm-pack test $(WASM_PACK_TEST_FLAGS) -- $(CARGO_FLAGS)
+
+# Installs the packed tarball in a scratch project, as a user would, and round-trips a text through it.
+test-package: build test-data
+	tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+	npm pack ./pkg --pack-destination "$$tmp" && \
+	cp tests/package.mjs "$$tmp" && \
+	cd "$$tmp" && npm init -y >/dev/null && $(NPM_INSTALL) ./*.tgz && \
+	node package.mjs "$$(node -p 'require("$(CURDIR)/pkg/package.json").name')" "$(CURDIR)/$(DATA_DIR)/gpt2.json"
 
 $(DATA_DIR)/%:
 	mkdir -p $(DATA_DIR)
