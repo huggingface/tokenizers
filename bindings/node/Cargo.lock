@@ -821,9 +821,9 @@ dependencies = [
 
 [[package]]
 name = "ptr_hash"
-version = "2.0.2"
+version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f184d2c69ac0853853275df42e7160a7dc4f3248d93434002c28de27ed3f6d0"
+checksum = "b22cf1be774892680e056d3387db0dcaa4fd46964b270671ef661e127186b969"
 dependencies = [
  "bitvec",
  "colored",
@@ -837,7 +837,6 @@ dependencies = [
  "rand_chacha",
  "rayon",
  "rdst",
- "serde",
  "tempfile",
  "xxhash-rust",
 ]
