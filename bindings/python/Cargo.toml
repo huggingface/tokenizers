@@ -13,30 +13,24 @@ name = "tokenizers"
 crate-type = ["cdylib"]
 
 [dependencies]
+# Renamed to tk to avoid collision with the bindings crate name (tokenizers)
+tk = { package = "tokenizers", path = "../../tokenizers", features = [
+  "train",
+  "esaxx_fast",
+] }
+
 pyo3 = { version = "=0.29", default-features = false, features = [
   "macros",
   "extension-module",
   "abi3-py310",
   "experimental-inspect",
 ] }
-#TODO: this will be a soft dependency later on IMO.
+#TODO: Remove the dependency when we support dlpack
 numpy = "=0.29"
-# Renamed: this crate's own lib is `tokenizers` too.
-tk = { package = "tokenizers", path = "../../tokenizers", default-features = false, features = [
-  # `to_json`, for `__repr__` and pickling.
-  "serialize",
-  "parallelism",
-  "normalizers",
-  "bpe",
-  "unigram",
-  "wordpiece",
-  "wordlevel",
-  "unicode-scripts",
-] }
 
 [build-dependencies]
 pyo3-build-config = "=0.29"
 
-# Not a workspace member, so this does not inherit tokenizers/Cargo.toml's profile.
 [profile.release]
 lto = "fat"
+codegen-units = 1
