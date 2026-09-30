@@ -159,6 +159,10 @@ of compatibility branches. But, the legacy code amounted to quite a lot of the f
 
 The `Trainer` trait, every concrete `*Trainer`, `TrainerWrapper` and the `Trainable` extension.
 
+The `tokenizers` crate re-exports it behind the `train` feature, which is off by default. It
+trains only the models whose feature is on (`bpe`, `unigram`, `wordpiece`, `wordlevel`). Add
+`esaxx_fast` for the C++ suffix array behind Unigram training.
+
 **Why separate:** training is a batch job on a workstation; inference is a hot loop in a server.
 They have opposite constraints, so they get opposite dependency budgets.
 </details>
