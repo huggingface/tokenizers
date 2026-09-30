@@ -2,3 +2,4 @@
 /pkg
 /examples/*/node_modules
 /examples/*/dist
+/node_modules

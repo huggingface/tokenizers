@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "lib": ["ES2022", "ESNext.Disposable", "DOM"],
+    "strict": true,
+    "noEmit": true
+  },
+  "include": ["pkg/tokenizers_wasm.d.ts"]
+}

@@ -7,7 +7,8 @@
 use tk_encode::pipeline::{EncodeOptions as CoreOptions, Override, PipelineTokenizer};
 use tk_encode::{PaddingDirection, PaddingParams, PaddingStrategy};
 use tokenizers_wasm::{EncodeOptions, Tokenizer};
-use wasm_bindgen::{JsCast, JsValue};
+use tsify::Ts;
+use wasm_bindgen::JsValue;
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -28,8 +29,8 @@ fn encode(tokenizer: &PipelineTokenizer, options: &CoreOptions) -> Vec<u32> {
     encodings[0].ids().iter().map(|token| token.id()).collect()
 }
 
-fn parse_options(json: &str) -> EncodeOptions {
-    js_sys::JSON::parse(json).unwrap().unchecked_into()
+fn parse_options(json: &str) -> Ts<EncodeOptions> {
+    Ts::new_unchecked(js_sys::JSON::parse(json).unwrap())
 }
 
 #[wasm_bindgen_test]

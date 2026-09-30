@@ -1,6 +1,7 @@
 use tk_convert::canonicalize_str;
 use tk_encode::pipeline::PipelineTokenizer;
 use tk_serialize::from_json;
+use tsify::Ts;
 
 use wasm_bindgen::prelude::*;
 
@@ -8,7 +9,7 @@ mod options;
 
 use options::convert_encode_options;
 
-pub use options::{EncodeOptions, PaddingOptions, TruncationOptions};
+pub use options::EncodeOptions;
 
 #[wasm_bindgen]
 /// A tokenizer loaded from a `tokenizer.json`.
@@ -43,13 +44,14 @@ impl Tokenizer {
     /// @param options - Settings for this call: whether to add special tokens, padding or
     /// truncation. Defaults to the tokenizer's config. See {@link EncodeOptions}.
     /// @returns The token ids.
-    /// @throws If an option has an unknown value.
-    pub fn encode(&self, text: &str, options: Option<EncodeOptions>) -> Result<Vec<u32>, JsError> {
-        let encodings = self
-            .0
-            .encode(text, &convert_encode_options(options)?)
-            .wait()
-            .map_err(js_err)?;
+    /// @throws If the options do not match {@link EncodeOptions}.
+    pub fn encode(
+        &self,
+        text: &str,
+        options: Option<Ts<EncodeOptions>>,
+    ) -> Result<Vec<u32>, JsError> {
+        let options = convert_encode_options(options)?;
+        let encodings = self.0.encode(text, &options).wait().map_err(js_err)?;
         let ids = encodings
             .first()
             .map(|e| e.ids().iter().map(|t| t.id()).collect())

@@ -27,6 +27,8 @@ tk-serialize = { path = "../../tokenizers/tk-serialize", features = [
 	"unicode-scripts",
 ] }
 tk-convert = { path = "../../tokenizers/tk-convert", default-features = false }
+serde = { version = "1", features = ["derive"] }
+tsify = "=0.5.8"
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 # getrandom gets pulled in the dependency tree and need the wasm_js feature to work in the browser

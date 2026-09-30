@@ -55,7 +55,13 @@ function App() {
         <label className="label" htmlFor="input">
           Text
         </label>
-        <textarea id="input" rows={5} spellCheck={false} value={text} onChange={(event) => setText(event.target.value)} />
+        <textarea
+          id="input"
+          rows={5}
+          spellCheck={false}
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+        />
       </div>
 
       <div className="panel">
