@@ -42,7 +42,6 @@ wide = "1.6.1"
 ########### Optional dependencies ############################
 rayon = { version = "1.12", optional = true }
 rayon-cond = { version = "0.4", optional = true }
-unicode-normalization-alignments = { version = "0.1", optional = true }
 # Only `normalizers/precompiled.rs` reaches it, which is `normalizers`-gated.
 unicode-segmentation = { version = "1.13", optional = true }
 indicatif = { version = "0.18", optional = true }
@@ -65,7 +64,6 @@ wordpiece = ["dep:yada"]
 wordlevel = []
 normalizers = [
   "dep:unicode-normalization",
-  "dep:unicode-normalization-alignments",
   "dep:spm_precompiled",
   "dep:unicode-segmentation",
 ]
