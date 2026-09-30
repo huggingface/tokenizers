@@ -310,3 +310,12 @@ jobs:
           cargo hack --package tk-encode --each-feature \
             --include-features bpe,unigram,wordpiece,wordlevel,normalizers \
             test --lib
+
+      - name: Clippy and test every tk-train feature combination
+        run: |
+          cargo hack --package tk-train --feature-powerset \
+            --at-least-one-of bpe,unigram,wordpiece,wordlevel \
+            clippy --all-targets -- -D warnings
+          cargo hack --package tk-train --feature-powerset --depth 1 \
+            --at-least-one-of bpe,unigram,wordpiece,wordlevel \
+            test --lib
