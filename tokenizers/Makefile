@@ -65,13 +65,15 @@ MODEL_FEATURES = bpe,unigram,wordpiece,wordlevel,normalizers
 .PHONY : all-checks
 all-checks : lint test doc feature-matrix oracle
 
-# tk-encode under each feature combination; `lint` and `test` are blind to these. Needs cargo-hack.
+# tk-encode and tk-train under each feature combination; `lint` and `test` are blind to these. Needs cargo-hack.
 .PHONY : feature-matrix
 feature-matrix : $(SHARED_RESOURCES)
 	cargo hack --package tk-encode --feature-powerset --depth 2 \
 	  --include-features $(MODEL_FEATURES) clippy --all-targets -- -D warnings
 	cargo hack --package tk-encode --each-feature \
 	  --include-features $(MODEL_FEATURES) test --lib
+	cargo hack --package tk-train --feature-powerset clippy --all-targets -- -D warnings
+	cargo hack --package tk-train --each-feature test --lib
 
 # ---- size profiling (opt-in, not part of all-checks) ----
 

@@ -310,3 +310,9 @@ jobs:
           cargo hack --package tk-encode --each-feature \
             --include-features bpe,unigram,wordpiece,wordlevel,normalizers \
             test --lib
+
+      # Only this job builds tk-train without `esaxx_fast`, which uses the pure-Rust suffix array.
+      - name: Clippy and test every tk-train feature combination
+        run: |
+          cargo hack --package tk-train --feature-powerset clippy --all-targets -- -D warnings
+          cargo hack --package tk-train --each-feature test --lib
