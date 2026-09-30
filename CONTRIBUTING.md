@@ -73,9 +73,6 @@ tokenizers/
 The Rust workspace lives in `tokenizers/`, one level below the repo root. Most
 `make` and `cargo` commands must be run from there.
 
-`tk-train` is excluded from the workspace, so `cargo test --workspace` does not
-cover it — build it explicitly if you touch it.
-
 ## Setup
 
 ### Prerequisites
