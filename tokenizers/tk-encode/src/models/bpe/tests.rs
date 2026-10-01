@@ -261,6 +261,29 @@ fn fuse_unk_applies_to_models_with_affixes() {
 }
 
 #[test]
+fn end_of_word_suffix_applies_to_single_char_words() {
+    let pipeline = BPE::from_config(BpeConfig {
+        vocab: v(&[
+            ("a", 0),
+            ("b", 1),
+            ("a</w>", 2),
+            ("b</w>", 3),
+            ("##b</w>", 4),
+            ("ab</w>", 5),
+        ]),
+        merges: m(&[("a", "##b</w>")]),
+        continuing_subword_prefix: Some("##".into()),
+        end_of_word_suffix: Some("</w>".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    // a one-character word is both the first and the last character, so it takes the suffix
+    assert_eq!(pipeline_ids(&pipeline, "a"), vec![2]);
+    assert_eq!(pipeline_ids(&pipeline, "b"), vec![3]);
+    assert_eq!(pipeline_ids(&pipeline, "ab"), vec![5]);
+}
+
+#[test]
 fn rejects_unsupported_configs() {
     let build = |options: BpeConfig| {
         BPE::from_config(BpeConfig {
