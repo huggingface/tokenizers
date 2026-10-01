@@ -597,3 +597,20 @@ fn keeps_role_to_token() {
     canonicalize_value(&mut v).unwrap();
     assert_eq!(v["role_to_token"], serde_json::json!({"bos_token": "<s>"}));
 }
+
+#[test]
+fn byte_fallback_without_any_byte_codes_is_switched_off() {
+    let model = |fallback: &str, vocab: &str| {
+        format!(r#"{{"vocab": {vocab}, "merges": [], "byte_fallback": {fallback}}}"#)
+    };
+    let flag = |v: &Value| v["model"]["byte_fallback"].as_bool();
+    // NeMo-style: no <0xNN> at all
+    assert_eq!(flag(&done(&model("true", r#"{"a": 0}"#), "")), Some(false));
+    // partial coverage is for the reader to fill or refuse
+    assert_eq!(
+        flag(&done(&model("true", r#"{"a": 0, "<0x09>": 1}"#), "")),
+        Some(true)
+    );
+    // no flag, no change
+    assert_eq!(flag(&done(BPE, "")), None);
+}
