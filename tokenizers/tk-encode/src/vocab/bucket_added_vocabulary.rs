@@ -170,6 +170,10 @@ pub struct AddedVocabulary {
     token_metadata: Box<[AddedTokenFlags]>, // indexed by token id
     normalized_vocab: Buckets,
     vocab: Buckets,
+    /// The content each token in `normalized_vocab` was added with, by id. The matcher only
+    /// holds the normalized form, and writing that back out as `content` would get it normalized
+    /// a second time when the config is read again.
+    normalized_contents: AHashMap<u32, String>,
 }
 impl fmt::Debug for AddedVocabulary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -189,6 +193,7 @@ impl AddedVocabulary {
             token_metadata: Box::new([]),
             normalized_vocab: Buckets::new(),
             vocab: Buckets::new(),
+            normalized_contents: AHashMap::new(),
         }
     }
     /// Size of the additional vocabulary
@@ -212,17 +217,18 @@ impl AddedVocabulary {
             .collect::<AHashMap<String, u32>>()
     }
 
-    /// Get the additional vocabulary with the AddedTokens
+    /// Get the additional vocabulary with the AddedTokens, each with the content it was added with
     /// TODO: this will be slow because we rebuild the added tokens
     pub fn get_added_tokens_decoder(&self) -> AHashMap<u32, AddedToken> {
         self.get_vocab()
             .into_iter()
             .map(|(token, id)| {
                 let m = &self.token_metadata[id as usize];
+                let content = self.normalized_contents.get(&id).cloned().unwrap_or(token);
                 (
                     id,
                     AddedToken {
-                        content: token,
+                        content,
                         single_word: m.single_word,
                         lstrip: m.lstrip,
                         rstrip: m.rstrip,
@@ -301,6 +307,7 @@ impl AddedVocabulary {
             entries.insert(id, (form, true));
         }
         let mut seen: AHashMap<String, u32> = AHashMap::new();
+        let mut normalized_contents = self.normalized_contents.clone();
 
         for token in tokens {
             total += 1;
@@ -346,6 +353,11 @@ impl AddedVocabulary {
             }
             metadata[id as usize] = flags;
             entries.insert(id, (form, is_norm)); // if id existed, we overwrite it
+            if is_norm {
+                normalized_contents.insert(id, token.content.clone());
+            } else {
+                normalized_contents.remove(&id);
+            }
             seen.insert(token.content.clone(), id);
         }
 
@@ -361,6 +373,7 @@ impl AddedVocabulary {
         self.token_metadata = metadata.into();
         self.vocab = Buckets::from_tokens(raw_tokens);
         self.normalized_vocab = Buckets::from_tokens(norm_tokens);
+        self.normalized_contents = normalized_contents;
         Ok(total - ignored)
     }
 }
@@ -610,8 +623,8 @@ mod tests {
 
     #[test]
     fn normalized_tokens_are_stored_by_normalized_form() {
-        // The Buckets rewrite doesn't retain the original content of normalized tokens:
-        // they are stored (and decoded) by their normalized form.
+        // Normalized tokens are matched (and decoded) by their normalized form, but keep the
+        // content they were added with: that is what `added_tokens` saves.
         let model = ModelMock::new(&[]);
         let mut vocab = AddedVocabulary::new();
         let normalizer = Lowercase;
@@ -629,10 +642,9 @@ mod tests {
             .unwrap();
 
         let decoder = vocab.get_added_tokens_decoder();
-        // normalized=true → stored under the normalizer output
-        assert!(decoder.values().any(|t| t.content == "hello"));
-        // normalized=false → stored under the original content
-        assert!(decoder.values().any(|t| t.content == "[CLS]"));
+        assert_eq!(decoder[&0].content, "Hello");
+        assert_eq!(decoder[&1].content, "[CLS]");
+        assert_eq!(vocab.token_to_id("hello"), Some(0));
 
         assert_eq!(vocab.simple_id_to_token(0).unwrap(), "hello");
         assert_eq!(vocab.simple_id_to_token(1).unwrap(), "[CLS]");
