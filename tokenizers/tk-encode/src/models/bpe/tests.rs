@@ -286,39 +286,66 @@ fn rejects_unk_token_missing_from_vocab() {
     );
 }
 
+fn byte_fallback_config(vocab: Vocab) -> BpeConfig {
+    BpeConfig {
+        vocab,
+        merges: vec![],
+        byte_fallback: true,
+        ..Default::default()
+    }
+}
+
 #[test]
-fn byte_fallback_with_missing_codes_uses_unk() {
-    // Like Gemma, whose vocab has a literal tab token instead of <0x09>. As in tokenizers 0.x, a
-    // character falls back to bytes only if all of its codes exist; otherwise it is unk. 'é' is
-    // C3 A9, so it is unk even though <0xC3> exists.
+fn byte_fallback_missing_ascii_code_takes_its_literal_token() {
+    // Like Gemma: a literal tab token, no <0x09>. Tab is in the vocab, so it never falls back.
     let mut vocab = byte_fallback_vocab();
     vocab.remove("<0x09>");
+    vocab.insert("\t".into(), 500);
+    let pipeline = PipelineBPE::from_config(byte_fallback_config(vocab)).unwrap();
+    assert_eq!(pipeline_ids(&pipeline, "h\té"), vec![300, 500, 0xC3, 0xA9]);
+}
+
+#[test]
+fn byte_fallback_missing_code_without_literal_errors() {
+    let mut vocab = byte_fallback_vocab();
+    vocab.remove("<0x09>");
+    assert_eq!(
+        PipelineBPE::from_config(byte_fallback_config(vocab))
+            .err()
+            .map(|e| e.to_string()),
+        Some(Error::ByteFallbackOutOfVocabulary(0x09).to_string())
+    );
+}
+
+#[test]
+fn byte_fallback_missing_non_ascii_code_errors() {
+    // A literal "é" token is not the byte 0xA9, so there is nothing to substitute.
+    let mut vocab = byte_fallback_vocab();
     vocab.remove("<0xA9>");
-    for (unk_token, fuse_unk, input, want) in [
-        (Some("<unk>"), false, "h\té", vec![300, 400, 400]),
-        (Some("<unk>"), false, "ü", vec![0xC3, 0xBC]),
-        (Some("<unk>"), true, "h\té", vec![300, 400]),
-        // 0.x emits the byte tokens before a pending unk; this keeps the order of the text
-        (Some("<unk>"), true, "\tü\t", vec![400, 0xC3, 0xBC, 400]),
-        (None, false, "h\té", vec![300]),
-    ] {
-        let pipeline = PipelineBPE::from_config(BpeConfig {
-            vocab: vocab.clone(),
-            merges: vec![],
-            ..BpeConfig {
-                byte_fallback: true,
-                unk_token: unk_token.map(Into::into),
-                fuse_unk,
-                ..Default::default()
-            }
+    vocab.insert("\u{a9}".into(), 501);
+    assert_eq!(
+        PipelineBPE::from_config(byte_fallback_config(vocab))
+            .err()
+            .map(|e| e.to_string()),
+        Some(Error::ByteFallbackOutOfVocabulary(0xA9).to_string())
+    );
+}
+
+#[test]
+fn byte_fallback_missing_code_with_affixes_errors() {
+    // With affixes the lookup is of the decorated form (`\t</w>`), so a bare tab can still fall back.
+    let mut vocab = byte_fallback_vocab();
+    vocab.remove("<0x09>");
+    vocab.insert("\t".into(), 500);
+    assert_eq!(
+        PipelineBPE::from_config(BpeConfig {
+            end_of_word_suffix: Some("</w>".into()),
+            ..byte_fallback_config(vocab)
         })
-        .unwrap();
-        assert_eq!(
-            pipeline_ids(&pipeline, input),
-            want,
-            "{unk_token:?} {fuse_unk} {input:?}"
-        );
-    }
+        .err()
+        .map(|e| e.to_string()),
+        Some(Error::ByteFallbackOutOfVocabulary(0x09).to_string())
+    );
 }
 
 #[test]
