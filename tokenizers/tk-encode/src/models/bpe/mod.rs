@@ -53,7 +53,10 @@ pub enum Error {
     #[error("Dropout should be between 0 and 1, inclusive")]
     InvalidDropout,
     /// When byte_fallback is enabled but the fallback code is not in the vocab
-    #[error("Byte fallback `<{0:#04X}>` not found in the vocabulary")]
+    #[error(
+        "Byte fallback `<{0:#04X}>` not found in the vocabulary (a missing ASCII code is filled \
+         from its literal character, unless the model has a prefix or suffix)"
+    )]
     ByteFallbackOutOfVocabulary(u8),
     /// When BPE operating with byte_level the byte atom is not in the vocab
     #[error("Byte atom `{0:#04X}` not found in the vocabulary")]

@@ -256,14 +256,27 @@ impl PipelineBPE {
             };
             let unk_token = unk_token.map(|external| to_internal(external).unwrap_or(u32::MAX));
             let fallback_lookup = if byte_fallback {
-                let mut fallback_lookup = [0u32; 256];
+                let mut fallback_lookup = [u32::MAX; 256];
                 for b in 0u8..=255 {
                     let code = format!("<{b:#04X}>");
-                    let external = vocab
-                        .token_to_id(&code)
-                        .ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
+                    if let Some(internal) = vocab.token_to_id(&code).and_then(to_internal) {
+                        fallback_lookup[b as usize] = internal;
+                    }
+                }
+                // A missing ASCII code takes the id of its literal character, the same byte (Gemma
+                // has `"\t"` but no `<0x09>`). Affixes rule that out, because the vocab lookup is
+                // of the decorated form, so a tab can still reach the fallback.
+                let has_affixes = !prefix.is_empty() || !suffix.is_empty();
+                for b in 0u8..=255 {
+                    if fallback_lookup[b as usize] != u32::MAX {
+                        continue;
+                    }
+                    let literal = (b.is_ascii() && !has_affixes)
+                        .then(|| vocab.token_to_id(&(b as char).to_string()))
+                        .flatten()
+                        .and_then(to_internal);
                     fallback_lookup[b as usize] =
-                        to_internal(external).ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
+                        literal.ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
                 }
                 Some(fallback_lookup)
             } else {
