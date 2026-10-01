@@ -217,6 +217,29 @@ fn ignore_merges_prefers_whole_word() {
 }
 
 #[test]
+fn end_of_word_suffix_applies_to_single_char_words() {
+    let pipeline = PipelineBPE::from_config(BpeConfig {
+        vocab: v(&[
+            ("a", 0),
+            ("b", 1),
+            ("a</w>", 2),
+            ("b</w>", 3),
+            ("##b</w>", 4),
+            ("ab</w>", 5),
+        ]),
+        merges: m(&[("a", "##b</w>")]),
+        continuing_subword_prefix: Some("##".into()),
+        end_of_word_suffix: Some("</w>".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    // a one-character word is both the first and the last character, so it takes the suffix
+    assert_eq!(pipeline_ids(&pipeline, "a"), vec![2]);
+    assert_eq!(pipeline_ids(&pipeline, "b"), vec![3]);
+    assert_eq!(pipeline_ids(&pipeline, "ab"), vec![5]);
+}
+
+#[test]
 fn rejects_unsupported_configs() {
     // no merges: the merge-map derivation underflows on merges whose right token
     // is shorter than continuing_subword_prefix (pre-existing, unrelated)
