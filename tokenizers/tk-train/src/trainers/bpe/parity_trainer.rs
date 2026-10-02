@@ -4,9 +4,9 @@ use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
 use log::{info, warn};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::cmp::Ordering;
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use tk_encode::Result;
 use tk_encode::models::bpe::{Merges, Vocab};
 use tk_encode::parallelism::*;
@@ -41,7 +41,7 @@ impl Ord for PairMerge {
 }
 
 /// Parity selection variant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub enum ParityVariant {
     /// At each step, pick the language with the longest total dev-set token length.
     Base,
@@ -67,59 +67,9 @@ struct LengthState {
     lengths_f64: Vec<f64>,
 }
 
-/// Configuration for the parity-aware BPE trainer.
-struct ParityConfig {
-    min_frequency: u64,
-    num_merges: usize,
-    show_progress: bool,
-    special_tokens: Vec<AddedToken>,
-    limit_alphabet: Option<usize>,
-    initial_alphabet: AHashSet<char>,
-    continuing_subword_prefix: Option<String>,
-    end_of_word_suffix: Option<String>,
-    max_token_length: Option<usize>,
-    /// How many initial merges use global (concatenated) statistics.
-    global_merges: usize,
-    /// Parity variant (base or window).
-    variant: ParityVariant,
-    /// Window size for the moving-window variant.
-    window_size: usize,
-    /// Alpha parameter for the moving-window variant.
-    alpha: f64,
-    /// Desired compression ratios per language (alternative to dev set).
-    ratio: Option<Vec<f64>>,
-    /// If true, subtract unique char count from num_symbols.
-    total_symbols: bool,
-}
-
-/// A `ParityBpeTrainerBuilder` can be used to create a `ParityBpeTrainer`
-/// with a custom configuration.
+#[derive(Debug, Default)]
 pub struct ParityBpeTrainerBuilder {
-    config: ParityConfig,
-}
-
-impl Default for ParityBpeTrainerBuilder {
-    fn default() -> Self {
-        Self {
-            config: ParityConfig {
-                min_frequency: 0,
-                num_merges: 32000,
-                show_progress: true,
-                special_tokens: vec![],
-                limit_alphabet: None,
-                initial_alphabet: AHashSet::new(),
-                continuing_subword_prefix: None,
-                end_of_word_suffix: None,
-                max_token_length: None,
-                global_merges: 0,
-                variant: ParityVariant::Base,
-                window_size: 100,
-                alpha: 2.0,
-                ratio: None,
-                total_symbols: false,
-            },
-        }
-    }
+    trainer: ParityBpeTrainer,
 }
 
 impl ParityBpeTrainerBuilder {
@@ -130,130 +80,110 @@ impl ParityBpeTrainerBuilder {
     /// Set the minimum frequency a pair must have to produce a merge operation
     #[must_use]
     pub fn min_frequency(mut self, frequency: u64) -> Self {
-        self.config.min_frequency = frequency;
+        self.trainer.min_frequency = frequency;
         self
     }
 
     /// Set the number of BPE merge operations to perform
     #[must_use]
     pub fn num_merges(mut self, n: usize) -> Self {
-        self.config.num_merges = n;
+        self.trainer.num_merges = n;
         self
     }
 
     /// Set whether to show progress while training
     #[must_use]
     pub fn show_progress(mut self, show: bool) -> Self {
-        self.config.show_progress = show;
+        self.trainer.show_progress = show;
         self
     }
 
     /// Set the special tokens that the model should know of
     #[must_use]
     pub fn special_tokens(mut self, tokens: Vec<AddedToken>) -> Self {
-        self.config.special_tokens = tokens;
+        self.trainer.special_tokens = tokens;
         self
     }
 
     /// Set the maximum number of initial tokens to keep in the alphabet
     #[must_use]
     pub fn limit_alphabet(mut self, limit: usize) -> Self {
-        self.config.limit_alphabet = Some(limit);
+        self.trainer.limit_alphabet = Some(limit);
         self
     }
 
     /// Set the initial alphabet to include, even if not in the training data
     #[must_use]
-    pub fn initial_alphabet(mut self, alphabet: HashSet<char>) -> Self {
-        let mut initial_alphabet = AHashSet::with_capacity(alphabet.len());
-        initial_alphabet.extend(alphabet);
-        self.config.initial_alphabet = initial_alphabet;
+    pub fn initial_alphabet(mut self, alphabet: impl IntoIterator<Item = char>) -> Self {
+        self.trainer.initial_alphabet = alphabet.into_iter().collect();
         self
     }
 
     /// Set an optional prefix for subwords that are not at the beginning of a word
     #[must_use]
     pub fn continuing_subword_prefix(mut self, prefix: String) -> Self {
-        self.config.continuing_subword_prefix = Some(prefix);
+        self.trainer.continuing_subword_prefix = Some(prefix);
         self
     }
 
     /// Set an optional suffix for subwords at the end of a word
     #[must_use]
     pub fn end_of_word_suffix(mut self, suffix: String) -> Self {
-        self.config.end_of_word_suffix = Some(suffix);
+        self.trainer.end_of_word_suffix = Some(suffix);
         self
     }
 
     /// Set an optional maximum token length to prevent overly long tokens
     #[must_use]
     pub fn max_token_length(mut self, max_token_length: Option<usize>) -> Self {
-        self.config.max_token_length = max_token_length;
+        self.trainer.max_token_length = max_token_length;
         self
     }
 
     /// Set how many initial merges use global (concatenated) statistics
     #[must_use]
     pub fn global_merges(mut self, n: usize) -> Self {
-        self.config.global_merges = n;
+        self.trainer.global_merges = n;
         self
     }
 
     /// Set the parity selection variant (`Base` or `Window`)
     #[must_use]
     pub fn variant(mut self, variant: ParityVariant) -> Self {
-        self.config.variant = variant;
+        self.trainer.variant = variant;
         self
     }
 
     /// Set the window size for the moving-window variant
     #[must_use]
     pub fn window_size(mut self, size: usize) -> Self {
-        self.config.window_size = size;
+        self.trainer.window_size = size;
         self
     }
 
     /// Set the alpha parameter for the moving-window variant
     #[must_use]
     pub fn alpha(mut self, alpha: f64) -> Self {
-        self.config.alpha = alpha;
+        self.trainer.alpha = alpha;
         self
     }
 
     /// Set target compression ratios per language (alternative to dev files)
     #[must_use]
     pub fn ratio(mut self, ratio: Vec<f64>) -> Self {
-        self.config.ratio = Some(ratio);
+        self.trainer.ratio = Some(ratio);
         self
     }
 
     /// Set whether to subtract unique character count from `num_merges`
     #[must_use]
     pub fn total_symbols(mut self, total: bool) -> Self {
-        self.config.total_symbols = total;
+        self.trainer.total_symbols = total;
         self
     }
 
     pub fn build(self) -> ParityBpeTrainer {
-        ParityBpeTrainer {
-            min_frequency: self.config.min_frequency,
-            num_merges: self.config.num_merges,
-            show_progress: self.config.show_progress,
-            special_tokens: self.config.special_tokens,
-            limit_alphabet: self.config.limit_alphabet,
-            initial_alphabet: self.config.initial_alphabet,
-            continuing_subword_prefix: self.config.continuing_subword_prefix,
-            end_of_word_suffix: self.config.end_of_word_suffix,
-            max_token_length: self.config.max_token_length,
-            global_merges: self.config.global_merges,
-            variant: self.config.variant,
-            window_size: self.config.window_size,
-            alpha: self.config.alpha,
-            ratio: self.config.ratio,
-            total_symbols: self.config.total_symbols,
-            language_words: Vec::new(),
-            dev_language_words: Vec::new(),
-        }
+        self.trainer
     }
 }
 
@@ -316,41 +246,24 @@ impl ParityBpeTrainerBuilder {
 /// `ParityBpeTrainer.train_from_iterator(tokenizer, train_iterators,
 /// dev_iterators=, ratio=)` method, the multi-corpus analogue of
 /// `Tokenizer.train_from_iterator`.
-#[non_exhaustive]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ParityBpeTrainer {
-    /// The minimum frequency a pair must have to produce a merge operation
-    pub(crate) min_frequency: u64,
-    /// The number of BPE merge operations to perform
-    pub(crate) num_merges: usize,
-    /// Whether to show progress while training
-    pub(crate) show_progress: bool,
-    /// A list of special tokens that the model should know of
+    min_frequency: u64,
+    num_merges: usize,
+    show_progress: bool,
     #[serde(with = "crate::added_token_serde")]
-    pub(crate) special_tokens: Vec<AddedToken>,
-    /// Whether to limit the number of initial tokens that can be kept before computing merges
-    pub(crate) limit_alphabet: Option<usize>,
-    /// The initial alphabet we want absolutely to include. This allows to cover
-    /// some characters that are not necessarily in the training set
-    pub(crate) initial_alphabet: AHashSet<char>,
-    /// An optional prefix to use on any subword that exist only behind another one
-    pub(crate) continuing_subword_prefix: Option<String>,
-    /// An optional suffix to characterize and end-of-word subword
-    pub(crate) end_of_word_suffix: Option<String>,
-    /// An optional parameter to limit the max length of any single token
-    pub(crate) max_token_length: Option<usize>,
-    /// How many initial merges use global (concatenated) statistics
-    pub(crate) global_merges: usize,
-    /// The parity selection variant (`Base` or `Window`)
-    pub(crate) variant: ParityVariant,
-    /// Window size for the moving-window variant
-    pub(crate) window_size: usize,
-    /// Alpha parameter for the moving-window variant
-    pub(crate) alpha: f64,
-    /// Target compression ratios per language (alternative to dev set)
-    pub(crate) ratio: Option<Vec<f64>>,
-    /// If true, subtract unique character count from `num_merges`
-    pub(crate) total_symbols: bool,
+    special_tokens: Vec<AddedToken>,
+    limit_alphabet: Option<usize>,
+    initial_alphabet: AHashSet<char>,
+    continuing_subword_prefix: Option<String>,
+    end_of_word_suffix: Option<String>,
+    max_token_length: Option<usize>,
+    global_merges: usize,
+    variant: ParityVariant,
+    window_size: usize,
+    alpha: f64,
+    ratio: Option<Vec<f64>>,
+    total_symbols: bool,
 
     /// Per-language training word counts
     #[serde(skip)]
@@ -363,13 +276,98 @@ pub struct ParityBpeTrainer {
 
 impl Default for ParityBpeTrainer {
     fn default() -> Self {
-        Self::builder().build()
+        Self {
+            min_frequency: 0,
+            num_merges: 32000,
+            show_progress: true,
+            special_tokens: vec![],
+            limit_alphabet: None,
+            initial_alphabet: AHashSet::new(),
+            continuing_subword_prefix: None,
+            end_of_word_suffix: None,
+            max_token_length: None,
+            global_merges: 0,
+            variant: ParityVariant::Base,
+            window_size: 100,
+            alpha: 2.0,
+            ratio: None,
+            total_symbols: false,
+            language_words: Vec::new(),
+            dev_language_words: Vec::new(),
+        }
     }
 }
 
 impl ParityBpeTrainer {
     pub fn builder() -> ParityBpeTrainerBuilder {
         ParityBpeTrainerBuilder::new()
+    }
+
+    /// A builder with this trainer's settings. The words fed so far are dropped.
+    pub fn to_builder(mut self) -> ParityBpeTrainerBuilder {
+        self.language_words = Vec::new();
+        self.dev_language_words = Vec::new();
+        ParityBpeTrainerBuilder { trainer: self }
+    }
+
+    pub fn min_frequency(&self) -> u64 {
+        self.min_frequency
+    }
+
+    pub fn num_merges(&self) -> usize {
+        self.num_merges
+    }
+
+    pub fn show_progress(&self) -> bool {
+        self.show_progress
+    }
+
+    pub fn special_tokens(&self) -> &[AddedToken] {
+        &self.special_tokens
+    }
+
+    pub fn limit_alphabet(&self) -> Option<usize> {
+        self.limit_alphabet
+    }
+
+    pub fn initial_alphabet(&self) -> &AHashSet<char> {
+        &self.initial_alphabet
+    }
+
+    pub fn continuing_subword_prefix(&self) -> Option<&str> {
+        self.continuing_subword_prefix.as_deref()
+    }
+
+    pub fn end_of_word_suffix(&self) -> Option<&str> {
+        self.end_of_word_suffix.as_deref()
+    }
+
+    pub fn max_token_length(&self) -> Option<usize> {
+        self.max_token_length
+    }
+
+    pub fn global_merges(&self) -> usize {
+        self.global_merges
+    }
+
+    pub fn variant(&self) -> ParityVariant {
+        self.variant
+    }
+
+    pub fn window_size(&self) -> usize {
+        self.window_size
+    }
+
+    pub fn alpha(&self) -> f64 {
+        self.alpha
+    }
+
+    pub fn ratio(&self) -> Option<&[f64]> {
+        self.ratio.as_deref()
+    }
+
+    pub fn total_symbols(&self) -> bool {
+        self.total_symbols
     }
 
     /// Test-only: store pre-computed word counts at a specific language index
@@ -484,11 +482,6 @@ impl ParityBpeTrainer {
         }
         self.dev_language_words[lang_idx] = words?;
         Ok(())
-    }
-
-    /// Return the number of languages currently fed
-    pub fn num_languages(&self) -> usize {
-        self.language_words.len()
     }
 
     fn setup_progress(&self) -> Option<ProgressBar> {
@@ -1168,9 +1161,9 @@ impl ParityBpeTrainer {
     }
 
     /// Runs the training and returns the vocabulary and merge list it produced, plus the special
-    /// tokens the caller has to add alongside them, like [`super::BpeTrainer::do_train`].
+    /// tokens the caller has to add alongside them, like [`super::BpeTrainer::train_vocab`].
     #[allow(clippy::map_entry)]
-    pub fn do_train(&self) -> Result<(Vocab, Merges, Vec<AddedToken>)> {
+    pub fn train_vocab(&self) -> Result<(Vocab, Merges, Vec<AddedToken>)> {
         let num_langs = self.language_words.len();
         if num_langs == 0 {
             return Err("No language data has been fed".into());
@@ -1540,7 +1533,7 @@ mod tests {
 
     /// The trained vocabulary, and each merge written as `"a b"`.
     fn train(trainer: &ParityBpeTrainer) -> (Vocab, Vec<String>) {
-        let (vocab, merges, _) = trainer.do_train().unwrap();
+        let (vocab, merges, _) = trainer.train_vocab().unwrap();
         let merges = merges
             .into_iter()
             .map(|(a, b)| format!("{a} {b}"))
@@ -2178,7 +2171,7 @@ mod tests {
         trainer.feed_language(0, lang0);
         trainer.feed_language(1, lang1);
 
-        let (vocab, merges, _) = trainer.do_train().unwrap();
+        let (vocab, merges, _) = trainer.train_vocab().unwrap();
         let config = BpeConfig {
             vocab: vocab.clone(),
             merges: merges.clone(),
@@ -2203,10 +2196,28 @@ mod tests {
 
         trainer.feed_language(0, lang0);
 
-        let result = trainer.do_train();
+        let result = trainer.train_vocab();
         assert!(
             result.is_err(),
             "should fail when ratio length != num_langs"
         );
+    }
+
+    #[test]
+    fn to_builder_keeps_settings_and_drops_words() {
+        let mut trainer = ParityBpeTrainer::builder()
+            .num_merges(123)
+            .variant(ParityVariant::Window)
+            .build();
+        trainer.feed_language(0, AHashMap::from_iter([("hello".into(), 1)]));
+        trainer.feed_dev_language(0, AHashMap::from_iter([("hello".into(), 1)]));
+
+        let trainer = trainer.to_builder().window_size(7).build();
+
+        assert_eq!(trainer.num_merges(), 123);
+        assert_eq!(trainer.variant(), ParityVariant::Window);
+        assert_eq!(trainer.window_size(), 7);
+        assert!(trainer.language_words.is_empty());
+        assert!(trainer.dev_language_words.is_empty());
     }
 }

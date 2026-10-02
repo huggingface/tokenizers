@@ -49,7 +49,6 @@ pub(crate) struct Symbol {
     next: isize,
     len: usize,
 }
-#[derive(Clone, Default)]
 pub struct Word {
     symbols: Vec<Symbol>,
 }

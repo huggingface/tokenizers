@@ -47,6 +47,19 @@ esaxx_fast = ["unigram", "esaxx-rs/cpp"]
 progressbar = ["dep:indicatif"]
 parity-aware-bpe = ["bpe"]
 
+[[example]]
+name = "train_from_scratch"
+required-features = ["wordpiece"]
+
 [dev-dependencies]
 tempfile = "3.10"
 assert_approx_eq = "1.1"
+tk-convert = { path = "../tk-convert" }
+tk-serialize = { path = "../tk-serialize", features = [
+  "serialize",
+  "normalizers",
+  "bpe",
+  "unigram",
+  "wordpiece",
+  "wordlevel",
+] }

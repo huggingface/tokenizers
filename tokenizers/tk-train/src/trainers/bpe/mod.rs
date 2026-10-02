@@ -1,18 +1,17 @@
 #![allow(clippy::map_entry)]
 
 #[cfg(feature = "parity-aware-bpe")]
-pub mod parity_trainer;
+mod parity_trainer;
 mod word;
 #[cfg(feature = "parity-aware-bpe")]
 pub use parity_trainer::{ParityBpeTrainer, ParityBpeTrainerBuilder, ParityVariant};
 
-use crate::Trainer;
+use crate::trainer::{ModelTrainer, TrainingParams};
 use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::cmp::Ordering;
-use std::collections::HashSet;
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 // The `Word` machinery a trainer merges into is training-only, so it lives here rather than in the
 // inference crate. `PipelineBPE` is the only BPE left; a trainer reaches it through
@@ -20,10 +19,11 @@ use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 // private to `tk-encode`.
 use word::{WithFirstLastIterator, Word};
 
+use crate::error::{Result, TrainingError};
 use crate::progress::{ProgressBar, ProgressFormat, ProgressStyle};
-use tk_encode::Result;
 use tk_encode::models::bpe::{BpeConfig, Merges, Pair, PipelineBPE, Vocab};
 use tk_encode::parallelism::*;
+use tk_encode::utils::byte_level::BYTES_CHAR_LOOKUP;
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -52,141 +52,60 @@ impl Ord for Merge {
     }
 }
 
-struct Config {
-    min_frequency: u64,
-    vocab_size: usize,
-    show_progress: bool,
-    progress_format: ProgressFormat,
-    special_tokens: Vec<AddedToken>,
-    limit_alphabet: Option<usize>,
-    initial_alphabet: AHashSet<char>,
-    continuing_subword_prefix: Option<String>,
-    end_of_word_suffix: Option<String>,
-    max_token_length: Option<usize>,
-}
-
-/// A `BpeTrainerBuilder` can be used to create a `BpeTrainer` with a custom
-/// configuration.
+#[derive(Debug, Default)]
 pub struct BpeTrainerBuilder {
-    config: Config,
-}
-
-impl Default for BpeTrainerBuilder {
-    fn default() -> Self {
-        Self {
-            config: Config {
-                min_frequency: 0,
-                vocab_size: 30000,
-                show_progress: true,
-                progress_format: ProgressFormat::default(),
-                special_tokens: vec![],
-                limit_alphabet: None,
-                initial_alphabet: AHashSet::new(),
-                continuing_subword_prefix: None,
-                end_of_word_suffix: None,
-                max_token_length: None,
-            },
-        }
-    }
+    trainer: BpeTrainer,
 }
 
 impl BpeTrainerBuilder {
-    /// Constructs a new `BpeTrainerBuilder`
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Set the expected minimum frequency
+    /// The minimum frequency a pair must have to produce a merge.
     #[must_use]
     pub fn min_frequency(mut self, frequency: u64) -> Self {
-        self.config.min_frequency = frequency;
+        self.trainer.min_frequency = frequency;
         self
     }
 
-    /// Set the vocabulary size
-    #[must_use]
-    pub fn vocab_size(mut self, size: usize) -> Self {
-        self.config.vocab_size = size;
-        self
-    }
-
-    /// Set whether to show progress
-    #[must_use]
-    pub fn show_progress(mut self, show: bool) -> Self {
-        self.config.show_progress = show;
-        self
-    }
-
-    /// Set the progress output format
-    ///
-    /// Controls how progress information is reported during training.
-    /// - `Indicatif` (default): Interactive terminal progress bars
-    /// - `JsonLines`: Machine-readable JSON lines to stderr
-    /// - `Silent`: No progress output
-    #[must_use]
-    pub fn progress_format(mut self, format: ProgressFormat) -> Self {
-        self.config.progress_format = format;
-        self
-    }
-
-    /// Set the special tokens
-    #[must_use]
-    pub fn special_tokens(mut self, tokens: Vec<AddedToken>) -> Self {
-        self.config.special_tokens = tokens;
-        self
-    }
-
-    /// Set whether to limit the alphabet
+    /// The maximum number of characters kept in the initial alphabet, before any merge.
     #[must_use]
     pub fn limit_alphabet(mut self, limit: usize) -> Self {
-        self.config.limit_alphabet = Some(limit);
+        self.trainer.limit_alphabet = Some(limit);
         self
     }
 
-    /// Set the initial alphabet
+    /// Characters added to the alphabet even when the training data does not contain them.
     #[must_use]
-    pub fn initial_alphabet(mut self, alphabet: HashSet<char>) -> Self {
-        let mut initial_alphabet = AHashSet::with_capacity(alphabet.len());
-        initial_alphabet.extend(alphabet);
-        self.config.initial_alphabet = initial_alphabet;
+    pub fn initial_alphabet(mut self, alphabet: impl IntoIterator<Item = char>) -> Self {
+        self.trainer.initial_alphabet = alphabet.into_iter().collect();
         self
     }
 
-    /// Set the continuing_subword_prefix
+    /// A prefix on every subword that does not start a word, like WordPiece's `##`.
     #[must_use]
     pub fn continuing_subword_prefix(mut self, prefix: String) -> Self {
-        self.config.continuing_subword_prefix = Some(prefix);
+        self.trainer.continuing_subword_prefix = Some(prefix);
         self
     }
 
-    /// Set the end_of_word_suffix
+    /// A suffix on every subword that ends a word, like `</w>`.
     #[must_use]
     pub fn end_of_word_suffix(mut self, suffix: String) -> Self {
-        self.config.end_of_word_suffix = Some(suffix);
-        self
-    }
-    /// Set max_token_length
-    #[must_use]
-    pub fn max_token_length(mut self, max_token_length: Option<usize>) -> Self {
-        self.config.max_token_length = max_token_length;
+        self.trainer.end_of_word_suffix = Some(suffix);
         self
     }
 
-    /// Constructs the final BpeTrainer
+    /// The maximum length of a learned token, in characters.
+    #[must_use]
+    pub fn max_token_length(mut self, max_token_length: Option<usize>) -> Self {
+        self.trainer.max_token_length = max_token_length;
+        self
+    }
+
     pub fn build(self) -> BpeTrainer {
-        BpeTrainer {
-            min_frequency: self.config.min_frequency,
-            vocab_size: self.config.vocab_size,
-            show_progress: self.config.show_progress,
-            progress_format: self.config.progress_format,
-            special_tokens: self.config.special_tokens,
-            limit_alphabet: self.config.limit_alphabet,
-            initial_alphabet: self.config.initial_alphabet,
-            continuing_subword_prefix: self.config.continuing_subword_prefix,
-            end_of_word_suffix: self.config.end_of_word_suffix,
-            max_token_length: self.config.max_token_length,
-            words: AHashMap::new(),
-        }
+        self.trainer
     }
 }
 
@@ -195,81 +114,88 @@ impl BpeTrainerBuilder {
 /// # Examples
 ///
 /// ```
-/// use tk_train::BpeTrainer;
-/// use tk_train::Trainer;
-/// use tk_encode::models::bpe::{PipelineBPE, BpeConfig};
+/// use tk_train::{BpeTrainer, ModelTrainer, ProgressFormat, TrainingParams};
 ///
 /// let sequences = vec![ "Hello", "World" ];
 ///
 /// let mut trainer = BpeTrainer::default();
-/// trainer.feed(sequences.iter(), |s| Ok(vec![s.to_owned()]));
+/// trainer.feed(sequences.iter(), |s| Ok(vec![s.to_owned()])).unwrap();
 ///
-/// // `PipelineBPE` has no empty state to train *into* -- it only exists once there is a
-/// // vocabulary and a merge list -- so take the parts and build it.
-/// let (vocab, merges, special_tokens) = trainer.train_vocab().unwrap();
-/// let model = PipelineBPE::from_config(BpeConfig { vocab, merges, ..BpeConfig::default() }).unwrap();
+/// let params = TrainingParams {
+///     vocab_size: 30_000,
+///     special_tokens: vec![],
+///     unk_token: None,
+///     progress: ProgressFormat::Silent,
+///     byte_level: false,
+/// };
+/// let model = trainer.train_model(&params).unwrap();
 /// ```
-#[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
+#[derive(Debug, Deserialize)]
 pub struct BpeTrainer {
-    /// The minimum frequency a pair must have to produce a merge operation
-    pub min_frequency: u64,
-    /// The target vocabulary size
-    pub vocab_size: usize,
-    /// Whether to show progress while training
-    pub show_progress: bool,
-    /// Progress output format (Indicatif, JsonLines, or Silent)
-    ///
-    /// Skipped when (de)serializing, and read back as its `Default`: it only decides how progress
-    /// is displayed.
-    #[serde(skip)]
-    pub progress_format: ProgressFormat,
-    /// A list of special tokens that the model should know of
-    #[serde(with = "crate::added_token_serde")]
-    pub special_tokens: Vec<AddedToken>,
-    /// Whether to limit the number of initial tokens that can be kept before computing merges
-    pub limit_alphabet: Option<usize>,
-    /// The initial alphabet we want absolutely to include. This allows to cover
-    /// some characters that are not necessarily in the training set
-    pub initial_alphabet: AHashSet<char>,
-    /// An optional prefix to use on any subword that exist only behind another one
-    pub continuing_subword_prefix: Option<String>,
-    /// An optional suffix to characterize and end-of-word subword
-    pub end_of_word_suffix: Option<String>,
-    /// An optional parameter to limit the max length of any single token
-    pub max_token_length: Option<usize>,
-
+    /// Pairs with lower occurence than this are not considered as merge candidates
+    min_frequency: u64,
+    max_token_length: Option<usize>,
+    /// Limits the size of the initial alphabet, least frequent symbols are dropped
+    limit_alphabet: Option<usize>,
+    /// Seeds the symbol alphabet
+    initial_alphabet: AHashSet<char>,
+    continuing_subword_prefix: Option<String>,
+    end_of_word_suffix: Option<String>,
     words: AHashMap<CompactString, u64>,
 }
 
 impl Default for BpeTrainer {
     fn default() -> Self {
-        Self::builder().build()
+        Self {
+            min_frequency: 0,
+            limit_alphabet: None,
+            initial_alphabet: AHashSet::new(),
+            continuing_subword_prefix: None,
+            end_of_word_suffix: None,
+            max_token_length: None,
+            words: AHashMap::new(),
+        }
     }
 }
 
 impl BpeTrainer {
-    pub fn new(min_frequency: u64, vocab_size: usize) -> Self {
-        Self {
-            min_frequency,
-            vocab_size,
-            ..Default::default()
-        }
-    }
-
     pub fn builder() -> BpeTrainerBuilder {
         BpeTrainerBuilder::new()
     }
 
-    /// Returns the number of unique words in the corpus after feeding.
-    /// This can be used to estimate training time before starting.
-    pub fn get_word_count(&self) -> usize {
-        self.words.len()
+    /// A builder with this trainer's settings. The words fed so far are dropped.
+    pub fn to_builder(mut self) -> BpeTrainerBuilder {
+        self.words = AHashMap::new();
+        BpeTrainerBuilder { trainer: self }
+    }
+
+    pub fn min_frequency(&self) -> u64 {
+        self.min_frequency
+    }
+
+    pub fn limit_alphabet(&self) -> Option<usize> {
+        self.limit_alphabet
+    }
+
+    pub fn initial_alphabet(&self) -> &AHashSet<char> {
+        &self.initial_alphabet
+    }
+
+    pub fn continuing_subword_prefix(&self) -> Option<&str> {
+        self.continuing_subword_prefix.as_deref()
+    }
+
+    pub fn end_of_word_suffix(&self) -> Option<&str> {
+        self.end_of_word_suffix.as_deref()
+    }
+
+    pub fn max_token_length(&self) -> Option<usize> {
+        self.max_token_length
     }
 
     /// Setup a progress bar if asked to show progress (only for Indicatif format)
-    fn setup_progress(&self) -> Option<ProgressBar> {
-        if self.show_progress && self.progress_format == ProgressFormat::Indicatif {
+    fn setup_progress(&self, progress: ProgressFormat) -> Option<ProgressBar> {
+        if progress == ProgressFormat::Indicatif {
             let p = ProgressBar::new(0);
             p.set_style(
                 ProgressStyle::default_bar()
@@ -283,8 +209,14 @@ impl BpeTrainer {
     }
 
     /// Emit JSON progress line to stderr (for JsonLines format)
-    fn emit_json_progress(&self, stage: &str, current: usize, total: usize) {
-        if self.progress_format == ProgressFormat::JsonLines {
+    fn emit_json_progress(
+        &self,
+        progress: ProgressFormat,
+        stage: &str,
+        current: usize,
+        total: usize,
+    ) {
+        if progress == ProgressFormat::JsonLines {
             eprintln!(
                 r#"{{"stage":"{}","current":{},"total":{}}}"#,
                 stage, current, total
@@ -293,33 +225,46 @@ impl BpeTrainer {
     }
 
     /// Set the progress bar in the finish state
-    fn finalize_progress(&self, p: &Option<ProgressBar>, final_len: usize, stage: &str) {
+    fn finalize_progress(
+        &self,
+        progress: ProgressFormat,
+        p: &Option<ProgressBar>,
+        final_len: usize,
+        stage: &str,
+    ) {
         if let Some(p) = p {
             p.set_length(final_len as u64);
             p.finish();
             println!();
         }
-        self.emit_json_progress(stage, final_len, final_len);
+        self.emit_json_progress(progress, stage, final_len, final_len);
     }
 
     /// Update the progress bar with the new provided length and message
-    fn update_progress(&self, p: &Option<ProgressBar>, len: usize, message: &'static str) {
+    fn update_progress(
+        &self,
+        progress: ProgressFormat,
+        p: &Option<ProgressBar>,
+        len: usize,
+        message: &'static str,
+    ) {
         if let Some(p) = p {
             p.set_message(message);
             p.set_length(len as u64);
             p.reset();
         }
         // Emit initial JSON progress for this stage
-        self.emit_json_progress(message, 0, len);
+        self.emit_json_progress(progress, message, 0, len);
     }
 
     /// Add the provided special tokens to the initial vocabulary
     fn add_special_tokens(
         &self,
+        special_tokens: &[AddedToken],
         w2id: &mut AHashMap<CompactString, u32>,
         id2w: &mut Vec<CompactString>,
     ) {
-        for token in &self.special_tokens {
+        for token in special_tokens {
             // get hash of content
             if !w2id.contains_key(&CompactString::from(&token.content)) {
                 id2w.push(CompactString::from(&token.content));
@@ -332,6 +277,7 @@ impl BpeTrainer {
     fn compute_alphabet(
         &self,
         wc: &AHashMap<CompactString, u64>,
+        byte_level: bool,
         w2id: &mut AHashMap<CompactString, u32>,
         id2w: &mut Vec<CompactString>,
     ) {
@@ -346,6 +292,12 @@ impl BpeTrainer {
         // Also include anything from the provided initial alphabet
         for c in &self.initial_alphabet {
             *alphabet.entry(*c).or_default() = usize::MAX;
+        }
+        // `PipelineBPE` refuses a byte-level vocabulary that cannot spell every byte.
+        if byte_level {
+            for c in BYTES_CHAR_LOOKUP.iter() {
+                *alphabet.entry(*c).or_default() = usize::MAX;
+            }
         }
 
         let mut kept = alphabet.iter().collect::<Vec<_>>();
@@ -476,62 +428,83 @@ impl BpeTrainer {
     /// The WordPiece trainer is the one caller: it trains a BPE and reinterprets the vocabulary as
     /// WordPiece pieces, so building a `PipelineBPE` first -- merge tables and all -- would be work
     /// thrown away.
-    pub fn train_vocab(&self) -> Result<(Vocab, Merges, Vec<AddedToken>)> {
-        self.do_train(&self.words)
+    pub(crate) fn train_vocab(&self, params: &TrainingParams) -> Result<(Vocab, Merges)> {
+        self.do_train(&self.words, params)
     }
 
     /// The runtime options a trained model is built with.
     ///
-    /// The two affixes are the only settings a BPE trainer decides: everything else in
-    /// [`BpeConfig`] describes how to *read* a model (unknown-token handling, dropout,
+    /// The two affixes and byte-level are the only settings a BPE trainer decides: everything
+    /// else in [`BpeConfig`] describes how to *read* a model (unknown-token handling, dropout,
     /// caching) and is the reader's business, not the trainer's, so it stays at its default.
-    fn model_options(&self) -> BpeConfig {
+    fn model_options(&self, byte_level: bool) -> BpeConfig {
         BpeConfig {
             continuing_subword_prefix: self.continuing_subword_prefix.clone(),
             end_of_word_suffix: self.end_of_word_suffix.clone(),
+            byte_level,
             ..Default::default()
         }
     }
 
-    /// Runs the training and returns the vocabulary and merge list it produced, plus the special
-    /// tokens the caller has to add alongside them.
+    /// Runs the training and returns the vocabulary and merge list it produced.
     ///
     /// It hands back `(Vocab, Merges)` rather than filling in a model because that pair *is* what a
     /// `tokenizer.json` stores, and `PipelineBPE` can only be built from it -- see
     /// [`PipelineBPE::from_config`]. The WordPiece trainer wants the vocabulary alone, so
     /// splitting the two also saves it building merge tables it would throw away.
-    pub fn do_train(
+    fn do_train(
         &self,
         word_counts: &AHashMap<CompactString, u64>,
-    ) -> Result<(Vocab, Merges, Vec<AddedToken>)> {
-        let mut word_to_id: AHashMap<CompactString, u32> = AHashMap::with_capacity(self.vocab_size);
-        let mut id_to_word: Vec<CompactString> = Vec::with_capacity(self.vocab_size);
+        params: &TrainingParams,
+    ) -> Result<(Vocab, Merges)> {
+        // A byte-level model reads text as bytes, so it learns from each word spelled with one
+        // visible character per byte, the spelling its vocabulary is written in.
+        let byte_level_counts;
+        let word_counts = if params.byte_level {
+            byte_level_counts = spell_as_bytes(word_counts);
+            &byte_level_counts
+        } else {
+            word_counts
+        };
+        let mut word_to_id: AHashMap<CompactString, u32> =
+            AHashMap::with_capacity(params.vocab_size);
+        let mut id_to_word: Vec<CompactString> = Vec::with_capacity(params.vocab_size);
         let max_token_length: usize = self.max_token_length.unwrap_or(usize::MAX);
 
-        let progress = self.setup_progress();
+        let progress = self.setup_progress(params.progress);
 
         //
         // 1. Add all special tokens to the vocabulary
         //
-        self.add_special_tokens(&mut word_to_id, &mut id_to_word);
+        self.add_special_tokens(&params.special_tokens, &mut word_to_id, &mut id_to_word);
 
         //
         // 2. Compute the initial alphabet
         //
-        self.compute_alphabet(word_counts, &mut word_to_id, &mut id_to_word);
+        self.compute_alphabet(
+            word_counts,
+            params.byte_level,
+            &mut word_to_id,
+            &mut id_to_word,
+        );
 
         //
         // 3. Tokenize words
         //
-        self.update_progress(&progress, word_counts.len(), "Tokenize words");
+        self.update_progress(
+            params.progress,
+            &progress,
+            word_counts.len(),
+            "Tokenize words",
+        );
         let (mut words, counts) =
             self.tokenize_words(word_counts, &mut word_to_id, &mut id_to_word, &progress);
-        self.finalize_progress(&progress, words.len(), "Tokenize words");
+        self.finalize_progress(params.progress, &progress, words.len(), "Tokenize words");
 
         //
         // 4. Count pairs in words
         //
-        self.update_progress(&progress, words.len(), "Count pairs");
+        self.update_progress(params.progress, &progress, words.len(), "Count pairs");
         let (mut pair_counts, mut where_to_update) = self.count_pairs(&words, &counts, &progress);
         // Insert them in the queue
         let mut queue = OctonaryHeap::with_capacity(pair_counts.len());
@@ -545,16 +518,21 @@ impl BpeTrainer {
                 });
             }
         });
-        self.finalize_progress(&progress, words.len(), "Count pairs");
+        self.finalize_progress(params.progress, &progress, words.len(), "Count pairs");
 
         //
         // 5. Do merges
         //
-        self.update_progress(&progress, self.vocab_size, "Compute merges");
+        self.update_progress(
+            params.progress,
+            &progress,
+            params.vocab_size,
+            "Compute merges",
+        );
         let mut merges: Vec<(Pair, u32)> = vec![];
         loop {
             // Stop as soon as we have a big enough vocabulary
-            if word_to_id.len() >= self.vocab_size {
+            if word_to_id.len() >= params.vocab_size {
                 break;
             }
 
@@ -651,9 +629,14 @@ impl BpeTrainer {
             if let Some(p) = &progress {
                 p.inc(1);
             }
-            self.emit_json_progress("Compute merges", merges.len(), self.vocab_size);
+            self.emit_json_progress(
+                params.progress,
+                "Compute merges",
+                merges.len(),
+                params.vocab_size,
+            );
         }
-        self.finalize_progress(&progress, merges.len(), "Compute merges");
+        self.finalize_progress(params.progress, &progress, merges.len(), "Compute merges");
 
         // The vocabulary, keyed by the token string rather than by `word_to_id`'s hash: we have to
         // look the string up in `id_to_word` either way.
@@ -675,27 +658,52 @@ impl BpeTrainer {
             })
             .collect();
 
-        Ok((vocab, merges, self.special_tokens.clone()))
+        Ok((vocab, merges))
     }
 }
 
-impl Trainer for BpeTrainer {
+fn spell_as_bytes(word_counts: &AHashMap<CompactString, u64>) -> AHashMap<CompactString, u64> {
+    word_counts
+        .iter()
+        .map(|(word, count)| {
+            let word = word
+                .bytes()
+                .map(|b| BYTES_CHAR_LOOKUP[b as usize])
+                .collect();
+            (word, *count)
+        })
+        .collect()
+}
+
+impl ModelTrainer for BpeTrainer {
     type Model = PipelineBPE;
 
     /// Train a BPE model
-    fn train(&self, model: &mut PipelineBPE) -> Result<Vec<AddedToken>> {
-        let (vocab, merges, special_tokens) = self.do_train(&self.words)?;
-        *model = PipelineBPE::from_config(BpeConfig {
+    fn train_model(&self, params: &TrainingParams) -> Result<PipelineBPE> {
+        let (vocab, merges) = self.train_vocab(params)?;
+        Ok(PipelineBPE::from_config(BpeConfig {
             vocab,
             merges,
-            ..self.model_options()
-        })?;
-        Ok(special_tokens)
+            ..self.model_options(params.byte_level)
+        })?)
     }
 
-    /// Whether we should show progress
-    fn should_show_progress(&self) -> bool {
-        self.show_progress
+    fn check(&self, params: &TrainingParams) -> Result<()> {
+        // A byte-level vocabulary holds all 256 byte tokens before its first merge.
+        let reserved = params.special_tokens.len() + 256;
+        if params.byte_level && params.vocab_size <= reserved {
+            return Err(TrainingError::VocabTooSmall {
+                vocab_size: params.vocab_size,
+                reserved,
+            });
+        }
+        if params.byte_level
+            && let Some(limit_alphabet) = self.limit_alphabet
+            && limit_alphabet < 256
+        {
+            return Err(TrainingError::AlphabetTooSmall { limit_alphabet });
+        }
+        Ok(())
     }
 
     fn feed<I, S, F>(&mut self, iterator: I, process: F) -> Result<()>
@@ -733,8 +741,13 @@ impl Trainer for BpeTrainer {
 #[cfg(test)]
 mod tests {
     use super::{BpeTrainer, Merges};
+    use crate::trainer::{ModelTrainer, TrainingParams};
     use ahash::AHashMap;
     use compact_str::CompactString;
+
+    fn params() -> TrainingParams {
+        TrainingParams::for_tests(30_000)
+    }
 
     #[test]
     fn test_train() {
@@ -754,11 +767,8 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        let trainer = BpeTrainer::builder()
-            .show_progress(false)
-            .min_frequency(2)
-            .build();
-        let (trained_vocab, merges, _special_tokens) = trainer.do_train(&word_counts).unwrap();
+        let trainer = BpeTrainer::builder().min_frequency(2).build();
+        let (trained_vocab, merges) = trainer.do_train(&word_counts, &params()).unwrap();
 
         // Vocab should contain all of the characters from the `word_counts` mapping
         // as well as three merges: 're', 'are', and 'is'.
@@ -831,10 +841,9 @@ mod tests {
         .collect();
         let trainer = BpeTrainer::builder()
             .max_token_length(Some(max_token_length))
-            .show_progress(false)
             .min_frequency(0)
             .build();
-        let (vocab, _merges, _special_tokens) = trainer.do_train(&long_word_counts).unwrap();
+        let (vocab, _merges) = trainer.do_train(&long_word_counts, &params()).unwrap();
         for token in vocab.keys() {
             assert!(
                 token.chars().count() <= max_token_length,
@@ -869,11 +878,9 @@ mod tests {
         .collect();
         let trainer = BpeTrainer::builder()
             .max_token_length(Some(2))
-            .show_progress(false)
             .min_frequency(0)
             .build();
-        let (trained_vocab, _merges, _special_tokens) =
-            trainer.do_train(&long_word_counts).unwrap();
+        let (trained_vocab, _merges) = trainer.do_train(&long_word_counts, &params()).unwrap();
         let expected_vocab: AHashMap<String, u32> = [
             ("短", 12),
             ("n", 6),
@@ -911,5 +918,23 @@ mod tests {
         .map(|(k, v)| (k.to_string(), v))
         .collect();
         assert_eq!(trained_vocab, expected_vocab)
+    }
+
+    #[test]
+    fn to_builder_keeps_settings_and_drops_words() {
+        let mut trainer = BpeTrainer::builder()
+            .continuing_subword_prefix("##".into())
+            .build();
+        trainer
+            .feed(["hello world"].iter(), |s| {
+                Ok(s.split(' ').map(str::to_owned).collect())
+            })
+            .unwrap();
+
+        let trainer = trainer.to_builder().min_frequency(4).build();
+
+        assert_eq!(trainer.continuing_subword_prefix(), Some("##"));
+        assert_eq!(trainer.min_frequency(), 4);
+        assert!(trainer.words.is_empty());
     }
 }

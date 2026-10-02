@@ -1033,6 +1033,32 @@ impl PipelineModel {
             Self::WordPiece(model) => model.id_to_token(id),
         }
     }
+
+    /// `token -> id`, the inverse of [`Self::id_to_token`].
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        match self {
+            Self::BPE(model) => model.token_to_id(token),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.token_to_id(token),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.token_to_id(token),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.token_to_id(token),
+        }
+    }
+
+    /// One past the highest id in the vocabulary, so the first id free for a token added after it.
+    pub fn id_space(&self) -> usize {
+        match self {
+            Self::BPE(model) => model.id_space(),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.get_vocab_size(),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.vocab_r.keys().max().map_or(0, |&id| id as usize + 1),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.id_space(),
+        }
+    }
 }
 
 /// A set of buffers and other state the model needs to encode efficiently,

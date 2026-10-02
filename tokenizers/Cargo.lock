@@ -3218,7 +3218,9 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+ "tk-convert",
  "tk-encode",
+ "tk-serialize",
 ]
 
 [[package]]

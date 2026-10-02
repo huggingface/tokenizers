@@ -1,15 +1,11 @@
-use std::collections::HashSet;
-
-use crate::Trainer;
+use crate::error::Result;
+use crate::trainer::{ModelTrainer, TrainingParams};
 use crate::trainers::bpe::{BpeTrainer, BpeTrainerBuilder};
 use ahash::AHashSet;
-use serde::{Deserialize, Serialize};
-use tk_encode::Result;
+use serde::Deserialize;
 use tk_encode::models::wordpiece::WordPiece;
-use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 
-/// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom
-/// configuration.
+#[derive(Debug)]
 pub struct WordPieceTrainerBuilder {
     bpe_trainer_builder: BpeTrainerBuilder,
 }
@@ -23,68 +19,42 @@ impl Default for WordPieceTrainerBuilder {
 }
 
 impl WordPieceTrainerBuilder {
-    /// Constructs a new `WordPieceTrainerBuilder`
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Set the expected minimum frequency
     #[must_use]
     pub fn min_frequency(mut self, frequency: u64) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.min_frequency(frequency);
         self
     }
 
-    /// Set the vocabulary size
-    #[must_use]
-    pub fn vocab_size(mut self, size: usize) -> Self {
-        self.bpe_trainer_builder = self.bpe_trainer_builder.vocab_size(size);
-        self
-    }
-
-    /// Set whether to show progress
-    #[must_use]
-    pub fn show_progress(mut self, show: bool) -> Self {
-        self.bpe_trainer_builder = self.bpe_trainer_builder.show_progress(show);
-        self
-    }
-
-    /// Set the special tokens
-    #[must_use]
-    pub fn special_tokens(mut self, tokens: Vec<AddedToken>) -> Self {
-        self.bpe_trainer_builder = self.bpe_trainer_builder.special_tokens(tokens);
-        self
-    }
-
-    /// Set whether to limit the alphabet
+    /// See [`BpeTrainerBuilder::limit_alphabet`].
     #[must_use]
     pub fn limit_alphabet(mut self, limit: usize) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.limit_alphabet(limit);
         self
     }
 
-    /// Set the initial alphabet
+    /// See [`BpeTrainerBuilder::initial_alphabet`].
     #[must_use]
-    pub fn initial_alphabet(mut self, alphabet: HashSet<char>) -> Self {
+    pub fn initial_alphabet(mut self, alphabet: impl IntoIterator<Item = char>) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.initial_alphabet(alphabet);
         self
     }
 
-    /// Set the continuing_subword_prefix
     #[must_use]
     pub fn continuing_subword_prefix(mut self, prefix: String) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.continuing_subword_prefix(prefix);
         self
     }
 
-    /// Set the end_of_word_suffix
     #[must_use]
     pub fn end_of_word_suffix(mut self, suffix: String) -> Self {
         self.bpe_trainer_builder = self.bpe_trainer_builder.end_of_word_suffix(suffix);
         self
     }
 
-    /// Constructs the final WordPieceTrainer
     pub fn build(self) -> WordPieceTrainer {
         let bpe_trainer = self.bpe_trainer_builder.build();
         WordPieceTrainer { bpe_trainer }
@@ -92,109 +62,68 @@ impl WordPieceTrainerBuilder {
 }
 
 /// Trains a `WordPiece` model.
-#[derive(Default, Clone, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 pub struct WordPieceTrainer {
     bpe_trainer: BpeTrainer,
 }
 
 impl WordPieceTrainer {
-    pub fn min_frequency(&self) -> u64 {
-        self.bpe_trainer.min_frequency
-    }
-
-    pub fn set_min_frequency(&mut self, freq: u64) {
-        self.bpe_trainer.min_frequency = freq;
-    }
-
-    pub fn vocab_size(&self) -> usize {
-        self.bpe_trainer.vocab_size
-    }
-
-    pub fn set_vocab_size(&mut self, size: usize) {
-        self.bpe_trainer.vocab_size = size;
-    }
-
-    pub fn show_progress(&self) -> bool {
-        self.bpe_trainer.show_progress
-    }
-
-    pub fn set_show_progress(&mut self, show_progress: bool) {
-        self.bpe_trainer.show_progress = show_progress;
-    }
-
-    pub fn special_tokens(&self) -> &[AddedToken] {
-        &self.bpe_trainer.special_tokens
-    }
-
-    pub fn set_special_tokens(&mut self, special_tokens: Vec<AddedToken>) {
-        self.bpe_trainer.special_tokens = special_tokens;
-    }
-
-    pub fn limit_alphabet(&self) -> Option<usize> {
-        self.bpe_trainer.limit_alphabet
-    }
-
-    pub fn set_limit_alphabet(&mut self, limit: Option<usize>) {
-        self.bpe_trainer.limit_alphabet = limit;
-    }
-
-    pub fn initial_alphabet(&self) -> &AHashSet<char> {
-        &self.bpe_trainer.initial_alphabet
-    }
-
-    pub fn set_initial_alphabet(&mut self, alphabet: HashSet<char>) {
-        let mut initial_alphabet = AHashSet::with_capacity(alphabet.len());
-        initial_alphabet.extend(alphabet);
-        self.bpe_trainer.initial_alphabet = initial_alphabet;
-    }
-
-    pub fn continuing_subword_prefix(&self) -> &Option<String> {
-        &self.bpe_trainer.continuing_subword_prefix
-    }
-
-    pub fn set_continuing_subword_prefix(&mut self, prefix: Option<String>) {
-        self.bpe_trainer.continuing_subword_prefix = prefix;
-    }
-
-    pub fn end_of_word_suffix(&self) -> &Option<String> {
-        &self.bpe_trainer.end_of_word_suffix
-    }
-
-    pub fn set_end_of_word_suffix(&mut self, suffix: Option<String>) {
-        self.bpe_trainer.end_of_word_suffix = suffix;
-    }
-
     pub fn builder() -> WordPieceTrainerBuilder {
         WordPieceTrainerBuilder::default()
     }
 
-    pub fn train(&self, model: &mut WordPiece) -> Result<Vec<AddedToken>> {
+    /// A builder with this trainer's settings. The words fed so far are dropped.
+    pub fn to_builder(self) -> WordPieceTrainerBuilder {
+        WordPieceTrainerBuilder {
+            bpe_trainer_builder: self.bpe_trainer.to_builder(),
+        }
+    }
+
+    pub fn min_frequency(&self) -> u64 {
+        self.bpe_trainer.min_frequency()
+    }
+
+    pub fn limit_alphabet(&self) -> Option<usize> {
+        self.bpe_trainer.limit_alphabet()
+    }
+
+    pub fn initial_alphabet(&self) -> &AHashSet<char> {
+        self.bpe_trainer.initial_alphabet()
+    }
+
+    pub fn continuing_subword_prefix(&self) -> Option<&str> {
+        self.bpe_trainer.continuing_subword_prefix()
+    }
+
+    pub fn end_of_word_suffix(&self) -> Option<&str> {
+        self.bpe_trainer.end_of_word_suffix()
+    }
+}
+
+impl ModelTrainer for WordPieceTrainer {
+    type Model = WordPiece;
+
+    fn train_model(&self, params: &TrainingParams) -> Result<WordPiece> {
         // WordPiece reinterprets a trained BPE's vocabulary as its own pieces; the merge list has no
         // meaning here and is dropped. This used to go through `tk_convert`'s `from_bpe`, which
         // built a whole `BPE` to read its vocabulary back off -- `train_vocab` hands over the same
         // vocabulary without building anything.
-        let (vocab, _merges, special_tokens) = self.bpe_trainer.train_vocab()?;
+        let (vocab, _merges) = self.bpe_trainer.train_vocab(params)?;
 
-        model.vocab_r = vocab.iter().map(|(t, id)| (*id, t.clone())).collect();
-        model.vocab = vocab;
+        let mut model = WordPiece {
+            vocab_r: vocab.iter().map(|(t, id)| (*id, t.clone())).collect(),
+            vocab,
+            ..Default::default()
+        };
         // The continuing_subword_prefix is the only other option to be overridden by the trainer
-        if let Some(prefix) = &self.bpe_trainer.continuing_subword_prefix {
-            model.continuing_subword_prefix = prefix.clone();
+        if let Some(prefix) = self.bpe_trainer.continuing_subword_prefix() {
+            model.continuing_subword_prefix = prefix.to_owned();
+        }
+        if let Some(unk_token) = &params.unk_token {
+            model.unk_token = unk_token.clone();
         }
 
-        Ok(special_tokens)
-    }
-}
-
-impl Trainer for WordPieceTrainer {
-    type Model = WordPiece;
-
-    fn train(&self, model: &mut WordPiece) -> Result<Vec<AddedToken>> {
-        self.train(model)
-    }
-
-    fn should_show_progress(&self) -> bool {
-        self.bpe_trainer.should_show_progress()
+        Ok(model)
     }
 
     fn feed<I, S, F>(&mut self, iterator: I, process: F) -> Result<()>
@@ -204,5 +133,25 @@ impl Trainer for WordPieceTrainer {
         F: Fn(&str) -> Result<Vec<String>> + Sync,
     {
         self.bpe_trainer.feed(iterator, process)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn to_builder_keeps_settings() {
+        let mut trainer = WordPieceTrainer::builder().min_frequency(2).build();
+        trainer
+            .feed(["hello world"].iter(), |s| {
+                Ok(s.split(' ').map(str::to_owned).collect())
+            })
+            .unwrap();
+
+        let trainer = trainer.to_builder().build();
+
+        assert_eq!(trainer.continuing_subword_prefix(), Some("##"));
+        assert_eq!(trainer.min_frequency(), 2);
     }
 }

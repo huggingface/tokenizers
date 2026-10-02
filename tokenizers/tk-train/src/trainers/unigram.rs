@@ -1,21 +1,18 @@
-use crate::Trainer;
-use crate::progress::{ProgressBar, ProgressStyle};
+use crate::error::{Result, TrainingError};
+use crate::progress::{ProgressBar, ProgressFormat, ProgressStyle};
+use crate::trainer::{ModelTrainer, TrainingParams};
 use ahash::{AHashMap, AHashSet};
 use log::debug;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::cmp::Reverse;
-use std::convert::Infallible;
-use std::convert::TryInto;
-use tk_encode::Result;
 use tk_encode::models::unigram::{lattice::Lattice, model::Unigram};
 use tk_encode::utils::parallelism::*;
-use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 
 // A token and a score
 type SentencePiece = (String, f64);
 
 // A full sentence or word + it's count within the dataset
-type Sentence = (String, u32);
+type Sentence = (String, u64);
 
 fn digamma(mut x: f64) -> f64 {
     let mut result = 0.0;
@@ -33,7 +30,7 @@ fn digamma(mut x: f64) -> f64 {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum UnigramTrainerError {
+pub(crate) enum UnigramTrainerError {
     #[error("The vocabulary is not large enough to contain all chars")]
     VocabularyTooSmall,
 }
@@ -46,111 +43,77 @@ fn to_log_prob(pieces: &mut [SentencePiece]) {
     }
 }
 
-/// A `UnigramTrainer` can train a `Unigram` model from `word_counts`.
-#[non_exhaustive]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Trains a [`Unigram`] model.
+#[derive(Debug, Deserialize)]
 pub struct UnigramTrainer {
-    pub show_progress: bool,
-    pub vocab_size: u32,
-    pub n_sub_iterations: u32,
-    pub shrinking_factor: f64,
-    #[serde(with = "crate::added_token_serde")]
-    pub special_tokens: Vec<AddedToken>,
-    pub initial_alphabet: AHashSet<char>,
-
-    pub unk_token: Option<String>,
-
-    pub max_piece_length: usize,
+    n_sub_iterations: u32,
+    shrinking_factor: f64,
+    initial_alphabet: AHashSet<char>,
+    max_piece_length: usize,
     seed_size: usize,
-    words: AHashMap<String, u32>,
-}
-
-/// Builds a [`UnigramTrainer`]. Every field has a default, so `build` cannot fail -- the
-/// [`Infallible`] error is kept only so callers can go on writing `.build().unwrap()`.
-#[derive(Debug, Clone, Default)]
-pub struct UnigramTrainerBuilder {
-    show_progress: Option<bool>,
-    vocab_size: Option<u32>,
-    n_sub_iterations: Option<u32>,
-    shrinking_factor: Option<f64>,
-    special_tokens: Option<Vec<AddedToken>>,
-    initial_alphabet: Option<AHashSet<char>>,
-    unk_token: Option<Option<String>>,
-    max_piece_length: Option<usize>,
-    seed_size: Option<usize>,
-    words: Option<AHashMap<String, u32>>,
-}
-
-impl UnigramTrainerBuilder {
-    pub fn show_progress(&mut self, show_progress: bool) -> &mut Self {
-        self.show_progress = Some(show_progress);
-        self
-    }
-
-    pub fn vocab_size(&mut self, vocab_size: u32) -> &mut Self {
-        self.vocab_size = Some(vocab_size);
-        self
-    }
-
-    pub fn n_sub_iterations(&mut self, n_sub_iterations: u32) -> &mut Self {
-        self.n_sub_iterations = Some(n_sub_iterations);
-        self
-    }
-
-    pub fn shrinking_factor(&mut self, shrinking_factor: f64) -> &mut Self {
-        self.shrinking_factor = Some(shrinking_factor);
-        self
-    }
-
-    pub fn special_tokens(&mut self, special_tokens: Vec<AddedToken>) -> &mut Self {
-        self.special_tokens = Some(special_tokens);
-        self
-    }
-
-    pub fn initial_alphabet(&mut self, initial_alphabet: AHashSet<char>) -> &mut Self {
-        self.initial_alphabet = Some(initial_alphabet);
-        self
-    }
-
-    pub fn unk_token(&mut self, unk_token: Option<String>) -> &mut Self {
-        self.unk_token = Some(unk_token);
-        self
-    }
-
-    pub fn max_piece_length(&mut self, max_piece_length: usize) -> &mut Self {
-        self.max_piece_length = Some(max_piece_length);
-        self
-    }
-
-    pub fn seed_size(&mut self, seed_size: usize) -> &mut Self {
-        self.seed_size = Some(seed_size);
-        self
-    }
-
-    pub fn words(&mut self, words: AHashMap<String, u32>) -> &mut Self {
-        self.words = Some(words);
-        self
-    }
-
-    pub fn build(&self) -> std::result::Result<UnigramTrainer, Infallible> {
-        Ok(UnigramTrainer {
-            show_progress: self.show_progress.unwrap_or(true),
-            vocab_size: self.vocab_size.unwrap_or(8000),
-            n_sub_iterations: self.n_sub_iterations.unwrap_or(2),
-            shrinking_factor: self.shrinking_factor.unwrap_or(0.75),
-            special_tokens: self.special_tokens.clone().unwrap_or_default(),
-            initial_alphabet: self.initial_alphabet.clone().unwrap_or_default(),
-            unk_token: self.unk_token.clone().unwrap_or(None),
-            max_piece_length: self.max_piece_length.unwrap_or(16),
-            seed_size: self.seed_size.unwrap_or(1_000_000),
-            words: self.words.clone().unwrap_or_default(),
-        })
-    }
+    words: AHashMap<String, u64>,
 }
 
 impl Default for UnigramTrainer {
     fn default() -> Self {
-        Self::builder().build().unwrap()
+        Self {
+            n_sub_iterations: 2,
+            shrinking_factor: 0.75,
+            initial_alphabet: AHashSet::new(),
+            max_piece_length: 16,
+            seed_size: 1_000_000,
+            words: AHashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct UnigramTrainerBuilder {
+    trainer: UnigramTrainer,
+}
+
+impl UnigramTrainerBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The number of EM iterations run between two pruning steps.
+    #[must_use]
+    pub fn n_sub_iterations(mut self, n_sub_iterations: u32) -> Self {
+        self.trainer.n_sub_iterations = n_sub_iterations;
+        self
+    }
+
+    /// The share of pieces each pruning step keeps.
+    #[must_use]
+    pub fn shrinking_factor(mut self, shrinking_factor: f64) -> Self {
+        self.trainer.shrinking_factor = shrinking_factor;
+        self
+    }
+
+    /// Characters added to the alphabet even when the training data does not contain them.
+    #[must_use]
+    pub fn initial_alphabet(mut self, alphabet: impl IntoIterator<Item = char>) -> Self {
+        self.trainer.initial_alphabet = alphabet.into_iter().collect();
+        self
+    }
+
+    /// The maximum length of a piece, in characters.
+    #[must_use]
+    pub fn max_piece_length(mut self, max_piece_length: usize) -> Self {
+        self.trainer.max_piece_length = max_piece_length;
+        self
+    }
+
+    /// The number of substrings kept as candidate pieces before EM starts.
+    #[must_use]
+    pub fn seed_size(mut self, seed_size: usize) -> Self {
+        self.trainer.seed_size = seed_size;
+        self
+    }
+
+    pub fn build(self) -> UnigramTrainer {
+        self.trainer
     }
 }
 
@@ -159,9 +122,35 @@ impl UnigramTrainer {
         UnigramTrainerBuilder::default()
     }
 
+    /// A builder with this trainer's settings. The words fed so far are dropped.
+    pub fn to_builder(mut self) -> UnigramTrainerBuilder {
+        self.words = AHashMap::new();
+        UnigramTrainerBuilder { trainer: self }
+    }
+
+    pub fn n_sub_iterations(&self) -> u32 {
+        self.n_sub_iterations
+    }
+
+    pub fn shrinking_factor(&self) -> f64 {
+        self.shrinking_factor
+    }
+
+    pub fn initial_alphabet(&self) -> &AHashSet<char> {
+        &self.initial_alphabet
+    }
+
+    pub fn max_piece_length(&self) -> usize {
+        self.max_piece_length
+    }
+
+    pub fn seed_size(&self) -> usize {
+        self.seed_size
+    }
+
     /// Setup a progress bar if asked to show progress
-    fn setup_progress(&self) -> Option<ProgressBar> {
-        if self.show_progress {
+    fn setup_progress(&self, progress: ProgressFormat) -> Option<ProgressBar> {
+        if progress == ProgressFormat::Indicatif {
             let p = ProgressBar::new(0);
             p.set_style(
                 ProgressStyle::default_bar()
@@ -187,7 +176,12 @@ impl UnigramTrainer {
         true
     }
 
-    fn finalize(&self, model: Unigram, required_chars: AHashSet<String>) -> Result<Unigram> {
+    fn finalize(
+        &self,
+        model: Unigram,
+        required_chars: AHashSet<String>,
+        params: &TrainingParams,
+    ) -> Result<Unigram> {
         let mut min_score_penalty = 0.0;
         let min_score_penalty_delta = 0.0001;
 
@@ -211,8 +205,8 @@ impl UnigramTrainer {
             }
         }
 
-        let (unk_id, need_add_unk) = if let Some(ref unk) = self.unk_token {
-            let unk_id = self
+        let (unk_id, need_add_unk) = if let Some(ref unk) = params.unk_token {
+            let unk_id = params
                 .special_tokens
                 .iter()
                 .enumerate()
@@ -226,9 +220,9 @@ impl UnigramTrainer {
         };
 
         let vocab_size_without_special_tokens = if need_add_unk {
-            self.vocab_size as usize - self.special_tokens.len() - 1
+            params.vocab_size - params.special_tokens.len() - 1
         } else {
-            self.vocab_size as usize - self.special_tokens.len()
+            params.vocab_size - params.special_tokens.len()
         };
         for (token, score) in model.iter() {
             if inserted.contains::<str>(token) {
@@ -244,20 +238,20 @@ impl UnigramTrainer {
         pieces.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
 
         // Insert the necessary tokens
-        let mut special_tokens = self
+        let mut special_tokens = params
             .special_tokens
             .iter()
             .map(|t| (t.content.clone(), 0.0))
             .collect::<Vec<_>>();
         if need_add_unk {
-            special_tokens.insert(0, (self.unk_token.clone().unwrap(), 0.0));
+            special_tokens.insert(0, (params.unk_token.clone().unwrap(), 0.0));
         }
 
-        Unigram::from(
+        Ok(Unigram::from(
             special_tokens.into_iter().chain(pieces).collect(),
             unk_id,
             model.byte_fallback(),
-        )
+        )?)
     }
 
     fn required_chars(&self, word_counts: &[Sentence]) -> AHashSet<String> {
@@ -280,7 +274,7 @@ impl UnigramTrainer {
             .sum::<usize>()
             + sentences.len();
         let mut flat_string = String::with_capacity(total);
-        let mut all_chars: AHashMap<char, u32> = AHashMap::new();
+        let mut all_chars: AHashMap<char, u64> = AHashMap::new();
         let c_sentence_boundary = '\0';
         let k_sentence_boundary = '\0'.to_string();
         for (string, n) in sentences {
@@ -332,7 +326,7 @@ impl UnigramTrainer {
 
         // Fill seed_sentencepieces
         for (count, character) in sall_chars {
-            seed_sentencepieces.push((character.to_string(), count.into()));
+            seed_sentencepieces.push((character.to_string(), count as f64));
         }
 
         // sort by decreasing score
@@ -354,6 +348,7 @@ impl UnigramTrainer {
         model: &Unigram,
         pieces: &[SentencePiece],
         sentences: &[Sentence],
+        params: &TrainingParams,
     ) -> Vec<SentencePiece> {
         let mut always_keep = vec![true; pieces.len()];
         let mut alternatives: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
@@ -436,7 +431,7 @@ impl UnigramTrainer {
         let sum: f64 = freq.iter().sum();
         let logsum = sum.ln();
         let mut candidates: Vec<(usize, f64)> = vec![];
-        let mut new_pieces: Vec<SentencePiece> = Vec::with_capacity(self.vocab_size as usize);
+        let mut new_pieces: Vec<SentencePiece> = Vec::with_capacity(params.vocab_size);
         new_pieces.push(pieces[0].clone());
 
         // Finally, computes how likely the LM likelihood is reduced if
@@ -491,7 +486,7 @@ impl UnigramTrainer {
                 candidates.push((id, loss));
             }
         }
-        let desired_vocab_size: usize = (self.vocab_size as usize * 11) / 10; // * 1.1
+        let desired_vocab_size: usize = (params.vocab_size * 11) / 10; // * 1.1
         let pruned_size: usize = ((pieces.len() as f64) * self.shrinking_factor) as usize;
         let pruned_size = desired_vocab_size.max(pruned_size);
 
@@ -524,7 +519,7 @@ impl UnigramTrainer {
     }
 
     fn run_e_step(&self, model: &Unigram, sentences: &[Sentence]) -> (f64, u32, Vec<f64>) {
-        let all_sentence_freq: u32 = sentences.iter().map(|(_a, b)| *b).sum();
+        let all_sentence_freq: u64 = sentences.iter().map(|(_a, b)| *b).sum();
 
         let chunk_size = std::cmp::max(sentences.len() / current_num_threads(), 1);
         let collected: (f64, u32, Vec<f64>) = sentences
@@ -564,7 +559,12 @@ impl UnigramTrainer {
 
         collected
     }
-    fn run_m_step(&self, pieces: &[SentencePiece], expected: &[f64]) -> Vec<SentencePiece> {
+    fn run_m_step(
+        &self,
+        pieces: &[SentencePiece],
+        expected: &[f64],
+        params: &TrainingParams,
+    ) -> Vec<SentencePiece> {
         if pieces.len() != expected.len() {
             panic!(
                 "Those two iterators are supposed to be the same length ({} vs {})",
@@ -572,8 +572,7 @@ impl UnigramTrainer {
                 expected.len()
             );
         }
-        let mut new_pieces: Vec<SentencePiece> =
-            Vec::with_capacity(self.vocab_size.try_into().unwrap());
+        let mut new_pieces: Vec<SentencePiece> = Vec::with_capacity(params.vocab_size);
 
         let mut sum = 0.0;
         let expected_frequency_threshold = 0.5;
@@ -601,20 +600,14 @@ impl UnigramTrainer {
             .collect();
         new_pieces
     }
-    pub fn do_train(
-        &self,
-        sentences: Vec<Sentence>,
-        model: &mut Unigram,
-    ) -> Result<Vec<AddedToken>> {
-        let progress = self.setup_progress();
+    fn do_train(&self, sentences: Vec<Sentence>, params: &TrainingParams) -> Result<Unigram> {
+        let progress = self.setup_progress(params.progress);
         //
         // 1. Compute frequent substrings
-        // TODO Should be able to upgrade to u64 when needed
         self.update_progress(&progress, sentences.len(), "Suffix array seeds");
-        let mut pieces: Vec<SentencePiece> =
-            Vec::with_capacity(self.vocab_size.try_into().unwrap());
+        let mut pieces: Vec<SentencePiece> = Vec::with_capacity(params.vocab_size);
 
-        // We use a UNK token when training, whatever the `self.unk_token`
+        // We use a UNK token when training, whatever the `params.unk_token`
         pieces.push(("<UNK>".into(), f64::NAN));
         pieces.extend(self.make_seed_sentence_pieces(&sentences, &progress));
         self.finalize_progress(&progress, sentences.len());
@@ -626,7 +619,7 @@ impl UnigramTrainer {
             sentences.len()
         );
 
-        let desired_vocab_size: usize = (self.vocab_size as usize * 11) / 10; // * 1.1
+        let desired_vocab_size: usize = (params.vocab_size * 11) / 10; // * 1.1
 
         // 2. Run E-M Loops to fine grain the pieces.
         // We will shrink the vocab by shrinking_factor every loop on average
@@ -639,8 +632,10 @@ impl UnigramTrainer {
         let expected_updates = expected_loops * self.n_sub_iterations as usize;
         self.update_progress(&progress, expected_updates, "EM training");
         let required_chars = self.required_chars(&sentences);
-        if required_chars.len() as u32 > self.vocab_size {
-            return Err(Box::new(UnigramTrainerError::VocabularyTooSmall));
+        if required_chars.len() > params.vocab_size {
+            return Err(TrainingError::Pipeline(Box::new(
+                UnigramTrainerError::VocabularyTooSmall,
+            )));
         }
         let mut new_model = Unigram::from(pieces.clone(), Some(0), false)?;
         loop {
@@ -650,7 +645,7 @@ impl UnigramTrainer {
                 let (_objective, _num_tokens, expected) = self.run_e_step(&new_model, &sentences);
 
                 // Executes M step.
-                pieces = self.run_m_step(&pieces, &expected);
+                pieces = self.run_m_step(&pieces, &expected, params);
                 new_model = Unigram::from(pieces.clone(), Some(0), false)?;
 
                 // Useful comment for checking compatibility with spm
@@ -660,7 +655,7 @@ impl UnigramTrainer {
                     new_model.len(),
                     _objective,
                     _num_tokens,
-                    _num_tokens as f64 / model.len() as f64
+                    _num_tokens as f64 / new_model.len() as f64
                 );
                 if let Some(p) = &progress {
                     p.inc(1);
@@ -674,30 +669,23 @@ impl UnigramTrainer {
             }
 
             // Prunes pieces.
-            pieces = self.prune_sentence_pieces(&new_model, &pieces, &sentences);
+            pieces = self.prune_sentence_pieces(&new_model, &pieces, &sentences, params);
             new_model = Unigram::from(pieces.clone(), Some(0), false)?;
         }
         self.finalize_progress(&progress, expected_updates);
 
         // Finally, adjusts the size of sentencepices to be |vocab_size|.
-        *model = self.finalize(new_model, required_chars)?;
-
-        Ok(self.special_tokens.clone())
+        self.finalize(new_model, required_chars, params)
     }
 }
 
-impl Trainer for UnigramTrainer {
+impl ModelTrainer for UnigramTrainer {
     type Model = Unigram;
 
     /// Train a Unigram model
-    fn train(&self, model: &mut Unigram) -> Result<Vec<AddedToken>> {
+    fn train_model(&self, params: &TrainingParams) -> Result<Unigram> {
         let sentences: Vec<_> = self.words.iter().map(|(s, i)| (s.to_owned(), *i)).collect();
-        self.do_train(sentences, model)
-    }
-
-    /// Whether we should show progress
-    fn should_show_progress(&self) -> bool {
-        self.show_progress
+        self.do_train(sentences, params)
     }
 
     fn feed<I, S, F>(&mut self, iterator: I, process: F) -> Result<()>
@@ -706,7 +694,7 @@ impl Trainer for UnigramTrainer {
         S: AsRef<str> + Send,
         F: Fn(&str) -> Result<Vec<String>> + Sync,
     {
-        let words: Result<AHashMap<String, u32>> = iterator
+        let words: Result<AHashMap<String, u64>> = iterator
             .maybe_par_bridge()
             .map(|sequence| {
                 let words = process(sequence.as_ref())?;
@@ -737,13 +725,15 @@ mod tests {
     use super::*;
     use assert_approx_eq::assert_approx_eq;
     use std::iter::FromIterator;
+    use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
+
+    fn params() -> TrainingParams {
+        TrainingParams::for_tests(8000)
+    }
 
     #[test]
     fn test_unigram_chars() {
-        let trainer = UnigramTrainerBuilder::default()
-            .show_progress(false)
-            .build()
-            .unwrap();
+        let trainer = UnigramTrainerBuilder::default().build();
 
         let sentences = vec![
             ("This is a".to_string(), 1),
@@ -788,12 +778,31 @@ mod tests {
     }
 
     #[test]
+    fn trains_on_word_counts_beyond_u32() {
+        let trainer = UnigramTrainerBuilder::default().build();
+        let params = TrainingParams {
+            vocab_size: 5,
+            ..params()
+        };
+
+        let model = trainer
+            .do_train(
+                vec![
+                    ("abc".to_string(), 3_000_000_000),
+                    ("bcd".to_string(), 3_000_000_000),
+                ],
+                &params,
+            )
+            .unwrap();
+
+        assert!(model.token_to_id("a").is_some());
+    }
+
+    #[test]
     fn test_initial_alphabet() {
         let trainer = UnigramTrainerBuilder::default()
-            .show_progress(false)
             .initial_alphabet(AHashSet::from_iter(vec!['a', 'b', 'c', 'd', 'e', 'f']))
-            .build()
-            .unwrap();
+            .build();
 
         let sentences = vec![("こんにちは友達".to_string(), 1)];
         let required_chars = trainer.required_chars(&sentences);
@@ -811,19 +820,18 @@ mod tests {
     #[test]
     fn test_unk_token() {
         // 1. Should add `unk_token` as first special token
-        let trainer = UnigramTrainerBuilder::default()
-            .show_progress(false)
-            .special_tokens(vec![
+        let trainer = UnigramTrainerBuilder::default().build();
+        let params1 = TrainingParams {
+            special_tokens: vec![
                 AddedToken::from("[SEP]", true),
                 AddedToken::from("[CLS]", true),
-            ])
-            .unk_token(Some("[UNK]".into()))
-            .build()
-            .unwrap();
+            ],
+            unk_token: Some("[UNK]".into()),
+            ..params()
+        };
 
-        let mut unigram = Unigram::default();
-        trainer
-            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
+        let unigram = trainer
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &params1)
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -832,20 +840,18 @@ mod tests {
         assert_eq!(pieces.next(), Some(&("[CLS]".into(), 0.0)));
 
         // 2. Let it where it is
-        let trainer = UnigramTrainerBuilder::default()
-            .show_progress(false)
-            .special_tokens(vec![
+        let params2 = TrainingParams {
+            special_tokens: vec![
                 AddedToken::from("[SEP]", true),
                 AddedToken::from("[CLS]", true),
                 AddedToken::from("[UNK]", true),
-            ])
-            .unk_token(Some("[UNK]".into()))
-            .build()
-            .unwrap();
+            ],
+            unk_token: Some("[UNK]".into()),
+            ..params()
+        };
 
-        let mut unigram = Unigram::default();
-        trainer
-            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
+        let unigram = trainer
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &params2)
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -854,14 +860,8 @@ mod tests {
         assert_eq!(pieces.next(), Some(&("[UNK]".into(), 0.0)));
 
         // 3. Don't put it there if not needed
-        let trainer = UnigramTrainerBuilder::default()
-            .show_progress(false)
-            .build()
-            .unwrap();
-
-        let mut unigram = Unigram::default();
-        trainer
-            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
+        let unigram = trainer
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &params())
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -870,18 +870,17 @@ mod tests {
 
     #[test]
     fn test_special_tokens() {
-        let trainer = UnigramTrainerBuilder::default()
-            .show_progress(false)
-            .special_tokens(vec![
+        let trainer = UnigramTrainerBuilder::default().build();
+        let params = TrainingParams {
+            special_tokens: vec![
                 AddedToken::from("[SEP]", true),
                 AddedToken::from("[CLS]", true),
-            ])
-            .build()
-            .unwrap();
+            ],
+            ..params()
+        };
 
-        let mut unigram = Unigram::default();
-        trainer
-            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &mut unigram)
+        let unigram = trainer
+            .do_train(vec![("The".into(), 12), ("are".into(), 11)], &params)
             .unwrap();
 
         let mut pieces = unigram.iter();
@@ -898,5 +897,21 @@ mod tests {
         assert_approx_eq!(scores[0], -1.098, 0.01);
         // ln(2) - ln(3)
         assert_approx_eq!(scores[1], -0.405, 0.01);
+    }
+
+    #[test]
+    fn to_builder_keeps_settings_and_drops_words() {
+        let mut trainer = UnigramTrainer::builder().max_piece_length(8).build();
+        trainer
+            .feed(["hello world"].iter(), |s| {
+                Ok(s.split(' ').map(str::to_owned).collect())
+            })
+            .unwrap();
+
+        let trainer = trainer.to_builder().shrinking_factor(0.5).build();
+
+        assert_eq!(trainer.max_piece_length(), 8);
+        assert_eq!(trainer.shrinking_factor(), 0.5);
+        assert!(trainer.words.is_empty());
     }
 }
