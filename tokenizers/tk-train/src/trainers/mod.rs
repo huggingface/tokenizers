@@ -1,14 +1,13 @@
-//! Concrete model trainers and the [`TrainerWrapper`] enum that dispatches over
-//! them, paired with [`crate::ModelWrapper`] on the model side.
+//! Concrete model trainers and the [`TrainerWrapper`] enum that dispatches over them.
 
 #[cfg(feature = "bpe")]
-pub mod bpe;
+mod bpe;
 #[cfg(feature = "unigram")]
-pub mod unigram;
+mod unigram;
 #[cfg(feature = "wordlevel")]
-pub mod wordlevel;
+mod wordlevel;
 #[cfg(feature = "wordpiece")]
-pub mod wordpiece;
+mod wordpiece;
 
 #[cfg(feature = "bpe")]
 pub use bpe::*;
@@ -19,15 +18,14 @@ pub use wordlevel::*;
 #[cfg(feature = "wordpiece")]
 pub use wordpiece::*;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-use crate::ModelWrapper;
-use tk_encode::Result;
-use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
+use tk_encode::pipeline::PipelineModel;
 
-use crate::Trainer;
+use crate::error::Result;
+use crate::trainer::{IntoPipelineModel, ModelTrainer, TrainingParams};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub enum TrainerWrapper {
     #[cfg(feature = "bpe")]
     BpeTrainer(BpeTrainer),
@@ -39,46 +37,32 @@ pub enum TrainerWrapper {
     UnigramTrainer(UnigramTrainer),
 }
 
-impl Trainer for TrainerWrapper {
-    type Model = ModelWrapper;
+impl ModelTrainer for TrainerWrapper {
+    type Model = PipelineModel;
 
-    fn should_show_progress(&self) -> bool {
+    fn train_model(&self, params: &TrainingParams) -> Result<PipelineModel> {
         match self {
             #[cfg(feature = "bpe")]
-            Self::BpeTrainer(bpe) => bpe.should_show_progress(),
+            Self::BpeTrainer(t) => t.train_model(params)?.into_pipeline_model(),
             #[cfg(feature = "wordpiece")]
-            Self::WordPieceTrainer(wpt) => wpt.should_show_progress(),
+            Self::WordPieceTrainer(t) => t.train_model(params)?.into_pipeline_model(),
             #[cfg(feature = "wordlevel")]
-            Self::WordLevelTrainer(wpt) => wpt.should_show_progress(),
+            Self::WordLevelTrainer(t) => t.train_model(params)?.into_pipeline_model(),
             #[cfg(feature = "unigram")]
-            Self::UnigramTrainer(wpt) => wpt.should_show_progress(),
+            Self::UnigramTrainer(t) => t.train_model(params)?.into_pipeline_model(),
         }
     }
 
-    // With a single model compiled in, the `_` arms can never match.
-    #[allow(unreachable_patterns)]
-    fn train(&self, model: &mut ModelWrapper) -> Result<Vec<AddedToken>> {
+    fn check(&self, params: &TrainingParams) -> Result<()> {
         match self {
             #[cfg(feature = "bpe")]
-            Self::BpeTrainer(t) => match model {
-                ModelWrapper::BPE(bpe) => t.train(bpe),
-                _ => Err("BpeTrainer can only train a BPE".into()),
-            },
+            Self::BpeTrainer(t) => t.check(params),
             #[cfg(feature = "wordpiece")]
-            Self::WordPieceTrainer(t) => match model {
-                ModelWrapper::WordPiece(wp) => t.train(wp),
-                _ => Err("WordPieceTrainer can only train a WordPiece".into()),
-            },
+            Self::WordPieceTrainer(t) => t.check(params),
             #[cfg(feature = "wordlevel")]
-            Self::WordLevelTrainer(t) => match model {
-                ModelWrapper::WordLevel(wl) => t.train(wl),
-                _ => Err("WordLevelTrainer can only train a WordLevel".into()),
-            },
+            Self::WordLevelTrainer(t) => t.check(params),
             #[cfg(feature = "unigram")]
-            Self::UnigramTrainer(t) => match model {
-                ModelWrapper::Unigram(u) => t.train(u),
-                _ => Err("UnigramTrainer can only train a Unigram".into()),
-            },
+            Self::UnigramTrainer(t) => t.check(params),
         }
     }
 
@@ -90,13 +74,13 @@ impl Trainer for TrainerWrapper {
     {
         match self {
             #[cfg(feature = "bpe")]
-            Self::BpeTrainer(bpe) => bpe.feed(iterator, process),
+            Self::BpeTrainer(t) => t.feed(iterator, process),
             #[cfg(feature = "wordpiece")]
-            Self::WordPieceTrainer(wpt) => wpt.feed(iterator, process),
+            Self::WordPieceTrainer(t) => t.feed(iterator, process),
             #[cfg(feature = "wordlevel")]
-            Self::WordLevelTrainer(wpt) => wpt.feed(iterator, process),
+            Self::WordLevelTrainer(t) => t.feed(iterator, process),
             #[cfg(feature = "unigram")]
-            Self::UnigramTrainer(wpt) => wpt.feed(iterator, process),
+            Self::UnigramTrainer(t) => t.feed(iterator, process),
         }
     }
 }
@@ -123,21 +107,5 @@ impl From<UnigramTrainer> for TrainerWrapper {
 impl From<WordLevelTrainer> for TrainerWrapper {
     fn from(t: WordLevelTrainer) -> Self {
         Self::WordLevelTrainer(t)
-    }
-}
-
-#[cfg(test)]
-#[cfg(all(feature = "bpe", feature = "unigram"))]
-mod tests {
-    use super::*;
-    use tk_encode::models::unigram::Unigram;
-
-    #[test]
-    fn trainer_wrapper_train_model_wrapper() {
-        let trainer = TrainerWrapper::BpeTrainer(BpeTrainer::default());
-        let mut model = ModelWrapper::Unigram(Unigram::default());
-
-        let result = trainer.train(&mut model);
-        assert!(result.is_err());
     }
 }

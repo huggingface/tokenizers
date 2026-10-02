@@ -1,74 +1,46 @@
-use crate::Trainer;
+use crate::error::Result;
+use crate::trainer::{ModelTrainer, TrainingParams};
 use ahash::AHashMap;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::cmp::Ordering;
-use std::convert::Infallible;
-use tk_encode::Result;
 use tk_encode::models::wordlevel::WordLevel;
 use tk_encode::utils::parallelism::*;
-use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 
-#[non_exhaustive]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct WordLevelTrainer {
-    /// The minimum frequency a word must have to be part of the vocabulary
-    pub min_frequency: u64,
-    /// The target vocabulary size
-    pub vocab_size: usize,
-    /// Whether to show progress while training
-    pub show_progress: bool,
-    /// A list of special tokens that the model should know of
-    #[serde(with = "crate::added_token_serde")]
-    pub special_tokens: Vec<AddedToken>,
+    min_frequency: u64,
 
     words: AHashMap<String, u64>,
 }
 
-/// Builds a [`WordLevelTrainer`]. Every field has a default, so `build` cannot fail -- the
-/// [`Infallible`] error is kept only so callers can go on writing `.build().unwrap()`.
-#[derive(Debug, Clone, Default)]
+impl Default for WordLevelTrainer {
+    fn default() -> Self {
+        Self {
+            min_frequency: 0,
+            words: AHashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct WordLevelTrainerBuilder {
-    min_frequency: Option<u64>,
-    vocab_size: Option<usize>,
-    show_progress: Option<bool>,
-    special_tokens: Option<Vec<AddedToken>>,
+    trainer: WordLevelTrainer,
 }
 
 impl WordLevelTrainerBuilder {
-    pub fn min_frequency(&mut self, min_frequency: u64) -> &mut Self {
-        self.min_frequency = Some(min_frequency);
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The minimum frequency a word must have to be part of the vocabulary.
+    #[must_use]
+    pub fn min_frequency(mut self, min_frequency: u64) -> Self {
+        self.trainer.min_frequency = min_frequency;
         self
     }
 
-    pub fn vocab_size(&mut self, vocab_size: usize) -> &mut Self {
-        self.vocab_size = Some(vocab_size);
-        self
-    }
-
-    pub fn show_progress(&mut self, show_progress: bool) -> &mut Self {
-        self.show_progress = Some(show_progress);
-        self
-    }
-
-    pub fn special_tokens(&mut self, special_tokens: Vec<AddedToken>) -> &mut Self {
-        self.special_tokens = Some(special_tokens);
-        self
-    }
-
-    pub fn build(&self) -> std::result::Result<WordLevelTrainer, Infallible> {
-        Ok(WordLevelTrainer {
-            min_frequency: self.min_frequency.unwrap_or(0),
-            vocab_size: self.vocab_size.unwrap_or(30_000),
-            show_progress: self.show_progress.unwrap_or(true),
-            special_tokens: self.special_tokens.clone().unwrap_or_default(),
-            words: AHashMap::new(),
-        })
-    }
-}
-
-impl Default for WordLevelTrainer {
-    fn default() -> Self {
-        Self::builder().build().unwrap()
+    pub fn build(self) -> WordLevelTrainer {
+        self.trainer
     }
 }
 
@@ -77,11 +49,21 @@ impl WordLevelTrainer {
         WordLevelTrainerBuilder::default()
     }
 
+    /// A builder with this trainer's settings. The words fed so far are dropped.
+    pub fn to_builder(mut self) -> WordLevelTrainerBuilder {
+        self.words = AHashMap::new();
+        WordLevelTrainerBuilder { trainer: self }
+    }
+
+    pub fn min_frequency(&self) -> u64 {
+        self.min_frequency
+    }
+
     fn do_train(
         &self,
         word_counts: &AHashMap<String, u64>,
-        model: &mut WordLevel,
-    ) -> Result<Vec<AddedToken>> {
+        params: &TrainingParams,
+    ) -> Result<WordLevel> {
         let mut ordered_counts = word_counts.iter().collect::<Vec<_>>();
 
         //sort the word counts first by inverse counts and then by word, in order
@@ -96,9 +78,14 @@ impl WordLevelTrainer {
 
         ordered_counts.sort_by(cmp);
 
-        let word_level = WordLevel::builder()
+        let mut word_level = WordLevel::builder();
+        if let Some(unk_token) = &params.unk_token {
+            word_level = word_level.unk_token(unk_token.clone());
+        }
+        let word_level = word_level
             .vocab(
-                self.special_tokens
+                params
+                    .special_tokens
                     .iter()
                     .map(|token| token.content.clone())
                     .chain(
@@ -107,32 +94,23 @@ impl WordLevelTrainer {
                             .filter(|(_, n)| **n >= self.min_frequency)
                             .map(|(w, _)| w.to_owned()),
                     )
-                    .take(self.vocab_size)
+                    .take(params.vocab_size)
                     .enumerate()
                     .map(|(i, w)| (w, i as u32))
                     .collect(),
             )
             .build()?;
 
-        // Transfer the vocab
-        model.vocab = word_level.vocab;
-        model.vocab_r = word_level.vocab_r;
-
-        Ok(self.special_tokens.clone())
+        Ok(word_level)
     }
 }
 
-impl Trainer for WordLevelTrainer {
+impl ModelTrainer for WordLevelTrainer {
     type Model = WordLevel;
 
     /// Train a WordLevel model
-    fn train(&self, model: &mut WordLevel) -> Result<Vec<AddedToken>> {
-        self.do_train(&self.words, model)
-    }
-
-    /// Whether we should show progress
-    fn should_show_progress(&self) -> bool {
-        self.show_progress
+    fn train_model(&self, params: &TrainingParams) -> Result<WordLevel> {
+        self.do_train(&self.words, params)
     }
 
     fn feed<I, S, F>(&mut self, iterator: I, process: F) -> Result<()>
@@ -170,7 +148,6 @@ impl Trainer for WordLevelTrainer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tk_encode::models::wordlevel::WordLevel;
 
     #[test]
     fn test_train() {
@@ -186,13 +163,10 @@ mod tests {
         .cloned()
         .collect();
 
-        let mut trainer = WordLevelTrainer {
-            vocab_size: 5,
-            ..Default::default()
-        };
+        let mut trainer = WordLevelTrainer::default();
+        let params = TrainingParams::for_tests(5);
 
-        let mut model = WordLevel::default();
-        trainer.do_train(&word_counts, &mut model).unwrap();
+        let model = trainer.do_train(&word_counts, &params).unwrap();
         let expected_vocab: AHashMap<String, u32> = [
             ("the".into(), 0),
             ("are".into(), 1),
@@ -207,8 +181,7 @@ mod tests {
 
         // If we specify a min_frequency
         trainer.min_frequency = 15;
-        let mut model = WordLevel::default();
-        trainer.do_train(&word_counts, &mut model).unwrap();
+        let model = trainer.do_train(&word_counts, &params).unwrap();
         let expected_vocab: AHashMap<String, u32> = [
             ("the".into(), 0),
             ("are".into(), 1),
@@ -220,5 +193,20 @@ mod tests {
         .collect();
 
         assert_eq!(model.vocab, expected_vocab);
+    }
+
+    #[test]
+    fn to_builder_keeps_settings_and_drops_words() {
+        let mut trainer = WordLevelTrainer::builder().min_frequency(2).build();
+        trainer
+            .feed(["hello world"].iter(), |s| {
+                Ok(s.split(' ').map(str::to_owned).collect())
+            })
+            .unwrap();
+
+        let trainer = trainer.to_builder().build();
+
+        assert_eq!(trainer.min_frequency(), 2);
+        assert!(trainer.words.is_empty());
     }
 }

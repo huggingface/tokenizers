@@ -17,6 +17,8 @@ pub enum ProgressFormat {
 pub use indicatif::{ProgressBar, ProgressStyle};
 
 #[cfg(not(feature = "progressbar"))]
+// Stands in for indicatif's API, so a build without every trainer leaves some of it unused.
+#[allow(dead_code)]
 mod progressbar {
     use std::borrow::Cow;
     pub struct ProgressBar;

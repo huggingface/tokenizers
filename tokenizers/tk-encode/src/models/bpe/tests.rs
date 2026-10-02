@@ -391,6 +391,32 @@ fn byte_level_id_to_token_spells_the_projected_alphabet() {
     assert_eq!(pipeline.id_to_token(301), None);
 }
 
+fn assert_token_to_id_inverts_id_to_token(pipeline: &PipelineBPE) {
+    for id in 0..pipeline.id_space() as u32 {
+        if let Some(token) = pipeline.id_to_token(id) {
+            assert_eq!(pipeline.token_to_id(&token), Some(id), "{token:?}");
+        }
+    }
+}
+
+#[test]
+fn token_to_id_inverts_id_to_token() {
+    let pipeline = hello(BpeConfig::default()).unwrap();
+
+    assert_token_to_id_inverts_id_to_token(&pipeline);
+    assert_eq!(pipeline.token_to_id("not in the vocab"), None);
+}
+
+#[test]
+fn token_to_id_reads_a_byte_level_vocab_in_its_printable_spelling() {
+    let pipeline = byte_level_bpe(&[(" he", 300)], &[], true).unwrap();
+
+    assert_token_to_id_inverts_id_to_token(&pipeline);
+    assert_eq!(pipeline.token_to_id("Ġhe"), Some(300));
+    assert_eq!(pipeline.token_to_id(" he"), None);
+    assert_eq!(pipeline.id_space(), 301);
+}
+
 #[test]
 fn byte_level_requires_full_byte_coverage() {
     // An ASCII-only vocab covers no control/high bytes: building the

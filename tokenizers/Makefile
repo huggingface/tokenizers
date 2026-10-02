@@ -17,6 +17,7 @@ SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2.json $(DATA_DIR)
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/deepseek-v4.json
 TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json
 ORACLE_RESOURCES = $(DATA_DIR)/gpt2.json $(DATA_DIR)/bert-base-uncased.json $(DATA_DIR)/t5-base.json $(DATA_DIR)/albert-base-v1-tokenizer.json $(DATA_DIR)/fixtures/models/llama-3.2-1b.json $(DATA_DIR)/fixtures/models/all-minilm-l6-v2.json $(DATA_DIR)/fixtures/models/all-mpnet-base-v2.json $(DATA_DIR)/fixtures/models/siglip-base-patch16-224.json $(DATA_DIR)/fixtures/models/mistral-7b-v0.1.json
+TRAIN_GOLDEN_RESOURCES = $(DATA_DIR)/gpt2.json $(DATA_DIR)/big.txt $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/fixtures/lang/amh_Ethi.txt $(DATA_DIR)/fixtures/lang/arb_Arab.txt $(DATA_DIR)/fixtures/lang/ben_Beng.txt $(DATA_DIR)/fixtures/lang/cmn_Hani.txt $(DATA_DIR)/fixtures/lang/ell_Grek.txt $(DATA_DIR)/fixtures/lang/eng_Latn.txt $(DATA_DIR)/fixtures/lang/heb_Hebr.txt $(DATA_DIR)/fixtures/lang/hin_Deva.txt $(DATA_DIR)/fixtures/lang/jpn_Jpan.txt $(DATA_DIR)/fixtures/lang/kat_Geor.txt $(DATA_DIR)/fixtures/lang/kor_Hang.txt $(DATA_DIR)/fixtures/lang/rus_Cyrl.txt $(DATA_DIR)/fixtures/lang/tam_Taml.txt $(DATA_DIR)/fixtures/lang/tha_Thai.txt $(DATA_DIR)/fixtures/modalities/agentic-traces.txt $(DATA_DIR)/fixtures/modalities/agentic_swe.txt $(DATA_DIR)/fixtures/modalities/code_mixed.txt $(DATA_DIR)/fixtures/modalities/math_latex.txt
 
 .PHONY : data
 data : $(TESTS_RESOURCES) $(BENCHMARK_RESOURCES)
@@ -48,6 +49,16 @@ test : $(TESTS_RESOURCES)
 .PHONY : oracle
 oracle : $(ORACLE_RESOURCES)
 	cargo test -p tk-convert --features bench-baseline --test oracle
+
+# Training against goldens from the latest released `tokenizers`, made by tk-train/tests/golden/generate.py.
+.PHONY : train-golden
+train-golden : $(TRAIN_GOLDEN_RESOURCES)
+	cargo test --release -p tk-train --features parity-aware-bpe --test golden -- --ignored --test-threads=1 --nocapture
+
+# Training against the latest released `tokenizers`, run side by side with the same arguments.
+.PHONY : train-oracle
+train-oracle : $(DATA_DIR)/big.txt $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt
+	cargo test --release -p tk-train --features oracle --test oracle
 
 .PHONY : doc
 doc :

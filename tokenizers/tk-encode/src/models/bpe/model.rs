@@ -9,7 +9,7 @@ use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken, Span};
 use crate::tokenizer::Result;
-use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, char_to_byte};
 use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
 use crate::vocab::bucket_vocab_store::{BucketVocabStore, key_and_hash, key_and_hash_readable};
 
@@ -85,6 +85,21 @@ impl PipelineBPE {
     /// valid UTF-8 on its own -- only the concatenation of a whole id sequence usually is.
     pub(crate) fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
         self.vocab.id_to_token_bytes(id)
+    }
+
+    /// `token -> id`, the inverse of [`Self::id_to_token`]: a byte-level vocabulary takes the
+    /// token in its printable spelling.
+    pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
+        if !self.is_byte_level() {
+            return self.vocab.token_to_id(token);
+        }
+        let bytes: Option<Vec<u8>> = token.chars().map(char_to_byte).collect();
+        self.vocab.get_bytes(&bytes?)
+    }
+
+    /// One past the highest id in the vocabulary.
+    pub(crate) fn id_space(&self) -> usize {
+        self.vocab.id_space()
     }
 
     /// The string representation of a token, with printable markers of unprintable bytes

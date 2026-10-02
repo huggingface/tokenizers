@@ -332,6 +332,15 @@ impl PipelineWordPiece {
         self.vocab_r.get(id as usize)?.as_deref().map(str::to_owned)
     }
 
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.vocab_trie.exact_match_search(token)
+    }
+
+    /// One past the highest id in the vocabulary.
+    pub fn id_space(&self) -> usize {
+        self.vocab_r.len()
+    }
+
     /// `{"token": id}`, in id order. For a writer; the reverse table is dense over the ids, so the
     /// holes a config left are the `None`s that get skipped.
     pub fn vocab(&self) -> Vec<(String, u32)> {
@@ -406,6 +415,18 @@ mod tests {
     #[test]
     fn test_error_display() {
         assert!(format!("{}", Error::MissingUnkToken).contains("Missing [UNK] token"));
+    }
+
+    #[test]
+    fn token_to_id_inverts_id_to_token() {
+        let pipeline = pipeline_wordpiece();
+
+        for id in 0..pipeline.id_space() as u32 {
+            let token = pipeline.id_to_token(id).unwrap();
+            assert_eq!(pipeline.token_to_id(&token), Some(id), "{token:?}");
+        }
+        assert_eq!(pipeline.id_space(), 5);
+        assert_eq!(pipeline.token_to_id("hel"), None);
     }
 
     /// `hello` is in the vocabulary whole and as `hell` + `##o`, so the
