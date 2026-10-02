@@ -21,8 +21,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use tk_encode::pipeline::PipelineTokenizer;
-use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
-use tk_train::{TokenizerBlueprint, TokenizerTrainer, TokenizerTrainerBuilder, TrainerWrapper};
+use tk_train::{ProgressFormat, TokenizerTrainerBuilder, TrainerWrapper};
 
 const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../data");
 const GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden");
@@ -50,14 +49,6 @@ fn sorted_files(dir: &str, keep: fn(&str) -> bool) -> Vec<PathBuf> {
     names.into_iter().map(|name| dir.join(name)).collect()
 }
 
-fn lines(path: &Path) -> Vec<String> {
-    std::fs::read_to_string(path)
-        .unwrap()
-        .split('\n')
-        .map(String::from)
-        .collect()
-}
-
 fn read_json(path: impl AsRef<Path>) -> Value {
     let raw = std::fs::read_to_string(path).unwrap();
     serde_json::from_str(&tk_convert::canonicalize_str(&raw).unwrap()).unwrap()
@@ -67,14 +58,23 @@ fn golden(case: &str) -> Value {
     read_json(Path::new(GOLDEN).join(case).join("tokenizer.json"))
 }
 
-/// The golden's trainer state, with its special tokens and unknown token taken out.
-///
-/// 0.23.2 kept both on the trainer. v1 keeps them on the builder, which refuses a trainer that
-/// still has them.
-fn golden_trainer_state(case: &str) -> (Value, Vec<String>, Option<String>) {
+fn trainer_state(case: &str) -> Value {
     let path = Path::new(GOLDEN).join(case).join("trainer.json");
-    let mut state: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-    let specials =
+    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+/// What 0.23.2 kept on the trainer and v1 keeps on the builder. Progress is left out: the goldens
+/// were made without it, and it does not change what is trained.
+struct BuilderSettings {
+    vocab_size: Option<usize>,
+    special_tokens: Vec<String>,
+    unk_token: Option<String>,
+}
+
+/// The golden's trainer state, with the settings v1 keeps on the builder taken out of it.
+fn golden_trainer_state(case: &str) -> (Value, BuilderSettings) {
+    let mut state = trainer_state(case);
+    let special_tokens =
         take(&mut state, "special_tokens", Value::Array(vec![])).map_or(vec![], |tokens| {
             let tokens = tokens.as_array().unwrap().iter();
             tokens
@@ -88,9 +88,17 @@ fn golden_trainer_state(case: &str) -> (Value, Vec<String>, Option<String>) {
                 })
                 .collect()
         });
-    let unk =
+    let unk_token =
         take(&mut state, "unk_token", Value::Null).and_then(|unk| unk.as_str().map(String::from));
-    (state, specials, unk)
+    let vocab_size = take(&mut state, "vocab_size", Value::Null)
+        .and_then(|size| size.as_u64())
+        .map(|size| size as usize);
+    let settings = BuilderSettings {
+        vocab_size,
+        special_tokens,
+        unk_token,
+    };
+    (state, settings)
 }
 
 /// Replaces the first `key` found in `value`, at any depth, and returns what it held.
@@ -104,24 +112,36 @@ fn take(value: &mut Value, key: &str, with: Value) -> Option<Value> {
         .find_map(|inner| take(inner, key, with.clone()))
 }
 
-/// The blueprint the golden was trained with: its stages, without the tokens training added.
-fn golden_blueprint(mut tokenizer: Value) -> TokenizerBlueprint {
+/// The stages the golden was trained with, without the tokens training added.
+fn golden_stages(mut tokenizer: Value) -> PipelineTokenizer {
     tokenizer["added_tokens"] = Value::Array(vec![]);
-    let tokenizer = tk_serialize::from_json(&tokenizer.to_string()).unwrap();
-    TokenizerBlueprint::from(&tokenizer)
+    tk_serialize::from_json(&tokenizer.to_string()).unwrap()
+}
+
+/// `builder` with the trainer 0.23.2 had for `case`, and the settings that trainer held.
+fn with_golden_trainer(
+    case: &str,
+    builder: TokenizerTrainerBuilder<TrainerWrapper>,
+) -> TokenizerTrainerBuilder<TrainerWrapper> {
+    let (state, settings) = golden_trainer_state(case);
+    let trainer: TrainerWrapper = serde_json::from_value(state).unwrap();
+    let mut builder = builder
+        .trainer(trainer)
+        .special_tokens(settings.special_tokens)
+        .progress(ProgressFormat::Indicatif);
+    if let Some(vocab_size) = settings.vocab_size {
+        builder = builder.vocab_size(vocab_size);
+    }
+    if let Some(unk_token) = settings.unk_token {
+        builder = builder.unk_token(unk_token);
+    }
+    builder
 }
 
 /// A builder configured as 0.23.2 was for `case`, from its trainer state and the golden's stages.
-fn golden_builder(case: &str, golden: &Value) -> TokenizerTrainerBuilder {
-    let (state, specials, unk) = golden_trainer_state(case);
-    let trainer: TrainerWrapper = serde_json::from_value(state).unwrap();
-    let builder = TokenizerTrainer::builder(trainer)
-        .blueprint(golden_blueprint(golden.clone()))
-        .special_tokens(specials);
-    match unk {
-        Some(unk) => builder.unk_token(unk),
-        None => builder,
-    }
+fn golden_builder(case: &str, golden: &Value) -> TokenizerTrainerBuilder<TrainerWrapper> {
+    let stages = TokenizerTrainerBuilder::from_tokenizer(&golden_stages(golden.clone())).unwrap();
+    with_golden_trainer(case, stages)
 }
 
 fn to_value(tokenizer: &PipelineTokenizer) -> Value {
@@ -202,7 +222,7 @@ fn assert_added_tokens_point_at_themselves(tokenizer: &Value) {
 fn bpe_byte_level_matches_release_exactly() {
     let golden = golden("bpe_byte_level");
     let trainer = golden_builder("bpe_byte_level", &golden).build().unwrap();
-    let trained = to_value(&trainer.train_files(&corpus()).unwrap());
+    let trained = to_value(&trainer.train_files(corpus()).unwrap());
 
     assert_eq!(vocab(&trained), vocab(&golden));
     assert_eq!(merges(&trained), merges(&golden));
@@ -218,7 +238,7 @@ fn bpe_sentencepiece_adds_byte_tokens_and_keeps_release_merges() {
     let trainer = golden_builder("bpe_sentencepiece", &golden)
         .build()
         .unwrap();
-    let trained = to_value(&trainer.train_files(&corpus()).unwrap());
+    let trained = to_value(&trainer.train_files(corpus()).unwrap());
 
     let vocab = vocab(&trained);
     for byte in 0..=255u8 {
@@ -238,7 +258,7 @@ fn bpe_sentencepiece_adds_byte_tokens_and_keeps_release_merges() {
 fn wordpiece_bert_shares_release_vocab() {
     let golden = golden("wordpiece_bert");
     let trainer = golden_builder("wordpiece_bert", &golden).build().unwrap();
-    let trained = to_value(&trainer.train_files(&corpus()).unwrap());
+    let trained = to_value(&trainer.train_files(corpus()).unwrap());
 
     // Two 0.23.2 runs share 99.99% of this vocab.
     let (trained_vocab, golden_vocab) = (vocab(&trained), vocab(&golden));
@@ -262,7 +282,7 @@ fn unigram_sentencepiece_keeps_release_pieces() {
     let trainer = golden_builder("unigram_sentencepiece", &golden)
         .build()
         .unwrap();
-    let trained = to_value(&trainer.train_files(&corpus()).unwrap());
+    let trained = to_value(&trainer.train_files(corpus()).unwrap());
 
     // Every 0.23.2 run gives this piece set, with scores up to 0.0062 apart.
     let (trained, golden) = (pieces(&trained), pieces(&golden));
@@ -283,15 +303,13 @@ fn unigram_sentencepiece_keeps_release_pieces() {
 #[ignore = "trains on ~100 MB: make train-golden"]
 fn wordlevel_keeps_tokens_added_before_training() {
     let golden = golden("wordlevel_added_tokens");
+    // Fails until the builder takes added tokens that are not special: `HuggingFace` and
+    // `Tokenizers` were added as normalized, non-special tokens.
     let trainer = golden_builder("wordlevel_added_tokens", &golden)
-        .special_tokens(["<|im_start|>", "<|im_end|>"])
-        .added_tokens(vec![
-            AddedToken::from("HuggingFace", false).normalized(true),
-            AddedToken::from("Tokenizers", false).normalized(true),
-        ])
+        .special_tokens(["[UNK]", "[PAD]", "<|im_start|>", "<|im_end|>"])
         .build()
         .unwrap();
-    let trained = to_value(&trainer.train_files(&corpus()).unwrap());
+    let trained = to_value(&trainer.train_files(corpus()).unwrap());
 
     assert_eq!(vocab(&trained), vocab(&golden));
     // 0.23.2 drops the tokens whose ids the trainer's special tokens take.
@@ -308,57 +326,27 @@ fn retrain_gpt2_matches_release_model() {
     let golden = golden("retrain_gpt2");
     let gpt2 =
         tk_serialize::from_json(&read_json(Path::new(DATA).join("gpt2.json")).to_string()).unwrap();
-    let (state, specials, _) = golden_trainer_state("retrain_gpt2");
-    let trainer: TrainerWrapper = serde_json::from_value(state).unwrap();
-    let trainer = TokenizerTrainer::builder(trainer)
-        .blueprint(TokenizerBlueprint::from(&gpt2))
-        .special_tokens(specials)
-        .build()
-        .unwrap();
-    let sequences = corpus()
-        .iter()
-        .flat_map(|path| lines(path))
-        .collect::<Vec<_>>();
-    let trained = to_value(&trainer.train(sequences.iter()).unwrap());
+    let gpt2 = TokenizerTrainerBuilder::from_tokenizer(&gpt2).unwrap();
+    let trainer = with_golden_trainer("retrain_gpt2", gpt2).build().unwrap();
+    let trained = to_value(&trainer.train_files(corpus()).unwrap());
 
     assert_eq!(vocab(&trained), vocab(&golden));
     assert_eq!(merges(&trained), merges(&golden));
     assert_added_tokens_point_at_themselves(&trained);
 }
 
+/// Trains on the `fixtures/lang` corpora, with the last 500 lines of each as its dev set, and
+/// expects 0.23.2's vocab and merges exactly.
 #[cfg(feature = "parity-aware-bpe")]
 #[test]
 #[ignore = "trains on ~100 MB: make train-golden"]
 fn parity_bpe_matches_release_exactly() {
-    const DEV_LINES: usize = 500;
-    let golden = golden("parity_bpe");
-    let (mut state, specials, _) = golden_trainer_state("parity_bpe");
+    let mut state = trainer_state("parity_bpe");
     // 0.23.2's Python state for this trainer is hand-written, not serde: it spells the variant in
     // lowercase.
     let variant = state["variant"].as_str().unwrap();
     state["variant"] = Value::String(variant[..1].to_uppercase() + &variant[1..]);
-    let trainer: tk_train::ParityBpeTrainer = serde_json::from_value(state).unwrap();
-    let trainer = TokenizerTrainer::builder(trainer)
-        .blueprint(golden_blueprint(golden.clone()))
-        .special_tokens(specials)
-        .build()
-        .unwrap();
+    let _trainer: tk_train::ParityBpeTrainer = serde_json::from_value(state).unwrap();
 
-    let languages: Vec<Vec<String>> = corpus()
-        .iter()
-        .filter(|path| path.parent().unwrap().ends_with("lang"))
-        .map(|path| lines(path))
-        .collect();
-    let train = languages
-        .iter()
-        .map(|lines| lines[..lines.len() - DEV_LINES].iter())
-        .collect();
-    let dev = languages
-        .iter()
-        .map(|lines| lines[lines.len() - DEV_LINES..].iter())
-        .collect();
-    let trained = to_value(&trainer.train_languages(train, Some(dev)).unwrap());
-
-    assert_eq!(vocab(&trained), vocab(&golden));
-    assert_eq!(merges(&trained), merges(&golden));
+    todo!("ParityBpe has no way to train through TokenizerTrainer yet (decision A6)");
 }

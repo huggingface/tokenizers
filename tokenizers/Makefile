@@ -53,7 +53,12 @@ oracle : $(ORACLE_RESOURCES)
 # Training against goldens from the latest released `tokenizers`, made by tk-train/tests/golden/generate.py.
 .PHONY : train-golden
 train-golden : $(TRAIN_GOLDEN_RESOURCES)
-	cargo test --release -p tk-train --features parity-aware-bpe --test golden -- --ignored --test-threads=1
+	cargo test --release -p tk-train --features parity-aware-bpe --test golden -- --ignored --test-threads=1 --nocapture
+
+# Training against the latest released `tokenizers`, run side by side with the same arguments.
+.PHONY : train-oracle
+train-oracle : $(DATA_DIR)/big.txt $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt
+	cargo test --release -p tk-train --features oracle --test oracle
 
 .PHONY : doc
 doc :

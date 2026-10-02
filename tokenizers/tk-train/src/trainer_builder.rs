@@ -352,6 +352,9 @@ impl ModelSettings {
                 if let Some(suffix) = config.end_of_word_suffix {
                     trainer = trainer.end_of_word_suffix(suffix);
                 }
+                trainer = trainer
+                    .fuse_unk(config.fuse_unk)
+                    .ignore_merges(config.ignore_merges);
                 Ok(Self {
                     trainer: trainer.build().into(),
                     vocab_size: config.vocab.len(),
@@ -782,6 +785,39 @@ mod tests {
             Some(DecoderRuntime::ByteLevel(_))
         ));
         assert!(matches!(built.trainer, TrainerWrapper::BpeTrainer(_)));
+    }
+
+    #[cfg(feature = "bpe")]
+    #[test]
+    fn from_tokenizer_keeps_fuse_unk_and_ignore_merges() {
+        let source = tokenizer(
+            r#"{
+                "version": "1.0",
+                "truncation": null,
+                "padding": null,
+                "added_tokens": [],
+                "normalizer": null,
+                "pre_tokenizer": null,
+                "post_processor": null,
+                "decoder": null,
+                "model": {
+                    "type": "BPE",
+                    "unk_token": "<unk>",
+                    "fuse_unk": true,
+                    "ignore_merges": true,
+                    "vocab": {"<unk>": 0, "a": 1, "b": 2},
+                    "merges": []
+                }
+            }"#,
+        );
+
+        let builder = TokenizerTrainerBuilder::from_tokenizer(&source).unwrap();
+
+        let TrainerWrapper::BpeTrainer(trainer) = &builder.trainer else {
+            panic!("expected a BPE trainer, got {:?}", builder.trainer);
+        };
+        assert!(trainer.fuse_unk());
+        assert!(trainer.ignore_merges());
     }
 
     #[cfg(feature = "unigram")]

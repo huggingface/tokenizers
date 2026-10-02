@@ -104,6 +104,22 @@ impl BpeTrainerBuilder {
         self
     }
 
+    /// Whether the trained model emits one unk token for a run of unknown characters, rather than
+    /// one per character.
+    #[must_use]
+    pub fn fuse_unk(mut self, fuse_unk: bool) -> Self {
+        self.trainer.fuse_unk = fuse_unk;
+        self
+    }
+
+    /// Whether the trained model emits a word that is a vocab entry as that entry, without
+    /// applying the merges.
+    #[must_use]
+    pub fn ignore_merges(mut self, ignore_merges: bool) -> Self {
+        self.trainer.ignore_merges = ignore_merges;
+        self
+    }
+
     pub fn build(self) -> BpeTrainer {
         self.trainer
     }
@@ -141,6 +157,11 @@ pub struct BpeTrainer {
     initial_alphabet: AHashSet<char>,
     continuing_subword_prefix: Option<String>,
     end_of_word_suffix: Option<String>,
+    // Model options in 0.23.2, so its trainer JSON does not have them.
+    #[serde(default)]
+    fuse_unk: bool,
+    #[serde(default)]
+    ignore_merges: bool,
     words: AHashMap<CompactString, u64>,
 }
 
@@ -153,6 +174,8 @@ impl Default for BpeTrainer {
             continuing_subword_prefix: None,
             end_of_word_suffix: None,
             max_token_length: None,
+            fuse_unk: false,
+            ignore_merges: false,
             words: AHashMap::new(),
         }
     }
@@ -191,6 +214,14 @@ impl BpeTrainer {
 
     pub fn max_token_length(&self) -> Option<usize> {
         self.max_token_length
+    }
+
+    pub fn fuse_unk(&self) -> bool {
+        self.fuse_unk
+    }
+
+    pub fn ignore_merges(&self) -> bool {
+        self.ignore_merges
     }
 
     /// Setup a progress bar if asked to show progress (only for Indicatif format)
@@ -434,13 +465,14 @@ impl BpeTrainer {
 
     /// The runtime options a trained model is built with.
     ///
-    /// The two affixes and byte-level are the only settings a BPE trainer decides: everything
-    /// else in [`BpeConfig`] describes how to *read* a model (unknown-token handling, dropout,
-    /// caching) and is the reader's business, not the trainer's, so it stays at its default.
+    /// Training never reads `fuse_unk` and `ignore_merges`. The trainer carries them because a
+    /// [`PipelineBPE`] takes them when it is built and cannot change them afterwards.
     fn model_options(&self, byte_level: bool) -> BpeConfig {
         BpeConfig {
             continuing_subword_prefix: self.continuing_subword_prefix.clone(),
             end_of_word_suffix: self.end_of_word_suffix.clone(),
+            fuse_unk: self.fuse_unk,
+            ignore_merges: self.ignore_merges,
             byte_level,
             ..Default::default()
         }
@@ -684,6 +716,7 @@ impl ModelTrainer for BpeTrainer {
         Ok(PipelineBPE::from_config(BpeConfig {
             vocab,
             merges,
+            unk_token: params.unk_token.clone(),
             ..self.model_options(params.byte_level)
         })?)
     }
@@ -744,6 +777,7 @@ mod tests {
     use crate::trainer::{ModelTrainer, TrainingParams};
     use ahash::AHashMap;
     use compact_str::CompactString;
+    use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 
     fn params() -> TrainingParams {
         TrainingParams::for_tests(30_000)
@@ -918,6 +952,46 @@ mod tests {
         .map(|(k, v)| (k.to_string(), v))
         .collect();
         assert_eq!(trained_vocab, expected_vocab)
+    }
+
+    #[test]
+    fn trained_model_keeps_the_unk_token() {
+        let mut trainer = BpeTrainer::builder().build();
+        trainer
+            .feed(["hello world"].iter(), |s| {
+                Ok(s.split(' ').map(str::to_owned).collect())
+            })
+            .unwrap();
+        let params = TrainingParams {
+            special_tokens: vec![AddedToken::from("<unk>", true)],
+            unk_token: Some("<unk>".into()),
+            ..params()
+        };
+
+        let model = trainer.train_model(&params).unwrap();
+
+        assert_eq!(
+            model.to_config().unwrap().unk_token.as_deref(),
+            Some("<unk>")
+        );
+    }
+
+    #[test]
+    fn trained_model_keeps_fuse_unk_and_ignore_merges() {
+        let mut trainer = BpeTrainer::builder()
+            .fuse_unk(true)
+            .ignore_merges(true)
+            .build();
+        trainer
+            .feed(["hello world"].iter(), |s| {
+                Ok(s.split(' ').map(str::to_owned).collect())
+            })
+            .unwrap();
+
+        let config = trainer.train_model(&params()).unwrap().to_config().unwrap();
+
+        assert!(config.fuse_unk);
+        assert!(config.ignore_merges);
     }
 
     #[test]

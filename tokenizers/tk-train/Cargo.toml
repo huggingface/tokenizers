@@ -35,6 +35,8 @@ itertools = "0.14"
 thiserror = "2"
 esaxx-rs = { version = "0.1.10", default-features = false, optional = true }
 indicatif = { version = "0.18", optional = true }
+# Latest released tokenizers, the trainer `tests/oracle.rs` compares against.
+tokenizers-release = { package = "tokenizers", version = "=0.23.2", optional = true }
 
 [features]
 default = ["progressbar", "bpe", "unigram", "wordpiece", "wordlevel"]
@@ -46,6 +48,7 @@ wordlevel = ["tk-encode/wordlevel"]
 esaxx_fast = ["unigram", "esaxx-rs/cpp"]
 progressbar = ["dep:indicatif"]
 parity-aware-bpe = ["bpe"]
+oracle = ["dep:tokenizers-release"]
 
 [[example]]
 name = "train_from_scratch"

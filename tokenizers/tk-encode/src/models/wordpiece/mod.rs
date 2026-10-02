@@ -417,6 +417,18 @@ mod tests {
         assert!(format!("{}", Error::MissingUnkToken).contains("Missing [UNK] token"));
     }
 
+    #[test]
+    fn token_to_id_inverts_id_to_token() {
+        let pipeline = pipeline_wordpiece();
+
+        for id in 0..pipeline.id_space() as u32 {
+            let token = pipeline.id_to_token(id).unwrap();
+            assert_eq!(pipeline.token_to_id(&token), Some(id), "{token:?}");
+        }
+        assert_eq!(pipeline.id_space(), 5);
+        assert_eq!(pipeline.token_to_id("hel"), None);
+    }
+
     /// `hello` is in the vocabulary whole and as `hell` + `##o`, so the
     /// longest-match walk has something to choose; `world` gives a second
     /// one-token word.
