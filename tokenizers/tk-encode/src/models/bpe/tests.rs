@@ -314,6 +314,62 @@ fn rejects_merge_token_out_of_vocabulary() {
     }
 }
 
+#[test]
+fn merge_without_the_prefix_is_not_sliced() {
+    // A merge whose right side does not carry the continuing subword prefix must not be sliced at
+    // `prefix.len()`: that offset can land inside a multi-byte character, which used to build a
+    // `str` from invalid UTF-8. "\u{65e5}" is E6 97 A5 and does not start with "ab", so nothing is
+    // stripped and the merged token is the whole concatenation.
+    let err = PipelineBPE::from_config(BpeConfig {
+        vocab: v(&[("x", 0), ("\u{65e5}", 1)]),
+        merges: m(&[("x", "\u{65e5}")]),
+        continuing_subword_prefix: Some("ab".into()),
+        ..BpeConfig::default()
+    })
+    .err()
+    .unwrap();
+    match err.downcast_ref::<Error>() {
+        Some(Error::MergeTokenOutOfVocabulary(token)) => assert_eq!(token, "x\u{65e5}"),
+        other => panic!("expected MergeTokenOutOfVocabulary, got {other:?}"),
+    }
+}
+
+#[test]
+fn prefix_longer_than_the_merged_token() {
+    // The prefix can be longer than the token it is stripped from. That used to underflow
+    // `b.len() - prefix_len`.
+    let err = PipelineBPE::from_config(BpeConfig {
+        vocab: v(&[("x", 0), ("y", 1)]),
+        merges: m(&[("x", "y")]),
+        continuing_subword_prefix: Some("aaaa".into()),
+        ..BpeConfig::default()
+    })
+    .err()
+    .unwrap();
+    match err.downcast_ref::<Error>() {
+        Some(Error::MergeTokenOutOfVocabulary(token)) => assert_eq!(token, "xy"),
+        other => panic!("expected MergeTokenOutOfVocabulary, got {other:?}"),
+    }
+}
+
+#[test]
+fn merged_token_longer_than_the_longest_vocab_entry() {
+    // The merged token is not necessarily in the vocabulary, so it can be longer than the longest
+    // vocabulary entry. That used to run off the scratch buffer: the longest entry is 3 bytes and
+    // the merged token needs 4.
+    let err = PipelineBPE::from_config(BpeConfig {
+        vocab: v(&[("x", 0), ("\u{65e5}", 1)]),
+        merges: m(&[("x", "\u{65e5}")]),
+        ..BpeConfig::default()
+    })
+    .err()
+    .unwrap();
+    match err.downcast_ref::<Error>() {
+        Some(Error::MergeTokenOutOfVocabulary(token)) => assert_eq!(token, "x\u{65e5}"),
+        other => panic!("expected MergeTokenOutOfVocabulary, got {other:?}"),
+    }
+}
+
 fn projected(s: &str) -> String {
     s.bytes().map(|b| BYTES_CHAR_LOOKUP[b as usize]).collect()
 }
