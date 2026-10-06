@@ -588,7 +588,7 @@ fn every_fixture_canonicalises_into_something_the_canonical_reader_accepts() {
     /// Fixtures with no canonical form, each with a substring its refusal must contain. Every
     /// entry is a limit of what the pipeline can *build*, not a gap in this pass; listing them
     /// makes adding one a diff a reviewer sees. Checked both ways, so a stale entry fails too.
-    const UNCONVERTIBLE: &[(&str, &str)] = &[("tokenizer.json", "add_prefix_space")];
+    const UNCONVERTIBLE: &[(&str, &str)] = &[];
 
     let Ok(entries) = std::fs::read_dir(std::path::Path::new(DATA)) else {
         eprintln!("skipping: no fixtures at {DATA} (populated by `make data models`)");
