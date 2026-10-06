@@ -165,9 +165,9 @@ jobs:
         # populated by `napi artifacts`. Cheaper to lipo directly — that's
         # exactly what the wrapper does internally.
         run: |
-          lipo -create -output ${{ env.APP_NAME }}.darwin-universal.node \
-            artifacts/${{ env.APP_NAME }}.darwin-x64.node \
-            artifacts/${{ env.APP_NAME }}.darwin-arm64.node
+          lipo -create -output ${APP_NAME}.darwin-universal.node \
+            artifacts/${APP_NAME}.darwin-x64.node \
+            artifacts/${APP_NAME}.darwin-arm64.node
       - name: Upload universal artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
