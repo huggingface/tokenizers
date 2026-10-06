@@ -11,6 +11,8 @@
     title: Components
   - local: training_from_memory
     title: Training from memory
+  - local: node
+    title: Node
   title: Getting started
 - sections:
   - local: api/input-sequences
