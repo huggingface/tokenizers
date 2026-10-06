@@ -1,0 +1,3 @@
+# Cargo only reads the workspace-root Cargo.lock; member-crate lockfiles are
+# redundant (and just bloat diffs), so don't track them.
+/*/Cargo.lock

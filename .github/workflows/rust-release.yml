@@ -1,31 +1,81 @@
 name: Rust Release
 
-env:
-  CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
-
 on:
   push:
     tags:
       - v*
+  # Manual runs do everything but upload: the drift check, then `cargo publish --dry-run`, which
+  # packages every crate and builds each one from its own tarball. See the publish step.
+  workflow_dispatch:
+
+permissions: {}
 
 jobs:
   rust_publish:
+    permissions:
+      contents: read
+      # Mandatory for Trusted Publishing: the job mints an OIDC token that crates.io
+      # exchanges for a short-lived registry token, so there is no long-lived secret.
+      id-token: write
+    # Must match the "Environment" field on each crate's crates.io Trusted Publishing
+    # entry (leave that field blank there and any environment is accepted).
+    environment:
+      name: release
+      url: https://crates.io/crates/tokenizers
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
 
       - name: Cache Cargo Registry
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ~/.cargo/registry
           key: ubuntu-latest-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
 
-      - name: Publish package rust
+      # bitcannon ships committed classify tables (no build script). Regenerate them here — this
+      # self-validates every codepoint against the reference atom() and fails the release if the
+      # committed table is stale (someone changed the scheme without `cargo run -p bitmap_gen`).
+      # The `--` matters: without it a path that no longer exists is read as a revision, and
+      # `git diff` exits 128 on the argument, which this `||` would report as "is stale".
+      - name: Regenerate & verify classify tables (bitmap_gen)
         working-directory: ./tokenizers
-        if: ${{ !contains(github.ref, 'rc') }}
-        run: cargo publish --token ${CRATES_TOKEN}
+        run: |
+          cargo run -p bitmap_gen
+          git diff --exit-code -- bitcannon/src/classify/atom_tables.rs \
+            || { echo "::error::bitcannon/src/classify/atom_tables.rs is stale — run 'cargo run -p bitmap_gen' and commit"; exit 1; }
+
+      # Swaps this job's OIDC identity for a crates.io token that is revoked when the run
+      # ends. Tags only: `cargo publish --dry-run` never contacts the registry with
+      # credentials, so a manual run needs no token and no Trusted Publishing config.
+      - name: Authenticate to crates.io
+        id: auth
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18  # v1.0.5
+
+      # One command, not one step per crate: `--workspace` publishes the members in dependency
+      # order (bitcannon, then tk-encode/tk-convert, then tk-serialize, then tokenizers) and waits
+      # for each to appear on the index before starting the next, so tk-serialize can resolve the
+      # tk-encode it just uploaded. bitmap_gen is skipped for us: it is `publish = false`.
+      # No rc gate: a caret requirement never resolves a prerelease unless asked for by name.
+      - name: Publish workspace crates
+        working-directory: ./tokenizers
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish --workspace ${{ !startsWith(github.ref, 'refs/tags/v') && '--dry-run' || '' }}
+
+      # tk-train is `exclude`d from the workspace, so `--workspace` never sees it, and it cannot
+      # even be packaged until tk-encode and tk-convert are live: from outside the workspace its
+      # path deps resolve their version pins against the registry. It goes last, on its own.
+      # Tags only: with nothing on the registry yet it cannot even be packaged, so a manual run
+      # has no dry-run for it.
+      - name: Publish tk-train
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: ./tokenizers/tk-train
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish
 

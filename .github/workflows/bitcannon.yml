@@ -1,0 +1,71 @@
+name: bitcannon
+
+on:
+  push:
+    paths: ["tokenizers/bitcannon/**", "tokenizers/bitmap_gen/**", ".github/workflows/bitcannon.yml"]
+  pull_request:
+    paths: ["tokenizers/bitcannon/**", "tokenizers/bitmap_gen/**", ".github/workflows/bitcannon.yml"]
+
+defaults:
+  run:
+    working-directory: tokenizers
+
+permissions: {}
+
+jobs:
+  # x86_64 runner → runs the SSE4.1/AVX classify SIMD paths NATIVELY, plus fmt/clippy + the drift guard.
+  native:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with: { components: rustfmt, clippy }
+      # fmt and clippy are NOT here: rust.yml already runs `cargo fmt --all` and
+      # `cargo clippy --workspace --all-targets --all-features` on every PR.
+      # This is the integration tests -- rust.yml only runs --lib and --doc, so
+      # tests/classes.rs and tests/parity.rs run nowhere else.
+      - run: cargo test -p bitcannon          # unit + parity gates (cl100k/deepseek/byte_level vs onig)
+      # committed classify tables must match the generator
+      - run: cargo run -p bitmap_gen && git diff --exit-code -- bitcannon/src/classify/atom_tables.rs
+
+  # AVX-512 classify path — GitHub runners often lack AVX-512, so emulate it with Intel SDE and run the
+  # SAME byte-exact test binaries under it.
+  avx512-sde:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - name: Install Intel SDE
+        run: |
+          # Pin to the current SDE release (update the version/URL as Intel publishes new builds).
+          # Intel removes the object when a release is superseded -- 9.44.0 now answers 403 -- so a
+          # stale pin here fails before any test runs. The id is the one the download page lists:
+          # https://www.intel.com/content/www/us/en/download/684897/intel-software-development-emulator.html
+          SDE_VER=sde-external-10.13.1-2026-07-28-lin
+          curl -sSL --fail "https://downloadmirror.intel.com/924984/${SDE_VER}.tar.xz" | tar -xJ
+          echo "$PWD/${SDE_VER}" >> "$GITHUB_PATH"
+      - name: Run tests under SDE (-future = AVX-512)
+        run: |
+          cargo test -p bitcannon --no-run --message-format=json \
+            | jq -r 'select(.profile.test == true) | .executable | select(. != null)' \
+            | while read -r bin; do echo "SDE: $bin"; sde64 -future -- "$bin"; done
+
+  # wasm32 SIMD128 classify + class-runs boundary extractor — run the test suite under wasmtime.
+  wasm:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with: { targets: wasm32-wasip1 }
+      - uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1.1.3
+      - name: Test under wasmtime (simd128)
+        env:
+          RUSTFLAGS: "-C target-feature=+simd128"
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: "wasmtime run --"
+        run: cargo test -p bitcannon --target wasm32-wasip1

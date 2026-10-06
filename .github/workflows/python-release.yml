@@ -3,213 +3,262 @@ on:
   push:
     tags:
       - v*
+      # ^ trigger when a v* tag gets pushed
+  # Manual runs build and test everything but never publish: see the `if` on `publish`.
+  workflow_dispatch:
 
-env:
-  AWS_DEFAULT_REGION: us-east-1
-  DIST_DIR: ${{ github.sha }}
+permissions: {}
 
 jobs:
-  lock_exists:
+  version-match:
+    name: Assert the tag and version match
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
-    name: Cargo.lock
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - name: Cargo.lock lock exists 
-        run: cat Cargo.lock
-        working-directory: ./bindings/python
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      # Step-level, not job-level: a skipped job would skip everything that `needs` it.
+      - if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cargo_version=$(
+            cargo metadata --no-deps \
+              --manifest-path bindings/python/Cargo.toml \
+              --format-version 1 \
+            | jq -r '.packages[0].version'
+          )
+          uvx --from packaging python -c "\
+          import sys
+          from packaging.version import Version
 
-  build:
-    name: build on ${{ matrix.platform || matrix.os }} (${{ matrix.target }} - ${{ matrix.manylinux || 'auto' }} - ${{ matrix.flavor == 'ft' && '3.14t' || matrix.interpreter || '3.14' }})
-    # only run on push to main and on release
-    needs: [lock_exists]
-    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
+          assert Version(sys.argv[1]) == Version(sys.argv[2]), sys.argv[1:]
+          " "$cargo_version" "${GITHUB_REF_NAME#v}"
+  
+  build-sdist:
+    needs: ["version-match"]
+    name: Make sdist
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # The from-sdist build compiles the whole extension cold, without sccache.
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: bindings/python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      - name: build sdist
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
+        with:
+          working-directory: bindings/python
+          command: sdist
+          rust-toolchain: stable
+          args: --out dist
+      - name: upload sdist
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: wheels-sdist
+          path: bindings/python/dist
+          if-no-files-found: error
+      - name: twine check
+        run: |
+          ls -lh dist
+          uvx twine check --strict dist/*
+      - name: build from the sdist
+        run: |
+          uv venv --python 3.14 .venv
+          source .venv/bin/activate
+          
+          # --no-binary tokenizers: refuse any wheel for this name, so the tarball is what gets built.
+          # Dependencies still come as wheels from PyPI.
+          # This runs maturin from PyPI under PEP 517 build isolation, the same path a user without a wheel takes.
+          uv pip install --no-binary tokenizers dist/*.tar.gz
+          python -c "import tokenizers; print(tokenizers.__version__)"
+
+  build-wheel:
+    needs: ["version-match"]
+    name: Build Python wheel - ${{ matrix.config.runner }} - ${{ matrix.config.target }} - ${{ matrix.config.python }}
+    runs-on: ${{ matrix.config.runner }}
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: bindings/python
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, macos, windows]
-        target: [x86_64, aarch64]
-        manylinux: [auto]
-        # `flavor` discriminates regular abi3 wheels from free-threaded
-        # (3.14t, non-abi3) wheels so the include: entries below for
-        # 3.14t create new matrix cells instead of merging with the abi3
-        # combos.
-        flavor: [abi3]
-        include:
-          - os: ubuntu
-            platform: linux
-          - os: windows
-            ls: dir
-            interpreter: "3.14"
-          - os: windows
-            ls: dir
-            target: x86_64
-            python-architecture: x64
-            python-install: "3.14"
-            interpreter: "3.14"
-          - os: windows
-            ls: dir
-            target: i686
-            python-architecture: x86
-            python-install: "3.14"
-            interpreter: "3.14"
-          - os: windows-11-arm
-            ls: dir
-            target: aarch64
-            python-architecture: arm64
-            # 3.14t arm64-freethreaded is currently broken upstream:
-            # actions/python-versions ships a 0-byte python.exe so pip
-            # install fails with `ModuleNotFoundError: encodings`. Drop
-            # 3.14t here until the upstream package is fixed.
-            python-install: "3.14"
-            interpreter: "3.14"
-              # - os: windows
-              #   ls: dir
-              #   target: aarch64
-              #   interpreter: 3.11 3.12
-          - os: macos
-            target: aarch64
-            interpreter: "3.14"
-          - os: ubuntu
-            platform: linux
-            target: i686
-          - os: ubuntu
-            platform: linux
-            target: aarch64
+        config:
+          # ---- Linux glibc, abi3 (one wheel for 3.10+) -------------------------------------
+          - { runner: ubuntu-24.04,     target: x86_64,  manylinux: auto, python: "3.14" }
+          - { runner: ubuntu-24.04-arm, target: aarch64, manylinux: auto, python: "3.14" }
+          - { runner: ubuntu-24.04,     target: i686,    manylinux: auto, python: "3.14" }
+          - { runner: ubuntu-24.04,     target: armv7,   manylinux: auto, python: "3.14" }
+          - { runner: ubuntu-24.04,     target: ppc64le, manylinux: auto, python: "3.14" }
+          - { runner: ubuntu-24.04,     target: s390x,   manylinux: auto, python: "3.14" }
+          - { runner: ubuntu-24.04,     target: riscv64, manylinux: auto, python: "3.14" }
 
-          - os: ubuntu
-            platform: linux
-            target: armv7
-            interpreter: "3.14"
-          # musllinux
-          - os: ubuntu
-            platform: linux
-            target: x86_64
-            manylinux: musllinux_1_1
-          - os: ubuntu
-            platform: linux
-            target: aarch64
-            manylinux: musllinux_1_1
-          - os: ubuntu
-            platform: linux
-            target: ppc64le
-            interpreter: "3.14"
-          - os: ubuntu
-            platform: linux
-            target: s390x
-            interpreter: "3.14"
+          # ---- Linux glibc, free-threaded (cp314t) ------------------------------------------
+          - { runner: ubuntu-24.04,     target: x86_64,  manylinux: auto, python: "3.14t" }
+          - { runner: ubuntu-24.04-arm, target: aarch64, manylinux: auto, python: "3.14t" }
 
-          # --- Free-threaded Python 3.14t wheels -------------------------
-          # `flavor: ft` switches the build to non-abi3 (`--no-default-features
-          # --features ext-module`) and `--interpreter 3.14t`, derived from
-          # `flavor` in the maturin invocation below. linux container builds
-          # (manylinux/musllinux) get 3.14t from the docker image, so
-          # `python-install` is unset for those; macOS/windows host builds
-          # need it set explicitly so setup-python actually installs 3.14t.
-          # windows-11-arm 3.14t is intentionally absent — see the abi3
-          # windows-11-arm entry above (upstream-broken package).
-          - { os: ubuntu, platform: linux, target: x86_64,  manylinux: auto,           flavor: ft }
-          - { os: ubuntu, platform: linux, target: aarch64, manylinux: auto,           flavor: ft }
-          - { os: ubuntu, platform: linux, target: x86_64,  manylinux: musllinux_1_1,  flavor: ft }
-          - { os: ubuntu, platform: linux, target: aarch64, manylinux: musllinux_1_1,  flavor: ft }
-          - { os: macos,                   target: x86_64,  manylinux: auto,           flavor: ft, python-install: "3.14t" }
-          - { os: macos,                   target: aarch64, manylinux: auto,           flavor: ft, python-install: "3.14t" }
-          - { os: windows, ls: dir, target: x86_64, manylinux: auto, python-architecture: x64, python-install: "3.14t", flavor: ft }
-        exclude:
-          - os: windows
-            target: aarch64
-              #   # Optimized PGO builds for x86_64 manylinux and windows follow a different matrix,
-              #   # maybe in future maturin-action can support this automatically
-              #   - os: ubuntu
-              #     target: x86_64
-              #     manylinux: auto
-              #   - os: windows
-              #     target: x86_64
-              # Windows on arm64 only supports Python 3.11+
+          # ---- Linux musl ------------------------------------------------------------------
+          - { runner: ubuntu-24.04, target: x86_64,  manylinux: musllinux_1_2, python: "3.14" }
+          - { runner: ubuntu-24.04, target: aarch64, manylinux: musllinux_1_2, python: "3.14" }
+          - { runner: ubuntu-24.04, target: i686,    manylinux: musllinux_1_2, python: "3.14" }
+          - { runner: ubuntu-24.04, target: armv7,   manylinux: musllinux_1_2, python: "3.14" }
+          - { runner: ubuntu-24.04, target: x86_64,  manylinux: musllinux_1_2, python: "3.14t" }
+          - { runner: ubuntu-24.04, target: aarch64, manylinux: musllinux_1_2, python: "3.14t" }
 
-    runs-on: ${{
-        matrix.os == 'windows-11-arm' && matrix.os ||
-        format('{0}-latest', matrix.os)
-      }}
+          # ---- macOS -----------------------------------------------------------------------
+          # macos-latest is macOS 26 on arm64; macos-15-intel is the only current x86_64 box.
+          - { runner: macos-15-intel, target: x86_64,  python: "3.14" }
+          - { runner: macos-latest,   target: aarch64, python: "3.14" }
+          - { runner: macos-15-intel, target: x86_64,  python: "3.14t" }
+          - { runner: macos-latest,   target: aarch64, python: "3.14t" }
+
+          # ---- Windows ---------------------------------------------------------------------
+          - { runner: windows-latest, target: x86_64,  python: "3.14" }
+          - { runner: windows-latest, target: i686,    python: "3.14",  python-arch: x86 }
+          - { runner: windows-11-arm, target: aarch64, python: "3.14",  python-arch: arm64 }
+          - { runner: windows-latest, target: x86_64,  python: "3.14t" }
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-
-      - name: set up python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      - name: setup python
+        if: runner.os != 'Linux'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: ${{ matrix.python-install || '3.14' }}
-          architecture: ${{ matrix.python-architecture || 'x64' }}
-
-      - run: pip install -U twine
-
+          python-version: ${{ matrix.config.python }}
+          architecture: ${{ matrix.config.python-arch || 'x64' }}
       - name: build wheels
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         with:
-          target: ${{ matrix.target }}
-          working-directory: ./bindings/python
-          manylinux: ${{ matrix.manylinux || 'auto' }}
-          container: ${{ matrix.container }}
-          # `flavor=ft` builds drop the abi3 cargo feature so the resulting
-          # wheel is non-abi3 (free-threaded Python can't load limited-API
-          # extensions). `flavor=abi3` builds use defaults.
+          working-directory: bindings/python
+          target: ${{ matrix.config.target }}
+          manylinux: ${{ matrix.config.manylinux || 'auto' }}
+          rust-toolchain: stable
+          # Never cache the build on a tag
+          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           args: >-
-            --release --out dist
-            --interpreter ${{ matrix.flavor == 'ft' && '3.14t' || matrix.interpreter || '3.14' }}
-            ${{ matrix.flavor == 'ft' && '--no-default-features --features ext-module' || '' }}
-          rust-toolchain: stable
-          sccache: false
-          docker-options: -e CI
-
-      - run: ${{ matrix.ls || 'ls -lh' }} dist/
-        working-directory: ./bindings/python
-
-      - run: twine check --strict dist/*
-        working-directory: ./bindings/python
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+            --release
+            --locked
+            --compatibility pypi
+            --out dist
+            -i ${{ matrix.config.python }}
+        env:
+          RUSTFLAGS: ${{ runner.os == 'macOS' && '-C link-arg=-undefined -C link-arg=dynamic_lookup' || '' }}
+      - name: upload wheels
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: pypi_files-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux }}-${{ matrix.flavor || 'abi3' }}
-          path: ./bindings/python/dist
-  build-sdist:
-    name: build sdist
-    needs: [lock_exists]
-    runs-on: ubuntu-latest
+          name: wheels-${{ matrix.config.runner }}-${{ matrix.config.target }}-${{ matrix.config.manylinux || 'host' }}-${{ matrix.config.python }}
+          path: bindings/python/dist
+          if-no-files-found: error
+      - name: twine check
+        run: |
+          ls -lh dist
+          uvx twine check --strict dist/*
+
+  test-wheel:
+    needs: ["build-wheel"]
+    name: Test Python wheel - ${{ matrix.config.runner }} - ${{ matrix.config.python }}
+    runs-on: ${{ matrix.config.runner }}
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: bindings/python
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          # ---- Linux x86_64 ------------------------------------------------------------------
+          - { runner: ubuntu-latest,    python: "3.10" }
+          - { runner: ubuntu-latest,    python: "3.14" }
+          - { runner: ubuntu-latest,    python: "3.14t" }
+          # ---- macOS arm64 -------------------------------------------------------------------
+          - { runner: macos-latest,     python: "3.10" }
+          - { runner: macos-latest,     python: "3.14" }
+          - { runner: macos-latest,     python: "3.14t" }
+          # ---- Other native architectures ----------------------------------------------------
+          - { runner: ubuntu-24.04-arm, python: "3.10" }
+          - { runner: ubuntu-24.04-arm, python: "3.14" }
+          - { runner: ubuntu-24.04-arm, python: "3.14t" }
+          - { runner: macos-15-intel,   python: "3.10" }
+          - { runner: macos-15-intel,   python: "3.14" }
+          - { runner: macos-15-intel,   python: "3.14t" }
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      - name: download all wheels
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
-          working-directory: ./bindings/python
-          command: sdist
-          args: --out dist
-          rust-toolchain: stable
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+          pattern: wheels-*
+          path: bindings/python/dist
+          merge-multiple: true
+      - name: Cache HF test data
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          name: pypi_files-srt
-          path: ./bindings/python/dist
+          path: bindings/python/data
+          key: hf-test-data-python-${{ hashFiles('bindings/python/Makefile') }}
+          restore-keys: hf-test-data-python-
+      - name: test the wheel
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          ls dist
 
+          # Setup virtual env
+          uv venv --python ${{ matrix.config.python }} .venv
+          
+          source .venv/bin/activate
 
-  upload_package:
-    name: Upload package to PyPi
+          # Install the built wheel.
+          # --no-build: a missing wheel is an error, not a source build
+          uv pip install tokenizers --no-index --no-deps --no-build --find-links dist --reinstall
+
+          # Install deps and pytest: tokenizers is already satisfied, so this only pulls its
+          # dependencies and pytest from PyPI.
+          uv pip install tokenizers pytest
+
+          # Download data
+          make test-data HF="uvx --from huggingface_hub hf"
+
+          # Disable the GIL on the free-threaded interpreter, so a module that re-enables it fails
+          # instead of passing single-threaded.
+          if [[ "${{ matrix.config.python }}" == *t ]]; then
+            export PYTHON_GIL=0
+          fi
+
+          # Run tests
+          pytest tests -m "not network"
+
+  publish:
+    # Tag pushes only
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: ["test-wheel", "build-sdist"]
+    name: Publish to PyPI
     runs-on: ubuntu-latest
-    needs: [build, build-sdist]
-    env:
-      PYPI_TOKEN: ${{ secrets.PYPI_TOKEN_DIST }}
-
+    environment:
+      name: release
+      url: https://pypi.org/p/tokenizers
+    permissions:
+      id-token: write
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-
-      - name: Install Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
-        with:
-          python-version: "3.14"
-          architecture: x64
-
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
-          path: ./bindings/python/dist
+          pattern: wheels-*
+          path: dist
           merge-multiple: true
-          # Temporary deactivation while testing abi3 CI
-          # - name: Upload to PyPi
-          #   working-directory: ./bindings/python
-          #   run: |
-          #     pip install twine
-          #     twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
+      # Defaults left on: verify-metadata runs twine check over dist/, attestations uploads a
+      # PEP 740 attestation per file (only possible under Trusted Publishing).
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
+        with:
+          packages-dir: dist
+          # PyPI files are immutable, so a re-run after a half-failed upload must skip what landed.
+          skip-existing: true
