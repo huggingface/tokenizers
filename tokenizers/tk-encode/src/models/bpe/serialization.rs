@@ -8,7 +8,12 @@ use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
 use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
+use std::ops::RangeInclusive;
 use std::str::from_utf8_unchecked;
+
+/// Bytes that can occur in a `&str`: everything except the overlong lead bytes
+/// OxC0 | 0xC1 and  the lead bytes past U+10FFFF (F5..=FF)
+const VALID_UTF8_BYTES: [RangeInclusive<u8>; 2] = [0x00..=0xBF, 0xC2..=0xF4];
 
 pub struct BpeConfig {
     /// `{"token": id}`, in no particular order.
@@ -236,10 +241,14 @@ impl PipelineBPE {
         };
         let (vocab, atoms) = if byte_level {
             // Byte-Level: atoms are raw bytes, we check that the vocabulary has all
-            // UTF-8 reachable atoms. See [`is_reachable_utf8`] for details.
-            let missing: Vec<u8> = (0u8..=255)
-                .filter(is_reachable_utf8)
-                .filter(|&byte| tables.byte_internal[byte as usize] == u32::MAX)
+            // UTF-8 reachable atoms.
+            let missing: Vec<u8> = VALID_UTF8_BYTES
+                .into_iter()
+                .flatten()
+                .filter(|&byte| {
+                    // u32::MAX means the byte is missing from the table
+                    tables.byte_internal[byte as usize] == u32::MAX
+                })
                 .collect();
             if !missing.is_empty() {
                 return Err(Error::ByteAtomOutOfVocabulary(missing).into());
@@ -315,21 +324,4 @@ impl PipelineBPE {
         }
         Ok(built)
     }
-}
-
-/// Whether `byte` can occur in a `&str`, which is guaranteed to ben a valid UTF-8 string
-fn is_reachable_utf8(byte: &u8) -> bool {
-    !matches!(
-        byte,
-        // Lead bytes that start a 2-bytes writing of a value that fits in a single 1 byte long UTF8 codepoint.
-        // UTF-8 only valid form is the shortest value, so those lead bytes are invalid UTF-8
-        0xC0 | 0xC1
-            // Lead byte for a four-byte character at U+140000 or above, past the last codepoint Unicode allows
-            | 0xF5..=0xF7
-            // Lead bytes for 5 and 6 character long codepoints, invalid
-            | 0xF8..=0xFD
-            // Not valid UTF-8 bytes
-            | 0xFE
-            | 0xFF
-    )
 }
