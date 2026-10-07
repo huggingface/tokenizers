@@ -327,7 +327,17 @@ fn byte_level_bpe(
     merges: &[(&str, &str)],
     ignore_merges: bool,
 ) -> Result<PipelineBPE> {
+    byte_level_bpe_excluding(&[], extra, merges, ignore_merges)
+}
+
+fn byte_level_bpe_excluding(
+    excluded_bytes: &[u8],
+    extra: &[(&str, u32)],
+    merges: &[(&str, &str)],
+    ignore_merges: bool,
+) -> Result<PipelineBPE> {
     let mut vocab: Vocab = (0..=255u8)
+        .filter(|b| !excluded_bytes.contains(b))
         .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
         .collect();
     vocab.extend(extra.iter().map(|&(s, i)| (projected(s), i)));
@@ -392,14 +402,37 @@ fn byte_level_id_to_token_spells_the_projected_alphabet() {
 }
 
 #[test]
-fn byte_level_requires_full_byte_coverage() {
-    // An ASCII-only vocab covers no control/high bytes: building the
-    // byte-level pipeline must be a build error, not a panic.
-    assert!(
-        hello(BpeConfig {
-            byte_level: true,
-            ..Default::default()
-        })
-        .is_err()
-    );
+fn byte_level_allows_missing_byte_atoms() {
+    let pipeline = hello(BpeConfig {
+        byte_level: true,
+        ..Default::default()
+    })
+    .unwrap();
+
+    assert_eq!(pipeline_ids(&pipeline, "hello"), vec![7]);
+    assert!(pipeline_ids(&pipeline, "\u{000B}").is_empty());
+}
+
+#[test]
+fn byte_level_missing_atoms_are_skipped_in_both_merge_engines() {
+    let pipeline = byte_level_bpe_excluding(&[0x0B], &[("ab", 300)], &[("a", "b")], false).unwrap();
+
+    // A missing atom by itself disappears, and neighboring atoms can still merge across it.
+    assert!(pipeline_ids(&pipeline, "\u{000B}").is_empty());
+    assert_eq!(pipeline_ids(&pipeline, "a\u{000B}b"), vec![300]);
+
+    // More than 24 bytes selects the queue engine. The same missing byte must be skipped there.
+    let long = format!("{}\u{000B}{}", "a".repeat(12), "b".repeat(12));
+    let mut expected = vec![u32::from(b'a'); 11];
+    expected.push(300);
+    expected.extend(vec![u32::from(b'b'); 11]);
+    assert_eq!(pipeline_ids(&pipeline, &long), expected);
+}
+
+#[test]
+fn byte_level_multibyte_character_skips_a_missing_byte_atom() {
+    let pipeline = byte_level_bpe_excluding(&[0xA9], &[], &[], false).unwrap();
+
+    // é is UTF-8 C3 A9. The missing continuation byte is skipped while C3 remains.
+    assert_eq!(pipeline_ids(&pipeline, "é"), vec![0xC3]);
 }
