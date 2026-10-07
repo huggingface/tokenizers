@@ -27,7 +27,7 @@ const VOCAB_ID_MASK: u32 = FOLD_BIT - 1;
 pub(crate) const INLINE_KEY_BYTES: usize = 7;
 
 #[inline(always)]
-fn mix(z: u64) -> u64 {
+pub(crate) fn mix(z: u64) -> u64 {
     let z = z.wrapping_mul(0x9E37_79B9_7F4A_7C15);
     z ^ (z >> 29)
 }

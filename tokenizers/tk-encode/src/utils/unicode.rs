@@ -1,6 +1,9 @@
-use ptr_hash::{FastPtrHash, PtrHashParams, hash::FastIntHash};
+use crate::vocab::bucket_vocab_store::mix;
+use ptr_hash::{FastPtrHash, PtrHashParams, hash::NoHash};
 
-type Mphf = FastPtrHash<FastIntHash, u32>;
+// The same type as the vocabulary's and the BPE pair map's, so the binary carries one copy of
+// PtrHash's code.
+type Mphf = FastPtrHash<NoHash, u64>;
 
 const _: () = assert!(
     matches!(unicode_normalization::UNICODE_VERSION, (17, 0, 0)),
@@ -21,18 +24,22 @@ pub(crate) struct Unicode9IgnoredCombiningMarks {
 
 impl Unicode9IgnoredCombiningMarks {
     pub(crate) fn new() -> Self {
-        let keys: Vec<_> = MARKS_ONLY_IN_UNICODE_17.iter().map(|&c| c as u32).collect();
+        // `NoHash` takes keys as already hashed, so the code points go through `mix` first.
+        // `mix` is a bijection, so the slot can still store and compare the char itself.
+        let keys: Vec<u64> = MARKS_ONLY_IN_UNICODE_17
+            .iter()
+            .map(|&c| mix(c as u64))
+            .collect();
         let mphf = Mphf::new(&keys, PtrHashParams::default_fast());
         let mut slots = vec![u32::MAX; mphf.max_index()].into_boxed_slice();
-        for &key in &keys {
-            slots[mphf.index(&key)] = key;
+        for &c in &MARKS_ONLY_IN_UNICODE_17 {
+            slots[mphf.index(&mix(c as u64))] = c as u32;
         }
         Self { mphf, slots }
     }
 
     pub(crate) fn contains(&self, c: char) -> bool {
-        let key = c as u32;
-        self.slots[self.mphf.index(&key)] == key
+        self.slots[self.mphf.index(&mix(c as u64))] == c as u32
     }
 }
 
@@ -121,3 +128,22 @@ pub(crate) static MARKS_ONLY_IN_UNICODE_17: [char; 448] = [
 pub(crate) static MARKS_ONLY_IN_UNICODE_9: [char; 2] = [
     '\u{1CF2}', '\u{1CF3}',
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn contains_exactly_the_marks_only_in_unicode_17() {
+        assert!(MARKS_ONLY_IN_UNICODE_17.is_sorted());
+        let set = Unicode9IgnoredCombiningMarks::new();
+        for c in (0..=char::MAX as u32).filter_map(char::from_u32) {
+            assert_eq!(
+                set.contains(c),
+                MARKS_ONLY_IN_UNICODE_17.binary_search(&c).is_ok(),
+                "U+{:04X}",
+                c as u32
+            );
+        }
+    }
+}
