@@ -556,6 +556,12 @@ impl TemplateProcessing {
                         let encoding = &mut encodings[i];
                         encoding.set_type_ids(vec![*type_id; encoding.len()]);
                         encoding.set_sequence_id(i);
+                        encoding
+                            .get_overflowing_mut()
+                            .iter_mut()
+                            .for_each(|overflow| {
+                                overflow.set_type_ids(vec![*type_id; overflow.len()]);
+                            });
                         Some(encoding.clone())
                     }
                     Piece::SpecialToken { id, type_id } => {
@@ -1048,7 +1054,7 @@ mod tests {
                         vec![1, 1, 1, 1, 1, 1],
                         vec![Encoding::new(
                             vec![1, 13, 0, 17, 0],
-                            vec![0, 0, 0, 0, 1],
+                            vec![0, 0, 0, 1, 1],
                             vec![
                                 "[CLS]".into(),
                                 "you".into(),
@@ -1067,7 +1073,7 @@ mod tests {
                     ),
                     Encoding::new(
                         vec![1, 13, 0, 17, 0],
-                        vec![0, 0, 0, 0, 1],
+                        vec![0, 0, 0, 1, 1],
                         vec![
                             "[CLS]".into(),
                             "you".into(),
@@ -1084,7 +1090,7 @@ mod tests {
                     ),
                     Encoding::new(
                         vec![1, 12, 14, 0, 17, 0],
-                        vec![0, 0, 0, 0, 0, 1],
+                        vec![0, 0, 0, 0, 1, 1],
                         vec![
                             "[CLS]".into(),
                             "Hello".into(),
@@ -1099,7 +1105,7 @@ mod tests {
                         vec![1, 1, 1, 1, 1, 1],
                         vec![Encoding::new(
                             vec![1, 13, 0, 17, 0],
-                            vec![0, 0, 0, 0, 1],
+                            vec![0, 0, 0, 1, 1],
                             vec![
                                 "[CLS]".into(),
                                 "you".into(),
