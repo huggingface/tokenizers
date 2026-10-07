@@ -1218,7 +1218,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers"
-version = "1.0.0-dev.0"
+version = "1.0.0-dev.2"
 dependencies = [
  "tk-convert",
  "tk-encode",
