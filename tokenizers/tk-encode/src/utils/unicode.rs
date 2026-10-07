@@ -13,7 +13,6 @@ const _: () = assert!(
 // (FastPtrHash is a generic)
 type Mphf = FastPtrHash<NoHash, u64>;
 
-
 /// A perfect hash lookup for chars that are combining marks in Unicode 17 but not in Unicode 9.
 /// We need to conform to unicode 9 to preserve backwards compatibility for legacy models:
 /// The normalization could differ and the model emit invalid ids (although it's very unlikely)
