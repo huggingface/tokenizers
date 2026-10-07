@@ -225,10 +225,12 @@ impl Tokenizer {
             truncation,
         )?;
         // py.detach releases the GIL while encode runs on Rust side
-        let encodings = py
+        let encoding = py
             .detach(|| self.pipeline.encode(text, &options).wait())
-            .map_err(err)?;
-        Ok(Encoding::from(&encodings[0]))
+            .map_err(err)?
+            .pop()
+            .expect("the encoding vec is not empty");
+        Ok(Encoding::from(encoding))
     }
 
     /// Encodes the given text and returns the string representation of each token.
@@ -317,7 +319,7 @@ impl Tokenizer {
         let encodings = py
             .detach(|| self.pipeline.encode(texts, &options).wait())
             .map_err(err)?;
-        Ok(encodings.iter().map(Encoding::from).collect())
+        Ok(encodings.into_iter().map(Encoding::from).collect())
     }
 
     /// Decodes token ids back into text

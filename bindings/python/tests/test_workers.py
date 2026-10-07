@@ -43,6 +43,12 @@ def test_pickle_encoding(bert):
     assert restored.attention_mask == encoding.attention_mask == [1, 1, 1, 1, 0, 0, 0, 0]
 
 
+def test_pickle_encoding_equals_original(bert):
+    encoding = bert.encode("Hello there")
+
+    assert pickle.loads(pickle.dumps(encoding)) == encoding
+
+
 def test_pickle_padding():
     padding = Padding(direction="left", pad_id=50256, pad_token="<|endoftext|>", pad_to_multiple_of=8)
 
