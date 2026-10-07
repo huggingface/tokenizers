@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use crate::normalizers::{
     bert::BertNormalizer,
     precompiled::PrecompiledNormalizer,
-    strip::StripAccents,
+    strip_accents::StripAccents,
     unicode::{NFC, NFD, NFKC, NFKD, Nmt},
 };
 use crate::normalizers::{
