@@ -191,7 +191,6 @@ checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 name = "bitcannon"
 version = "0.1.0-dev.2"
 dependencies = [
- "ahash",
  "onig",
 ]
 
