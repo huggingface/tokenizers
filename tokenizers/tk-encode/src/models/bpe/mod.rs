@@ -55,9 +55,20 @@ pub enum Error {
     /// When byte_fallback is enabled but the fallback code is not in the vocab
     #[error("Byte fallback `<{0:#04X}>` not found in the vocabulary")]
     ByteFallbackOutOfVocabulary(u8),
-    /// When BPE operating with byte_level the byte atom is not in the vocab
-    #[error("Byte atom `{0:#04X}` not found in the vocabulary")]
-    ByteAtomOutOfVocabulary(u8),
+    /// A byte-level vocabulary is missing has no single-byte token for these bytes
+    #[error(
+        "This byte-level vocabulary has no token for bytes {}. Text containing those bytes cannot be encoded.",
+        hex_list(.0)
+    )]
+    ByteAtomOutOfVocabulary(Vec<u8>),
+}
+
+fn hex_list(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|byte| format!("{byte:#04X}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// NOTE: Unchecked indexing, justified once instead of everywhere we do it.

@@ -8,7 +8,12 @@ use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
 use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
+use std::ops::RangeInclusive;
 use std::str::from_utf8_unchecked;
+
+/// Bytes that can occur in a `&str`: everything except the overlong lead bytes
+/// OxC0 | 0xC1 and  the lead bytes past U+10FFFF (F5..=FF)
+const VALID_UTF8_BYTES: [RangeInclusive<u8>; 2] = [0x00..=0xBF, 0xC2..=0xF4];
 
 pub struct BpeConfig {
     /// `{"token": id}`, in no particular order.
@@ -189,7 +194,7 @@ impl PipelineBPE {
                     .into_iter()
                     .map(|(k, v)| (k.into_bytes(), v))
                     .collect(),
-            )
+            )?
         };
 
         Self::from_merge_map(vocab, merges, config)
@@ -235,17 +240,26 @@ impl PipelineBPE {
                 .filter(|&internal| internal != u32::MAX)
         };
         let (vocab, atoms) = if byte_level {
-            let mut vocab = BucketVocabStore::build(vocab.byte_content());
-            vocab = byte_level::transform_vocab(vocab);
-            // every byte has to be an atom, or a word containing it could not be encoded at all
-            for b in 0u8..=255 {
-                vocab
-                    .get_bytes(&[b])
-                    .ok_or(Error::ByteAtomOutOfVocabulary(b))?;
+            // Byte-Level: atoms are raw bytes, we check that the vocabulary has all
+            // UTF-8 reachable atoms.
+            let missing: Vec<u8> = VALID_UTF8_BYTES
+                .into_iter()
+                .flatten()
+                .filter(|&byte| {
+                    // u32::MAX means the byte is missing from the table
+                    tables.byte_internal[byte as usize] == u32::MAX
+                })
+                .collect();
+            if !missing.is_empty() {
+                return Err(Error::ByteAtomOutOfVocabulary(missing).into());
             }
+            // Build the vocab and return it
+            let mut vocab = BucketVocabStore::build(vocab.byte_content())?;
+            vocab = byte_level::transform_vocab(vocab)?;
+
             (vocab, Atoms::Bytes)
         } else {
-            let vocab = BucketVocabStore::build(vocab.byte_content());
+            let vocab = BucketVocabStore::build(vocab.byte_content())?;
             let unk_token = if let Some(unk_str) = unk_token {
                 let token_id = vocab
                     .token_to_id(&unk_str)
