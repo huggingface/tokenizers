@@ -79,7 +79,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bitcannon"
-version = "0.1.0-dev.0"
+version = "0.1.0-dev.2"
 dependencies = [
  "ahash",
 ]
@@ -1058,7 +1058,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tk-convert"
-version = "0.1.0-dev.0"
+version = "0.1.0-dev.2"
 dependencies = [
  "bitcannon",
  "serde_json",
@@ -1067,7 +1067,7 @@ dependencies = [
 
 [[package]]
 name = "tk-encode"
-version = "0.1.0-dev.0"
+version = "0.1.0-dev.2"
 dependencies = [
  "ahash",
  "bitcannon",
@@ -1090,7 +1090,7 @@ dependencies = [
 
 [[package]]
 name = "tk-serialize"
-version = "0.1.0-dev.0"
+version = "0.1.0-dev.2"
 dependencies = [
  "base64 0.22.1",
  "bitcannon",
