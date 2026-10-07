@@ -234,14 +234,18 @@ impl BucketVocabStore {
             // Hash collision: two different byte strings resolve to the same hash
             if previous_bytes != current_bytes {
                 return Err(format!(
-                    "failed to build the vocabulary store: 64-bit hash collision for tokens {previous_id} and {current_id}; the store needs wider keys"
+                    "failed to build the vocabulary store: 64-bit hash collision for tokens \
+                     {:?} (id={previous_id}) and {:?} (id={current_id}).",
+                    String::from_utf8_lossy(previous_bytes),
+                    String::from_utf8_lossy(current_bytes)
                 )
                 .into());
             }
 
             // Duplicate entries in the vocabulary: warn and continue
             warn!(
-                "tokens {previous_id} and {current_id} both resolve to {:?}; {current_id} will take precedence",
+                "duplicate entries in the tokenizer vocabulary for token {:?}. \
+                The latest occurrence (token id {current_id}) will take precedence.",
                 String::from_utf8_lossy(current_bytes)
             );
         }
