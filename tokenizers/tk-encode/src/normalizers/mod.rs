@@ -8,6 +8,8 @@ pub mod prepend;
 pub mod replace;
 pub mod strip;
 #[cfg(feature = "normalizers")]
+pub mod strip_accents;
+#[cfg(feature = "normalizers")]
 pub mod unicode;
 pub mod utils;
 #[cfg(feature = "normalizers")]
@@ -19,7 +21,7 @@ pub use crate::normalizers::prepend::Prepend;
 pub use crate::normalizers::replace::Replace;
 pub use crate::normalizers::strip::Strip;
 #[cfg(feature = "normalizers")]
-pub use crate::normalizers::strip::StripAccents;
+pub use crate::normalizers::strip_accents::StripAccents;
 #[cfg(feature = "normalizers")]
 pub use crate::normalizers::unicode::{NFC, NFD, NFKC, NFKD, Nmt};
 pub use crate::normalizers::utils::Lowercase;

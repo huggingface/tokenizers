@@ -1,9 +1,6 @@
-use std::borrow::Cow;
-
 use crate::pipeline;
 use crate::tokenizer::Result;
-#[cfg(feature = "normalizers")]
-use unicode_normalization::char::is_combining_mark;
+use std::borrow::Cow;
 
 /// Both fields are required, which is the *only* thing that rejects a tag-less object here.
 #[derive(Copy, Clone, Debug)]
@@ -34,68 +31,9 @@ impl pipeline::Normalizer for Strip {
     }
 }
 
-// This normalizer removes combining marks from a normalized string
-// It's different from unidecode as it does not attempt to modify
-// non ascii languages.
-#[cfg(feature = "normalizers")]
-#[derive(Copy, Clone, Debug)]
-pub struct StripAccents;
-
-#[cfg(feature = "normalizers")]
-impl pipeline::Normalizer for StripAccents {
-    fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
-        if input.chars().any(is_combining_mark) {
-            Ok(Cow::Owned(
-                input.chars().filter(|&c| !is_combining_mark(c)).collect(),
-            ))
-        } else {
-            Ok(Cow::Borrowed(input))
-        }
-    }
-}
-
-#[cfg(all(test, feature = "normalizers"))]
+#[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Expected values were captured from the legacy `NormalizedString` normalizer this test used
-    /// to compare against, on the commit that removed it -- so they still pin exactly what the two
-    /// implementations agreed on, without keeping the legacy code alive to ask.
-    #[test]
-    fn pipeline_strip_accents() {
-        let n = StripAccents;
-        for (input, expected) in [
-            ("café", "café"),
-            ("abc", "abc"),
-            ("", ""),
-            ("å ç ñ", "å ç ñ"),
-            ("     hello", "     hello"),
-        ] {
-            assert_eq!(
-                &*pipeline::Normalizer::normalize(&n, input, 0).unwrap(),
-                expected,
-                "input={input:?}"
-            );
-        }
-    }
-
-    /// Released tokenizers classifies marks with Unicode 9 tables; we use Unicode 17.
-    #[test]
-    fn strip_accents_follows_current_unicode() {
-        let n = StripAccents;
-        for (input, expected) in [
-            // U+07FD NKO DANTAYALAN, a combining mark since Unicode 11.
-            ("a\u{07FD}b", "ab"),
-            // U+1CF2 VEDIC SIGN ARDHAVISARGA, reclassified as a letter in Unicode 10.
-            ("a\u{1CF2}b", "a\u{1CF2}b"),
-        ] {
-            assert_eq!(
-                &*pipeline::Normalizer::normalize(&n, input, 0).unwrap(),
-                expected,
-                "input={input:?}"
-            );
-        }
-    }
 
     /// Expected values were captured from the legacy `NormalizedString` normalizer this test used
     /// to compare against, on the commit that removed it -- so they still pin exactly what the two
