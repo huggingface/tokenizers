@@ -11,6 +11,12 @@ pub struct StripAccents {
     unicode_17_accents: Unicode9IgnoredCombiningMarks,
 }
 
+impl Default for StripAccents {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StripAccents {
     pub fn new() -> Self {
         Self {
