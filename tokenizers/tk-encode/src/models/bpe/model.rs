@@ -121,8 +121,12 @@ impl PipelineBPE {
             let Ok(text) = std::str::from_utf8(bytes) else {
                 continue;
             };
-            let foldable = if text.chars().count() <= 1 {
+            let foldable = if text.is_empty() {
+                false
+            } else if text.chars().count() <= 1 && self.affixes.is_none() {
                 // A single atom has no pair to merge and is trivially its own encoding.
+                // With affixes, even a single character may encode to its suffixed
+                // entry. Let conversion prove that instead of bypassing it.
                 true
             } else {
                 self.merge_word(text, &mut symbols, &mut scratch);

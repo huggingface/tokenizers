@@ -12,4 +12,16 @@ extension trait on `tk_convert`'s `TokenizerImpl`, and nothing in `tk-encode`
 replaces that type -- the pipeline tokenizer hands out its model by shared
 reference only. Drive a trainer directly instead: `feed`, then `train`.
 
+[`BpeTrainer`] documents the BPE training entry points, execution policy, and
+input limits.
+
+The [BPE engine guide](src/trainers/bpe/engine/README.md) describes the
+implementation, correctness checks, and performance measurement boundaries.
+
+[`tk_encode`]: ../tk-encode/src/lib.rs
+[`Trainer`]: src/trainer.rs
+[`TrainerWrapper`]: src/trainers/mod.rs
+[`Trainable`]: src/trainable.rs
+[`BpeTrainer`]: src/trainers/bpe/mod.rs
+
 License: Apache-2.0

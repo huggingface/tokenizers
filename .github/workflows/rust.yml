@@ -66,6 +66,13 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make test HF="uvx --from huggingface_hub hf"
 
+      # tk-train is excluded from the workspace and needs its own test gate.
+      - name: Test training
+        shell: bash
+        run: |
+          cargo test --manifest-path tk-train/Cargo.toml
+          cargo test --manifest-path tk-train/Cargo.toml --no-default-features
+
       # The only gate that checks the slim reader against an *independent* implementation: one test
       # per model encodes/decodes through `tk_serialize::from_json` and compares against the
       # released `tokenizers` crate. It sits behind `bench-baseline` because that pulls the released
@@ -131,6 +138,9 @@ jobs:
       - name: Lint with Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+      - name: Lint training
+        run: cargo clippy --manifest-path tk-train/Cargo.toml --all-targets -- -D warnings
+
   format:
     permissions:
       contents: read
@@ -149,6 +159,9 @@ jobs:
 
       - name: Lint with RustFmt
         run: cargo fmt --all -- --check
+
+      - name: Format training
+        run: cargo fmt --manifest-path tk-train/Cargo.toml --all -- --check
 
   readme:
     permissions:
