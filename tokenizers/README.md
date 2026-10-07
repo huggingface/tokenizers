@@ -31,7 +31,7 @@ The implementation is split across crates (each built on internal engines — `t
 This `tokenizers` crate is a thin umbrella that re-exports them so existing `tokenizers::…`
 paths keep working.
 
-### Using the crate
+### Using the rust crate
 
 Add it to your `Cargo.toml`:
 
