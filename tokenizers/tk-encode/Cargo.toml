@@ -33,9 +33,7 @@ bitcannon = { path = "../bitcannon", version = "0.1.0-dev.2" }
 rand = "0.10"
 ptr_hash = { version = "2.0.2", default-features = false }
 unicode_categories = "0.1"
-itertools = "0.15"
 log = "0.4"
-paste = "1.0.15"
 thiserror = "2"
 ahash = "0.8.12"
 dary_heap = "0.3.9"
@@ -74,7 +72,6 @@ normalizers = [
 unicode-scripts = []
 progressbar = ["indicatif"]
 http = ["hf-hub"]
-unstable_wasm = ["fancy-regex"]
 parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
 
 [dev-dependencies]
