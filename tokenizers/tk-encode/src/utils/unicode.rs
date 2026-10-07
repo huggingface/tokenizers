@@ -1,10 +1,6 @@
 use crate::vocab::bucket_vocab_store::mix;
 use ptr_hash::{FastPtrHash, PtrHashParams, hash::NoHash};
 
-// The same type as the vocabulary's and the BPE pair map's, so the binary carries one copy of
-// PtrHash's code.
-type Mphf = FastPtrHash<NoHash, u64>;
-
 const _: () = assert!(
     matches!(unicode_normalization::UNICODE_VERSION, (17, 0, 0)),
     concat!(
@@ -12,6 +8,11 @@ const _: () = assert!(
         "combining mark exceptions need to be updated too in tk-encode/src/utils/unicode.rs"
     )
 );
+
+// The same type as the vocabulary and the BPE pair_map, to avoid code duplication and keep the binary lean
+// (FastPtrHash is a generic)
+type Mphf = FastPtrHash<NoHash, u64>;
+
 
 /// A perfect hash lookup for chars that are combining marks in Unicode 17 but not in Unicode 9.
 /// We need to conform to unicode 9 to preserve backwards compatibility for legacy models:
