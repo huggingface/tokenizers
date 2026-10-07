@@ -75,7 +75,10 @@ build a `PipelineTokenizer`. Nothing about them waits on the builder.
 ## 2. Trainers
 
 **Done.** `tk-train` is a workspace member again, and its trainers build pipeline models directly
-(`PipelineBPE`, `Unigram`, `WordPiece`, `WordLevel`).
+(`PipelineBPE`, `Unigram`, `WordPiece`, `WordLevel`). The `tokenizers` crate re-exports it behind
+the `train` feature, which is off by default. The model features (`bpe`, `unigram`, `wordpiece`,
+`wordlevel`) pick which trainers compile, and the opt-in `esaxx_fast` switches Unigram training to
+the C++ suffix array.
 
 There is still no tokenizer-level `train` / `train_from_files`. Drive a trainer directly instead:
 `feed`, then `train`.
