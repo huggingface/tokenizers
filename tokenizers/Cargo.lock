@@ -3205,7 +3205,7 @@ dependencies = [
 
 [[package]]
 name = "tk-train"
-version = "0.1.0-dev.0"
+version = "0.1.0-dev.2"
 dependencies = [
  "ahash",
  "assert_approx_eq",
