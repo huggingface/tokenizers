@@ -79,28 +79,23 @@ impl PretrainedOptions {
         format!("{hub_url}/{identifier}/resolve/{revision}/{file}")
     }
 
-    fn make_headers(&self) -> Result<Option<Headers>, JsValue> {
-        match &self.token {
-            Some(token) => {
-                let headers = Headers::new()?;
-                headers.set("Authorization", &format!("Bearer {token}"))?;
-                Ok(Some(headers))
-            }
-            None => Ok(None),
+    fn make_headers(&self) -> Result<Headers, JsValue> {
+        let headers = Headers::new()?;
+        if let Some(token) = &self.token {
+            headers.set("Authorization", &format!("Bearer {token}"))?;
         }
+        Ok(headers)
     }
 }
 
 /// Fetch the URL, return the Response object
 fn fetch_url(
     url: &str,
-    headers: &Option<Headers>,
+    headers: &Headers,
     fetch: Option<&Function>,
 ) -> Result<Promise<Response>, JsValue> {
     let init = RequestInit::new();
-    if let Some(headers) = headers {
-        init.set_headers(headers);
-    }
+    init.set_headers(headers);
     let Some(fetch) = fetch else {
         return Ok(global_fetch(url, &init));
     };

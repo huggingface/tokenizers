@@ -9,33 +9,12 @@ use tk_encode::{
 use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
 
-/// A convenience type to match typescript's `T | false` type
+/// Typescript's `boolean | T`.
+#[derive(Deserialize)]
+#[serde(untagged)]
 enum Setting<T> {
     Toggle(bool),
     With(T),
-}
-
-// We need to implement Deserialize ourselves to map typescript's `bool | T` type to rust [`Settings`]
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Setting<T> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Visitor<T>(std::marker::PhantomData<T>);
-        impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for Visitor<T> {
-            type Value = Setting<T>;
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("boolean or an object")
-            }
-            fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E> {
-                Ok(Setting::Toggle(value))
-            }
-            fn visit_map<A: serde::de::MapAccess<'de>>(
-                self,
-                map: A,
-            ) -> Result<Self::Value, A::Error> {
-                T::deserialize(serde::de::value::MapAccessDeserializer::new(map)).map(Setting::With)
-            }
-        }
-        deserializer.deserialize_any(Visitor(std::marker::PhantomData))
-    }
 }
 
 /// Override [`Tokenizer.encode`] settings. Omitted values default to the tokenizer's defaults / config
@@ -248,23 +227,14 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
-    fn test_omitted_field_is_default() {
+    fn test_omitted_field_is_core_default() {
         assert_eq!(
             parse_encode_options(r#"{"padding": {}, "truncation": {"maxLength": 8}}"#).unwrap(),
             pipeline::EncodeOptions {
-                padding: With(PaddingParams {
-                    strategy: PaddingStrategy::BatchLongest,
-                    direction: PaddingDirection::Right,
-                    pad_to_multiple_of: None,
-                    pad_id: 0,
-                    pad_type_id: 0,
-                    pad_token: "[PAD]".to_owned(),
-                }),
+                padding: With(PaddingParams::default()),
                 truncation: With(TruncationParams {
                     max_length: 8,
-                    strategy: TruncationStrategy::LongestFirst,
-                    direction: TruncationDirection::Right,
-                    stride: 0,
+                    ..Default::default()
                 }),
                 ..Default::default()
             }
@@ -272,26 +242,14 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
-    fn test_reject_invalid_type() {
+    fn test_reject_invalid_options() {
         for json in [
             r#"{"addSpecialTokens": "no"}"#,
             r#"{"padding": 3}"#,
             r#"{"padding": {"padId": -1}}"#,
-            r#"{"truncation": {"maxLength": "8"}}"#,
-        ] {
-            assert!(parse_encode_options(json).is_err(), "{json}");
-        }
-    }
-
-    #[wasm_bindgen_test]
-    fn test_reject_missing_max_length() {
-        assert!(parse_encode_options(r#"{"truncation": {}}"#).is_err());
-    }
-
-    #[wasm_bindgen_test]
-    fn test_reject_invalid_enum_value() {
-        for json in [
             r#"{"padding": {"direction": "up"}}"#,
+            r#"{"truncation": {}}"#,
+            r#"{"truncation": {"maxLength": "8"}}"#,
             r#"{"truncation": {"maxLength": 8, "direction": "up"}}"#,
             r#"{"truncation": {"maxLength": 8, "strategy": "shortest"}}"#,
         ] {
