@@ -1208,15 +1208,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokenizers"
+version = "1.0.0-dev.2"
+dependencies = [
+ "tk-convert",
+ "tk-encode",
+ "tk-serialize",
+]
+
+[[package]]
 name = "tokenizers-python"
 version = "1.0.0-dev.2"
 dependencies = [
  "numpy",
  "pyo3",
  "pyo3-build-config",
- "tk-convert",
- "tk-encode",
- "tk-serialize",
+ "tokenizers",
 ]
 
 [[package]]

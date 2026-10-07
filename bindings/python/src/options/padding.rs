@@ -9,7 +9,7 @@ use pyo3::{
     type_hint_identifier, type_hint_subscript,
     types::PyString,
 };
-use tk_encode::{PaddingDirection, PaddingParams, PaddingStrategy};
+use tk::{PaddingDirection, PaddingParams, PaddingStrategy};
 
 use crate::error::err;
 
