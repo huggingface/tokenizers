@@ -1,3 +1,7 @@
+use ptr_hash::{FastPtrHash, PtrHashParams, hash::FastIntHash};
+
+type Mphf = FastPtrHash<FastIntHash, u32>;
+
 const _: () = assert!(
     matches!(unicode_normalization::UNICODE_VERSION, (17, 0, 0)),
     concat!(
@@ -6,174 +10,29 @@ const _: () = assert!(
     )
 );
 
-// Three interchangeable implementations of `Unicode9IgnoredCombiningMarks`, picked with cargo
-// features while we benchmark them. Features are additive, so when several are on (as under
-// `--all-features`) the bitset wins, then NoHash, and FastIntHash is the default.
-#[cfg(feature = "marks-set-bitset")]
-pub(crate) use bitset::Unicode9IgnoredCombiningMarks;
-#[cfg(not(any(feature = "marks-set-nohash", feature = "marks-set-bitset")))]
-pub(crate) use fxhash::Unicode9IgnoredCombiningMarks;
-#[cfg(all(feature = "marks-set-nohash", not(feature = "marks-set-bitset")))]
-pub(crate) use nohash::Unicode9IgnoredCombiningMarks;
-
-/// A perfect hash keyed by the code point, hashed with FxHash.
-#[cfg(not(any(feature = "marks-set-nohash", feature = "marks-set-bitset")))]
-mod fxhash {
-    use super::MARKS_ONLY_IN_UNICODE_17;
-    use ptr_hash::{FastPtrHash, PtrHashParams, hash::FastIntHash};
-
-    type Mphf = FastPtrHash<FastIntHash, u32>;
-
-    /// A perfect hash lookup for chars that are combining marks in Unicode 17 but not in Unicode 9.
-    /// We need to conform to unicode 9 to preserve backwards compatibility for legacy models:
-    /// The normalization could differ and the model emit invalid ids (although it's very unlikely)
-    #[derive(Clone)]
-    pub(crate) struct Unicode9IgnoredCombiningMarks {
-        mphf: Mphf,
-        slots: Box<[u32]>,
-    }
-
-    impl Unicode9IgnoredCombiningMarks {
-        pub(crate) fn new() -> Self {
-            let keys: Vec<_> = MARKS_ONLY_IN_UNICODE_17.iter().map(|&c| c as u32).collect();
-            let mphf = Mphf::new(&keys, PtrHashParams::default_fast());
-            let mut slots = vec![u32::MAX; mphf.max_index()].into_boxed_slice();
-            for &key in &keys {
-                slots[mphf.index(&key)] = key;
-            }
-            Self { mphf, slots }
-        }
-
-        pub(crate) fn contains(&self, c: char) -> bool {
-            let key = c as u32;
-            self.slots[self.mphf.index(&key)] == key
-        }
-    }
+/// A perfect hash lookup for chars that are combining marks in Unicode 17 but not in Unicode 9.
+/// We need to conform to unicode 9 to preserve backwards compatibility for legacy models:
+/// The normalization could differ and the model emit invalid ids (although it's very unlikely)
+#[derive(Clone)]
+pub(crate) struct Unicode9IgnoredCombiningMarks {
+    mphf: Mphf,
+    slots: Box<[u32]>,
 }
 
-/// A perfect hash of the same type as the vocabulary's, so the binary carries one copy of
-/// PtrHash's code.
-#[cfg(all(feature = "marks-set-nohash", not(feature = "marks-set-bitset")))]
-mod nohash {
-    use super::MARKS_ONLY_IN_UNICODE_17;
-    use crate::vocab::bucket_vocab_store::mix;
-    use ptr_hash::{FastPtrHash, PtrHashParams, hash::NoHash};
-
-    type Mphf = FastPtrHash<NoHash, u64>;
-
-    #[derive(Clone)]
-    pub(crate) struct Unicode9IgnoredCombiningMarks {
-        mphf: Mphf,
-        slots: Box<[u32]>,
+impl Unicode9IgnoredCombiningMarks {
+    pub(crate) fn new() -> Self {
+        let keys: Vec<_> = MARKS_ONLY_IN_UNICODE_17.iter().map(|&c| c as u32).collect();
+        let mphf = Mphf::new(&keys, PtrHashParams::default_fast());
+        let mut slots = vec![u32::MAX; mphf.max_index()].into_boxed_slice();
+        for &key in &keys {
+            slots[mphf.index(&key)] = key;
+        }
+        Self { mphf, slots }
     }
 
-    impl Unicode9IgnoredCombiningMarks {
-        pub(crate) fn new() -> Self {
-            // `NoHash` takes keys as already hashed, so the code points go through `mix` first.
-            // `mix` is a bijection, so the slot can still store and compare the char itself.
-            let keys: Vec<u64> = MARKS_ONLY_IN_UNICODE_17
-                .iter()
-                .map(|&c| mix(c as u64))
-                .collect();
-            let mphf = Mphf::new(&keys, PtrHashParams::default_fast());
-            let mut slots = vec![u32::MAX; mphf.max_index()].into_boxed_slice();
-            for &c in &MARKS_ONLY_IN_UNICODE_17 {
-                slots[mphf.index(&mix(c as u64))] = c as u32;
-            }
-            Self { mphf, slots }
-        }
-
-        pub(crate) fn contains(&self, c: char) -> bool {
-            self.slots[self.mphf.index(&mix(c as u64))] == c as u32
-        }
-    }
-}
-
-/// A two-level bitmap built at compile time. Each block of 64 code points is one `u64` with a
-/// bit per code point. Each distinct `u64` is stored once in `LEAVES`, and `BLOCKS` holds one
-/// byte per block naming its leaf.
-#[cfg(feature = "marks-set-bitset")]
-mod bitset {
-    use super::MARKS_ONLY_IN_UNICODE_17 as MARKS;
-
-    const FIRST_BLOCK: u32 = MARKS[0] as u32 >> 6;
-    const NUM_BLOCKS: usize =
-        (MARKS[MARKS.len() - 1] as u32 >> 6) as usize - FIRST_BLOCK as usize + 1;
-    const NUM_LEAVES: usize = build().2;
-
-    static BLOCKS: [u8; NUM_BLOCKS] = build().0;
-    static LEAVES: [u64; NUM_LEAVES] = {
-        let (_, all, _) = build();
-        let mut leaves = [0; NUM_LEAVES];
-        let mut i = 0;
-        while i < NUM_LEAVES {
-            leaves[i] = all[i];
-            i += 1;
-        }
-        leaves
-    };
-
-    /// One walk over the sorted marks: `(blocks, leaves, number of leaves used)`. `leaves` has
-    /// room for 256 because `blocks` indexes it with a `u8`.
-    const fn build() -> ([u8; NUM_BLOCKS], [u64; 256], usize) {
-        let mut blocks = [0; NUM_BLOCKS];
-        let mut leaves = [0; 256];
-        let mut len = 0;
-        let mut block = 0;
-        let mut word = 0;
-        let mut i = 0;
-        while i < MARKS.len() {
-            let c = MARKS[i] as u32;
-            let b = (c >> 6) as usize - FIRST_BLOCK as usize;
-            if b != block {
-                blocks[block] = find_or_push(&mut leaves, &mut len, word);
-                // Skipped blocks are empty.
-                let mut gap = block + 1;
-                while gap < b {
-                    blocks[gap] = find_or_push(&mut leaves, &mut len, 0);
-                    gap += 1;
-                }
-                block = b;
-                word = 0;
-            }
-            word |= 1 << (c & 63);
-            i += 1;
-        }
-        blocks[block] = find_or_push(&mut leaves, &mut len, word);
-        (blocks, leaves, len)
-    }
-
-    const fn find_or_push(leaves: &mut [u64; 256], len: &mut usize, word: u64) -> u8 {
-        let mut i = 0;
-        while i < *len {
-            if leaves[i] == word {
-                return i as u8;
-            }
-            i += 1;
-        }
-        assert!(*len < 256, "the bitset holds at most 256 distinct leaves");
-        leaves[*len] = word;
-        *len += 1;
-        i as u8
-    }
-
-    #[derive(Clone)]
-    pub(crate) struct Unicode9IgnoredCombiningMarks;
-
-    impl Unicode9IgnoredCombiningMarks {
-        pub(crate) fn new() -> Self {
-            Self
-        }
-
-        pub(crate) fn contains(&self, c: char) -> bool {
-            let c = c as u32;
-            // Below the first block, the subtraction wraps to a huge index, so one `get` rejects
-            // code points on both sides of the set.
-            match BLOCKS.get((c >> 6).wrapping_sub(FIRST_BLOCK) as usize) {
-                Some(&leaf) => (LEAVES[leaf as usize] >> (c & 63)) & 1 == 1,
-                None => false,
-            }
-        }
+    pub(crate) fn contains(&self, c: char) -> bool {
+        let key = c as u32;
+        self.slots[self.mphf.index(&key)] == key
     }
 }
 
@@ -262,22 +121,3 @@ pub(crate) static MARKS_ONLY_IN_UNICODE_17: [char; 448] = [
 pub(crate) static MARKS_ONLY_IN_UNICODE_9: [char; 2] = [
     '\u{1CF2}', '\u{1CF3}',
 ];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn contains_exactly_the_marks_only_in_unicode_17() {
-        assert!(MARKS_ONLY_IN_UNICODE_17.is_sorted());
-        let set = Unicode9IgnoredCombiningMarks::new();
-        for c in (0..=char::MAX as u32).filter_map(char::from_u32) {
-            assert_eq!(
-                set.contains(c),
-                MARKS_ONLY_IN_UNICODE_17.binary_search(&c).is_ok(),
-                "U+{:04X}",
-                c as u32
-            );
-        }
-    }
-}
