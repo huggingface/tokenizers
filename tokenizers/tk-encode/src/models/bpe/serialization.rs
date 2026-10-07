@@ -189,7 +189,7 @@ impl PipelineBPE {
                     .into_iter()
                     .map(|(k, v)| (k.into_bytes(), v))
                     .collect(),
-            )
+            )?
         };
 
         Self::from_merge_map(vocab, merges, config)
@@ -245,12 +245,12 @@ impl PipelineBPE {
                 return Err(Error::ByteAtomOutOfVocabulary(missing).into());
             }
             // Build the vocab and return it
-            let mut vocab = BucketVocabStore::build(vocab.byte_content());
-            vocab = byte_level::transform_vocab(vocab);
+            let mut vocab = BucketVocabStore::build(vocab.byte_content())?;
+            vocab = byte_level::transform_vocab(vocab)?;
 
             (vocab, Atoms::Bytes)
         } else {
-            let vocab = BucketVocabStore::build(vocab.byte_content());
+            let vocab = BucketVocabStore::build(vocab.byte_content())?;
             let unk_token = if let Some(unk_str) = unk_token {
                 let token_id = vocab
                     .token_to_id(&unk_str)

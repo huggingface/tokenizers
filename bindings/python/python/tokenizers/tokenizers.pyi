@@ -40,8 +40,8 @@ class Encoding:
     @property
     def attention_mask_array(self, /) -> NDArray[uint32]:
         """
-        Attention mask when the encoding is padded: 1 for token ids, 0 for padding tokens.
-        A read-only `uint32` numpy array, a view over the encoding, not a copy.
+        Returns a copy of the attention mask, as a `uint32` numpy array.
+        When the encoding is padded: 1 for token ids, 0 for padding tokens.
         """
     @property
     def ids(self, /) -> list[int]:
@@ -51,8 +51,7 @@ class Encoding:
     @property
     def ids_array(self, /) -> NDArray[uint32]:
         """
-        The id of each token, as a read-only `uint32` numpy array.
-        A view over the encoding, not a copy.
+        Returns a copy of the id of each token, as a `uint32` numpy array.
         """
     @property
     def type_ids(self, /) -> list[int]:
@@ -62,8 +61,7 @@ class Encoding:
     @property
     def type_ids_array(self, /) -> NDArray[uint32]:
         """
-        The type id of each token, as a read-only `uint32` numpy array.
-        A view over the encoding, not a copy.
+        Returns a copy of the type id of each token, as a `uint32` numpy array.
         """
 
 @final
