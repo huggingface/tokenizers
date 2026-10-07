@@ -4,8 +4,8 @@ on:
   push:
     tags:
       - v*
-  # Manual runs do everything but upload: the drift check, then `cargo publish --dry-run`, which
-  # packages every crate and builds each one from its own tarball. See the publish step.
+    branches:
+      - release/*
   workflow_dispatch:
 
 permissions: {}
