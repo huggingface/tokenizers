@@ -35,12 +35,7 @@ In older browsers, importing the package throws a `WebAssembly.CompileError`.
 npm install tokenizers-web@latest
 ```
 
-## Basic example
-
-You'll find below a basic example of how to use this package.
-
-You can also find in [the examples section](https://github.com/huggingface/tokenizers/tree/main/bindings/wasm/examples)
-of the repository a simple application showcasing how to use `tokenizers-web` with React.
+## Usage
 
 ```typescript
 import { Tokenizer } from "tokenizers-web";

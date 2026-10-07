@@ -1,9 +1,9 @@
-.PHONY: build test test-package test-data vite react style check-style check-types
+.PHONY: build test test-package test-data style check-style check-types
 
 DATA_DIR = data
 HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
 HF ?= hf
-TESTS_RESOURCES = $(DATA_DIR)/gpt2.json $(DATA_DIR)/llama-3-tokenizer.json $(DATA_DIR)/bert-base-uncased.json $(DATA_DIR)/t5-base.json
+TESTS_RESOURCES = $(DATA_DIR)/gpt2.json $(DATA_DIR)/bert-base-uncased.json
 
 # Firefox by default: wasm-pack downloads the newest chromedriver, which refuses an older installed Chrome.
 # For Chrome: `make test BROWSER=chrome`, adding `CHROMEDRIVER=<path>` when the versions differ.
@@ -55,6 +55,3 @@ check-style: test-data
 # Tsify generates the TypeScript declarations, so check them where they land.
 check-types: build
 	$(NPM_CI) && npm run typecheck
-
-react: build
-	cd examples/react && $(NPM_INSTALL) && npm run dev
