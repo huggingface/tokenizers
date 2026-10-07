@@ -71,6 +71,9 @@ unicode-scripts = []
 progressbar = ["indicatif"]
 http = ["hf-hub"]
 parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
+# Benchmark switch for the Unicode 9 mark set in `utils/unicode.rs`. Neither means FastIntHash.
+marks-set-nohash = []
+marks-set-bitset = []
 
 [dev-dependencies]
 # Test-only: one `#[cfg(test)]` cross-check in `vocab/buckets.rs`.
@@ -83,3 +86,9 @@ assert_approx_eq = "1.1"
 tracing = "0.1"
 tracing-subscriber = "0.3.23"
 serde_json = "1.0"
+criterion = "0.8"
+
+[[bench]]
+name = "strip_accents"
+harness = false
+required-features = ["normalizers"]
