@@ -1,7 +1,0 @@
-# wasm has no runtime feature detection, so the SIMD128 classify path is compile-time only.
-# Downstream crates don't read this file; they must pass the flag themselves.
-[target.wasm32-wasip1]
-rustflags = ["-C", "target-feature=+simd128"]
-
-[target.wasm32-unknown-unknown]
-rustflags = ["-C", "target-feature=+simd128"]
