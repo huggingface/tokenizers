@@ -45,7 +45,7 @@ tk-convert = { path = "tk-convert", version = "0.1.0-dev.2", default-features = 
 tk-serialize = { path = "tk-serialize", version = "0.1.0-dev.2", default-features = false, features = [
   "deserialize",
 ] }
-tk-train = { path = "tk-train", version = "0.1.0-dev.0", default-features = false, optional = true }
+tk-train = { path = "tk-train", version = "0.1.0-dev.2", default-features = false, optional = true }
 
 # Everything is on by default; a binding that wants a smaller build turns defaults off and picks.
 # The component features go through `tk-serialize`, which forwards each one to `tk-encode`: the
