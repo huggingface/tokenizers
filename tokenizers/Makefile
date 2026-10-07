@@ -7,7 +7,7 @@ HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
 # CI overrides with `uvx --from huggingface_hub hf`.
 HF ?= hf
 
-HF_REVISION ?= a6c4e9fcdc6e18f7ae3ef21253a28443e538c714
+HF_REVISION ?= 5f5c6524084c42a35c28c0184bea37ec2530fd7c
 
 $(DATA_DIR)/% :
 	$(dir_guard)
@@ -16,7 +16,7 @@ $(DATA_DIR)/% :
 SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2.json $(DATA_DIR)/big.txt $(DATA_DIR)/albert-base-v1-tokenizer.json $(DATA_DIR)/llama-3-tokenizer.json
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/deepseek-v4.json
 TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json
-ORACLE_RESOURCES = $(DATA_DIR)/gpt2.json $(DATA_DIR)/bert-base-uncased.json $(DATA_DIR)/t5-base.json $(DATA_DIR)/albert-base-v1-tokenizer.json $(DATA_DIR)/fixtures/models/llama-3.2-1b.json $(DATA_DIR)/fixtures/models/all-minilm-l6-v2.json $(DATA_DIR)/fixtures/models/all-mpnet-base-v2.json $(DATA_DIR)/fixtures/models/siglip-base-patch16-224.json $(DATA_DIR)/fixtures/models/mistral-7b-v0.1.json
+ORACLE_RESOURCES = $(DATA_DIR)/gpt2.json $(DATA_DIR)/bert-base-uncased.json $(DATA_DIR)/t5-base.json $(DATA_DIR)/albert-base-v1-tokenizer.json $(DATA_DIR)/fixtures/models/llama-3.2-1b.json $(DATA_DIR)/fixtures/models/all-minilm-l6-v2.json $(DATA_DIR)/fixtures/models/all-mpnet-base-v2.json $(DATA_DIR)/fixtures/models/siglip-base-patch16-224.json $(DATA_DIR)/fixtures/models/mistral-7b-v0.1.json $(DATA_DIR)/fixtures/models/modernbert-base.json
 
 .PHONY : data
 data : $(TESTS_RESOURCES) $(BENCHMARK_RESOURCES)
