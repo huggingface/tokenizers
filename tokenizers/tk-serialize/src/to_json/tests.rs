@@ -280,6 +280,25 @@ fn components_round_trip_to_their_canonical_spelling() {
     }
 }
 
+/// A normalized added token is matched by its normalized form, but it is written back with the
+/// content it was declared with: `Prepend` is not idempotent, so writing `▁<a>` would read back
+/// as `▁▁<a>` and stop matching.
+#[test]
+fn a_normalized_added_token_keeps_its_content() {
+    let added = r#"[{"id": 4, "content": "<a>", "single_word": false, "lstrip": false, "rstrip": false, "normalized": true, "special": false}]"#;
+    let text = config(&[
+        ("normalizer", r#"{"type": "Prepend", "prepend": "▁"}"#),
+        ("added_tokens", added),
+    ]);
+    assert_eq!(field_of(&rewrite(&text), "added_tokens"), json(added));
+
+    let before = from_json(&text).expect("the config reads");
+    let after = from_json(&to_json(&before).expect("the config writes")).expect("it reads back");
+    let options = EncodeOptions::no_specials();
+    assert_eq!(ids(&before, "<a>ab", &options), [4, 2]);
+    assert_eq!(ids(&after, "<a>ab", &options), [4, 2]);
+}
+
 /// Padding is state the tokenizer carries rather than a component, so no other test here would
 /// catch it being dropped. Both strategies, and `pad_to_multiple_of` in both of its states.
 #[test]
