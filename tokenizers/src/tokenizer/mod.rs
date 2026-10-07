@@ -106,14 +106,11 @@ pub trait PostProcessor {
         };
         encodings.iter_mut().enumerate().for_each(|(i, encoding)| {
             encoding.set_sequence_id(i);
-            encoding.set_type_ids(vec![i as u32; encoding.len()]);
             encoding
                 .get_overflowing_mut()
                 .iter_mut()
-                .for_each(|encoding| {
-                    encoding.set_sequence_id(i);
-                    encoding.set_type_ids(vec![i as u32; encoding.len()]);
-                });
+                .for_each(|encoding| encoding.set_sequence_id(i));
+            encoding.set_type_ids(vec![i as u32; encoding.len()]);
         });
 
         let encodings = self.process_encodings(encodings, add_special_tokens)?;
@@ -1613,6 +1610,8 @@ mod tests {
     use super::*;
     use crate::models::wordlevel::WordLevelBuilder;
     use crate::pre_tokenizers::whitespace::WhitespaceSplit;
+    use crate::processors::roberta::RobertaProcessing;
+    use crate::processors::template::TemplateProcessing;
     use ahash::AHashMap;
 
     /// Build a tokenizer with a known vocabulary: "a"=0, "b"=1, ... "j"=9, "<unk>"=10
@@ -1788,5 +1787,84 @@ mod tests {
             full_b.get_ids(),
             "OnlyFirst should not truncate the second sequence"
         );
+    }
+
+    #[test]
+    fn template_applies_type_id_to_single_sequence_overflow() {
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 3,
+            strategy: TruncationStrategy::LongestFirst,
+            stride: 0,
+            direction: TruncationDirection::Right,
+        }))
+        .unwrap();
+        tok.with_post_processor(Some(
+            TemplateProcessing::builder()
+                .try_single("$A:7")
+                .unwrap()
+                .build()
+                .unwrap(),
+        ));
+
+        let encoding = tok.encode(&["a", "b", "c", "d", "e"][..], false).unwrap();
+
+        assert_eq!(encoding.get_type_ids(), &[7, 7, 7]);
+        assert_eq!(encoding.get_overflowing().len(), 1);
+        assert_eq!(encoding.get_overflowing()[0].get_type_ids(), &[7, 7]);
+        assert_eq!(
+            encoding.get_overflowing()[0].get_sequence_ids(),
+            vec![Some(0), Some(0)]
+        );
+    }
+
+    #[test]
+    fn template_applies_type_id_to_all_pair_overflows() {
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 6,
+            strategy: TruncationStrategy::LongestFirst,
+            stride: 1,
+            direction: TruncationDirection::Right,
+        }))
+        .unwrap();
+        tok.with_post_processor(Some(
+            TemplateProcessing::builder()
+                .try_pair("$A:0 $B:7")
+                .unwrap()
+                .build()
+                .unwrap(),
+        ));
+
+        let encoding = tok.encode(("a b c d e", "f g h i j"), false).unwrap();
+
+        assert_eq!(encoding.get_overflowing().len(), 3);
+        for part in std::iter::once(&encoding).chain(encoding.get_overflowing()) {
+            assert_eq!(part.get_type_ids(), &[0, 0, 0, 7, 7, 7]);
+            assert_eq!(
+                part.get_sequence_ids(),
+                vec![Some(0), Some(0), Some(0), Some(1), Some(1), Some(1)]
+            );
+        }
+    }
+
+    #[test]
+    fn roberta_resets_type_ids_on_all_pair_overflows() {
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 6,
+            strategy: TruncationStrategy::LongestFirst,
+            stride: 1,
+            direction: TruncationDirection::Right,
+        }))
+        .unwrap();
+        tok.with_post_processor(Some(RobertaProcessing::default()));
+
+        let encoding = tok.encode(("a b c d e", "f g h i j"), false).unwrap();
+
+        assert_eq!(encoding.get_overflowing().len(), 3);
+        for part in std::iter::once(&encoding).chain(encoding.get_overflowing()) {
+            assert_eq!(part.get_type_ids(), &[0; 6]);
+        }
     }
 }

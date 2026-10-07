@@ -342,37 +342,4 @@ mod tests {
         assert_eq!(pair_encoding.token_to_sequence(1), Some(0));
         assert_eq!(pair_encoding.token_to_sequence(2), Some(1));
     }
-
-    #[test]
-    fn roberta_overflow_type_ids() {
-        // Regression test for huggingface/tokenizers#1908.
-        // RoBERTa forces every encoding to `type_id=0`; this contract has to
-        // hold for the overflowing encodings too. Before the fix, overflows
-        // produced by truncation kept whatever type_ids they had been built
-        // with (typically `1` for the second sequence), which broke models
-        // that read overflow type_ids back.
-        use crate::Token;
-
-        let processor = RobertaProcessing::default();
-
-        let mut encoding =
-            Encoding::from_tokens(vec![Token::new(12, "Hello".into(), (0, 5))], 0);
-        // Build an overflow whose tokens were originally tagged as type_id=1,
-        // to mimic what `encode_single_sequence` does for the pair before
-        // truncation runs.
-        let mut overflow =
-            Encoding::from_tokens(vec![Token::new(14, "there".into(), (6, 11))], 1);
-        overflow.set_type_ids(vec![1; overflow.len()]);
-        encoding.set_overflowing(vec![overflow]);
-
-        let processed = processor.process(encoding, None, false).unwrap();
-        assert_eq!(processed.get_type_ids(), &[0]);
-        for overflow in processed.get_overflowing() {
-            assert!(
-                overflow.get_type_ids().iter().all(|t| *t == 0),
-                "Roberta overflow must be type_id=0, got {:?}",
-                overflow.get_type_ids(),
-            );
-        }
-    }
 }
