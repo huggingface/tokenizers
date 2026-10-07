@@ -189,7 +189,7 @@ impl PipelineBPE {
                     .into_iter()
                     .map(|(k, v)| (k.into_bytes(), v))
                     .collect(),
-            )
+            )?
         };
 
         Self::from_merge_map(vocab, merges, config)
@@ -235,8 +235,8 @@ impl PipelineBPE {
                 .filter(|&internal| internal != u32::MAX)
         };
         let (vocab, atoms) = if byte_level {
-            let mut vocab = BucketVocabStore::build(vocab.byte_content());
-            vocab = byte_level::transform_vocab(vocab);
+            let mut vocab = BucketVocabStore::build(vocab.byte_content())?;
+            vocab = byte_level::transform_vocab(vocab)?;
             // every byte has to be an atom, or a word containing it could not be encoded at all
             for b in 0u8..=255 {
                 vocab
@@ -245,7 +245,7 @@ impl PipelineBPE {
             }
             (vocab, Atoms::Bytes)
         } else {
-            let vocab = BucketVocabStore::build(vocab.byte_content());
+            let vocab = BucketVocabStore::build(vocab.byte_content())?;
             let unk_token = if let Some(unk_str) = unk_token {
                 let token_id = vocab
                     .token_to_id(&unk_str)
