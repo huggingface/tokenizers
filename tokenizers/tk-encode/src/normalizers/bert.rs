@@ -41,6 +41,7 @@ fn clean_text_map(c: char) -> char {
 /// Checks whether a character is chinese
 /// This defines a "chinese character" as anything in the CJK Unicode block:
 ///   https://en.wikipedia.org/wiki/CJK_Unified_Ideographs_(Unicode_block)
+/// This includes the full CJK Extension E range, U+2B820 through U+2CEAF.
 ///
 /// Note that the CJK Unicode block is NOT all Japanese and Korean characters,
 /// despite its name. The modern Korean Hangul alphabet is a different block,
@@ -55,7 +56,7 @@ fn is_chinese_char(c: char) -> bool {
         0x20000..=0x2A6DF |
         0x2A700..=0x2B73F |
         0x2B740..=0x2B81F |
-        0x2B920..=0x2CEAF |
+        0x2B820..=0x2CEAF |
         0xF900..=0xFAFF |
         0x2F800..=0x2FA1F
     )
@@ -175,6 +176,26 @@ impl pipeline::Normalizer for BertNormalizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn handles_cjk_extension_e_boundaries() {
+        for (input, expected) in [
+            ("你好", " 你  好 "),
+            ("a\u{2b820}\u{2b91f}b", "a \u{2b820}  \u{2b91f} b"),
+        ] {
+            let normalizer = BertNormalizer::new(false, true, Some(false), false);
+            assert_eq!(
+                pipeline::Normalizer::normalize(&normalizer, input, 0).unwrap(),
+                expected
+            );
+
+            let normalizer = BertNormalizer::new(false, false, Some(false), false);
+            assert_eq!(
+                pipeline::Normalizer::normalize(&normalizer, input, 0).unwrap(),
+                input
+            );
+        }
+    }
 
     const INPUTS: &[&str] = &[
         "Héllo World",
