@@ -1096,8 +1096,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "tokenizers-web"
-version = "0.1.0-dev.2"
+name = "tokenizers-wasm"
+version = "1.0.0-dev.2"
 dependencies = [
  "getrandom 0.3.4",
  "getrandom 0.4.3",

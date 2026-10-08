@@ -1,6 +1,6 @@
 [package]
-name = "tokenizers-web"
-version = "0.1.0-dev.2"
+name = "tokenizers-wasm"
+version = "1.0.0-dev.2"
 edition = "2024"
 authors = ["Simon Brandeis <simon@huggingface.co>"]
 description = "WebAssembly bindings to the Hugging Face tokenizers library, for fast tokenization in the browser."
