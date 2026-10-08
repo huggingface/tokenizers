@@ -8,6 +8,7 @@ use rayon_cond::CondIterator;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use std::sync::OnceLock;
 use std::sync::TryLockError;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU8;
@@ -122,11 +123,120 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
 pub fn num_threads() -> usize {
     match NUM_THREADS.load(Ordering::Acquire) {
         // 0 == default value
-        0 => std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1),
+        0 => default_num_threads(),
         n => n,
     }
+}
+
+/// The default pool size: **physical** cores, not logical ones.
+///
+/// `available_parallelism()` counts SMT siblings, and filling them costs throughput
+/// here. Encoding medium documents (~8 KiB) peaks at the physical core count and
+/// then falls off:
+///
+/// | machine | at physical | at logical |
+/// |---|---|---|
+/// | aarch64, 88 physical | 6815 MiB/s @88t | 5462 MiB/s @176t (-20%) |
+/// | Granite Rapids, 2 sockets | 1314 MiB/s @128t | 698 MiB/s @512t (-47%) |
+///
+/// Two workers on one physical core share a front-end and an L1, and this encode
+/// path is branchy and L1i-hungry (a PGO build cuts L1i misses ~26%), so it feels
+/// that sharing more than most workloads do.
+///
+/// Capped by `available_parallelism()` so a cgroup quota or an affinity mask still
+/// wins — this only ever lowers the thread count, never raises it. Callers who want
+/// the old behaviour can still ask for it with [`set_num_threads`].
+fn default_num_threads() -> usize {
+    static CACHED: OnceLock<usize> = OnceLock::new();
+    *CACHED.get_or_init(|| {
+        let logical = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+        physical_cores().map_or(logical, |p| p.clamp(1, logical))
+    })
+}
+
+/// Physical cores, or `None` when the platform will not say.
+///
+/// `None` is a normal answer, not a failure: the caller falls back to the logical
+/// count, which is what this code did before.
+#[cfg(target_os = "linux")]
+fn physical_cores() -> Option<usize> {
+    let logical = std::thread::available_parallelism().ok()?.get();
+
+    // The direct answer, on kernels that expose it. Largely x86: it needs
+    // CONFIG_HOTPLUG_SMT, which most arm64 configs do not set — hence the fallback.
+    let per_core = std::fs::read_to_string("/sys/devices/system/cpu/smt/num_threads_per_core")
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .or_else(siblings_per_core)?;
+
+    Some(logical / per_core.max(1))
+}
+
+/// How many logical CPUs share cpu0's physical core, read from its sibling list.
+#[cfg(target_os = "linux")]
+fn siblings_per_core() -> Option<usize> {
+    let raw = std::fs::read_to_string("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list")
+        .ok()?;
+    parse_siblings_list(&raw)
+}
+
+/// Count the CPUs in a `thread_siblings_list`.
+///
+/// The kernel writes either a comma-separated list (`"0,88"`) or a range
+/// (`"0-1"`), and mixes them (`"0-1,4-5"`); all three appear in the wild. Kept
+/// free of I/O and compiled everywhere so it can be tested off Linux — a silent
+/// misparse here would divide the pool size by the wrong number on every box.
+#[cfg(any(target_os = "linux", test))]
+fn parse_siblings_list(raw: &str) -> Option<usize> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let mut total = 0usize;
+    for part in raw.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            return None;
+        }
+        total += match part.split_once('-') {
+            Some((lo, hi)) => {
+                let lo = lo.trim().parse::<usize>().ok()?;
+                let hi = hi.trim().parse::<usize>().ok()?;
+                hi.checked_sub(lo)?.checked_add(1)?
+            }
+            None => {
+                part.parse::<usize>().ok()?;
+                1
+            }
+        };
+    }
+    (total > 0).then_some(total)
+}
+
+#[cfg(target_os = "macos")]
+fn physical_cores() -> Option<usize> {
+    let mut out: libc::c_int = 0;
+    let mut len = std::mem::size_of::<libc::c_int>();
+    // SAFETY: `hw.physicalcpu` is a NUL-terminated name; `out`/`len` describe a
+    // correctly sized, initialised c_int that sysctl writes at most `len` bytes into.
+    let rc = unsafe {
+        libc::sysctlbyname(
+            c"hw.physicalcpu".as_ptr(),
+            (&raw mut out).cast(),
+            &raw mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    (rc == 0 && out > 0).then_some(out as usize)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn physical_cores() -> Option<usize> {
+    None
 }
 
 fn invalidate() {
@@ -395,5 +505,58 @@ mod tests {
 
         let chunks: Vec<_> = v.maybe_par_chunks(2).collect();
         assert_eq!(chunks, vec![&[1, 2][..], &[3, 4], &[5]]);
+    }
+
+    /// The default must stay inside what we are allowed to use, and must never be
+    /// zero — a zero would ask rayon for an unbounded pool.
+    #[test]
+    fn default_pool_size_never_exceeds_available_parallelism() {
+        let logical = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+        let got = default_num_threads();
+        assert!(got >= 1, "pool size must be at least 1, got {got}");
+        assert!(
+            got <= logical,
+            "default {got} exceeds available parallelism {logical}; a cgroup quota \
+             or affinity mask must still win"
+        );
+    }
+
+    /// Whatever the platform reports, it has to be a plausible core count. This is
+    /// the guard against a parse going wrong (an empty sibling list, a `0`) and
+    /// silently collapsing the pool to one thread on every machine.
+    #[test]
+    fn physical_core_count_is_plausible() {
+        let logical = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+        if let Some(p) = physical_cores() {
+            assert!(p >= 1, "physical core count must be positive, got {p}");
+            assert!(
+                p <= logical,
+                "physical cores {p} > logical {logical}, which cannot be right"
+            );
+        }
+    }
+
+    /// Both sysfs spellings, and the malformed cases, which must report "no idea"
+    /// rather than a wrong divisor.
+    #[test]
+    fn parses_thread_siblings_lists() {
+        // SMT-2, the two shapes the kernel uses.
+        assert_eq!(parse_siblings_list("0,88\n"), Some(2));
+        assert_eq!(parse_siblings_list("0-1\n"), Some(2));
+        // No SMT.
+        assert_eq!(parse_siblings_list("0"), Some(1));
+        // SMT-4 (POWER-style), and a mixed list.
+        assert_eq!(parse_siblings_list("0-3"), Some(4));
+        assert_eq!(parse_siblings_list("0-1,4-5"), Some(4));
+        // Garbage must not silently become a divisor.
+        assert_eq!(parse_siblings_list(""), None);
+        assert_eq!(parse_siblings_list("   "), None);
+        assert_eq!(parse_siblings_list("abc"), None);
+        assert_eq!(parse_siblings_list("0,"), None);
+        assert_eq!(parse_siblings_list("3-1"), None);
     }
 }
