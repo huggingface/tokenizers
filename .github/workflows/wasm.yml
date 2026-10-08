@@ -260,9 +260,9 @@ jobs:
         with:
           node-version: latest
 
-      # OIDC publishing landed in npm 11.5.1.
-      - name: Ensure npm supports Trusted Publishing
-        run: npm install -g npm@^11.5.1
+      # Staged publishing landed in npm 11.15.0 (OIDC publishing in 11.5.1).
+      - name: Ensure npm supports staged publishing
+        run: npm install -g npm@^11.15.0
 
       - name: Build bindings
         run: make build
@@ -278,8 +278,8 @@ jobs:
       - name: Verify package contents
         run: npm pack --dry-run ./pkg
 
-      - name: Publish
+      - name: Stage for publishing
         run: |
           TAG=latest
           [[ "$GITHUB_REF_NAME" == *-* ]] && TAG=next
-          npm publish ./pkg --access public --provenance --tag "$TAG"
+          npm stage publish ./pkg --access public --provenance --tag "$TAG"
