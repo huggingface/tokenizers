@@ -8,13 +8,13 @@ use crate::models::unigram::{Unigram, UnigramScratch};
 #[cfg(feature = "wordlevel")]
 use crate::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
-use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
+use crate::models::wordpiece::{WordPiece, WordPieceScratch};
 pub use crate::pipeline::encode_options::EncodeOptions;
 pub use crate::pipeline::encode_options::Override;
 use crate::utils::truncation::truncate_pair;
 use crate::{
     DecoderRuntime, PaddingParams, TruncationParams,
-    models::bpe::{BpeScratch, PipelineBPE},
+    models::bpe::{BPE, BpeScratch},
     pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     tokenizer::Decoder as _,
@@ -872,12 +872,7 @@ impl PipelineTokenizer {
     }
 
     /// Decode for a byte-level BPE, whose vocab entries are already decoded raw bytes.
-    fn decode_byte_level(
-        &self,
-        bpe: &PipelineBPE,
-        ids: &[u32],
-        skip_special_tokens: bool,
-    ) -> String {
+    fn decode_byte_level(&self, bpe: &BPE, ids: &[u32], skip_special_tokens: bool) -> String {
         // Byte-level tokens average ~4 bytes
         let mut out: Vec<u8> = Vec::with_capacity(ids.len() * 4);
         for &id in ids {
@@ -1011,13 +1006,13 @@ pub trait Model {
     reason = "PipelineBPE holds a 1kB byte -> id lookup table"
 )]
 pub enum PipelineModel {
-    BPE(PipelineBPE),
+    BPE(BPE),
     #[cfg(feature = "unigram")]
     Unigram(Unigram),
     #[cfg(feature = "wordlevel")]
     WordLevel(WordLevel),
     #[cfg(feature = "wordpiece")]
-    WordPiece(PipelineWordPiece),
+    WordPiece(WordPiece),
 }
 
 impl PipelineModel {
@@ -1791,7 +1786,7 @@ mod tests {
         assert_eq!(pipeline.decode(&[7, 4], false).unwrap(), "hello he");
     }
 
-    fn hello_bpe() -> PipelineBPE {
+    fn hello_bpe() -> BPE {
         use crate::models::bpe::{BpeConfig, Merges, Vocab};
 
         let vocab: Vocab = [
@@ -1813,7 +1808,7 @@ mod tests {
             ("hel".to_string(), "l".to_string()),
             ("hell".to_string(), "o".to_string()),
         ];
-        PipelineBPE::from_config(BpeConfig {
+        BPE::from_config(BpeConfig {
             vocab,
             merges,
             ..BpeConfig::default()

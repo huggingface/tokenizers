@@ -30,15 +30,15 @@ fn m(pairs: &[(&str, &str)]) -> Merges {
 }
 
 /// The `hello` model: `h`/`e`/`l`/`o` plus the four merges that fold them into one id.
-fn hello(options: BpeConfig) -> Result<PipelineBPE> {
-    PipelineBPE::from_config(BpeConfig {
+fn hello(options: BpeConfig) -> Result<BPE> {
+    BPE::from_config(BpeConfig {
         vocab: v(HELLO_VOCAB),
         merges: m(HELLO_MERGES),
         ..options
     })
 }
 
-fn pipeline_ids(model: &PipelineBPE, sequence: &str) -> Vec<u32> {
+fn pipeline_ids(model: &BPE, sequence: &str) -> Vec<u32> {
     let mut out = Vec::new();
     let mut scratch = model.init_scratch();
     pipeline::Model::tokenize_pipeline(model, sequence, &mut scratch, &mut out).unwrap();
@@ -123,7 +123,7 @@ fn unknown_char_without_unk_is_dropped() {
 fn unk_replaces_unknown_chars() {
     let mut vocab = v(HELLO_VOCAB);
     vocab.insert("<unk>".into(), 8);
-    let pipeline = PipelineBPE::from_config(BpeConfig {
+    let pipeline = BPE::from_config(BpeConfig {
         vocab,
         merges: m(HELLO_MERGES),
         ..BpeConfig {
@@ -146,7 +146,7 @@ fn unk_replaces_unknown_chars() {
 fn fused_unk_collapses_runs() {
     let mut vocab = v(HELLO_VOCAB);
     vocab.insert("<unk>".into(), 8);
-    let pipeline = PipelineBPE::from_config(BpeConfig {
+    let pipeline = BPE::from_config(BpeConfig {
         vocab,
         merges: m(HELLO_MERGES),
         ..BpeConfig {
@@ -174,7 +174,7 @@ fn byte_fallback_vocab() -> Vocab {
 
 #[test]
 fn byte_fallback_encodes_missing_chars_as_byte_tokens() {
-    let pipeline = PipelineBPE::from_config(BpeConfig {
+    let pipeline = BPE::from_config(BpeConfig {
         vocab: byte_fallback_vocab(),
         merges: vec![],
         ..BpeConfig {
@@ -191,7 +191,7 @@ fn byte_fallback_encodes_missing_chars_as_byte_tokens() {
 
 #[test]
 fn byte_fallback_wins_over_unk() {
-    let pipeline = PipelineBPE::from_config(BpeConfig {
+    let pipeline = BPE::from_config(BpeConfig {
         vocab: byte_fallback_vocab(),
         merges: vec![],
         ..BpeConfig {
@@ -221,7 +221,7 @@ fn rejects_unsupported_configs() {
     // no merges: the merge-map derivation underflows on merges whose right token
     // is shorter than continuing_subword_prefix (pre-existing, unrelated)
     let build = |options: BpeConfig| {
-        PipelineBPE::from_config(BpeConfig {
+        BPE::from_config(BpeConfig {
             vocab: v(HELLO_VOCAB),
             merges: vec![],
             ..options
@@ -301,7 +301,7 @@ fn byte_fallback_with_missing_codes_errors() {
 #[test]
 fn rejects_merge_token_out_of_vocabulary() {
     // The merge-map derivation is now part of this constructor, so its errors are its own.
-    let err = PipelineBPE::from_config(BpeConfig {
+    let err = BPE::from_config(BpeConfig {
         vocab: v(HELLO_VOCAB),
         merges: m(&[("h", "z")]),
         ..BpeConfig::default()
@@ -326,7 +326,7 @@ fn byte_level_bpe(
     extra: &[(&str, u32)],
     merges: &[(&str, &str)],
     ignore_merges: bool,
-) -> Result<PipelineBPE> {
+) -> Result<BPE> {
     let mut vocab: Vocab = (0..=255u8)
         .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
         .collect();
@@ -335,7 +335,7 @@ fn byte_level_bpe(
         .iter()
         .map(|&(a, b)| (projected(a), projected(b)))
         .collect();
-    PipelineBPE::from_config(BpeConfig {
+    BPE::from_config(BpeConfig {
         vocab,
         merges,
         ..BpeConfig {

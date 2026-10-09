@@ -2,7 +2,7 @@
 //! it (`merge_multipass` or `merge_hot_cold_queue`) wants to start from.
 use crate::models::bpe::At;
 use crate::models::bpe::merge_hot_cold_queue::{Entry, MergeQueue, QueueScratch};
-use crate::models::bpe::model::{Atoms, PipelineBPE};
+use crate::models::bpe::model::{Atoms, BPE};
 use crate::models::bpe::tables::{BpeTables, ID_MASK, RANK_MASK};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
@@ -126,7 +126,7 @@ impl<M: SinkMode> SymbolSink<M> {
     }
 }
 
-impl PipelineBPE {
+impl BPE {
     /// Converts one pretoken to internal IDs, returning the lowest-ranked adjacent pair,
     /// `u64::MAX` when no pair merges.
     pub(super) fn convert_multipass(&self, sequence: &str, symbols: &mut Vec<u32>) -> u64 {
