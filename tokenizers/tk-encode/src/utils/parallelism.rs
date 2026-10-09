@@ -7,9 +7,9 @@ use rayon::prelude::*;
 use rayon_cond::CondIterator;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::MutexGuard;
-use std::sync::TryLockError;
+use std::sync::PoisonError;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -26,17 +26,11 @@ static USED_PARALLELISM: AtomicBool = AtomicBool::new(false);
 /// TODO: deprecate
 static PARALLELISM: AtomicU8 = AtomicU8::new(0);
 
-/// 0 means deafult value
+/// 0 means the default value.
 static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
-/// Counter to track the current version of the pool
-/// After forking or changing the number of threads, we need to invalidate and recreate a new pool
-/// Old pools will be dropped when they go out of scope (arc refcount goes to 0)
+/// Version of the thread configuration used by the cached pool.
 static POOL_GEN: AtomicUsize = AtomicUsize::new(0);
 
-/// register an invalidation callback to be called after a fork with pthread_atfork
-/// this is required because when forking only the parent thread is copied to the child process so
-/// you lose access to the previously built thread pool -> rebuild needed
-/// cf the POSIX spec: https://pubs.opengroup.org/onlinepubs/9699919799/functions/fork.html
 #[cfg(unix)]
 fn register_fork_handler() {
     static REGISTERED: AtomicBool = AtomicBool::new(false);
@@ -45,7 +39,7 @@ fn register_fork_handler() {
         .is_ok()
     {
         unsafe extern "C" fn child_after_fork() {
-            POOL_GEN.fetch_add(1, Ordering::SeqCst);
+            CACHE.store(std::ptr::null_mut(), Ordering::Release);
         }
         unsafe {
             let _ = libc::pthread_atfork(None, None, Some(child_after_fork));
@@ -56,38 +50,57 @@ fn register_fork_handler() {
 #[cfg(not(unix))]
 fn register_fork_handler() {}
 
-#[derive(Clone)]
 struct Slot {
     pool: Arc<rayon::ThreadPool>,
     version: usize,
-    pid: u32,
 }
 
-static CELL: Mutex<Option<Slot>> = Mutex::new(None);
+struct Cache {
+    pid: u32,
+    slot: Mutex<Option<Slot>>,
+}
 
-type MaybeLockGuard = Option<MutexGuard<'static, Option<Slot>>>;
+// Published caches live for the process; a fork abandons the inherited lock and pool.
+static CACHE: AtomicPtr<Cache> = AtomicPtr::new(std::ptr::null_mut());
 
-fn lock() -> MaybeLockGuard {
-    match CELL.try_lock() {
-        Ok(g) => Some(g),
-        Err(TryLockError::Poisoned(p)) => Some(p.into_inner()),
-        Err(TryLockError::WouldBlock) => None,
+fn cache() -> &'static Cache {
+    register_fork_handler();
+    #[cfg(unix)]
+    let pid = std::process::id();
+    #[cfg(not(unix))]
+    let pid = 0;
+
+    loop {
+        let current = CACHE.load(Ordering::Acquire);
+        // SAFETY: published caches are never freed, and their pid is immutable.
+        if let Some(cache) = unsafe { current.as_ref() }
+            && cache.pid == pid
+        {
+            return cache;
+        }
+        let new = Box::into_raw(Box::new(Cache {
+            pid,
+            slot: Mutex::new(None),
+        }));
+        match CACHE.compare_exchange(current, new, Ordering::AcqRel, Ordering::Acquire) {
+            // SAFETY: this initialized cache is now published and will never be freed.
+            Ok(_) => return unsafe { &*new },
+            // SAFETY: this empty cache was never published and is still exclusively owned.
+            Err(_) => unsafe { drop(Box::from_raw(new)) },
+        }
     }
 }
 
 pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
-    register_fork_handler();
-
+    let mut guard = cache().slot.lock().unwrap_or_else(PoisonError::into_inner);
     let generation = POOL_GEN.load(Ordering::Acquire);
-    if let Some(guard) = lock()
-        && let Some(slot) = guard.as_ref()
+    if let Some(slot) = guard.as_ref()
         && generation == slot.version
     {
         return Some(slot.pool.clone());
     }
 
     let num_threads = num_threads();
-    // We don't create a thread pool when thread == 1
     let slot = if num_threads == 1 {
         None
     } else {
@@ -96,27 +109,21 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
             .thread_name(|i| format!("tk-encode-{i}"))
             .build()
             .ok()?;
-        let slot = Slot {
+        Some(Slot {
             pool: Arc::new(pool),
             version: generation,
-            pid: std::process::id(),
-        };
-        Some(slot)
+        })
     };
 
-    let old = lock().and_then(|mut guard| match &slot {
-        Some(slot) => guard.replace(slot.clone()),
-        None => guard.take(),
-    });
-
-    if let Some(old) = old
-        && old.pid != std::process::id()
-    {
-        // mem::forget is here to avoid deadlocking on the pool drop after forking
-        std::mem::forget(old.pool);
+    if generation != POOL_GEN.load(Ordering::Acquire) {
+        drop(guard);
+        return None;
     }
-
-    slot.map(|slot| slot.pool.clone())
+    let pool = slot.as_ref().map(|slot| slot.pool.clone());
+    let old = std::mem::replace(&mut *guard, slot);
+    drop(guard);
+    drop(old);
+    pool
 }
 
 pub fn num_threads() -> usize {
