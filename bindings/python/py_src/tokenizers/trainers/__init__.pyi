@@ -5,7 +5,7 @@ Trainers Module
 from collections.abc import Sequence
 from typing import Any, final
 
-from tokenizers import AddedToken
+from tokenizers import AddedToken, Tokenizer
 
 @final
 class BpeTrainer(Trainer):
@@ -111,6 +111,75 @@ class BpeTrainer(Trainer):
 
 @final
 class ParityBpeTrainer:
+    """
+    Trainer for parity-aware BPE that ensures cross-lingual fairness in tokenization.
+
+    Unlike standard BPE, this trainer takes one Python iterator per language and
+    balances merge operations across languages using a development set or target
+    compression ratios. The single training entry point is
+    :meth:`train_from_iterator`, the multi-corpus analogue of
+    :meth:`tokenizers.Tokenizer.train_from_iterator`. Balancing requires either
+    ``dev_iterators`` (ideally parallel across languages) or ``ratio``; given
+    neither, selection follows the per-language training totals, which the
+    highest-data language dominates, so the result stays close to plain BPE. When
+    both are given the dev set takes precedence. A runnable version that obtains
+    per-language corpora and a parallel dev set is in
+    ``examples/train_parity_bpe.py``.
+
+    Args:
+        num_merges (:obj:`int`, `optional`):
+            Number of BPE merge operations to perform. Defaults to ``32000``.
+
+        variant (:obj:`str`, `optional`):
+            Algorithm variant: ``"base"`` (default) or ``"window"`` (moving-window balancing).
+
+        min_frequency (:obj:`int`, `optional`):
+            Minimum pair frequency to merge. Defaults to ``0``.
+
+        ratio (:obj:`List[float]`, `optional`):
+            Target compression rate per language, one entry per training iterator. The
+            trainer selects the language with the lowest ``compression_rate / ratio``,
+            so raising one language's ratio gives it more merges; only the values
+            relative to each other matter. Rates are counted in the units the
+            pre-tokenizer emits, bytes under
+            :class:`~tokenizers.pre_tokenizers.ByteLevel`, so equal ratios do not give
+            equal tokenization across scripts: Devanagari takes about 2.5x the bytes of
+            Latin script for the same content. Set each ratio proportional to the
+            language's average length on parallel text instead. Defaults to ``None``.
+
+        global_merges (:obj:`int`, `optional`):
+            Number of initial standard BPE merges before switching to parity mode. Defaults to ``0``.
+
+        window_size (:obj:`int`, `optional`):
+            Window size for the ``"window"`` variant. Defaults to ``100``.
+
+        alpha (:obj:`float`, `optional`):
+            Alpha parameter for the ``"window"`` variant. Defaults to ``2.0``.
+
+        total_symbols (:obj:`bool`, `optional`):
+            If True, subtract unique character count from ``num_merges``. Defaults to ``False``.
+
+    Example::
+
+        >>> from tokenizers import Tokenizer, pre_tokenizers
+        >>> from tokenizers.models import BPE
+        >>> from tokenizers.trainers import ParityBpeTrainer
+        >>> tokenizer = Tokenizer(BPE())
+        >>> tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
+        >>> trainer = ParityBpeTrainer(num_merges=32000, variant="base")
+        >>> # balance against a parallel dev set, the same sentences in every language
+        >>> trainer.train_from_iterator(
+        ...     tokenizer,
+        ...     train_iterators=[english_lines, hindi_lines],
+        ...     dev_iterators=[english_dev, hindi_dev],
+        ... )
+        >>> # or against target rates, which need no dev data
+        >>> trainer.train_from_iterator(
+        ...     tokenizer,
+        ...     train_iterators=[english_lines, hindi_lines],
+        ...     ratio=[1.0, 2.57],
+        ... )
+    """
     def __getstate__(self, /) -> Any: ...
     def __new__(
         cls,
@@ -130,16 +199,10 @@ class ParityBpeTrainer:
         continuing_subword_prefix: str | None = None,
         end_of_word_suffix: str | None = None,
         max_token_length: int | None = None,
-    ) -> ParityBpeTrainer:
-        """Create and return a new object.  See help(type) for accurate signature."""
-        ...
-    def __repr__(self, /) -> str:
-        """Return repr(self)."""
-        ...
+    ) -> ParityBpeTrainer: ...
+    def __repr__(self, /) -> str: ...
     def __setstate__(self, /, state: Any) -> None: ...
-    def __str__(self, /) -> str:
-        """Return str(self)."""
-        ...
+    def __str__(self, /) -> str: ...
     @property
     def alpha(self, /) -> float: ...
     @alpha.setter
@@ -188,6 +251,44 @@ class ParityBpeTrainer:
     def total_symbols(self, /) -> bool: ...
     @total_symbols.setter
     def total_symbols(self, /, v: bool) -> None: ...
+    def train_from_iterator(
+        self,
+        /,
+        tokenizer: Tokenizer,
+        train_iterators: Sequence[Any],
+        dev_iterators: Sequence[Any] | None = None,
+        ratio: Sequence[float] | None = None,
+    ) -> None:
+        """
+        Train a user-configured tokenizer with parity-aware BPE from per-language
+        Python iterators.
+
+        Each entry of ``train_iterators`` (and optionally ``dev_iterators``) is a
+        Python iterator yielding strings (or batches / lists of strings) for one
+        language. This is the multi-corpus analogue of
+        :meth:`~tokenizers.Tokenizer.train_from_iterator`: file I/O happens in
+        Python, so users can pull data from plain text, parquet (via ``pyarrow``),
+        ``datasets``, etc.
+
+        Args:
+            tokenizer (:class:`~tokenizers.Tokenizer`):
+                A tokenizer instance to train. Its pre-tokenizer (and optionally
+                normalizer) should already be configured.
+
+            train_iterators (:obj:`List[Iterator]`):
+                One Python iterator per language, each yielding ``str`` or
+                ``List[str]``.
+
+            dev_iterators (:obj:`List[Iterator]`, `optional`):
+                One Python iterator per language, used to drive parity-aware
+                language selection. Must have the same length as
+                ``train_iterators``.
+
+            ratio (:obj:`List[float]`, `optional`):
+                Target compression rates per language, an alternative to
+                ``dev_iterators`` and ignored when one is supplied. See the class
+                docstring for how to choose the values.
+        """
     @property
     def variant(self, /) -> str: ...
     @property

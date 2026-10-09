@@ -154,7 +154,7 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
         let type_stubs = pyo3_introspection::module_stub_files(&python_module);
 
         for (rel_path, contents) in type_stubs {
-            let out_path = out_dir.join(&rel_path);
+            let out_path = package_stub_path(&out_dir, &rel_path);
             if let Some(parent) = out_path.parent() {
                 std::fs::create_dir_all(parent)
                     .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name))
@@ -168,6 +168,17 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
     })?;
 
     Ok(())
+}
+
+// Type checkers resolve `tokenizers.models` to the `models/` package, never to a
+// sibling `models.pyi`, so a submodule backed by a package gets its stub inside it.
+fn package_stub_path(out_dir: &Path, rel_path: &Path) -> PathBuf {
+    let package_dir = out_dir.join(rel_path.with_extension(""));
+    if package_dir.is_dir() {
+        package_dir.join("__init__.pyi")
+    } else {
+        out_dir.join(rel_path)
+    }
 }
 
 fn absolutize_local_imports(contents: &str, root_module: &str) -> String {

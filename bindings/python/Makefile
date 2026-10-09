@@ -34,7 +34,7 @@ check-style:
 	$(CARGO_ENV) cargo run --manifest-path ./tools/stub-gen/Cargo.toml
 	ruff check $(check_stubs) --select I --fix
 	ruff check $(check_dirs)
-	ruff format py_src/tokenizers/*.pyi
+	ruff format $(check_stubs)
 	ruff format --check $(check_dirs)
 	ty check py_src --exclude py_src/tokenizers/implementations --exclude py_src/tokenizers/tools/visualizer.py
 
