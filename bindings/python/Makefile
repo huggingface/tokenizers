@@ -41,6 +41,8 @@ check-style:
 
 TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json
 
+test-data: $(TESTS_RESOURCES)
+
 # Launch the Python test suite
 test-py: $(TESTS_RESOURCES)
 	$(PIP) install pytest pytest-asyncio huggingface_hub setuptools_rust numpy pyarrow datasets
