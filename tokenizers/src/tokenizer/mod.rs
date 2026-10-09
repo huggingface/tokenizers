@@ -88,32 +88,15 @@ pub trait Model {
 
     /// Tokenize every pre-token within a `PreTokenizedString` in one call.
     ///
-    /// When `truncation` is `Some((max_tokens, direction))`, the
-    /// `tokenize_with_limit` early-exit path is taken; otherwise every
-    /// pre-token is tokenized.
-    ///
     /// The default calls `self.tokenize()` per pre-token, which is correct
     /// for self-contained `Model` implementations.  Implementations that
     /// wrap their inner model behind a lock (e.g. the `PyModel` and Node
     /// `Model` bindings, both `Arc<RwLock<_>>`) can override this to
     /// acquire the lock once for the whole sequence of pre-tokens; that
     /// removes ~one atomic load/store pair per pre-token from the hot path
-    /// (~1 500 pre-tokens per ~10 KB document).  Both the truncated and
-    /// non-truncated paths benefit from the override because they share
-    /// this entry point.
-    fn tokenize_in_pretokenized(
-        &self,
-        pretokenized: &mut PreTokenizedString,
-        truncation: Option<(usize, TruncationDirection)>,
-    ) -> Result<()> {
-        match truncation {
-            Some((max_tokens, direction)) => pretokenized.tokenize_with_limit(
-                |normalized| self.tokenize(normalized.get()),
-                max_tokens,
-                direction,
-            ),
-            None => pretokenized.tokenize(|normalized| self.tokenize(normalized.get())),
-        }
+    /// (~1 500 pre-tokens per ~10 KB document).
+    fn tokenize_in_pretokenized(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
+        pretokenized.tokenize(|normalized| self.tokenize(normalized.get()))
     }
 }
 
@@ -1183,19 +1166,7 @@ where
         offsets_type: OffsetType,
     ) -> Result<Encoding> {
         let mut pretokenized: PreTokenizedString = pretokenized.into();
-        let truncation = match self.truncation.as_ref() {
-            Some(TruncationParams {
-                direction,
-                max_length,
-                strategy,
-                ..
-            }) if *strategy != TruncationStrategy::OnlySecond || type_id != 0 => {
-                Some((*max_length, *direction))
-            }
-            _ => None,
-        };
-        self.model
-            .tokenize_in_pretokenized(&mut pretokenized, truncation)?;
+        self.model.tokenize_in_pretokenized(&mut pretokenized)?;
         pretokenized.into_encoding(word_idx, type_id, offsets_type)
     }
 }
@@ -1666,7 +1637,7 @@ mod tests {
     }
 
     #[test]
-    fn right_truncation_early_exit_matches_full_encode() {
+    fn right_truncation_matches_full_encode() {
         // "a b c d e f g h i j" → 10 tokens [0,1,2,3,4,5,6,7,8,9]
         // Right truncation to 3 → [0,1,2]
         let input = "a b c d e f g h i j";
@@ -1689,6 +1660,61 @@ mod tests {
             truncated.get_ids(),
             &full.get_ids()[..3],
             "Right-truncated should match first 3 tokens of full encoding"
+        );
+    }
+
+    fn overflowing_ids(encoding: &Encoding) -> Vec<Vec<u32>> {
+        encoding
+            .get_overflowing()
+            .iter()
+            .map(|o| o.get_ids().to_vec())
+            .collect()
+    }
+
+    #[test]
+    fn truncation_keeps_every_overflowing_chunk() {
+        let input = "a b c d e f g h i j";
+        for direction in [TruncationDirection::Right, TruncationDirection::Left] {
+            for stride in [0, 1] {
+                let mut tok = test_tokenizer();
+                tok.with_truncation(Some(TruncationParams {
+                    max_length: 3,
+                    strategy: TruncationStrategy::LongestFirst,
+                    stride,
+                    direction,
+                }))
+                .unwrap();
+                let truncated = tok.encode(input, false).unwrap();
+
+                let mut expected = test_tokenizer().encode(input, false).unwrap();
+                expected.truncate(3, stride, direction);
+
+                assert_eq!(truncated.get_ids(), expected.get_ids());
+                assert_eq!(
+                    overflowing_ids(&truncated),
+                    overflowing_ids(&expected),
+                    "{direction:?}, stride {stride}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn right_truncation_overflow_covers_the_whole_input() {
+        let mut tok = test_tokenizer();
+        tok.with_truncation(Some(TruncationParams {
+            max_length: 3,
+            strategy: TruncationStrategy::LongestFirst,
+            stride: 0,
+            direction: TruncationDirection::Right,
+        }))
+        .unwrap();
+        let encoding = tok.encode("a b c d e f g h i j", false).unwrap();
+
+        assert_eq!(encoding.get_ids(), &[0, 1, 2]);
+        assert_eq!(
+            overflowing_ids(&encoding),
+            vec![vec![3, 4, 5], vec![6, 7, 8], vec![9]]
         );
     }
 

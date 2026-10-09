@@ -171,63 +171,63 @@ jobs:
           path: bindings/node/${{ env.APP_NAME }}.*.node
           if-no-files-found: error
 
-  publish:
-    # Skip the npm publish step on rc tags — publishing requires a stable
-    # version and the npm-side write permissions / secrets we only want
-    # active on real releases. rc tags still exercise the build +
-    # universal-macOS jobs (so the matrix is tested end-to-end), they
-    # just don't push to the registry.
-    if: ${{ !contains(github.ref, 'rc') }}
-    permissions:
-      # npm provenance signing needs id-token=write; the publish itself
-      # authenticates via NODE_AUTH_TOKEN (NPM_TOKEN secret), set up by
-      # actions/setup-node with registry-url.
-      contents: read
-      id-token: write
-    name: Publish
-    environment: release
-    runs-on: ubuntu-latest
-    needs:
-      - build
-      - universal-macOS
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - name: Setup node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
-        with:
-          node-version: lts/*
-          cache: yarn
-          cache-dependency-path: ./bindings/node/yarn.lock
-          registry-url: 'https://registry.npmjs.org'
-      - name: Install dependencies
-        working-directory: ./bindings/node
-        run: yarn install --immutable
-      - name: Download all artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
-        with:
-          path: ./bindings/node/artifacts
-      - name: Create missing npm/<triple> dirs
-        # `yarn artifacts` (napi artifacts) writes each `.node` file into
-        # `npm/<triple>/`. Some triples (e.g. darwin-universal) have no
-        # checked-in template dir, so without this step the artifacts
-        # command fails with ENOENT. `create-npm-dirs` populates anything
-        # missing from `napi.targets` in package.json.
-        working-directory: ./bindings/node
-        run: npx napi create-npm-dirs
+  # publish:
+  #   # Skip the npm publish step on rc tags — publishing requires a stable
+  #   # version and the npm-side write permissions / secrets we only want
+  #   # active on real releases. rc tags still exercise the build +
+  #   # universal-macOS jobs (so the matrix is tested end-to-end), they
+  #   # just don't push to the registry.
+  #   if: ${{ !contains(github.ref, 'rc') }}
+  #   permissions:
+  #     # npm provenance signing needs id-token=write; the publish itself
+  #     # authenticates via NODE_AUTH_TOKEN (NPM_TOKEN secret), set up by
+  #     # actions/setup-node with registry-url.
+  #     contents: read
+  #     id-token: write
+  #   name: Publish
+  #   environment: release
+  #   runs-on: ubuntu-latest
+  #   needs:
+  #     - build
+  #     - universal-macOS
+  #   steps:
+  #     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+  #     - name: Setup node
+  #       uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
+  #       with:
+  #         node-version: lts/*
+  #         cache: yarn
+  #         cache-dependency-path: ./bindings/node/yarn.lock
+  #         registry-url: 'https://registry.npmjs.org'
+  #     - name: Install dependencies
+  #       working-directory: ./bindings/node
+  #       run: yarn install --immutable
+  #     - name: Download all artifacts
+  #       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+  #       with:
+  #         path: ./bindings/node/artifacts
+  #     - name: Create missing npm/<triple> dirs
+  #       # `yarn artifacts` (napi artifacts) writes each `.node` file into
+  #       # `npm/<triple>/`. Some triples (e.g. darwin-universal) have no
+  #       # checked-in template dir, so without this step the artifacts
+  #       # command fails with ENOENT. `create-npm-dirs` populates anything
+  #       # missing from `napi.targets` in package.json.
+  #       working-directory: ./bindings/node
+  #       run: npx napi create-npm-dirs
 
-      - name: Move artifacts
-        # `napi artifacts` copies every discovered `.node` binary into the
-        # root workspace (in addition to the per-platform npm/<triple>/
-        # directories). Because package.json `files` includes `*.node`,
-        # those root-level binaries are what `npm pack` will include.
-        working-directory: ./bindings/node
-        run: yarn artifacts
-      - name: Verify package contents
-        working-directory: ./bindings/node
-        run: npm pack --dry-run --ignore-scripts
-      - name: Publish
-        working-directory: ./bindings/node
-        run: npm publish --access public --provenance --ignore-scripts
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+  #     - name: Move artifacts
+  #       # `napi artifacts` copies every discovered `.node` binary into the
+  #       # root workspace (in addition to the per-platform npm/<triple>/
+  #       # directories). Because package.json `files` includes `*.node`,
+  #       # those root-level binaries are what `npm pack` will include.
+  #       working-directory: ./bindings/node
+  #       run: yarn artifacts
+  #     - name: Verify package contents
+  #       working-directory: ./bindings/node
+  #       run: npm pack --dry-run --ignore-scripts
+  #     - name: Publish
+  #       working-directory: ./bindings/node
+  #       run: npm publish --access public --provenance --ignore-scripts
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
