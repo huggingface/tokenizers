@@ -128,6 +128,16 @@ CPU time, process high-water memory, and exact output validation. Measure `feed`
 public `do_train`, and end-to-end execution separately. Keep workload-specific
 results in benchmark records.
 
+## Design background
+
+The fixed-coordinate corpus representation grew from Yikai Liao's
+[2023 prototype](https://github.com/Yikai-Liao/efficient_bpe/blob/b1907dfb8b8634553e4ddfad6aba49b5e0d922cf/ebpe.py)
+and [2024 prototype](https://github.com/Yikai-Liao/efficient_bpe/blob/7bfbc638fa4d5e7d2a663699458d9a4b5def34af/ebpe_v2.py).
+The 2026 batching work drew on BatchBPE and YouTokenToMe's conditional rule
+pipeline. [Design history and references](DESIGN.md#credits-and-references)
+describe this development, related Re-Pair techniques, and the separately
+attributed radix-sort port.
+
 ## Source guide
 
 - Start with [mod.rs](mod.rs): `Training` initializes and restarts attempts,

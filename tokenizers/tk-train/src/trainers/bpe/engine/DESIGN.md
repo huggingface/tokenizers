@@ -70,6 +70,17 @@ descending weight, measures retained symbols, and assigns coordinates. Each
 retained symbol has one slot, and a separator ends each word. These coordinates
 remain fixed throughout the attempt.
 
+The project prototypes developed this representation in two stages. The
+[May 2023 version](https://github.com/Yikai-Liao/efficient_bpe/blob/b1907dfb8b8634553e4ddfad6aba49b5e0d922cf/ebpe.py)
+kept endpoint lengths at fixed positions in the original text. The
+[September 2024 version](https://github.com/Yikai-Liao/efficient_bpe/blob/7bfbc638fa4d5e7d2a663699458d9a4b5def34af/ebpe_v2.py)
+combined token IDs at both endpoints with a shared token-span table, weighted
+words, occurrence lists, and local pair-count updates. Fixed coordinates let
+those lists retain their addresses across merges; endpoint IDs and spans supply
+the current neighbors at each visited occurrence. The current fresh-mode layout
+continues that representation, with the occurrence-span extension described below
+for active ID reuse.
+
 A live token stores its ID at its first and last slots. Its span is the number of
 retained-symbol slots it covers. The span locates the next live token; the
 preceding endpoint locates the previous token. A merge updates endpoints and
@@ -107,6 +118,18 @@ Reuse preparation always partitions at word boundaries. It scans complete words
 when an ID has been reused or a birth length limit is configured; otherwise it
 can visit the cohort's recorded positions within those regions. This preserves
 intermediate boundaries needed for cohort accounting.
+
+Related Re-Pair work provides earlier examples of occurrence-based replacement,
+local neighbor updates, and navigation across vacated array positions.
+[Larsson and Moffat (1999), Section 2.3](https://avadeaux.net/larsson.dogma.net/dcc99.pdf)
+describe the occurrence and update machinery.
+[Bille, Gørtz, and Prezza (2016), Section 4.1](https://arxiv.org/html/1611.01479v1)
+describe constant-time traversal of blank runs; their
+[2017 implementation, Section 3.1](https://arxiv.org/html/1704.08558v1)
+uses half-word slots, a bitmap, and lengths for long blank runs. The endpoint-ID
+and shared-span representation above is the project's concrete encoding of its
+fixed-coordinate corpus. These references place its navigation and update
+strategy in the earlier literature.
 
 ### Delayed corpus construction
 
@@ -176,8 +199,11 @@ second application of that value, and the mutable borrow excludes safe
 concurrent corpus access. The type does not identify the corpus instance or
 version: the coordinator must preserve the preparation snapshot through apply.
 
-Commit updates each logical pair owner's state. An owner is a shard, while a
-worker is the pool thread executing its task; work stealing can change the worker.
+Commit routes each pair key to one logical owner, so that all count changes and
+birth fragments for that key meet at one shard before publication. An owner is a
+shard, while a worker is the pool thread executing its task; work stealing can
+change the worker. This project uses owner-sharded pair state to distribute
+reduction and publication while the coordinator retains ordered rule selection.
 The reciprocal router gives the same owner as integer remainder. Routing changes
 where a key is stored, never its priority.
 
@@ -187,6 +213,14 @@ again. [Failure behavior](#failure-behavior) specifies what happens if a phase
 returns an error.
 
 ## Why batching preserves rule priority
+
+The 2026 batching design was informed by
+[BatchBPE's position-sensitive batching, Sections 3.1–3.4](https://arxiv.org/html/2408.04653v1)
+and [YouTokenToMe's conditional two-rule pipeline](https://github.com/VKCOM/YouTokenToMe/blob/f4162d846057a3118222ca04a01b84297eb8a8db/youtokentome/cpp/bpe.cpp#L1121-L1169).
+They motivated examining when several pending replacements can coexist.
+This engine's contract also requires preserving weighted rule priority and the
+token-ID tie order. The argument below establishes those conditions for its
+ordered-prefix batches and identifies the cases handled by single-rule rounds.
 
 [RuleBatch](batch.rs) selects an ordered prefix. It stops at the first incompatible
 candidate and does not skip that candidate to accept a lower-priority rule.
@@ -483,6 +517,11 @@ when needed. This preserves full-width coordinates. Position buffers specialize
 the same storage with an empty payload. Linked chains add bounded local node
 references and reverse traversal.
 
+Full-width coordinates remove a 32-bit coordinate limit from these lists and
+chains. Allocation still depends on checked resident-size bounds, the platform's
+addressable object sizes, and available memory. Corpus slots, index state,
+occurrence storage, and worker scratch all contribute to the resident working set.
+
 ### Encoded occurrence lists
 
 [SortedPositions](storage/sorted_positions.rs) uses inline small cases and
@@ -541,6 +580,51 @@ feed, public `do_train`, and end-to-end costs. Store recorded results with their
 inputs and build settings.
 
 ## Credits and references
+
+### Project prototypes
+
+Yikai Liao's
+[May 3, 2023 prototype](https://github.com/Yikai-Liao/efficient_bpe/blob/b1907dfb8b8634553e4ddfad6aba49b5e0d922cf/ebpe.py)
+used endpoint lengths at fixed text coordinates.
+The [September 9, 2024 prototype](https://github.com/Yikai-Liao/efficient_bpe/blob/7bfbc638fa4d5e7d2a663699458d9a4b5def34af/ebpe_v2.py)
+combined endpoint token IDs and shared token spans with weighted words,
+occurrence lists, and local updates. These snapshots document the development
+of the corpus representation used by this engine.
+
+### Related Re-Pair techniques
+
+- N. Jesper Larsson and Alistair Moffat,
+  [Offline Dictionary-Based Compression](https://avadeaux.net/larsson.dogma.net/dcc99.pdf),
+  DCC 1999, Section 2.3: occurrence structures, local neighbor updates, and
+  navigation across gaps left by replacements.
+- Philip Bille, Inge Li Gørtz, and Nicola Prezza,
+  [Space-Efficient Re-Pair Compression](https://arxiv.org/abs/1611.01479v1),
+  2016 preprint, Section 4.1: constant-time skipping of blank runs in an array.
+- Philip Bille, Inge Li Gørtz, and Nicola Prezza,
+  [Practical and Effective Re-Pair Compression](https://arxiv.org/abs/1704.08558v1),
+  2017 preprint, Section 3.1: half-word text storage, a bitmap, and long-run
+  lengths for compact navigation.
+
+These papers provide related techniques for locating occurrences and traversing
+text after replacements. The fixed-coordinate section describes this engine's
+endpoint-ID and span encoding and its active-reuse extension.
+
+### Sources informing the 2026 batching work
+
+- Alexander P. Morgan,
+  [Batching BPE Tokenization Merges](https://arxiv.org/abs/2408.04653v1),
+  August 5, 2024, Sections 3.1–3.4: compatibility checks for batching replacements.
+- [YouTokenToMe](https://github.com/VKCOM/YouTokenToMe/tree/f4162d846057a3118222ca04a01b84297eb8a8db),
+  revision `f4162d846057a3118222ca04a01b84297eb8a8db`:
+  [conditional admission of a second in-flight rule](https://github.com/VKCOM/YouTokenToMe/blob/f4162d846057a3118222ca04a01b84297eb8a8db/youtokentome/cpp/bpe.cpp#L1121-L1169).
+
+The project's
+[source analysis](https://github.com/Yikai-Liao/efficient_bpe/blob/96c59014aaf24cd7b5fd93a4f6f456ce5108dbf1/rust/PARALLEL_RESEARCH_IMPLEMENTATIONS.md)
+records the inspected YouTokenToMe behavior and the deductions used during the
+parallel design work. The ordered-prefix proof in this document covers this
+engine's weighted counts, pair-ID ties, and single-rule exceptions.
+
+### Integer encoding and radix-sort source
 
 Unsigned LEB128 gaps use base-128 varints, described in the
 [Protocol Buffers integer encoding documentation](https://protobuf.dev/programming-guides/encoding/#base-128-varints).
