@@ -106,6 +106,21 @@ fn every_component_encodes_what_it_should() {
     }
 }
 
+#[test]
+fn bpe_cache_capacity_is_configurable() {
+    let explicit = Json::parse(
+        r#"{"type": "BPE", "byte_level": false, "cache_capacity": 0,
+            "vocab": {"a": 0, "b": 1, "ab": 2}, "merges": [["a", "b"]]}"#,
+    )
+    .expect("valid BPE JSON");
+    let (_, _, options) = read_bpe(&explicit).expect("the BPE reads");
+    assert_eq!(options.cache_capacity, 0);
+
+    let absent = Json::parse(TINY_BPE).expect("valid BPE JSON");
+    let (_, _, options) = read_bpe(&absent).expect("the BPE reads");
+    assert_eq!(options.cache_capacity, BpeConfig::default().cache_capacity);
+}
+
 /// `(slot, json, in the message)`: a legacy or malformed shape, and what the refusal has to name so
 /// the caller knows what to convert. Inferring a model kind from its keys, rewriting `"a b"` merges,
 /// and folding a `Metaspace` or `ByteLevel` pre-tokenizer are all tk-convert's job now.
