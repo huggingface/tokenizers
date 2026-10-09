@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use js_sys::{JSON, Promise, Reflect};
 use tk_encode::pipeline::{EncodeOptions, PipelineTokenizer};
-use tokenizers_web::Tokenizer;
+use tokenizers_wasm::Tokenizer;
 use tsify::Ts;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};

@@ -1,1 +1,1 @@
-export * from "./tokenizers_web.js";
+export * from "./tokenizers_wasm.js";
