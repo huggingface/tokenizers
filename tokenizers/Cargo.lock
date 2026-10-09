@@ -191,7 +191,6 @@ checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 name = "bitcannon"
 version = "0.1.0-dev.2"
 dependencies = [
- "ahash",
  "onig",
 ]
 
@@ -2220,9 +2219,9 @@ dependencies = [
 
 [[package]]
 name = "ptr_hash"
-version = "2.0.3"
+version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8b245ffd7f6df09abe5067afa7627372515dd87aefbfed91a0e5c34398da302"
+checksum = "b22cf1be774892680e056d3387db0dcaa4fd46964b270671ef661e127186b969"
 dependencies = [
  "bitvec",
  "colored",

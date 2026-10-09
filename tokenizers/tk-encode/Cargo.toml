@@ -31,7 +31,7 @@ path = "src/lib.rs"
 ############ Required dependencies ###############################
 bitcannon = { path = "../bitcannon", version = "0.1.0-dev.2" }
 rand = "0.10"
-ptr_hash = { version = "2.0.2", default-features = false }
+ptr_hash = { version = "2.1.2", default-features = false }
 unicode_categories = "0.1"
 itertools = "0.15"
 log = "0.4"

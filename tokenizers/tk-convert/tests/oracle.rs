@@ -361,3 +361,11 @@ fn mistral_7b_v0_1() {
         "fixtures/models/mistral-7b-v0.1.json",
     );
 }
+
+#[test]
+fn modernbert_base() {
+    assert_matches_released(
+        "answerdotai/ModernBERT-base",
+        "fixtures/models/modernbert-base.json",
+    );
+}

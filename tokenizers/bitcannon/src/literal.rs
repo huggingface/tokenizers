@@ -92,6 +92,7 @@ fn match_bits(text: &[u8], needle: &[u8], base: usize) -> u64 {
 /// ragged tail and on targets with no kernel -- it may only ever be pessimistic, never miss.
 #[inline]
 fn any_bits(text: &[u8], base: usize, b: u8) -> bool {
+    let _ = b;
     if base + 64 <= text.len() {
         #[cfg(target_arch = "aarch64")]
         // SAFETY: bounds checked directly above.

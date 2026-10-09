@@ -257,7 +257,7 @@ fn byte_level_is_a_model_field_not_a_pre_tokenizer() {
     // Where the flag *does* land is the model, which then wants every byte to be an atom. The
     // four-token vocab above is not one, so this is refused for that reason and no other.
     assert!(
-        read_err(&json).contains("Byte atom"),
+        read_err(&json).contains("byte-level vocabulary has no token for bytes"),
         "not the byte-atom refusal"
     );
 }
