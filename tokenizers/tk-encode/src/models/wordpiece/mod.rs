@@ -332,6 +332,10 @@ impl PipelineWordPiece {
         self.vocab_r.get(id as usize)?.as_deref().map(str::to_owned)
     }
 
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.vocab_trie.exact_match_search(token)
+    }
+
     /// `{"token": id}`, in id order. For a writer; the reverse table is dense over the ids, so the
     /// holes a config left are the `None`s that get skipped.
     pub fn vocab(&self) -> Vec<(String, u32)> {

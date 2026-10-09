@@ -223,10 +223,6 @@ struct TokenizerInner {
     /// Lowest id owned by the added vocabulary, or `u32::MAX` when there is none.
     /// Allows to skip the added vocabulary lookup if the token id is lower than this value.
     added_id_min: u32,
-    /// Which token plays which role (`"eos_token"` -> `"</s>"`), so a `tokenizer.json` can carry
-    /// the special-token metadata that used to need a separate `tokenizer_config.json`. Empty
-    /// when the config declares none. `BTreeMap` so the writer emits a stable key order.
-    role_to_token: BTreeMap<String, String>,
     /// Padding configuration, overridden per call by [`EncodeOptions::padding`].
     padding: Option<PaddingParams>,
     /// Truncation configuration, overridden per call by [`EncodeOptions::truncation`].
@@ -240,6 +236,10 @@ struct TokenizerInner {
 #[derive(Clone)]
 pub struct PipelineTokenizer {
     inner: Arc<TokenizerInner>,
+    ///  Which token plays which role (`"eos_token"` -> `"</s>"`), so a `tokenizer.json` can carry
+    /// the special-token metadata that used to need a separate `tokenizer_config.json`. Empty
+    /// when the config declares none. `BTreeMap` so the writer emits a stable key order.
+    role_to_token: BTreeMap<String, String>,
 }
 
 // comptime verification that PipelineTokenizer is Send + Sync
@@ -281,11 +281,11 @@ impl PipelineTokenizer {
                 post_processor,
                 decoder,
                 added_id_min,
-                role_to_token,
                 padding,
                 truncation,
                 scratch_pool: ScratchPool::new(),
             }),
+            role_to_token,
         }
     }
 
@@ -579,12 +579,19 @@ impl PipelineTokenizer {
 
     /// Which token plays which role, as the config declared it. Empty when it declared none.
     pub fn get_role_to_token(&self) -> &BTreeMap<String, String> {
-        &self.inner.role_to_token
+        &self.role_to_token
     }
 
     /// The token a role points at, e.g. `get_token_for_role("eos_token")`.
     pub fn get_token_for_role(&self, role: &str) -> Option<&str> {
-        self.inner.role_to_token.get(role).map(String::as_str)
+        self.role_to_token.get(role).map(String::as_str)
+    }
+
+    pub fn with_role_to_token(&self, role_to_token: BTreeMap<String, String>) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+            role_to_token,
+        }
     }
 
     pub fn get_padding(&self) -> Option<&PaddingParams> {
@@ -593,6 +600,16 @@ impl PipelineTokenizer {
 
     pub fn get_truncation(&self) -> Option<&TruncationParams> {
         self.inner.truncation.as_ref()
+    }
+
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
+        self.get_model().id_to_token(id)
+    }
+
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.get_added_vocabulary()
+            .token_to_id(token)
+            .or_else(|| self.get_model().token_to_id(token))
     }
 
     /// Encode `input` into token ids.
@@ -1031,6 +1048,18 @@ impl PipelineModel {
             Self::WordLevel(model) => model.id_to_token(id),
             #[cfg(feature = "wordpiece")]
             Self::WordPiece(model) => model.id_to_token(id),
+        }
+    }
+
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        match self {
+            Self::BPE(model) => model.token_to_id(token),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.token_to_id(token),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.token_to_id(token),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.token_to_id(token),
         }
     }
 }
@@ -1746,6 +1775,18 @@ mod tests {
             padding,
             truncation,
         )
+    }
+
+    #[test]
+    fn with_role_to_token() {
+        let pipeline = hello_pipeline();
+        let roles = BTreeMap::from([("eos_token".to_string(), "hello".to_string())]);
+
+        let rebuilt = pipeline.with_role_to_token(roles.clone());
+
+        assert_eq!(rebuilt.get_role_to_token(), &roles);
+        assert!(pipeline.get_role_to_token().is_empty());
+        assert!(Arc::ptr_eq(&pipeline.inner, &rebuilt.inner));
     }
 
     #[test]
