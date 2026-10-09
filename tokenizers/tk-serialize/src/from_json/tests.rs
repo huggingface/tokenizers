@@ -262,6 +262,16 @@ fn byte_level_is_a_model_field_not_a_pre_tokenizer() {
     );
 }
 
+#[test]
+fn byte_level_prefix_space_must_be_first_in_sequence() {
+    let json = config(&[(
+        "pre_tokenizer",
+        r#"{"type": "Sequence", "pretokenizers": [
+            {"type": "WhitespaceSplit"}, {"type": "ByteLevelPrefixSpace"}] }"#,
+    )]);
+    assert!(read_err(&json).contains("ByteLevelPrefixSpace must be first"));
+}
+
 /// One config per decoder variant, so a field rename fails here rather than silently producing a
 /// decoder that decodes nothing.
 #[test]

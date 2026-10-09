@@ -304,8 +304,30 @@ fn a_byte_level_pre_tokenizer_becomes_a_model_flag_and_a_split() {
         serde_json::json!([{"type": "WhitespaceSplit"}])
     );
 
+    let v = done(
+        BPE,
+        r#", "pre_tokenizer": {"type": "ByteLevel", "add_prefix_space": true,
+             "use_regex": false}"#,
+    );
+    assert_eq!(
+        v["pre_tokenizer"],
+        serde_json::json!({"type": "ByteLevelPrefixSpace"})
+    );
+
     // A model that never had one still has to say so.
     assert_eq!(done(BPE, "")["model"]["byte_level"], false);
+
+    let v = done(
+        BPE,
+        r#", "pre_tokenizer": {"type": "ByteLevel", "add_prefix_space": true}"#,
+    );
+    assert_eq!(
+        v["pre_tokenizer"],
+        serde_json::json!({"type": "Sequence", "pretokenizers": [
+            {"type": "ByteLevelPrefixSpace"},
+            {"type": "Split", "pattern": {"Regex": bitcannon::regexes::GPT2}}
+        ]})
+    );
 
     // Guards the canonical reader no longer carries: it reads `byte_level` only off a BPE, so
     // one anywhere else would be silently ignored rather than refused.
@@ -313,9 +335,10 @@ fn a_byte_level_pre_tokenizer_becomes_a_model_flag_and_a_split() {
     assert!(
         err(
             BPE,
-            r#", "pre_tokenizer": {"type": "ByteLevel", "add_prefix_space": true}"#
+            r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
+        {"type": "WhitespaceSplit"}, {"type": "ByteLevel", "add_prefix_space": true}] }"#
         )
-        .contains("add_prefix_space")
+        .contains("after earlier pre-tokenizers")
     );
     assert!(
         err(
@@ -326,6 +349,66 @@ fn a_byte_level_pre_tokenizer_becomes_a_model_flag_and_a_split() {
         .contains("last member")
     );
     assert!(err(UNIGRAM, bl).contains("needs a BPE model"));
+}
+
+#[test]
+fn byte_level_add_prefix_space_survives_canonicalization_and_special_token_splits() {
+    use tk_encode::pipeline::EncodeOptions;
+
+    let mut vocab = serde_json::Map::new();
+    for (byte, character) in tk_encode::utils::byte_level::BYTES_CHAR_LOOKUP
+        .iter()
+        .enumerate()
+    {
+        vocab.insert(character.to_string(), serde_json::json!(byte));
+    }
+    vocab.insert("ĠHello".to_string(), serde_json::json!(256));
+    vocab.insert("Hello".to_string(), serde_json::json!(257));
+    vocab.insert("Ġworld".to_string(), serde_json::json!(258));
+    vocab.insert("world".to_string(), serde_json::json!(259));
+    let model = serde_json::json!({
+        "type": "BPE",
+        "ignore_merges": true,
+        "vocab": vocab,
+        "merges": []
+    });
+    let mut value = config(
+        &model.to_string(),
+        r#", "pre_tokenizer": {"type": "ByteLevel", "add_prefix_space": true,
+             "trim_offsets": true},
+           "added_tokens": [{"id": 260, "content": "<s>", "single_word": false,
+             "lstrip": false, "rstrip": false, "normalized": false, "special": true}]"#,
+    );
+    #[cfg(feature = "bench-baseline")]
+    let released = tokenizers_release::Tokenizer::from_bytes(
+        serde_json::to_vec(&value).expect("legacy config serializes"),
+    )
+    .expect("the released tokenizer reads this config");
+    canonicalize_value(&mut value).expect("the supported ByteLevel setting canonicalizes");
+    let tokenizer = tk_serialize::from_json(&value.to_string()).expect("the canonical form reads");
+    let ids = |text: &str| {
+        tokenizer
+            .encode(text, &EncodeOptions::default())
+            .wait()
+            .unwrap()
+            .iter()
+            .flat_map(|encoding| encoding.ids())
+            .map(|token| token.id())
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(ids("Hello"), [256]);
+    assert_eq!(ids(" Hello"), [256]);
+    assert_eq!(ids("Hello<s>world"), [256, 260, 258]);
+
+    #[cfg(feature = "bench-baseline")]
+    for text in ["Hello", " Hello", "Hello<s>world"] {
+        assert_eq!(
+            ids(text),
+            released.encode(text, true).unwrap().get_ids(),
+            "released tokenizer differs for {text:?}"
+        );
+    }
 }
 
 // ---- the post-processor ------------------------------------------------------------------------
@@ -505,7 +588,7 @@ fn every_fixture_canonicalises_into_something_the_canonical_reader_accepts() {
     /// Fixtures with no canonical form, each with a substring its refusal must contain. Every
     /// entry is a limit of what the pipeline can *build*, not a gap in this pass; listing them
     /// makes adding one a diff a reviewer sees. Checked both ways, so a stale entry fails too.
-    const UNCONVERTIBLE: &[(&str, &str)] = &[("tokenizer.json", "add_prefix_space")];
+    const UNCONVERTIBLE: &[(&str, &str)] = &[];
 
     let Ok(entries) = std::fs::read_dir(std::path::Path::new(DATA)) else {
         eprintln!("skipping: no fixtures at {DATA} (populated by `make data models`)");
