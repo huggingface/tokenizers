@@ -403,3 +403,26 @@ fn byte_level_requires_full_byte_coverage() {
         .is_err()
     );
 }
+
+#[test]
+fn single_character_fold_obeys_affixes() {
+    for prefix in [None, Some("##".to_string())] {
+        let model = PipelineBPE::from_config(BpeConfig {
+            vocab: v(&[("", 0), ("b", 1), ("测", 2), ("b</w>", 3), ("测</w>", 4)]),
+            continuing_subword_prefix: prefix,
+            end_of_word_suffix: Some("</w>".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        let mut scratch = model.init_scratch();
+        // Repeat through one scratch to exercise both fold and cached results.
+        for _ in 0..2 {
+            for (input, expected) in [("b", vec![3]), ("测", vec![4]), ("", vec![])] {
+                let mut tokens = Vec::new();
+                pipeline::Model::tokenize_pipeline(&model, input, &mut scratch, &mut tokens)
+                    .unwrap();
+                assert_eq!(tokens.iter().map(|t| t.id()).collect::<Vec<_>>(), expected);
+            }
+        }
+    }
+}
