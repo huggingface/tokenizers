@@ -57,7 +57,21 @@ class BpeTrainer(Trainer):
         >>> tokenizer = Tokenizer(BPE())
         >>> tokenizer.train(["path/to/corpus.txt"], trainer)
     """
-    def __new__(cls, /, **kwargs) -> BpeTrainer: ...
+    def __new__(
+        cls,
+        /,
+        *,
+        vocab_size: int = 30000,
+        min_frequency: int = 0,
+        show_progress: bool = True,
+        progress_format: str = "indicatif",
+        special_tokens: list = [],
+        limit_alphabet: int | None = None,
+        initial_alphabet: Sequence[str] = [],
+        continuing_subword_prefix: str | None = None,
+        end_of_word_suffix: str | None = None,
+        max_token_length: int | None = None,
+    ) -> BpeTrainer: ...
     @property
     def continuing_subword_prefix(self, /) -> str | None: ...
     @continuing_subword_prefix.setter
@@ -355,7 +369,19 @@ class UnigramTrainer(Trainer):
         >>> tokenizer = Tokenizer(Unigram())
         >>> tokenizer.train(["path/to/corpus.txt"], trainer)
     """
-    def __new__(cls, /, **kwargs) -> UnigramTrainer: ...
+    def __new__(
+        cls,
+        /,
+        *,
+        vocab_size: int = 8000,
+        show_progress: bool = True,
+        special_tokens: list = [],
+        initial_alphabet: Sequence[str] = [],
+        shrinking_factor=0.75,
+        unk_token=None,
+        max_piece_length=16,
+        n_sub_iterations=2,
+    ) -> UnigramTrainer: ...
     @property
     def initial_alphabet(self, /) -> list[str]: ...
     @initial_alphabet.setter
@@ -403,7 +429,15 @@ class WordLevelTrainer(Trainer):
         >>> tokenizer = Tokenizer(WordLevel(unk_token="<unk>"))
         >>> tokenizer.train(["path/to/corpus.txt"], trainer)
     """
-    def __new__(cls, /, **kwargs) -> WordLevelTrainer: ...
+    def __new__(
+        cls,
+        /,
+        *,
+        vocab_size: int = 30000,
+        min_frequency: int = 0,
+        show_progress: bool = True,
+        special_tokens: list = [],
+    ) -> WordLevelTrainer: ...
     @property
     def min_frequency(self, /) -> int: ...
     @min_frequency.setter
@@ -465,7 +499,19 @@ class WordPieceTrainer(Trainer):
         >>> tokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
         >>> tokenizer.train(["path/to/corpus.txt"], trainer)
     """
-    def __new__(cls, /, **kwargs) -> WordPieceTrainer: ...
+    def __new__(
+        cls,
+        /,
+        *,
+        vocab_size: int = 30000,
+        min_frequency: int = 0,
+        show_progress: bool = True,
+        special_tokens: list = [],
+        limit_alphabet: int | None = None,
+        initial_alphabet: Sequence[str] = [],
+        continuing_subword_prefix: str | None = "##",
+        end_of_word_suffix: str | None = None,
+    ) -> WordPieceTrainer: ...
     @property
     def continuing_subword_prefix(self, /) -> str | None: ...
     @continuing_subword_prefix.setter

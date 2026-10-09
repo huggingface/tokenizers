@@ -5,6 +5,8 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod text_signature;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::try_init().ok();
 
@@ -139,8 +141,9 @@ fn generate_stubs(cdylib: &Path, out_dir: &Path) -> Result<(), Box<dyn std::erro
         println!("Found cdylib at {}", cdylib.display());
 
         let main_module_name = "tokenizers";
-        let python_module = pyo3_introspection::introspect_cdylib(&cdylib, main_module_name)
+        let mut python_module = pyo3_introspection::introspect_cdylib(&cdylib, main_module_name)
             .unwrap_or_else(|_| panic!("Failed introspection of {}", main_module_name));
+        text_signature::apply(&mut python_module, py.import(main_module_name)?.as_any())?;
 
         // Sanity check: if docstrings are missing the patched pyo3 in
         // .cargo/config.toml didn't actually apply to the cdylib build (most

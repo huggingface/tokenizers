@@ -70,7 +70,7 @@ class ByteLevel(Decoder):
         >>> decoder.decode(["ĠHello", "Ġworld"])
         ' Hello world'
     """
-    def __new__(cls, /, **_kwargs) -> ByteLevel: ...
+    def __new__(cls, /) -> ByteLevel: ...
 
 @final
 class CTC(Decoder):
