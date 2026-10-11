@@ -59,10 +59,13 @@ the pipeline keeps apart — so canonically it is spelled as the two it is:
 
 ```text
   "normalizer":    {"type":"MetaspaceNormalizer", "replacement":"▁",
-                    "prepend":bool, "drop_whitespace":bool}
+                    "prepend":"always"|"first"|"never", "drop_whitespace":bool}
   "pre_tokenizer": {"type":"Split", "pattern":{"String":"▁"},
                     "behavior":"MergedWithNext", "invert":false}
 ```
+
+`prepend` is a string, not the legacy `add_prefix_space` boolean. The `Metaspace`
+decoder uses the same three values under `prepend_scheme`.
 
 There is no `ByteLevel` pre-tokenizer either. Byte-level describes how the vocabulary is encoded,
 so it is `"byte_level"` on the model; the split it used to imply is a plain `Split` on the GPT-2
