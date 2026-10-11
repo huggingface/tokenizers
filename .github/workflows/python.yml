@@ -73,7 +73,7 @@ jobs:
       # Also provides `uvx`, which runs the huggingface_hub CLI that fetches the test fixtures
       # (see the Makefile) without a separate install step.
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: ${{ matrix.python }}
 
@@ -125,7 +125,7 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: "3.14"
 
