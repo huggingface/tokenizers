@@ -28,8 +28,3 @@ mod to_json;
 
 #[cfg(feature = "serialize")]
 pub use to_json::{post_processor_to_json, to_json};
-
-#[cfg(feature = "deserialize")]
-mod structured;
-#[cfg(feature = "deserialize")]
-pub use structured::segments_from_json;

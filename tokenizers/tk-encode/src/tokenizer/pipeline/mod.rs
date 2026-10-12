@@ -26,9 +26,9 @@ use super::Result;
 
 #[cfg(feature = "parallelism")]
 mod parallel;
+mod safe_ranges;
 mod scratch_pool;
-mod structured;
-pub use structured::EncodeSegment;
+pub use safe_ranges::SafeRangeInput;
 
 pub use scratch_pool::ModelScratch;
 
@@ -198,7 +198,7 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
 
 struct TokenizerInner {
     added_vocabulary: BucketAddedVocabulary,
-    /// Lazily built for structured text; shared by clones, never serialized.
+    /// Lazily built for untrusted text; shared by clones, never serialized.
     ordinary_added_vocabulary: OnceLock<BucketAddedVocabulary>,
     normalizers: Vec<PipelineNormalizer>,
     pre_tokenizer: PipelinePreTokenizer,
@@ -274,6 +274,10 @@ impl PipelineTokenizer {
 pub enum Input {
     Single(String),
     Pair(String, String),
+    /// A sequence with explicit trusted ranges for special-token matching.
+    SingleWithRanges(SafeRangeInput),
+    /// Each sequence carries its own independently indexed trusted ranges.
+    PairWithRanges(SafeRangeInput, SafeRangeInput),
 }
 
 #[derive(Clone)]
@@ -561,6 +565,9 @@ impl PipelineTokenizer {
 
     /// Encode `input` into token ids.
     ///
+    /// Pass a [`SafeRangeInput`] (or a pair/batch of them) to restrict special-token
+    /// matching to trusted UTF-8 byte ranges, independently of shared tokenizer policy.
+    ///
     /// Special tokens are matched in two passes:
     ///  1. on the raw input,
     ///  2. then on each segment after normalization
@@ -614,6 +621,15 @@ impl PipelineTokenizer {
                 let a = self.encode_sequence_with(&s1, scratch)?;
                 let b = self.encode_sequence_with(&s2, scratch)?;
                 Ok(self.post_process(a, Some(b), add_special_tokens)?)
+            }
+            Input::SingleWithRanges(seq) => {
+                let tokens = self.encode_safe_sequence_with(&seq, scratch)?;
+                self.post_process(tokens, None, add_special_tokens)
+            }
+            Input::PairWithRanges(s1, s2) => {
+                let a = self.encode_safe_sequence_with(&s1, scratch)?;
+                let b = self.encode_safe_sequence_with(&s2, scratch)?;
+                self.post_process(a, Some(b), add_special_tokens)
             }
         }
     }
