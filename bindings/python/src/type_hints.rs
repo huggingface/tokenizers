@@ -2,7 +2,7 @@
 
 use std::convert::Infallible;
 
-use numpy::{PyArray1, PyReadonlyArray1};
+use numpy::{PyArray1, PyReadonlyArray1, PyUntypedArray};
 use pyo3::exceptions::PyTypeError;
 use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
@@ -33,7 +33,8 @@ impl<'py> IntoPyObject<'py> for U32Array<'py> {
 /// `Encoding | Sequence[int] | NDArray[numpy.integer[Any]]`.
 ///
 /// An `Encoding` and a `uint32` numpy array are read in place, no copy.
-/// Any other sequence is copied into a `Vec<u32>` one element at a time.
+/// Contiguous native `int32`, `int64` and `uint64` arrays are range-checked and
+/// copied in Rust. Other sequences use Python's integer conversion.
 pub enum TokenIds<'py> {
     Encoding(Bound<'py, Encoding>),
     Array(PyReadonlyArray1<'py, u32>),
@@ -67,6 +68,28 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
                 Ok(_) => Self::Array(array),
                 Err(_) => Self::Copied(array.as_array().to_vec()),
             });
+        }
+        // Subclasses may override iteration. Keep their sequence semantics, and
+        // avoid trying each dtype for ordinary Python lists.
+        if obj.is_exact_instance_of::<PyUntypedArray>() {
+            macro_rules! copy_integer_array {
+                ($ty:ty) => {
+                    if let Ok(array) = obj.extract::<PyReadonlyArray1<$ty>>()
+                        && let Ok(slice) = array.as_slice()
+                        && let Ok(ids) = slice
+                            .iter()
+                            .map(|&id| u32::try_from(id))
+                            .collect::<Result<Vec<_>, _>>()
+                    {
+                        return Ok(Self::Copied(ids));
+                    }
+                };
+            }
+            // as_slice also checks alignment. Unsupported layouts, byte orders,
+            // and out-of-range IDs use the existing conversion and its errors.
+            copy_integer_array!(i32);
+            copy_integer_array!(i64);
+            copy_integer_array!(u64);
         }
         obj.extract::<Vec<u32>>().map(Self::Copied)
     }
