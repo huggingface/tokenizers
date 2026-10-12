@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::sync::OnceLock;
 
+use wide::u8x16;
+
 use crate::pipeline;
 use crate::tokenizer::Result;
 
@@ -50,6 +52,27 @@ impl CharacterCache {
     }
 }
 
+/// Given a slice bytes, return the length of the largest ASCII prefix.
+/// Leverages SIMD to check the input 16 bytes at a time.
+pub(crate) fn ascii_prefix_len(input: &[u8]) -> usize {
+    let mut chunks = input.chunks_exact(16);
+    let mut offset = 0;
+    for chunk in &mut chunks {
+        // In unicode, only ASCII bytes have their high bit set to 0 (meaning they are a single-byte codepoint)
+        // and .to_bitmask packs the top-bits into a u32, the lowest set bit is then the first non-ascii byte
+        let mask = u8x16::from(<[u8; 16]>::try_from(chunk).unwrap()).to_bitmask();
+        if mask != 0 {
+            return offset + mask.trailing_zeros() as usize;
+        }
+        offset += 16;
+    }
+    let remainder = chunks.remainder();
+    let mut window = [0u8;16];
+    window[..remainder.len()].copy_from_slice(remainder);
+    let mask = u8x16::from(window).to_bitmask();
+    offset + (mask.trailing_zeros() as usize).min(remainder.len())
+}
+
 /// Lowercases the input
 #[derive(Copy, Clone, Debug)]
 pub struct Lowercase;
@@ -81,6 +104,25 @@ mod tests {
         let cache = CharacterCache::new(char::is_alphabetic);
         for c in (0..=0x10FFFFu32).filter_map(char::from_u32) {
             assert_eq!(cache.get(c), c.is_alphabetic(), "{c:?}");
+        }
+    }
+
+    #[test]
+    fn ascii_prefix_len_stops_at_the_first_high_byte() {
+        for len in 0..=70 {
+            let ascii = vec![0x7F; len];
+            assert_eq!(ascii_prefix_len(&ascii), len, "all ASCII, len {len}");
+            for at in 0..len {
+                for high in [0x80, 0xFF] {
+                    let mut bytes = ascii.clone();
+                    bytes[at..].fill(high);
+                    assert_eq!(
+                        ascii_prefix_len(&bytes),
+                        at,
+                        "len {len}, {high:#x} from {at}"
+                    );
+                }
+            }
         }
     }
 
