@@ -33,6 +33,8 @@ impl Input {
         match self {
             Self::Single(s) => s.len(),
             Self::Pair(s1, s2) => s1.len() + s2.len(),
+            Self::SingleWithRanges(s) => s.text().len(),
+            Self::PairWithRanges(s1, s2) => s1.text().len() + s2.text().len(),
         }
     }
 }
@@ -167,6 +169,16 @@ impl EncodeBatch {
                         Seq::A => s1,
                         Seq::B => s2,
                     },
+                    Input::SingleWithRanges(s) => {
+                        return self.tokenizer.encode_safe_sequence_with(s, scratch);
+                    }
+                    Input::PairWithRanges(s1, s2) => {
+                        let s = match chunk.side {
+                            Seq::A => s1,
+                            Seq::B => s2,
+                        };
+                        return self.tokenizer.encode_safe_sequence_with(s, scratch);
+                    }
                 };
                 self.tokenizer
                     .encode_sequence_with(&input[chunk.range.clone()], scratch)
@@ -349,6 +361,25 @@ impl PipelineTokenizer {
         }
     }
 
+    // Range-bearing sequences remain whole. The ordinary planner extracts specials before
+    // worker dispatch and would bypass the per-input trust policy. Keeping one task per
+    // sequence also preserves the validated byte coordinates and normalization boundaries.
+    fn plan_safe_sequence(
+        seq_idx: usize,
+        side: Seq,
+        input: &super::SafeRangeInput,
+        chunks: &mut Vec<SequenceChunk>,
+        outputs: &mut Vec<ChunkResult>,
+    ) {
+        chunks.push(SequenceChunk {
+            seq: seq_idx,
+            idx: outputs.len(),
+            side,
+            range: 0..input.text().len(),
+        });
+        outputs.push(ChunkResult::new(None));
+    }
+
     fn plan_work(&self, inputs: &Inputs) -> Plan {
         let mut chunks = Vec::with_capacity(inputs.len());
         let mut side_a_len = Vec::with_capacity(inputs.len());
@@ -364,6 +395,16 @@ impl PipelineTokenizer {
                     self.plan_sequence(seq_idx, Seq::A, s1, &mut chunks, &mut seq_outputs);
                     let a_len = seq_outputs.len();
                     self.plan_sequence(seq_idx, Seq::B, s2, &mut chunks, &mut seq_outputs);
+                    side_a_len.push(a_len);
+                }
+                Input::SingleWithRanges(s) => {
+                    Self::plan_safe_sequence(seq_idx, Seq::A, s, &mut chunks, &mut seq_outputs);
+                    side_a_len.push(seq_outputs.len());
+                }
+                Input::PairWithRanges(s1, s2) => {
+                    Self::plan_safe_sequence(seq_idx, Seq::A, s1, &mut chunks, &mut seq_outputs);
+                    let a_len = seq_outputs.len();
+                    Self::plan_safe_sequence(seq_idx, Seq::B, s2, &mut chunks, &mut seq_outputs);
                     side_a_len.push(a_len);
                 }
             }
