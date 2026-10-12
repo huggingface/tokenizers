@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::ops::Range;
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock};
 
 use wide::u8x16;
 
@@ -74,6 +74,19 @@ pub(crate) fn ascii_prefix_len(input: &[u8]) -> usize {
     offset + (mask.trailing_zeros() as usize).min(remainder.len())
 }
 
+/// Finds the offset of the next chunk of 16 bytes that is only ascii characters, or input.len()
+/// Strides input 16 bytes per 16 bytes
+pub(crate) fn next_ascii_chunk(input: &[u8]) -> usize {
+    let mut offset: usize = 0;
+    while let Some(chunk) = input.get(offset..offset + 16) {
+        if u8x16::from(<[u8; 16]>::try_from(chunk).unwrap()).to_bitmask() == 0 {
+            return offset;
+        }
+        offset += 16
+    }
+    input.len()
+}
+
 /// Builds a normalizer's output when only parts of the input must change.
 /// Inputs that don't require changes are returned as Cow::Borrowed
 pub(crate) struct Rewriter<'a> {
@@ -117,6 +130,9 @@ impl<'a> Rewriter<'a> {
     }
 }
 
+static LOWERCASE_CACHE: LazyLock<CharacterCache> =
+    LazyLock::new(|| CharacterCache::new(|c| !lowercases_to_self(c)));
+
 /// Lowercases the input
 #[derive(Copy, Clone, Debug)]
 pub struct Lowercase;
@@ -129,13 +145,47 @@ pub(crate) fn lowercases_to_self(c: char) -> bool {
 
 impl pipeline::Normalizer for Lowercase {
     fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
-        if input.chars().all(lowercases_to_self) {
-            Ok(input.into())
-        } else {
-            Ok(Cow::Owned(
-                input.chars().flat_map(|c| c.to_lowercase()).collect(),
-            ))
+        let mut rewriter = Rewriter::new(input);
+        let bytes = input.as_bytes();
+
+        // First pass: normalize text chunks that contains non-ascii characters
+        let mut cursor = ascii_prefix_len(bytes);
+        while cursor < bytes.len() {
+            let end = cursor + next_ascii_chunk(&bytes[cursor..]);
+            let non_ascii_segment = &input[cursor..end];
+
+            let mut run_start = None;
+            for (i, c) in non_ascii_segment.char_indices() {
+                if LOWERCASE_CACHE.get(c) {
+                    run_start.get_or_insert(i);
+                } else if let Some(start) = run_start.take() {
+                    rewriter.replace_range_with(cursor + start..cursor + i, |out| {
+                        out.extend(
+                            non_ascii_segment[start..i]
+                                .chars()
+                                .flat_map(char::to_lowercase),
+                        )
+                    });
+                }
+            }
+            if let Some(start) = run_start {
+                rewriter.replace_range_with(cursor + start..end, |out| {
+                    out.extend(
+                        non_ascii_segment[start..]
+                            .chars()
+                            .flat_map(char::to_lowercase),
+                    )
+                });
+            }
+            cursor = end + ascii_prefix_len(&bytes[end..]);
         }
+        let mut result = rewriter.finish();
+
+        // Second pass: use make_ascii_lowercase to lowercase ascii characters
+        if result.bytes().any(|b| b.is_ascii_uppercase()) {
+            result.to_mut().make_ascii_lowercase();
+        }
+        Ok(result)
     }
 }
 
@@ -229,6 +279,65 @@ mod tests {
                 expected,
                 "input={input:?}"
             );
+        }
+    }
+
+    /// `count` texts of up to `max_len` bytes, each a random concatenation of `pieces`.
+    fn random_texts(seed: u64, pieces: &[&str], count: usize, max_len: usize) -> Vec<String> {
+        let mut state = seed;
+        let mut next = |bound: usize| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 33) as usize % bound
+        };
+        (0..count)
+            .map(|_| {
+                let len = next(max_len);
+                let mut text = String::new();
+                while text.len() < len {
+                    text.push_str(pieces[next(pieces.len())]);
+                }
+                text
+            })
+            .collect()
+    }
+
+    #[test]
+    fn lowercase_matches_the_char_chain() {
+        let pieces = [
+            "A",
+            "z",
+            " ",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "abcdefghijklmnopqrstuvwxyz",
+            "\u{c9}",
+            "\u{e9}",
+            "\u{130}",
+            "\u{1c5}",
+            "\u{212a}",
+            "\u{3a3}",
+            "\u{416}",
+            "\u{436}",
+            "\u{4e2d}",
+        ];
+        for text in random_texts(1, &pieces, 2000, 90) {
+            let expected: String = text.chars().flat_map(char::to_lowercase).collect();
+            let got = pipeline::Normalizer::normalize(&Lowercase, &text, 0).unwrap();
+            assert_eq!(got, expected, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn lowercase_borrows_text_that_is_already_lowercase() {
+        for text in [
+            "",
+            "the lazy dog jumps over the lazy dog",
+            "\u{43f}\u{440}\u{438}\u{432}\u{435}\u{442} \u{43c}\u{438}\u{440}",
+            "caf\u{e9} \u{4e2d}\u{6587} ok",
+        ] {
+            let got = pipeline::Normalizer::normalize(&Lowercase, text, 0).unwrap();
+            assert!(matches!(got, Cow::Borrowed(_)), "{text:?}");
         }
     }
 }
