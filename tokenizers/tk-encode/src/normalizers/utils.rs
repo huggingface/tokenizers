@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::ops::Range;
 use std::sync::OnceLock;
 
 use wide::u8x16;
@@ -67,10 +68,53 @@ pub(crate) fn ascii_prefix_len(input: &[u8]) -> usize {
         offset += 16;
     }
     let remainder = chunks.remainder();
-    let mut window = [0u8;16];
+    let mut window = [0u8; 16];
     window[..remainder.len()].copy_from_slice(remainder);
     let mask = u8x16::from(window).to_bitmask();
     offset + (mask.trailing_zeros() as usize).min(remainder.len())
+}
+
+/// Builds a normalizer's output when only parts of the input must change.
+/// Inputs that don't require changes are returned as Cow::Borrowed
+pub(crate) struct Rewriter<'a> {
+    input: &'a str,
+    cursor: usize,
+    output: Option<String>,
+}
+
+impl<'a> Rewriter<'a> {
+    pub(crate) fn new(input: &'a str) -> Self {
+        Self {
+            input,
+            cursor: 0,
+            output: None,
+        }
+    }
+
+    /// Copies the input bytes up to range, then replaces the range by calling `with`.
+    /// Ranges must come in ascending order and must not overlap.
+    pub(crate) fn replace_range_with(
+        &mut self,
+        range: Range<usize>,
+        with: impl FnOnce(&mut String),
+    ) {
+        debug_assert!(self.cursor <= range.start && range.start <= range.end);
+        let out = self
+            .output
+            .get_or_insert_with(|| String::with_capacity(self.input.len()));
+        out.push_str(&self.input[self.cursor..range.start]);
+        with(out);
+        self.cursor = range.end;
+    }
+
+    pub(crate) fn finish(self) -> Cow<'a, str> {
+        if let Some(mut owned) = self.output {
+            owned.push_str(&self.input[self.cursor..]);
+            Cow::Owned(owned)
+        } else {
+            Cow::Borrowed(self.input)
+        }
+    }
 }
 
 /// Lowercases the input
@@ -123,6 +167,46 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn rewriter_borrows_without_replace() {
+        for input in ["The lazy dog jumps over", ""] {
+            assert!(
+                matches!(Rewriter::new(input).finish(), Cow::Borrowed(_)),
+                "{input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rewriter_owns_after_a_replace() {
+        let mut rewriter = Rewriter::new("The lazy dog jumps over");
+        rewriter.replace_range_with(0.."The lazy".len(), |out| out.push_str("catzz"));
+        assert!(matches!(rewriter.finish(), Cow::Owned(s) if s == "catzz dog jumps over"));
+    }
+
+    #[test]
+    fn rewriter_splices_replacements_into_the_input() {
+        let cases: [(&str, &[(Range<usize>, &str)], &str); 6] = [
+            ("hello world", &[(0..5, "HI")], "HI world"),
+            ("hello world", &[(6..11, "")], "hello "),
+            ("hello world", &[(0..11, "x")], "x"),
+            ("hello world", &[(0..1, "HH"), (6..11, "w")], "HHello w"),
+            (
+                "hello world",
+                &[(0..5, "a"), (5..6, "b"), (6..6, "c")],
+                "abcworld",
+            ),
+            ("café 中文", &[(3..5, "e"), (6..9, "")], "cafe 文"),
+        ];
+        for (input, replacements, expected) in cases {
+            let mut rewriter = Rewriter::new(input);
+            for (range, text) in replacements {
+                rewriter.replace_range_with(range.clone(), |out| out.push_str(text));
+            }
+            assert_eq!(rewriter.finish(), expected, "{input:?} {replacements:?}");
         }
     }
 
