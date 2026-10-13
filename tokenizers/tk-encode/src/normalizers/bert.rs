@@ -207,31 +207,49 @@ impl BertNormalizer {
                 .then(|| bytes.len() - remainder.len())
         };
 
-        let Some(mut first) = first_change(input.as_bytes()) else {
+        let push_clean_ascii = |b: u8, out: &mut Vec<u8>| {
+            match b {
+                b'\t' | b'\n' | b'\r' if self.clean_text => out.push(b' '),
+                0x00..=0x1F | 0x7F if self.clean_text => {}
+                _ if self.lowercase => out.push(b.to_ascii_lowercase()),
+                _ => out.push(b),
+            };
+        };
+
+        let Some(first) = first_change(input.as_bytes()) else {
             return input;
         };
-        while !input.is_char_boundary(first) {
-            first -= 1;
+
+        let bytes = input.as_bytes();
+        let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+        out.extend_from_slice(&bytes[..first]);
+
+        let mut chunks = bytes[first..].chunks_exact(16);
+        for chunk in &mut chunks {
+            let mut lanes = u8x16::from(<[u8; 16]>::try_from(chunk).unwrap());
+            if self.clean_text {
+                let spaces = lanes.simd_eq(u8x16::splat(b'\t'))
+                    | lanes.simd_eq(u8x16::splat(b'\n'))
+                    | lanes.simd_eq(u8x16::splat(b'\r'));
+                let controls =
+                    lanes.simd_le(u8x16::splat(0x1F)) | lanes.simd_eq(u8x16::splat(0x7F));
+                if (controls & !spaces).any() {
+                    chunk.iter().for_each(|&b| push_clean_ascii(b, &mut out));
+                    continue;
+                }
+                lanes = spaces.select(u8x16::splat(b' '), lanes);
+            }
+            if self.lowercase {
+                lanes |= (lanes.simd_ge(u8x16::splat(b'A')) & lanes.simd_le(u8x16::splat(b'Z')))
+                    & u8x16::splat(0x20);
+            }
+            out.extend_from_slice(&lanes.to_array());
+        }
+        for &b in chunks.remainder() {
+            push_clean_ascii(b, &mut out);
         }
 
-        // At least one byte needs to change: copy
-        let mut out = String::with_capacity(input.len());
-        out.push_str(&input[..first]);
-        for c in input[first..].chars() {
-            // lowercase ascii chars
-            let c = if self.lowercase {
-                c.to_ascii_lowercase()
-            } else {
-                c
-            };
-            // Clean controls and spaces, if needed
-            match c {
-                '\t' | '\n' | '\r' if self.clean_text => out.push(' '),
-                '\0'..='\x1f' | '\x7f' if self.clean_text => {}
-                _ => out.push(c),
-            };
-        }
-        Cow::Owned(out)
+        Cow::Owned(unsafe { String::from_utf8_unchecked(out) })
     }
 }
 
