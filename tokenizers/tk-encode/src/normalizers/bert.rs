@@ -12,6 +12,7 @@ use unicode_categories::UnicodeCategories;
 use unicode_normalization::{
     IsNormalized, UnicodeNormalization, char::canonical_combining_class, is_nfd_quick,
 };
+use wide::u8x16;
 
 /// Checks whether a character is whitespace
 fn is_whitespace(c: char) -> bool {
@@ -175,19 +176,48 @@ impl BertNormalizer {
     }
 
     fn normalize_ascii<'a>(&self, input: Cow<'a, str>) -> Cow<'a, str> {
-        let needs_change = |byte: u8| {
-            // Control chars and spaces
-            self.clean_text && (byte < 0x20 || byte == 0x7F)
-            // Uppercase ascii: A-Z
-                || (self.lowercase && byte.is_ascii_uppercase())
+        let needs_change = |lanes: u8x16| {
+            let mut needs_change = u8x16::splat(0);
+            if self.clean_text {
+                // Check control chars and spaces
+                needs_change |= lanes.simd_le(u8x16::splat(0x1F)) // test for 0x00..=0x1F
+                | lanes.simd_eq(u8x16::splat(0x7F)); // DEL control char
+            }
+            if self.lowercase {
+                // Check range A-Z
+                needs_change |=
+                    lanes.simd_ge(u8x16::splat(b'A')) & lanes.simd_le(u8x16::splat(b'Z'));
+            }
+            needs_change
         };
-        // Check for no-op
-        if !input.bytes().any(needs_change) {
+
+        let first_change = |bytes: &[u8]| {
+            let mut chunks = bytes.chunks_exact(16);
+            for (n, chunk) in (&mut chunks).enumerate() {
+                let lanes = u8x16::from(<[u8; 16]>::try_from(chunk).unwrap());
+                if needs_change(lanes).any() {
+                    return Some(n * 16);
+                }
+            }
+            let remainder = chunks.remainder();
+            let mut window = [b'a'; 16];
+            window[..remainder.len()].copy_from_slice(remainder);
+            needs_change(u8x16::from(window))
+                .any()
+                .then(|| bytes.len() - remainder.len())
+        };
+
+        let Some(mut first) = first_change(input.as_bytes()) else {
             return input;
+        };
+        while !input.is_char_boundary(first) {
+            first -= 1;
         }
+
         // At least one byte needs to change: copy
         let mut out = String::with_capacity(input.len());
-        for c in input.chars() {
+        out.push_str(&input[..first]);
+        for c in input[first..].chars() {
             // lowercase ascii chars
             let c = if self.lowercase {
                 c.to_ascii_lowercase()
@@ -197,7 +227,7 @@ impl BertNormalizer {
             // Clean controls and spaces, if needed
             match c {
                 '\t' | '\n' | '\r' if self.clean_text => out.push(' '),
-                '\0'..='\x1f' | '\x7f' if self.clean_text => {},
+                '\0'..='\x1f' | '\x7f' if self.clean_text => {}
                 _ => out.push(c),
             };
         }
