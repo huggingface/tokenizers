@@ -71,7 +71,6 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
                 Err(_) => Self::Copied(array.as_array().to_vec()),
             });
         }
-        // Preserve custom iteration on ndarray subclasses.
         if obj.is_exact_instance_of::<PyUntypedArray>() {
             return Self::extract_numpy_ids(obj).map(Self::Copied);
         }
@@ -80,7 +79,6 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
 }
 
 impl TokenIds<'_> {
-    // Avoid increasing code size in the Encoding and uint32 fast paths.
     #[inline(never)]
     fn extract_numpy_ids(obj: Borrowed<'_, '_, PyAny>) -> PyResult<Vec<u32>> {
         let len = match obj.len() {
