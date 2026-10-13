@@ -1,11 +1,17 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::OnceLock};
 
-use crate::{pipeline, tokenizer::Result};
+use crate::{
+    normalizers::utils::{CharacterCache, Rewriter, unstable_spans_iter},
+    pipeline,
+    tokenizer::Result,
+};
 
 use super::lowercase::lowercases_to_self;
 
 use unicode_categories::UnicodeCategories;
-use unicode_normalization::{IsNormalized, UnicodeNormalization, is_nfd_quick};
+use unicode_normalization::{
+    IsNormalized, UnicodeNormalization, char::canonical_combining_class, is_nfd_quick,
+};
 
 /// Checks whether a character is whitespace
 fn is_whitespace(c: char) -> bool {
@@ -113,28 +119,28 @@ impl BertNormalizer {
         }
     }
 
-    fn is_noop(&self, input: &str, strip_accents: bool) -> bool {
-        if strip_accents && !matches!(is_nfd_quick(input.chars()), IsNormalized::Yes) {
-            return false;
-        }
-        let changes = |c: char| {
-            (self.clean_text && (clean_text_removes(c) || clean_text_map(c) != c))
-                || (self.handle_chinese_chars && is_chinese_char(c))
-                || (strip_accents && c.is_mark_nonspacing())
-                || (self.lowercase && !lowercases_to_self(c))
-        };
-        !input.chars().any(changes)
+    fn unstable_cache(&self, strip_accents: bool) -> &'static CharacterCache {
+        static CACHES: [OnceLock<CharacterCache>; 16] = [const { OnceLock::new() }; 16];
+        let (clean_text, handle_chinese, lowercase) =
+            (self.clean_text, self.handle_chinese_chars, self.lowercase);
+        let index = clean_text as usize
+            | (handle_chinese as usize) << 1
+            | (strip_accents as usize) << 2
+            | (lowercase as usize) << 3;
+        CACHES[index].get_or_init(|| {
+            CharacterCache::new(move |c| {
+                (clean_text && (clean_text_removes(c) || clean_text_map(c) != c))
+                    || (handle_chinese && is_chinese_char(c))
+                    || (strip_accents
+                        && (c.is_mark_nonspacing()
+                            || canonical_combining_class(c) != 0
+                            || !matches!(is_nfd_quick(std::iter::once(c)), IsNormalized::Yes)))
+                    || (lowercase && !lowercases_to_self(c))
+            })
+        })
     }
-}
 
-impl pipeline::Normalizer for BertNormalizer {
-    fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
-        let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
-
-        if self.is_noop(input, strip_accents) {
-            return Ok(input.into());
-        }
-
+    fn normalize_into(&self, input: &str, strip_accents: bool, out: &mut String) {
         let cleaned = input
             .chars()
             .filter(|&c| !(self.clean_text && clean_text_removes(c)))
@@ -154,27 +160,73 @@ impl pipeline::Normalizer for BertNormalizer {
 
         // `.nfd()` changes the iterator's type, so the stage toggles can't be
         // plain `if`s mid-chain: each config combination gets its own
-        // statically-typed chain, all funneled into one pre-sized String.
-        let mut normalized = String::with_capacity(input.len());
+        // statically-typed chain
         match (strip_accents, self.lowercase) {
-            (true, true) => normalized.extend(
+            (true, true) => out.extend(
                 cleaned
                     .nfd()
                     .filter(|c| !c.is_mark_nonspacing())
                     .flat_map(char::to_lowercase),
             ),
-            (true, false) => normalized.extend(cleaned.nfd().filter(|c| !c.is_mark_nonspacing())),
-            (false, true) => normalized.extend(cleaned.flat_map(char::to_lowercase)),
-            (false, false) => normalized.extend(cleaned),
+            (true, false) => out.extend(cleaned.nfd().filter(|c| !c.is_mark_nonspacing())),
+            (false, true) => out.extend(cleaned.flat_map(char::to_lowercase)),
+            (false, false) => out.extend(cleaned),
         }
+    }
 
-        Ok(Cow::Owned(normalized))
+    fn normalize_ascii<'a>(&self, input: Cow<'a, str>) -> Cow<'a, str> {
+        let needs_change = |byte: u8| {
+            // Control chars and spaces
+            self.clean_text && (byte < 0x20 || byte == 0x7F)
+            // Uppercase ascii: A-Z
+                || (self.lowercase && byte.is_ascii_uppercase())
+        };
+        // Check for no-op
+        if !input.bytes().any(needs_change) {
+            return input;
+        }
+        // At least one byte needs to change: copy
+        let mut out = String::with_capacity(input.len());
+        for c in input.chars() {
+            // lowercase ascii chars
+            let c = if self.lowercase {
+                c.to_ascii_lowercase()
+            } else {
+                c
+            };
+            // Clean controls and spaces, if needed
+            match c {
+                '\t' | '\n' | '\r' if self.clean_text => out.push(' '),
+                '\0'..='\x1f' | '\x7f' if self.clean_text => {},
+                _ => out.push(c),
+            };
+        }
+        Cow::Owned(out)
+    }
+}
+
+impl pipeline::Normalizer for BertNormalizer {
+    fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
+        let strip_accents = self.strip_accents.unwrap_or(self.lowercase);
+
+        // Pass 1: normalize non-ascii segments
+        let mut rewriter = Rewriter::new(input);
+        for span in unstable_spans_iter(input, self.unstable_cache(strip_accents), false) {
+            let text = &input[span.clone()];
+            self.normalize_into(text, strip_accents, rewriter.rewrite(span));
+        }
+        // Pass 2: Normalize ascii text
+        // 1. clean_text: transform \t, \r and \n to ' ', drop other control bytes (eg 0x00-0x01, 0x7F)
+        // 2. lowercase ASCII chars
+        // chinese, nfd, strip accents: nothing to do as those were handled by the previous pass
+        Ok(self.normalize_ascii(rewriter.finish()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::normalizers::utils::random_texts;
 
     const INPUTS: &[&str] = &[
         "Héllo World",
@@ -235,5 +287,124 @@ mod tests {
             hash, 0x9cde_0fd5_9e74_731d,
             "sweep digest moved: {hash:#018x}"
         );
+    }
+
+    fn configs() -> Vec<BertNormalizer> {
+        let mut configs = Vec::new();
+        for clean_text in [true, false] {
+            for chinese in [true, false] {
+                for strip_accents in [None, Some(true), Some(false)] {
+                    for lowercase in [true, false] {
+                        configs.push(BertNormalizer::new(
+                            clean_text,
+                            chinese,
+                            strip_accents,
+                            lowercase,
+                        ));
+                    }
+                }
+            }
+        }
+        configs
+    }
+
+    /// The per-character chain run on the whole string: what `normalize` must reproduce.
+    fn chain(n: &BertNormalizer, text: &str) -> String {
+        let mut out = String::new();
+        n.normalize_into(text, n.strip_accents.unwrap_or(n.lowercase), &mut out);
+        out
+    }
+
+    #[test]
+    fn normalize_matches_the_char_chain_on_the_whole_string() {
+        let pieces = [
+            "the quick brown fox jumps over the lazy dog, THE QUICK BROWN FOX",
+            "a",
+            "Z",
+            " ",
+            "\0",
+            "\u{7}",
+            "\u{b}",
+            "\u{1f}",
+            "\u{7f}",
+            "\t",
+            "\n",
+            "\r",
+            "\u{e9}",
+            "\u{c9}",
+            "\u{df}",
+            "\u{ff}",
+            "e\u{301}",
+            "E\u{301}",
+            "\u{301}",
+            "\u{323}\u{301}",
+            "\u{301}\u{323}",
+            "\u{1d165}\u{1d16e}",
+            "\u{212a}",
+            "\u{130}",
+            "\u{1c5}",
+            "\u{3a3}",
+            "\u{3ac}",
+            "\u{390}",
+            "\u{416}",
+            "\u{439}",
+            "\u{5d0}\u{5b0}\u{5b4}",
+            "\u{4e2d}\u{6587}",
+            "\u{3000}",
+            "\u{a0}",
+            "\u{85}",
+            "\u{ad}",
+            "\u{fffd}",
+            "\u{fb01}",
+            "\u{1f600}",
+        ];
+        let texts = random_texts(7, &pieces, 1500, 160);
+        for n in configs() {
+            for text in &texts {
+                let got = pipeline::Normalizer::normalize(&n, text, 0).unwrap();
+                assert_eq!(got, chain(&n, text), "{n:?} on {text:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn ascii_stages_match_the_chain_at_every_block_offset() {
+        let ascii = [
+            "a", "Q", " ", "\t", "\n", "\r", "\0", "\u{1b}", "\u{7f}", "~",
+        ];
+        for n in configs() {
+            for align in 0..16 {
+                for text in random_texts(align as u64, &ascii, 20, 48) {
+                    let text = "x".repeat(align) + &text + "\u{e9}";
+                    let got = pipeline::Normalizer::normalize(&n, &text, 0).unwrap();
+                    assert_eq!(got, chain(&n, &text), "{n:?} on {text:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn unchanged_text_comes_back_borrowed() {
+        let candidates = [
+            "",
+            "the quick brown fox jumps over the lazy dog",
+            "The Quick Brown Fox",
+            "caf\u{e9} au lait",
+            "cafe\u{301}",
+            "\u{43f}\u{440}\u{438}\u{432}\u{435}\u{442} \u{43c}\u{438}\u{440}",
+            "\u{4e2d}\u{6587}",
+            "\u{5d0}\u{5b0}",
+        ];
+        let mut checked = 0;
+        for n in configs() {
+            for text in candidates {
+                if chain(&n, text) == text {
+                    let got = pipeline::Normalizer::normalize(&n, text, 0).unwrap();
+                    assert!(matches!(got, Cow::Borrowed(_)), "{n:?} on {text:?}");
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 60, "only {checked} unchanged cases");
     }
 }
