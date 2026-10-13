@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::{pipeline, tokenizer::Result};
 
-use super::utils::lowercases_to_self;
+use super::lowercase::lowercases_to_self;
 
 use unicode_categories::UnicodeCategories;
 use unicode_normalization::{IsNormalized, UnicodeNormalization, is_nfd_quick};
