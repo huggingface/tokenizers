@@ -2,7 +2,9 @@
 
 use std::convert::Infallible;
 
-use numpy::{PyArray1, PyReadonlyArray1, PyUntypedArray};
+use numpy::{
+    PyArray1, PyArrayDescrMethods, PyReadonlyArray1, PyUntypedArray, PyUntypedArrayMethods,
+};
 use pyo3::exceptions::PyTypeError;
 use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
@@ -71,31 +73,50 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
         }
         // Subclasses may override iteration. Keep their sequence semantics, and
         // avoid trying each dtype for ordinary Python lists.
-        if obj.is_exact_instance_of::<PyUntypedArray>() {
-            macro_rules! copy_integer_array {
-                ($ty:ty) => {
-                    if let Ok(array) = obj.extract::<PyReadonlyArray1<$ty>>()
-                        && let Ok(slice) = array.as_slice()
-                        && let Ok(ids) = slice
-                            .iter()
-                            .map(|&id| u32::try_from(id))
-                            .collect::<Result<Vec<_>, _>>()
-                    {
-                        return Ok(Self::Copied(ids));
-                    }
-                };
-            }
-            // as_slice also checks alignment. Unsupported layouts, byte orders,
-            // and out-of-range IDs use the existing conversion and its errors.
-            copy_integer_array!(i32);
-            copy_integer_array!(i64);
-            copy_integer_array!(u64);
+        if obj.is_exact_instance_of::<PyUntypedArray>()
+            && let Some(ids) = Self::copy_numpy_ids(obj)
+        {
+            return Ok(Self::Copied(ids));
         }
         obj.extract::<Vec<u32>>().map(Self::Copied)
     }
 }
 
 impl TokenIds<'_> {
+    // Keep additional dtype dispatch out of the existing decode paths.
+    #[inline(never)]
+    fn copy_numpy_ids(obj: Borrowed<'_, '_, PyAny>) -> Option<Vec<u32>> {
+        let array = obj.cast::<PyUntypedArray>().ok()?;
+        if array.ndim() != 1 || !array.is_contiguous() || !array.is_aligned() {
+            return None;
+        }
+        let dtype = array.dtype();
+        if !matches!((dtype.kind(), dtype.itemsize()), (b'i', 4 | 8) | (b'u', 8))
+            || dtype.is_native_byteorder() != Some(true)
+        {
+            return None;
+        }
+        macro_rules! copy_integer_array {
+            ($ty:ty) => {
+                if let Ok(array) = obj.extract::<PyReadonlyArray1<$ty>>()
+                    && let Ok(slice) = array.as_slice()
+                    && let Ok(ids) = slice
+                        .iter()
+                        .map(|&id| u32::try_from(id))
+                        .collect::<Result<Vec<_>, _>>()
+                {
+                    return Some(ids);
+                }
+            };
+        }
+        // Unsupported layouts, byte orders, and out-of-range IDs use the
+        // existing conversion and its errors.
+        copy_integer_array!(i32);
+        copy_integer_array!(i64);
+        copy_integer_array!(u64);
+        None
+    }
+
     pub fn as_slice(&self) -> &[u32] {
         match self {
             Self::Encoding(encoding) => encoding.get().ids(),
