@@ -193,7 +193,12 @@ impl BertNormalizer {
             let out = match &mut out {
                 Some(out) => out,
                 None if !(mask.spaces | mask.deletes | mask.uppercase).any() => continue,
-                None => out.insert(Vec::from(&bytes[..chunk_idx * 16])),
+                None => {
+                    // The ASCII stages only replace or drop bytes: the output never outgrows the input.
+                    let mut fresh = Vec::with_capacity(bytes.len());
+                    fresh.extend_from_slice(&bytes[..chunk_idx * 16]);
+                    out.insert(fresh)
+                }
             };
             if mask.deletes.any() {
                 // We have to remove bytes from the input: can't use SIMD
@@ -213,7 +218,11 @@ impl BertNormalizer {
         let mut out = match out {
             Some(out) => out,
             None if !remainder.iter().any(|&b| self.ascii_changes(b)) => return input,
-            None => Vec::from(&bytes[..bytes.len() - remainder.len()]),
+            None => {
+                let mut fresh = Vec::with_capacity(bytes.len());
+                fresh.extend_from_slice(&bytes[..bytes.len() - remainder.len()]);
+                fresh
+            }
         };
         for &byte in remainder {
             self.push_ascii_byte(byte, &mut out);
