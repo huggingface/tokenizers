@@ -1,5 +1,9 @@
 use std::borrow::Cow;
+#[cfg(feature = "normalizers")]
+use std::sync::LazyLock;
 
+#[cfg(feature = "normalizers")]
+use crate::normalizers::utils::{CharacterCache, Rewriter, unstable_spans_iter};
 use crate::pipeline;
 use crate::tokenizer::Result;
 #[cfg(feature = "normalizers")]
@@ -34,6 +38,10 @@ impl pipeline::Normalizer for Strip {
     }
 }
 
+#[cfg(feature = "normalizers")]
+static STRIP_ACCENTS_CACHE: LazyLock<CharacterCache> =
+    LazyLock::new(|| CharacterCache::new(is_combining_mark));
+
 // This normalizer removes combining marks from a normalized string
 // It's different from unidecode as it does not attempt to modify
 // non ascii languages.
@@ -44,19 +52,18 @@ pub struct StripAccents;
 #[cfg(feature = "normalizers")]
 impl pipeline::Normalizer for StripAccents {
     fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
-        if input.chars().any(is_combining_mark) {
-            Ok(Cow::Owned(
-                input.chars().filter(|&c| !is_combining_mark(c)).collect(),
-            ))
-        } else {
-            Ok(Cow::Borrowed(input))
+        let mut rewriter = Rewriter::new(input);
+        for span in unstable_spans_iter(input, &STRIP_ACCENTS_CACHE, false) {
+            rewriter.rewrite(span); // write nothing = delete
         }
+        Ok(rewriter.finish())
     }
 }
 
 #[cfg(all(test, feature = "normalizers"))]
 mod tests {
     use super::*;
+    use crate::normalizers::utils::random_texts;
 
     /// Expected values were captured from the legacy `NormalizedString` normalizer this test used
     /// to compare against, on the commit that removed it -- so they still pin exactly what the two
@@ -126,6 +133,44 @@ mod tests {
                     "strip=({strip_left}, {strip_right}) input={input:?}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn strip_accents_matches_the_char_filter() {
+        let pieces = [
+            "e",
+            "\u{301}",
+            "\u{323}\u{301}",
+            "\u{e9}",
+            "e\u{301}",
+            "abcdefghijklmnopqrstuvwxyz",
+            " ",
+            "\u{416}",
+            "\u{5d0}\u{5b0}",
+            "\u{915}\u{93c}\u{94d}",
+            "\u{1d165}\u{1d16e}",
+            "\u{4e2d}",
+            "\u{1f600}",
+        ];
+        for text in random_texts(3, &pieces, 1000, 120) {
+            let expected: String = text.chars().filter(|&c| !is_combining_mark(c)).collect();
+            let got = pipeline::Normalizer::normalize(&StripAccents, &text, 0).unwrap();
+            assert_eq!(got, expected, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn strip_accents_borrows_text_without_marks() {
+        for text in [
+            "",
+            "abc",
+            "caf\u{e9}",
+            "\u{416}\u{436} \u{4e2d}",
+            &"x".repeat(40),
+        ] {
+            let got = pipeline::Normalizer::normalize(&StripAccents, text, 0).unwrap();
+            assert!(matches!(got, Cow::Borrowed(_)), "{text:?}");
         }
     }
 }
