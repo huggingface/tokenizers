@@ -87,7 +87,9 @@ impl TokenIds<'_> {
     #[inline(never)]
     fn copy_numpy_ids(obj: Borrowed<'_, '_, PyAny>) -> Option<Vec<u32>> {
         let array = obj.cast::<PyUntypedArray>().ok()?;
-        if array.ndim() != 1 || !array.is_contiguous() || !array.is_aligned() {
+        // Dtype dispatch can cost more than iteration for very short fallback
+        // arrays. Keep their existing conversion path.
+        if array.ndim() != 1 || array.len() < 8 || !array.is_contiguous() || !array.is_aligned() {
             return None;
         }
         let dtype = array.dtype();
