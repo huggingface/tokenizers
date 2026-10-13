@@ -9,7 +9,11 @@ pub(crate) struct Rewriter<'a> {
     output: Option<String>,
 }
 
+// #[inline(always)] is important and has been benched
+// With plain #[inline] the compiler keeps these as calls inside `Replace`'s
+// match loop, which costs more than the work they do.
 impl<'a> Rewriter<'a> {
+    #[inline(always)]
     pub(crate) fn new(input: &'a str) -> Self {
         Self {
             input,
@@ -21,6 +25,7 @@ impl<'a> Rewriter<'a> {
     /// Copies the input bytes up to `range`, skips `range`, then returns a &mut to
     /// the output so the caller can write the replacement for range into it.
     /// Ranges must come in ascending order and must not overlap.
+    #[inline(always)]
     pub(crate) fn rewrite(&mut self, range: Range<usize>) -> &mut String {
         debug_assert!(self.cursor <= range.start && range.start <= range.end);
         let out = self
@@ -31,6 +36,7 @@ impl<'a> Rewriter<'a> {
         out
     }
 
+    #[inline(always)]
     pub(crate) fn finish(self) -> Cow<'a, str> {
         if let Some(mut owned) = self.output {
             owned.push_str(&self.input[self.cursor..]);
