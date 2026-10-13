@@ -51,51 +51,53 @@ pub(crate) fn non_ascii_segments_iter(bytes: &[u8]) -> impl Iterator<Item = Rang
     })
 }
 
-pub(crate) fn unstable_spans_iter(
-    input: &str,
-    unstable: &CharacterCache,
+pub(crate) fn unstable_spans_iter<'a>(
+    input: &'a str,
+    unstable: &'a CharacterCache,
+    keep_cs_char: bool,
+) -> impl Iterator<Item = Range<usize>> + 'a {
+    non_ascii_segments_iter(input.as_bytes())
+        .flat_map(move |range| unstable_spans_in_segment(input, range, unstable, keep_cs_char))
+}
+
+fn unstable_spans_in_segment<'a>(
+    input: &'a str,
+    range: Range<usize>,
+    unstable: &'a CharacterCache,
     keep_previous_char: bool,
-) -> impl Iterator<Item = Range<usize>> {
-    non_ascii_segments_iter(input.as_bytes()).flat_map(move |segment| {
-        unstable_spans_in_segment(
-            &input[segment.clone()],
-            segment.start,
-            unstable,
-            keep_previous_char,
-        )
+) -> impl Iterator<Item = Range<usize>> + 'a {
+    let offset = range.start;
+    let segment = &input[range];
+    let mut chars = segment.char_indices();
+
+    std::iter::from_fn(move || {
+        let mut local_chars = chars.clone();
+        let first_unstable = local_chars.find(|&(_, c)| unstable.get(c));
+        let Some((run_start, _)) = first_unstable else {
+            chars = local_chars;
+            return None;
+        };
+        let end = local_chars
+            .find(|&(_, c)| !unstable.get(c))
+            .map_or(segment.len(), |(i, _)| i);
+        chars = local_chars;
+        let run_start = offset + run_start;
+        let start = if keep_previous_char && run_start > 0 {
+            previous_char_start(input.as_bytes(), run_start)
+        } else {
+            run_start
+        };
+
+        Some(start..offset + end)
     })
 }
 
-fn unstable_spans_in_segment(
-    segment: &str,
-    offset: usize,
-    unstable: &CharacterCache,
-    keep_previous_char: bool,
-) -> impl Iterator<Item = Range<usize>> {
-    let mut chars = segment.char_indices();
-    // The byte before an unstable span is always ascii, hence always a stable starter
-    let mut previous_stable = offset.checked_sub(1);
-    std::iter::from_fn(move || {
-        let (run_start, _) = chars.find(|&(i, c)| {
-            let is_unstable = unstable.get(c);
-            if !is_unstable {
-                previous_stable = Some(offset + i);
-            }
-            is_unstable
-        })?;
-        let start = match previous_stable {
-            Some(previous) if keep_previous_char => previous,
-            _ => offset + run_start,
-        };
-        let end = match chars.find(|&(_, c)| !unstable.get(c)) {
-            Some((i, _)) => {
-                previous_stable = Some(offset + i);
-                i
-            }
-            None => segment.len(),
-        };
-        Some(start..offset + end)
-    })
+fn previous_char_start(bytes: &[u8], at: usize) -> usize {
+    let mut start = at - 1;
+    while bytes[start] & 0xC0 == 0x80 {
+        start -= 1;
+    }
+    start
 }
 
 #[cfg(test)]
@@ -148,15 +150,15 @@ mod tests {
         let pieces = ["a", " ", &"x".repeat(40), "é", "Ж", "中", "😀"];
         for text in random_texts(4, &pieces, 2000, 200) {
             let bytes = text.as_bytes();
-            let mut previous_end = 0;
+            let mut cs_end = 0;
             for segment in non_ascii_segments_iter(bytes) {
-                assert!(previous_end <= segment.start, "{text:?}");
-                assert!(bytes[previous_end..segment.start].is_ascii(), "{text:?}");
+                assert!(cs_end <= segment.start, "{text:?}");
+                assert!(bytes[cs_end..segment.start].is_ascii(), "{text:?}");
                 assert!(bytes[segment.start] >= 0x80, "{text:?}");
                 assert!(text.is_char_boundary(segment.end), "{text:?}");
-                previous_end = segment.end;
+                cs_end = segment.end;
             }
-            assert!(bytes[previous_end..].is_ascii(), "{text:?}");
+            assert!(bytes[cs_end..].is_ascii(), "{text:?}");
         }
     }
 
@@ -198,17 +200,14 @@ mod tests {
         ];
         for text in random_texts(5, &pieces, 2000, 200) {
             let spans: Vec<_> = unstable_spans_iter(&text, &uppercase, false).collect();
-            let mut previous_end = 0;
+            let mut cs_end = 0;
             for span in &spans {
-                assert!(
-                    previous_end <= span.start && span.start < span.end,
-                    "{text:?}"
-                );
+                assert!(cs_end <= span.start && span.start < span.end, "{text:?}");
                 assert!(
                     text[span.clone()].chars().all(char::is_uppercase),
                     "{text:?}"
                 );
-                previous_end = span.end;
+                cs_end = span.end;
             }
             for (i, c) in text.char_indices() {
                 if !c.is_ascii() && c.is_uppercase() {
