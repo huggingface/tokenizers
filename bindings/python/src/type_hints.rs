@@ -71,8 +71,7 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
                 Err(_) => Self::Copied(array.as_array().to_vec()),
             });
         }
-        // Subclasses may override iteration. Keep their sequence semantics, and
-        // avoid trying each dtype for ordinary Python lists.
+        // Preserve custom iteration on ndarray subclasses.
         if obj.is_exact_instance_of::<PyUntypedArray>() {
             return Self::extract_numpy_ids(obj).map(Self::Copied);
         }
@@ -81,27 +80,27 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
 }
 
 impl TokenIds<'_> {
-    // Keep additional dtype dispatch out of the existing decode paths.
+    // Avoid increasing code size in the Encoding and uint32 fast paths.
     #[inline(never)]
     fn extract_numpy_ids(obj: Borrowed<'_, '_, PyAny>) -> PyResult<Vec<u32>> {
         let len = match obj.len() {
             Ok(len) => len,
             Err(_) => return obj.extract::<Vec<u32>>(),
         };
+
         if len == 0 {
             return Ok(Vec::new());
         }
-        // Dtype dispatch can cost more than iteration for very short fallback
-        // arrays. Keep their existing conversion path.
-        if len >= 8
-            && let Some(ids) = Self::copy_numpy_integer_ids(obj)
-        {
+
+        if let Some(ids) = Self::copy_numpy_integer_ids(obj) {
             return Ok(ids);
         }
+
         let mut ids = Vec::with_capacity(len);
         for item in obj.try_iter()? {
             ids.push(item?.extract::<u32>()?);
         }
+
         Ok(ids)
     }
 
@@ -111,12 +110,15 @@ impl TokenIds<'_> {
         if array.ndim() != 1 || !array.is_contiguous() || !array.is_aligned() {
             return None;
         }
+
         let dtype = array.dtype();
         if !matches!((dtype.kind(), dtype.itemsize()), (b'i', 4 | 8))
             || dtype.is_native_byteorder() != Some(true)
         {
             return None;
         }
+
+        // Preserve Python's overflow errors through scalar conversion.
         macro_rules! copy_integer_array {
             ($ty:ty) => {
                 if let Ok(array) = obj.extract::<PyReadonlyArray1<$ty>>()
@@ -130,10 +132,10 @@ impl TokenIds<'_> {
                 }
             };
         }
-        // Unsupported layouts, byte orders, and out-of-range IDs use the
-        // existing conversion and its errors.
+
         copy_integer_array!(i32);
         copy_integer_array!(i64);
+
         None
     }
 
