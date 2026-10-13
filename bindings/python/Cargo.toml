@@ -51,3 +51,4 @@ pyo3-build-config = "=0.29"
 # Not a workspace member, so this does not inherit tokenizers/Cargo.toml's profile.
 [profile.release]
 lto = "fat"
+codegen-units = 1
