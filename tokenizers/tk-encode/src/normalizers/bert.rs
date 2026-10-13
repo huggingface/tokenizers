@@ -68,6 +68,12 @@ fn is_chinese_char(c: char) -> bool {
     )
 }
 
+struct AsciiMasks {
+    spaces: u8x16,
+    deletes: u8x16,
+    uppercase: u8x16,
+}
+
 /// All four fields are required -- including `strip_accents`, which is an `Option<bool>` but has no
 /// `#[serde(default)]`, so a config has to spell it, if only as `null`. That is not an oversight to
 /// tidy: `null` and *absent* would mean the same thing to the type (`None`, meaning "follow
@@ -176,80 +182,80 @@ impl BertNormalizer {
     }
 
     fn normalize_ascii<'a>(&self, input: Cow<'a, str>) -> Cow<'a, str> {
-        let needs_change = |lanes: u8x16| {
-            let mut needs_change = u8x16::splat(0);
-            if self.clean_text {
-                // Check control chars and spaces
-                needs_change |= lanes.simd_le(u8x16::splat(0x1F)) // test for 0x00..=0x1F
-                | lanes.simd_eq(u8x16::splat(0x7F)); // DEL control char
-            }
-            if self.lowercase {
-                // Check range A-Z
-                needs_change |=
-                    lanes.simd_ge(u8x16::splat(b'A')) & lanes.simd_le(u8x16::splat(b'Z'));
-            }
-            needs_change
-        };
-
-        let first_change = |bytes: &[u8]| {
-            let mut chunks = bytes.chunks_exact(16);
-            for (n, chunk) in (&mut chunks).enumerate() {
-                let lanes = u8x16::from(<[u8; 16]>::try_from(chunk).unwrap());
-                if needs_change(lanes).any() {
-                    return Some(n * 16);
-                }
-            }
-            let remainder = chunks.remainder();
-            let mut window = [b'a'; 16];
-            window[..remainder.len()].copy_from_slice(remainder);
-            needs_change(u8x16::from(window))
-                .any()
-                .then(|| bytes.len() - remainder.len())
-        };
-
-        let push_clean_ascii = |b: u8, out: &mut Vec<u8>| {
-            match b {
-                b'\t' | b'\n' | b'\r' if self.clean_text => out.push(b' '),
-                0x00..=0x1F | 0x7F if self.clean_text => {}
-                _ if self.lowercase => out.push(b.to_ascii_lowercase()),
-                _ => out.push(b),
-            };
-        };
-
-        let Some(first) = first_change(input.as_bytes()) else {
-            return input;
-        };
-
         let bytes = input.as_bytes();
-        let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-        out.extend_from_slice(&bytes[..first]);
+        let mut out: Option<Vec<u8>> = None;
+        let mut chunks = bytes.chunks_exact(16);
 
-        let mut chunks = bytes[first..].chunks_exact(16);
-        for chunk in &mut chunks {
-            let mut lanes = u8x16::from(<[u8; 16]>::try_from(chunk).unwrap());
-            if self.clean_text {
-                let spaces = lanes.simd_eq(u8x16::splat(b'\t'))
-                    | lanes.simd_eq(u8x16::splat(b'\n'))
-                    | lanes.simd_eq(u8x16::splat(b'\r'));
-                let controls =
-                    lanes.simd_le(u8x16::splat(0x1F)) | lanes.simd_eq(u8x16::splat(0x7F));
-                if (controls & !spaces).any() {
-                    chunk.iter().for_each(|&b| push_clean_ascii(b, &mut out));
-                    continue;
+        // Read the text in chunks of 16 bytes
+        for (chunk_idx, chunk) in (&mut chunks).enumerate() {
+            let lanes = u8x16::from(<[u8; 16]>::try_from(chunk).unwrap());
+            let mask = self.compute_ascii_masks(lanes);
+            let out = match &mut out {
+                Some(out) => out,
+                None if !(mask.spaces | mask.deletes | mask.uppercase).any() => continue,
+                None => out.insert(Vec::from(&bytes[..chunk_idx * 16])),
+            };
+            if mask.deletes.any() {
+                // We have to remove bytes from the input: can't use SIMD
+                // We take the "slow" byte-per-byte path
+                for &byte in chunk {
+                    self.push_ascii_byte(byte, out);
                 }
-                lanes = spaces.select(u8x16::splat(b' '), lanes);
+            } else {
+                let lanes = mask.spaces.select(u8x16::splat(b' '), lanes)
+                    | (mask.uppercase & u8x16::splat(0x20));
+                out.extend_from_slice(&lanes.to_array());
             }
-            if self.lowercase {
-                lanes |= (lanes.simd_ge(u8x16::splat(b'A')) & lanes.simd_le(u8x16::splat(b'Z')))
-                    & u8x16::splat(0x20);
-            }
-            out.extend_from_slice(&lanes.to_array());
-        }
-        for &b in chunks.remainder() {
-            push_clean_ascii(b, &mut out);
         }
 
+        // Handle the remainder, byte by byte (at most 15)
+        let remainder = chunks.remainder();
+        let mut out = match out {
+            Some(out) => out,
+            None if !remainder.iter().any(|&b| self.ascii_changes(b)) => return input,
+            None => Vec::from(&bytes[..bytes.len() - remainder.len()]),
+        };
+        for &byte in remainder {
+            self.push_ascii_byte(byte, &mut out);
+        }
+
+        // SAFETY: only ASCII bytes are mutated: either repalced by another ASCII byte, or dropped from the Vec
+        // Every other byte is copied in order. `out` is always valid UTF-8
         Cow::Owned(unsafe { String::from_utf8_unchecked(out) })
+    }
+
+    fn compute_ascii_masks(&self, lanes: u8x16) -> AsciiMasks {
+        let zero = u8x16::splat(0);
+        let (mut spaces, mut deletes, mut capitals) = (zero, zero, zero);
+        if self.clean_text {
+            spaces = lanes.simd_eq(u8x16::splat(b'\t'))
+                | lanes.simd_eq(u8x16::splat(b'\n'))
+                | lanes.simd_eq(u8x16::splat(b'\r'));
+            deletes =
+                (lanes.simd_le(u8x16::splat(0x1F)) | lanes.simd_eq(u8x16::splat(0x7F))) & !spaces;
+        }
+        if self.lowercase {
+            capitals = lanes.simd_ge(u8x16::splat(b'A')) & lanes.simd_le(u8x16::splat(b'Z'));
+        }
+        AsciiMasks {
+            spaces,
+            deletes,
+            uppercase: capitals,
+        }
+    }
+
+    fn push_ascii_byte(&self, byte: u8, out: &mut Vec<u8>) {
+        match byte {
+            b'\t' | b'\n' | b'\r' if self.clean_text => out.push(b' '),
+            0x00..=0x1F | 0x7F if self.clean_text => {}
+            _ if self.lowercase => out.push(byte.to_ascii_lowercase()),
+            _ => out.push(byte),
+        }
+    }
+
+    fn ascii_changes(&self, byte: u8) -> bool {
+        (self.clean_text && (byte < 0x20 || byte == 0x7F))
+            || (self.lowercase && byte.is_ascii_uppercase())
     }
 }
 
