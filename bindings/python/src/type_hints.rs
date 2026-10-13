@@ -73,10 +73,8 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
         }
         // Subclasses may override iteration. Keep their sequence semantics, and
         // avoid trying each dtype for ordinary Python lists.
-        if obj.is_exact_instance_of::<PyUntypedArray>()
-            && let Some(ids) = Self::copy_numpy_ids(obj)
-        {
-            return Ok(Self::Copied(ids));
+        if obj.is_exact_instance_of::<PyUntypedArray>() {
+            return Self::extract_numpy_ids(obj).map(Self::Copied);
         }
         obj.extract::<Vec<u32>>().map(Self::Copied)
     }
@@ -85,11 +83,32 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
 impl TokenIds<'_> {
     // Keep additional dtype dispatch out of the existing decode paths.
     #[inline(never)]
-    fn copy_numpy_ids(obj: Borrowed<'_, '_, PyAny>) -> Option<Vec<u32>> {
-        let array = obj.cast::<PyUntypedArray>().ok()?;
+    fn extract_numpy_ids(obj: Borrowed<'_, '_, PyAny>) -> PyResult<Vec<u32>> {
+        let len = match obj.len() {
+            Ok(len) => len,
+            Err(_) => return obj.extract::<Vec<u32>>(),
+        };
+        if len == 0 {
+            return Ok(Vec::new());
+        }
         // Dtype dispatch can cost more than iteration for very short fallback
         // arrays. Keep their existing conversion path.
-        if array.ndim() != 1 || array.len() < 8 || !array.is_contiguous() || !array.is_aligned() {
+        if len >= 8
+            && let Some(ids) = Self::copy_numpy_integer_ids(obj)
+        {
+            return Ok(ids);
+        }
+        let mut ids = Vec::with_capacity(len);
+        for item in obj.try_iter()? {
+            ids.push(item?.extract::<u32>()?);
+        }
+        Ok(ids)
+    }
+
+    #[inline(never)]
+    fn copy_numpy_integer_ids(obj: Borrowed<'_, '_, PyAny>) -> Option<Vec<u32>> {
+        let array = obj.cast::<PyUntypedArray>().ok()?;
+        if array.ndim() != 1 || !array.is_contiguous() || !array.is_aligned() {
             return None;
         }
         let dtype = array.dtype();
