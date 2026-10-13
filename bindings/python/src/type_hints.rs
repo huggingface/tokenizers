@@ -35,7 +35,7 @@ impl<'py> IntoPyObject<'py> for U32Array<'py> {
 /// `Encoding | Sequence[int] | NDArray[numpy.integer[Any]]`.
 ///
 /// An `Encoding` and a `uint32` numpy array are read in place, no copy.
-/// Contiguous native `int32`, `int64` and `uint64` arrays are range-checked and
+/// Contiguous native `int32` and `int64` arrays are range-checked and
 /// copied in Rust. Other sequences use Python's integer conversion.
 pub enum TokenIds<'py> {
     Encoding(Bound<'py, Encoding>),
@@ -91,7 +91,7 @@ impl TokenIds<'_> {
             return None;
         }
         let dtype = array.dtype();
-        if !matches!((dtype.kind(), dtype.itemsize()), (b'i', 4 | 8) | (b'u', 8))
+        if !matches!((dtype.kind(), dtype.itemsize()), (b'i', 4 | 8))
             || dtype.is_native_byteorder() != Some(true)
         {
             return None;
@@ -113,7 +113,6 @@ impl TokenIds<'_> {
         // existing conversion and its errors.
         copy_integer_array!(i32);
         copy_integer_array!(i64);
-        copy_integer_array!(u64);
         None
     }
 
