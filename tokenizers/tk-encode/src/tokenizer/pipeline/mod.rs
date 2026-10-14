@@ -571,7 +571,7 @@ impl PipelineTokenizer {
     /// Whether a long text can be cut before a `\n` that has an ASCII letter or digit on both sides, and the
     /// parts encoded on their own, with the same ids: every normalizer works char by char and the
     /// pre-tokenizer always ends a word there. Lets one long input use every thread.
-    pub(crate) fn can_split_text(&self) -> bool {
+    pub fn can_split_text(&self) -> bool {
         fn pretok(p: &PipelinePreTokenizer) -> bool {
             match p {
                 PipelinePreTokenizer::Split(split) => split.is_gpt_regex(),

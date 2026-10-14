@@ -238,6 +238,48 @@ impl Tokenizer {
         Ok(Encoding::from(encoding))
     }
 
+    /// Encodes a UTF-8 text file in a stream, without loading it into Python.
+    ///
+    /// Rust threads read and encode the file piece by piece, and the returned iterator yields the token ids
+    /// of each piece, in file order, as a ``uint32`` numpy array (no ``Encoding``, no Python string).
+    /// Concatenated, they are ``encode(open(path).read(), add_special_tokens=add_special_tokens).ids``.
+    /// The threads run at most ``window`` pieces ahead of the consumer, so memory stays bounded.
+    /// The file is cut only where the tokenizer restarts identically; otherwise it is one piece.
+    ///
+    /// Args:
+    ///     path: The file to encode.
+    ///     threads: Number of encoding threads (default: all available cores).
+    ///     chunk_kb: Approximate size of a piece, in KiB.
+    ///     window: Maximum number of pieces encoded ahead of the consumer (default: 4 × threads).
+    ///     add_special_tokens: Whether to add the post-processor's special tokens to each piece.
+    ///
+    /// Returns:
+    ///     An iterator of ``numpy.ndarray`` of ``uint32``
+    #[pyo3(signature = (path, *, threads=None, chunk_kb=1024, window=None, add_special_tokens=false))]
+    fn encode_file(
+        &self,
+        path: PathBuf,
+        threads: Option<usize>,
+        chunk_kb: usize,
+        window: Option<usize>,
+        add_special_tokens: bool,
+    ) -> PyResult<crate::stream::EncodeStream> {
+        let threads = threads.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+        let mut options = EncodeOptions::no_specials();
+        options.add_special_tokens = add_special_tokens;
+        // a piece is not a sequence: padding or truncating it would change the concatenation
+        options.padding = Override::Off;
+        options.truncation = Override::Off;
+        crate::stream::EncodeStream::start(
+            &self.pipeline,
+            &path.to_string_lossy(),
+            options,
+            threads,
+            chunk_kb.max(1) << 10,
+            window.unwrap_or(4 * threads).max(threads),
+        )
+    }
+
     /// Encodes the given text, or pair of texts, and returns the string representation of each token.
     ///
     /// Shorthand for `decode_tokens(encode(input))`.
