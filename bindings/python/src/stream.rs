@@ -1,7 +1,7 @@
 //! `Tokenizer.encode_file`: toki's streaming encode driver behind a Python iterator.
 //!
-//! Worker threads cut the file into ~`chunk` byte pieces where encoding restarts identically (a `\n` with an ASCII
-//! letter or digit on both sides, when `can_split_text`), read each piece with pread and encode it with
+//! Worker threads cut the file into ~`chunk` byte pieces where encoding restarts identically (`stream_cut`: before
+//! a `\n` with an ASCII letter or digit on both sides, or before a space for a splitting `Metaspace`), read each piece with pread and encode it with
 //! `encode_into` (no `Encoding`). Finished pieces wait in a reorder buffer; the iterator hands them out in file
 //! order, one numpy `uint32` array each, without a copy. Workers run at most `window` pieces ahead of the
 //! consumer, so memory stays bounded whatever the file size, and the GIL is released while Python waits.
@@ -38,24 +38,23 @@ pub struct EncodeStream {
     workers: Vec<JoinHandle<()>>,
 }
 
-/// First cut >= x: a `\n` with an ASCII letter or digit on both sides (or the end), read forward in 64 KiB steps.
-fn cut(f: &File, size: usize, x: usize, splittable: bool, scratch: &mut Vec<u8>) -> std::io::Result<usize> {
+/// First cut >= x (or the end), read forward in 64 KiB steps: before a `\n` with an ASCII letter or digit on both
+/// sides, or before a space.
+fn cut(f: &File, size: usize, x: usize, sep: Option<u8>, scratch: &mut Vec<u8>) -> std::io::Result<usize> {
     if x == 0 {
         return Ok(0);
     }
-    if x >= size || !splittable {
+    let Some(sep) = sep.filter(|_| x < size) else {
         return Ok(size);
-    }
+    };
     let mut from = x - 1;
     loop {
         let n = (64usize << 10).min(size - from);
         scratch.resize(n, 0);
         f.read_exact_at(scratch, from as u64)?;
         for c in from + 1..from + n - 1 {
-            if scratch[c - from] == b'\n'
-                && scratch[c - from - 1].is_ascii_alphanumeric()
-                && scratch[c - from + 1].is_ascii_alphanumeric()
-            {
+            let b = &scratch[c - from - 1..c - from + 2];
+            if b[1] == sep && (sep == b' ' || (b[0].is_ascii_alphanumeric() && b[2].is_ascii_alphanumeric())) {
                 return Ok(c);
             }
         }
@@ -70,8 +69,8 @@ impl EncodeStream {
     pub fn start(pipeline: &Pipeline, path: &str, options: EncodeOptions, threads: usize, chunk: usize, window: usize) -> PyResult<Self> {
         let f = Arc::new(File::open(path).map_err(|e| PyValueError::new_err(format!("{path}: {e}")))?);
         let size = f.metadata().map_err(|e| PyValueError::new_err(e.to_string()))?.len() as usize;
-        let splittable = pipeline.can_split_text();
-        let n_pieces = if splittable { size.div_ceil(chunk).max(1) } else { 1 };
+        let sep = pipeline.stream_cut();
+        let n_pieces = if sep.is_some() { size.div_ceil(chunk).max(1) } else { 1 };
         let shared = Arc::new(Shared {
             state: Mutex::new(State { claimed: 0, consumed: 0, ready: BTreeMap::new(), error: None }),
             cv: Condvar::new(),
@@ -95,8 +94,8 @@ impl EncodeStream {
                             st.claimed - 1
                         };
                         let piece = (|| -> Result<Vec<u32>, String> {
-                            let lo = cut(&f, size, i * chunk, splittable, &mut scratch).map_err(|e| e.to_string())?;
-                            let hi = if i + 1 == n_pieces { size } else { cut(&f, size, (i + 1) * chunk, splittable, &mut scratch).map_err(|e| e.to_string())? };
+                            let lo = cut(&f, size, i * chunk, sep, &mut scratch).map_err(|e| e.to_string())?;
+                            let hi = if i + 1 == n_pieces { size } else { cut(&f, size, (i + 1) * chunk, sep, &mut scratch).map_err(|e| e.to_string())? };
                             toks.clear();
                             if hi > lo {
                                 data.resize(hi - lo, 0);

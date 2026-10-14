@@ -244,7 +244,9 @@ impl Tokenizer {
     /// of each piece, in file order, as a ``uint32`` numpy array (no ``Encoding``, no Python string).
     /// Concatenated, they are ``encode(open(path).read(), add_special_tokens=add_special_tokens).ids``.
     /// The threads run at most ``window`` pieces ahead of the consumer, so memory stays bounded.
-    /// The file is cut only where the tokenizer restarts identically; otherwise it is one piece.
+    /// The file is cut only where the tokenizer restarts identically (before a ``\n`` between ASCII letters or
+    /// digits for GPT regexes, whitespace and BERT, before a space for a splitting ``Metaspace``); otherwise it is
+    /// one piece.
     ///
     /// Args:
     ///     path: The file to encode.

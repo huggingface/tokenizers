@@ -595,6 +595,49 @@ impl PipelineTokenizer {
             })
     }
 
+    /// The byte a whole text (a file) can be cut before, with every piece encoded on its own to the same ids:
+    /// `\n` (with an ASCII letter or digit on both sides) when [`Self::can_split_text`], or `' '` for a
+    /// `Metaspace` that splits (pre-tokenizer `Split` on its delimiter, `MergedWithNext`): a space becomes the
+    /// delimiter that starts a word, and a piece starting with a space gets no extra delimiter. `None` when
+    /// neither holds, or when an added token contains the byte or strips whitespace, since its match could
+    /// cross the cut.
+    pub fn stream_cut(&self) -> Option<u8> {
+        let cut = if self.can_split_text() {
+            b'\n'
+        } else {
+            let normalizers = &self.inner.normalizers;
+            let Some((PipelineNormalizer::Metaspace(m), before)) = normalizers.split_last() else {
+                return None;
+            };
+            let char_wise = before.iter().all(|n| {
+                !matches!(
+                    n,
+                    PipelineNormalizer::Metaspace(_)
+                        | PipelineNormalizer::Replace(_)
+                        | PipelineNormalizer::Prepend(_)
+                        | PipelineNormalizer::Strip(_)
+                ) && !Self::is_precompiled(n)
+            });
+            let splits = match &self.inner.pre_tokenizer {
+                PipelinePreTokenizer::Split(split) => {
+                    matches!(&split.pattern, crate::pre_tokenizers::split::SplitPattern::String(d) if d.chars().eq(std::iter::once(m.delimiter())))
+                        && matches!(split.behavior, crate::SplitDelimiterBehavior::MergedWithNext)
+                        && !split.invert
+                }
+                _ => false,
+            };
+            if !(char_wise && splits) {
+                return None;
+            }
+            b' '
+        };
+        let added = self.inner.added_vocabulary.get_added_tokens_decoder();
+        let crosses = added
+            .values()
+            .any(|t| t.lstrip || t.rstrip || t.content.as_bytes().contains(&cut));
+        (!crosses).then_some(cut)
+    }
+
     #[allow(unreachable_patterns)]
     #[cfg_attr(not(feature = "normalizers"), allow(unused_variables))]
     fn is_precompiled(n: &PipelineNormalizer) -> bool {
