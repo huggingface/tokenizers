@@ -309,17 +309,19 @@ fn byte_level_drops_missing_atoms_and_merges_across_them() {
 
 #[test]
 fn byte_level_can_omit_an_unreachable_invalid_utf8_byte() {
-    let without_c0 = sparse_byte_level_config(0xC0, false, None, false);
-    assert_eq!(ids(&without_c0, "Hello"), vec![72, 101, 108, 108, 111]);
+    for (unk_token, byte_fallback) in [(None, false), (Some("<unk>"), false), (None, true)] {
+        let without_c0 = sparse_byte_level_config(0xC0, false, unk_token, byte_fallback);
+        assert_eq!(ids(&without_c0, "Hello"), vec![72, 101, 108, 108, 111]);
+    }
 }
 
 #[test]
 fn byte_level_rejects_sparse_vocab_with_unk_or_byte_fallback() {
     let with_unk = sparse_byte_level_config(0x0B, false, Some("<unk>"), false);
-    assert!(read_err(&with_unk).contains("Byte atom `0x0B`"));
+    assert!(read_err(&with_unk).contains("byte-level vocabulary has no token for bytes 0x0B"));
 
     let with_fallback = sparse_byte_level_config(0x0B, false, None, true);
-    assert!(read_err(&with_fallback).contains("Byte atom `0x0B`"));
+    assert!(read_err(&with_fallback).contains("byte-level vocabulary has no token for bytes 0x0B"));
 }
 
 /// One config per decoder variant, so a field rename fails here rather than silently producing a

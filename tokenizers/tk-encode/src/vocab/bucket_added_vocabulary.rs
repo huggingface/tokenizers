@@ -358,9 +358,11 @@ impl AddedVocabulary {
                 raw_tokens.push((form, id));
             }
         }
+        let vocab = Buckets::from_tokens(raw_tokens)?;
+        let normalized_vocab = Buckets::from_tokens(norm_tokens)?;
         self.token_metadata = metadata.into();
-        self.vocab = Buckets::from_tokens(raw_tokens);
-        self.normalized_vocab = Buckets::from_tokens(norm_tokens);
+        self.vocab = vocab;
+        self.normalized_vocab = normalized_vocab;
         Ok(total - ignored)
     }
 }

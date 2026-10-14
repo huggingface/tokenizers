@@ -1,5 +1,4 @@
-use numpy::ndarray::ArrayView1;
-use numpy::{PyArray1, PyArrayMethods};
+use numpy::PyArray1;
 use pyo3::prelude::*;
 use tk_encode::pipeline::Encoding as PipelineEncoding;
 
@@ -58,25 +57,23 @@ impl Encoding {
         &self.attention_mask
     }
 
-    /// The id of each token, as a read-only `uint32` numpy array.
-    /// A view over the encoding, not a copy.
+    /// Returns a copy of the id of each token, as a `uint32` numpy array.
     #[getter]
-    fn ids_array<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
-        view(this, &this.get().ids)
+    fn ids_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
+        U32Array(PyArray1::from_slice(py, &self.ids))
     }
 
-    /// The type id of each token, as a read-only `uint32` numpy array.
-    /// A view over the encoding, not a copy.
+    /// Returns a copy of the type id of each token, as a `uint32` numpy array.
     #[getter]
-    fn type_ids_array<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
-        view(this, &this.get().type_ids)
+    fn type_ids_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
+        U32Array(PyArray1::from_slice(py, &self.type_ids))
     }
 
-    /// Attention mask when the encoding is padded: 1 for token ids, 0 for padding tokens.
-    /// A read-only `uint32` numpy array, a view over the encoding, not a copy.
+    /// Returns a copy of the attention mask, as a `uint32` numpy array.
+    /// When the encoding is padded: 1 for token ids, 0 for padding tokens.
     #[getter]
-    fn attention_mask_array<'py>(this: &Bound<'py, Self>) -> U32Array<'py> {
-        view(this, &this.get().attention_mask)
+    fn attention_mask_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
+        U32Array(PyArray1::from_slice(py, &self.attention_mask))
     }
 
     /// The number of tokens in the encoding
@@ -110,15 +107,4 @@ impl Encoding {
             self.ids, self.type_ids, self.attention_mask
         )
     }
-}
-
-/// A read-only numpy array over `data`, with `encoding` as the array's base.
-fn view<'py>(encoding: &Bound<'py, Encoding>, data: &[u32]) -> U32Array<'py> {
-    // SAFETY: `Encoding` is frozen and never mutates its Vec<u32>, `data` stays alive for as
-    // long as `encoding` is alive. Numpy keeps `encoding` alive through the array's base.
-    let array = unsafe {
-        PyArray1::borrow_from_array(&ArrayView1::from(data), encoding.clone().into_any())
-    };
-    array.readwrite().make_nonwriteable();
-    U32Array(array)
 }

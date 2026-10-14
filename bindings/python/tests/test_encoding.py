@@ -1,9 +1,8 @@
 import gc
 
 import numpy as np
-import pytest
 
-from tokenizers import Encoding, Padding
+from tokenizers import Padding
 
 
 def test_array_list_equivalence(bert):
@@ -18,29 +17,28 @@ def test_array_list_equivalence(bert):
         assert field.shape == (8,)
 
 
-def test_array_zero_copy(bert):
+def test_array_copy(bert):
     encoding = bert.encode("Hello there")
 
-    assert np.shares_memory(encoding.ids_array, encoding.ids_array)
-    assert not np.shares_memory(encoding.ids_array, encoding.type_ids_array)
-    assert encoding.ids_array.base is encoding
+    assert not np.shares_memory(encoding.ids_array, encoding.ids_array)
+    assert encoding.ids_array.base is None
 
 
-def test_array_read_only(bert):
+def test_array_write_leaves_encoding_unchanged(bert):
     encoding = bert.encode("Hello there")
+    ids = encoding.ids_array
 
-    for field in (encoding.ids_array, encoding.type_ids_array, encoding.attention_mask_array):
-        assert not field.flags.writeable
-    with pytest.raises(ValueError, match="read-only"):
-        encoding.ids_array[0] = 0
+    ids[0] = 0
+
+    assert ids.tolist() == [0, 27462, 7495, 2]
+    assert encoding.ids == encoding.ids_array.tolist() == [1, 27462, 7495, 2]
 
 
-def test_array_keep_encoding_alive(bert):
+def test_array_outlives_encoding(bert):
     ids = bert.encode("Hello there").ids_array
 
     gc.collect()
 
-    assert isinstance(ids.base, Encoding)
     assert ids.tolist() == [1, 27462, 7495, 2]
 
 

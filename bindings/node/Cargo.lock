@@ -68,10 +68,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bitcannon"
-version = "0.1.0-dev.0"
-dependencies = [
- "ahash",
-]
+version = "0.1.0-dev.2"
 
 [[package]]
 name = "bitflags"
@@ -702,7 +699,7 @@ dependencies = [
 
 [[package]]
 name = "node"
-version = "1.0.0-dev.0"
+version = "1.0.0-dev.2"
 dependencies = [
  "napi",
  "napi-build",
@@ -821,9 +818,9 @@ dependencies = [
 
 [[package]]
 name = "ptr_hash"
-version = "2.0.2"
+version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f184d2c69ac0853853275df42e7160a7dc4f3248d93434002c28de27ed3f6d0"
+checksum = "b22cf1be774892680e056d3387db0dcaa4fd46964b270671ef661e127186b969"
 dependencies = [
  "bitvec",
  "colored",
@@ -837,7 +834,6 @@ dependencies = [
  "rand_chacha",
  "rayon",
  "rdst",
- "serde",
  "tempfile",
  "xxhash-rust",
 ]
@@ -1190,7 +1186,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tk-convert"
-version = "0.1.0-dev.0"
+version = "0.1.0-dev.2"
 dependencies = [
  "bitcannon",
  "serde_json",
@@ -1199,7 +1195,7 @@ dependencies = [
 
 [[package]]
 name = "tk-encode"
-version = "0.1.0-dev.0"
+version = "0.1.0-dev.2"
 dependencies = [
  "ahash",
  "bitcannon",
@@ -1225,7 +1221,7 @@ dependencies = [
 
 [[package]]
 name = "tk-serialize"
-version = "0.1.0-dev.0"
+version = "0.1.0-dev.2"
 dependencies = [
  "base64 0.22.1",
  "bitcannon",

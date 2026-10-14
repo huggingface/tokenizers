@@ -57,8 +57,19 @@ pub enum Error {
     ByteFallbackOutOfVocabulary(u8),
     /// When a sparse byte-level vocabulary is used with `unk_token` or `byte_fallback`, whose
     /// reference behavior is not yet preserved for missing atoms.
-    #[error("Byte atom `{0:#04X}` not found in the vocabulary")]
-    ByteAtomOutOfVocabulary(u8),
+    #[error(
+        "This byte-level vocabulary has no token for bytes {}. Text containing those bytes cannot be encoded.",
+        hex_list(.0)
+    )]
+    ByteAtomOutOfVocabulary(Vec<u8>),
+}
+
+fn hex_list(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|byte| format!("{byte:#04X}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// NOTE: Unchecked indexing, justified once instead of everywhere we do it.

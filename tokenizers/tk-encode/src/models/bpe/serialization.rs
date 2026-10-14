@@ -8,7 +8,12 @@ use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
 use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
+use std::ops::RangeInclusive;
 use std::str::from_utf8_unchecked;
+
+/// Bytes that can occur in a `&str`: everything except the overlong lead bytes
+/// OxC0 | 0xC1 and  the lead bytes past U+10FFFF (F5..=FF)
+const VALID_UTF8_BYTES: [RangeInclusive<u8>; 2] = [0x00..=0xBF, 0xC2..=0xF4];
 
 pub struct BpeConfig {
     /// `{"token": id}`, in no particular order.
@@ -18,8 +23,9 @@ pub struct BpeConfig {
     /// The vocabulary is written in the byte-level alphabet (gpt2 and everything after it), so its
     /// entries are decoded to their raw bytes at load. Missing byte atoms are skipped during
     /// conversion when neither `unk_token` nor `byte_fallback` is configured; sparse vocabularies
-    /// with either option are rejected because their reference behavior is not yet preserved. Not
-    /// a `model` field itself, but the writer needs it to spell the vocabulary.
+    /// missing UTF-8 reachable atoms with either option are rejected because their reference
+    /// behavior is not yet preserved. Not a `model` field itself, but the writer needs it to spell
+    /// the vocabulary.
     pub byte_level: bool,
     /// The token to emit for a character with no vocabulary entry. Must itself be in the vocab.
     pub unk_token: Option<String>,
@@ -191,7 +197,7 @@ impl PipelineBPE {
                     .into_iter()
                     .map(|(k, v)| (k.into_bytes(), v))
                     .collect(),
-            )
+            )?
         };
 
         Self::from_merge_map(vocab, merges, config)
@@ -237,21 +243,26 @@ impl PipelineBPE {
                 .filter(|&internal| internal != u32::MAX)
         };
         let (vocab, atoms) = if byte_level {
-            let mut vocab = BucketVocabStore::build(vocab.byte_content());
-            vocab = byte_level::transform_vocab(vocab);
             // With no unknown-token or byte-fallback handling, absent atoms can be skipped while
             // converting the byte-level alphabet. Those options have different reference
-            // semantics, so keep rejecting sparse vocabularies until they can be preserved here.
+            // semantics, so keep rejecting missing UTF-8 reachable atoms for those options.
             if unk_token.is_some() || byte_fallback {
-                for b in 0u8..=255 {
-                    if vocab.get_bytes(&[b]).is_none() {
-                        return Err(Error::ByteAtomOutOfVocabulary(b).into());
-                    }
+                let missing: Vec<u8> = VALID_UTF8_BYTES
+                    .into_iter()
+                    .flatten()
+                    .filter(|&byte| tables.byte_internal[byte as usize] == u32::MAX)
+                    .collect();
+                if !missing.is_empty() {
+                    return Err(Error::ByteAtomOutOfVocabulary(missing).into());
                 }
             }
+            // Build the vocab and return it
+            let mut vocab = BucketVocabStore::build(vocab.byte_content())?;
+            vocab = byte_level::transform_vocab(vocab)?;
+
             (vocab, Atoms::Bytes)
         } else {
-            let vocab = BucketVocabStore::build(vocab.byte_content());
+            let vocab = BucketVocabStore::build(vocab.byte_content())?;
             let unk_token = if let Some(unk_str) = unk_token {
                 let token_id = vocab
                     .token_to_id(&unk_str)

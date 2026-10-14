@@ -134,7 +134,7 @@ impl Unigram {
         let token_to_ids = if pairs.is_empty() {
             BucketVocabStore::new()
         } else {
-            BucketVocabStore::build(pairs)
+            BucketVocabStore::build(pairs)?
         };
         let trie = builder.build();
         let fuse_unk = true;
