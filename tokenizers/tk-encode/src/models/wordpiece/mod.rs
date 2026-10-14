@@ -237,7 +237,7 @@ pub struct WordPieceScratch {
 impl pipeline::ModelScratch for WordPieceScratch {}
 
 pub struct PipelineWordPiece {
-    vocab_trie: yada::DoubleArray<Vec<u8>>,
+    vocab_trie: Option<yada::DoubleArray<Vec<u8>>>,
     vocab_r: Box<[Option<Box<str>>]>,
     unk_token: Option<u32>,
     continuing_subword_prefix: String,
@@ -259,7 +259,15 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
         // yada requires the keyset sorted by key bytes.
         let mut keyset: Vec<_> = vocab.into_iter().collect();
         keyset.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-        let vocab_trie = DoubleArray::new(DoubleArrayBuilder::build(&keyset)?)?;
+        // Empty tokens keep their vocabulary ids but cannot consume any input.
+        // yada rejects empty keys, and an empty keyset when this is the only token.
+        let trie_start = usize::from(keyset.first().is_some_and(|(token, _)| token.is_empty()));
+        let trie_keys = &keyset[trie_start..];
+        let vocab_trie = if trie_keys.is_empty() {
+            None
+        } else {
+            Some(DoubleArray::new(DoubleArrayBuilder::build(trie_keys)?)?)
+        };
         let max_id = keyset.iter().map(|&(_, id)| id).max().unwrap_or(0) as usize;
         let mut vocab_r = vec![None; max_id + 1];
         for (token, id) in keyset {
@@ -313,7 +321,9 @@ impl PipelineWordPiece {
             // even if it happens to be in the vocab.
             let Some((token_id, match_len)) = self
                 .vocab_trie
-                .common_prefix_search(&candidate)
+                .as_ref()
+                .into_iter()
+                .flat_map(|trie| trie.common_prefix_search(&candidate))
                 .filter(|(_, len)| *len > prefix_len)
                 .last()
             else {
@@ -438,6 +448,58 @@ mod tests {
         let mut output = vec![];
         pipeline::Model::tokenize_pipeline(model, sequence, scratch, &mut output).unwrap();
         output.iter().map(|token| token.id()).collect()
+    }
+
+    #[test]
+    fn empty_vocabulary_token_keeps_its_id_without_matching_input() {
+        for (vocab, unk, empty_id, cases) in [
+            (
+                vec![("[UNK]", 0), ("a", 1), ("##b", 2), ("", 7)],
+                "[UNK]",
+                7,
+                vec![("ab", vec![1, 2]), ("ac", vec![0]), ("", vec![])],
+            ),
+            (
+                vec![("", 0), ("a", 1), ("##b", 2), ("[UNK]", 3)],
+                "[UNK]",
+                0,
+                vec![("ab", vec![1, 2]), ("ac", vec![3]), ("", vec![])],
+            ),
+            (
+                vec![("", 7), ("a", 1)],
+                "",
+                7,
+                vec![("a", vec![1]), ("b", vec![7]), ("", vec![])],
+            ),
+            (vec![("", 7)], "", 7, vec![("a", vec![7]), ("", vec![])]),
+        ] {
+            let vocab: Vocab = vocab
+                .into_iter()
+                .map(|(token, id)| (token.to_string(), id))
+                .collect();
+            let legacy = WordPiece::builder()
+                .vocab(vocab.clone())
+                .unk_token(unk.to_string())
+                .build()
+                .unwrap();
+            let model = PipelineWordPiece::try_from(legacy.clone()).unwrap();
+            assert_eq!(model.id_to_token(empty_id).as_deref(), Some(""));
+            assert_eq!(model.vocab().into_iter().collect::<Vocab>(), vocab);
+            let mut scratch = pipeline::Model::init_scratch(&model);
+            for (input, expected) in cases {
+                assert_eq!(pipeline_ids(&model, input, &mut scratch), expected);
+                assert_eq!(pipeline_ids(&model, input, &mut scratch), expected);
+                assert_eq!(
+                    legacy
+                        .tokenize(input)
+                        .unwrap()
+                        .iter()
+                        .map(|t| t.id)
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+            }
+        }
     }
 
     #[test]

@@ -280,6 +280,24 @@ fn components_round_trip_to_their_canonical_spelling() {
     }
 }
 
+#[test]
+#[cfg(feature = "wordpiece")]
+fn wordpiece_empty_vocabulary_token_round_trips() {
+    let text = config(&[(
+        "model",
+        r###"{"type": "WordPiece", "unk_token": "[UNK]", "continuing_subword_prefix": "##",
+            "max_input_chars_per_word": 100, "vocab": {"[UNK]": 0, "a": 1, "##b": 2, "": 7}}"###,
+    )]);
+    let tokenizer = from_json(&text).unwrap();
+    let serialized = to_json(&tokenizer).unwrap();
+    assert_eq!(field_of(&serialized, "model"), field_of(&text, "model"));
+    let reloaded = from_json(&serialized).unwrap();
+    for (input, expected) in [("ab", vec![1, 2]), ("ac", vec![0]), ("", vec![])] {
+        assert_eq!(ids(&tokenizer, input, &EncodeOptions::default()), expected);
+        assert_eq!(ids(&reloaded, input, &EncodeOptions::default()), expected);
+    }
+}
+
 /// Padding is state the tokenizer carries rather than a component, so no other test here would
 /// catch it being dropped. Both strategies, and `pad_to_multiple_of` in both of its states.
 #[test]
