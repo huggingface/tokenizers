@@ -11,6 +11,10 @@ pub struct PipelineSequence {
 }
 
 impl PipelineSequence {
+    pub(crate) fn members(&self) -> &[PipelinePreTokenizer] {
+        &self.pre_tokenizers
+    }
+
     pub fn new(pre_tokenizers: Vec<PipelinePreTokenizer>) -> Self {
         Self { pre_tokenizers }
     }

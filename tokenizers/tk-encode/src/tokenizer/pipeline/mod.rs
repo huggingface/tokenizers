@@ -568,6 +568,43 @@ impl PipelineTokenizer {
         &self.inner.post_processor
     }
 
+    /// Whether a long text can be cut before a `\n` that has an ASCII letter or digit on both sides, and the
+    /// parts encoded on their own, with the same ids: every normalizer works char by char and the
+    /// pre-tokenizer always ends a word there. Lets one long input use every thread.
+    pub(crate) fn can_split_text(&self) -> bool {
+        fn pretok(p: &PipelinePreTokenizer) -> bool {
+            match p {
+                PipelinePreTokenizer::Split(split) => split.is_gpt_regex(),
+                PipelinePreTokenizer::Sequence(seq) => seq.members().iter().all(pretok),
+                // these end a word at every whitespace; Punctuation, Digits and Delimiter alone do not
+                PipelinePreTokenizer::Bert(_)
+                | PipelinePreTokenizer::Whitespace(_)
+                | PipelinePreTokenizer::WhitespaceSplit(_) => true,
+                _ => false,
+            }
+        }
+        pretok(&self.inner.pre_tokenizer)
+            && self.inner.normalizers.iter().all(|n| {
+                !matches!(
+                    n,
+                    PipelineNormalizer::Metaspace(_)
+                        | PipelineNormalizer::Replace(_)
+                        | PipelineNormalizer::Prepend(_)
+                        | PipelineNormalizer::Strip(_)
+                ) && !Self::is_precompiled(n)
+            })
+    }
+
+    #[allow(unreachable_patterns)]
+    #[cfg_attr(not(feature = "normalizers"), allow(unused_variables))]
+    fn is_precompiled(n: &PipelineNormalizer) -> bool {
+        #[cfg(feature = "normalizers")]
+        if let PipelineNormalizer::Precompiled(_) = n {
+            return true;
+        }
+        false
+    }
+
     /// The whole flattened normalizer chain, in the order it runs.
     ///
     /// This is for a writer, which needs the members themselves. A config `Sequence` was
@@ -1863,5 +1900,114 @@ mod tests {
 
     fn hello_pipeline_with_truncation(truncation: TruncationParams) -> PipelineTokenizer {
         hello_pipeline_with(PipelinePostProcessor::default(), None, Some(truncation))
+    }
+
+    /// A long multi-line text of `hello` pieces (~3 MiB): past twice the split size, so a splittable tokenizer
+    /// cuts it, with `\n` between letters to cut at.
+    fn long_text() -> String {
+        let pieces = ["hello", "hell", "he", "h", "lo", "hhello"];
+        let mut s = String::new();
+        let mut i = 0usize;
+        while s.len() < 3 << 20 {
+            s.push_str(pieces[i % pieces.len()]);
+            s.push(if i % 7 == 6 { '\n' } else { ' ' });
+            i += 1;
+        }
+        s
+    }
+
+    fn pipeline_with_pre_tokenizer(pre_tokenizer: PipelinePreTokenizer) -> PipelineTokenizer {
+        PipelineTokenizer::from_parts(
+            BucketAddedVocabulary::new(),
+            Vec::new(),
+            pre_tokenizer,
+            PipelineModel::BPE(hello_bpe()),
+            PipelinePostProcessor::default(),
+            None,
+            Default::default(),
+            None,
+            None,
+        )
+    }
+
+    fn gpt2_split() -> PipelinePreTokenizer {
+        use crate::pre_tokenizers::split::{Split, SplitPattern};
+        use crate::utils::byte_level::GPT2_REGEX_STR;
+        PipelinePreTokenizer::Split(
+            Split::new(
+                SplitPattern::Regex(GPT2_REGEX_STR.to_owned()),
+                crate::tokenizer::SplitDelimiterBehavior::Isolated,
+                false,
+            )
+            .unwrap(),
+        )
+    }
+
+    #[test]
+    fn long_text_is_split_only_where_encoding_restarts_identically() {
+        use crate::pre_tokenizers::bert::BertPreTokenizer;
+        use crate::pre_tokenizers::delimiter::CharDelimiterSplit;
+        use crate::pre_tokenizers::digits::Digits;
+        use crate::pre_tokenizers::punctuation::Punctuation;
+        use crate::pre_tokenizers::sequence::PipelineSequence;
+        use crate::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
+        use crate::tokenizer::SplitDelimiterBehavior::Isolated;
+
+        for (pre_tokenizer, splittable) in [
+            (gpt2_split(), true),
+            (PipelinePreTokenizer::Whitespace(Whitespace), true),
+            (PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit), true),
+            (PipelinePreTokenizer::Bert(BertPreTokenizer), true),
+            (
+                PipelinePreTokenizer::Sequence(PipelineSequence::new(vec![
+                    PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
+                    gpt2_split(),
+                ])),
+                true,
+            ),
+            (
+                PipelinePreTokenizer::Punctuation(Punctuation::new(Isolated)),
+                false,
+            ),
+            (PipelinePreTokenizer::Digits(Digits::new(true)), false),
+            (
+                PipelinePreTokenizer::Delimiter(CharDelimiterSplit::new(' ')),
+                false,
+            ),
+            (PipelinePreTokenizer::None, false),
+        ] {
+            assert_eq!(
+                pipeline_with_pre_tokenizer(pre_tokenizer).can_split_text(),
+                splittable
+            );
+        }
+    }
+
+    #[test]
+    fn a_long_text_encodes_to_the_same_ids_when_split() {
+        use crate::pre_tokenizers::bert::BertPreTokenizer;
+        use crate::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
+
+        let text = long_text();
+        for pre_tokenizer in [
+            gpt2_split(),
+            PipelinePreTokenizer::Whitespace(Whitespace),
+            PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
+            PipelinePreTokenizer::Bert(BertPreTokenizer),
+        ] {
+            let pipeline = pipeline_with_pre_tokenizer(pre_tokenizer);
+            assert!(pipeline.can_split_text());
+            // `encode_into` encodes the text whole, on this thread: the reference
+            let mut whole = Vec::new();
+            pipeline
+                .encode_into(&text, &EncodeOptions::no_specials(), &mut whole)
+                .unwrap();
+            let whole: Vec<u32> = whole.iter().map(|t| t.id()).collect();
+            let split = pipeline
+                .encode(vec![text.as_str()], &EncodeOptions::no_specials())
+                .wait()
+                .unwrap();
+            assert_eq!(split[0].ids(), &whole[..]);
+        }
     }
 }
