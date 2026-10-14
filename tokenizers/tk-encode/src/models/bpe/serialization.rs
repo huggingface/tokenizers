@@ -21,8 +21,11 @@ pub struct BpeConfig {
     /// The merge list in rank order.
     pub merges: Merges,
     /// The vocabulary is written in the byte-level alphabet (gpt2 and everything after it), so its
-    /// entries are decoded to their raw bytes at load and every byte has to be an atom. Not a
-    /// `model` field itself, but the writer needs it to spell the vocabulary.
+    /// entries are decoded to their raw bytes at load. Missing byte atoms are skipped during
+    /// conversion when neither `unk_token` nor `byte_fallback` is configured; sparse vocabularies
+    /// missing UTF-8 reachable atoms with either option are rejected because their reference
+    /// behavior is not yet preserved. Not a `model` field itself, but the writer needs it to spell
+    /// the vocabulary.
     pub byte_level: bool,
     /// The token to emit for a character with no vocabulary entry. Must itself be in the vocab.
     pub unk_token: Option<String>,
@@ -240,18 +243,18 @@ impl PipelineBPE {
                 .filter(|&internal| internal != u32::MAX)
         };
         let (vocab, atoms) = if byte_level {
-            // Byte-Level: atoms are raw bytes, we check that the vocabulary has all
-            // UTF-8 reachable atoms.
-            let missing: Vec<u8> = VALID_UTF8_BYTES
-                .into_iter()
-                .flatten()
-                .filter(|&byte| {
-                    // u32::MAX means the byte is missing from the table
-                    tables.byte_internal[byte as usize] == u32::MAX
-                })
-                .collect();
-            if !missing.is_empty() {
-                return Err(Error::ByteAtomOutOfVocabulary(missing).into());
+            // With no unknown-token or byte-fallback handling, absent atoms can be skipped while
+            // converting the byte-level alphabet. Those options have different reference
+            // semantics, so keep rejecting missing UTF-8 reachable atoms for those options.
+            if unk_token.is_some() || byte_fallback {
+                let missing: Vec<u8> = VALID_UTF8_BYTES
+                    .into_iter()
+                    .flatten()
+                    .filter(|&byte| tables.byte_internal[byte as usize] == u32::MAX)
+                    .collect();
+                if !missing.is_empty() {
+                    return Err(Error::ByteAtomOutOfVocabulary(missing).into());
+                }
             }
             // Build the vocab and return it
             let mut vocab = BucketVocabStore::build(vocab.byte_content())?;

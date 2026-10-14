@@ -41,7 +41,8 @@ pub struct SparseFold {
     row_start: Box<[u32]>,
     /// The symbols of folding codepoints only, in codepoint order.
     symbols: Box<[u32]>,
-    /// One-byte characters, which are always exactly one symbol whether they fold or not. 512 B.
+    /// One-byte characters, which use their byte atom when they do not fold. Missing atoms are
+    /// `u32::MAX`. 512 B.
     ascii: [u32; 128],
     /// The same mapping for codepoints past 0xFFFF (emoji, CJK ext). Too few and too spread out to
     /// be worth optimizing at all.
@@ -105,7 +106,7 @@ impl SparseFold {
         self.symbols.at(before)
     }
 
-    /// A one-byte character. Always one symbol, fold or not.
+    /// A one-byte character. Uses its byte atom unless it folds; `u32::MAX` means no atom exists.
     #[inline(always)]
     pub fn get_ascii(&self, byte: u8) -> u32 {
         self.ascii.at((byte & 0x7F) as usize)

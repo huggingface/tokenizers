@@ -116,12 +116,36 @@ impl<M: SinkMode> SymbolSink<M> {
         self.mode.push_symbol(symbol);
     }
 
+    /// Pushes a byte-level atom when the vocabulary has one. A missing byte atom is dropped by
+    /// BPE, leaving the surrounding available symbols adjacent.
+    #[inline(always)]
+    fn push_if_present(&mut self, tables: &BpeTables, symbol: u32) {
+        if symbol != u32::MAX {
+            self.push(tables, symbol);
+        }
+    }
+
     /// Pushes `character` as its bytes, each mapped to a symbol through `byte_symbols`.
     #[inline(always)]
     fn push_char_bytes(&mut self, tables: &BpeTables, byte_symbols: &[u32; 256], character: char) {
         let mut buf = [0u8; 4];
         for &byte in character.encode_utf8(&mut buf).as_bytes() {
             self.push(tables, byte_symbols.at(byte as usize));
+        }
+    }
+
+    /// The byte-level model can omit individual byte atoms; unlike `byte_fallback`, those
+    /// omissions are skipped rather than rejected when the model is loaded.
+    #[inline(always)]
+    fn push_char_bytes_if_present(
+        &mut self,
+        tables: &BpeTables,
+        byte_symbols: &[u32; 256],
+        character: char,
+    ) {
+        let mut buf = [0u8; 4];
+        for &byte in character.encode_utf8(&mut buf).as_bytes() {
+            self.push_if_present(tables, byte_symbols.at(byte as usize));
         }
     }
 }
@@ -208,12 +232,13 @@ fn convert_bytes<M: SinkMode>(tables: &BpeTables, bytes: &[u8], sink: &mut Symbo
     let mut pos = 0usize;
     while pos < bytes.len() {
         // An ASCII character is exactly one symbol whether or not it folds, so this loop needs
-        // no fold branch. `get` gives the bounds check and the byte in one step.
+        // no fold branch. `get` gives the bounds check and the byte in one step. The byte atom
+        // can be absent, in which case the reference encoder drops it.
         while let Some(&ascii) = bytes.get(pos) {
             if ascii >= 0x80 {
                 break;
             }
-            sink.push(tables, tables.fold.get_ascii(ascii));
+            sink.push_if_present(tables, tables.fold.get_ascii(ascii));
             pos += 1;
         }
         if pos >= bytes.len() {
@@ -227,7 +252,7 @@ fn convert_bytes<M: SinkMode>(tables: &BpeTables, bytes: &[u8], sink: &mut Symbo
         } else {
             for offset in 0..char_len {
                 let byte = bytes.at(pos + offset) as usize;
-                sink.push(tables, byte_symbols.at(byte));
+                sink.push_if_present(tables, byte_symbols.at(byte));
             }
         }
         pos += char_len;
@@ -318,7 +343,7 @@ fn push_unknown<M: SinkMode>(
     sink: &mut SymbolSink<M>,
 ) {
     match atoms {
-        Atoms::Bytes => sink.push_char_bytes(tables, &tables.byte_internal, character),
+        Atoms::Bytes => sink.push_char_bytes_if_present(tables, &tables.byte_internal, character),
         Atoms::Chars {
             byte_fallback,
             unk_token,

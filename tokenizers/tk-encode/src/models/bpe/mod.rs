@@ -55,7 +55,8 @@ pub enum Error {
     /// When byte_fallback is enabled but the fallback code is not in the vocab
     #[error("Byte fallback `<{0:#04X}>` not found in the vocabulary")]
     ByteFallbackOutOfVocabulary(u8),
-    /// A byte-level vocabulary is missing has no single-byte token for these bytes
+    /// When a sparse byte-level vocabulary is used with `unk_token` or `byte_fallback`, whose
+    /// reference behavior is not yet preserved for missing atoms.
     #[error(
         "This byte-level vocabulary has no token for bytes {}. Text containing those bytes cannot be encoded.",
         hex_list(.0)
