@@ -715,6 +715,14 @@ impl PipelineTokenizer {
         scratch: &mut EncodeScratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
+        // A trailing Metaspace step represents the lowered pre-tokenizer. Match normalized
+        // added tokens before it rewrites spaces or inserts a sequence-opening delimiter.
+        let (normalizers, metaspace) = match self.inner.normalizers.split_last() {
+            Some((PipelineNormalizer::Metaspace(metaspace), normalizers)) => {
+                (normalizers, Some(metaspace))
+            }
+            _ => (self.inner.normalizers.as_slice(), None),
+        };
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(
             input,
@@ -730,8 +738,7 @@ impl PipelineTokenizer {
                     text: chunk,
                     input_offset,
                 } => {
-                    let normalized =
-                        normalize_all(&self.inner.normalizers, chunk, offset + input_offset)?;
+                    let normalized = normalize_all(normalizers, chunk, offset + input_offset)?;
 
                     // Extract special tokens from the normalized input
                     for segment in SpecialSegmentIterator::new(
@@ -746,8 +753,16 @@ impl PipelineTokenizer {
                             }
                             Segment::Text {
                                 text: normalized_chunk,
-                                ..
+                                input_offset: normalized_offset,
                             } => {
+                                let pre_tokenized = match metaspace {
+                                    Some(metaspace) => metaspace.normalize(
+                                        normalized_chunk,
+                                        offset + input_offset + normalized_offset,
+                                    )?,
+                                    None => std::borrow::Cow::Borrowed(normalized_chunk),
+                                };
+                                let normalized_chunk = pre_tokenized.as_ref();
                                 // A [`Span`] holds `u32` offsets, which breaks the `PreTokenizer` contract the
                                 // `str::get_unchecked` below relies on.
                                 // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),
