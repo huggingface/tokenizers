@@ -293,7 +293,7 @@ jobs:
         run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision 54d012f11a4911b797aa6ef2dffc0fb67cbc7619 --local-dir data
 
       - name: Install cargo-hack
-        uses: taiki-e/install-action@cargo-hack
+        uses: taiki-e/install-action@d8a3af99c9218844a5b609a03d73ecfb4fdee649  # cargo-hack
 
       # `--feature-powerset --depth 2` is every one of those features alone and every pair, each
       # built with `--no-default-features` -- so it covers a model feature *without* `bpe`, which
