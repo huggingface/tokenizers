@@ -9,7 +9,7 @@ use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken, Span};
 use crate::tokenizer::Result;
-use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, reverse_lookup};
 use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
 use crate::vocab::bucket_vocab_store::{BucketVocabStore, key_and_hash, key_and_hash_readable};
 
@@ -99,6 +99,15 @@ impl PipelineBPE {
                 .map(|&b| BYTES_CHAR_LOOKUP[b as usize])
                 .collect(),
         )
+    }
+
+    pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
+        if !self.is_byte_level() {
+            self.vocab.token_to_id(token)
+        } else {
+            let bytes = token.chars().flat_map(reverse_lookup).collect::<Vec<u8>>();
+            self.vocab.get_bytes(&bytes)
+        }
     }
 
     /// One bit per vocabulary id: can a pretoken equal to this entry be emitted as this entry,
