@@ -364,6 +364,23 @@ impl Tokenizer {
         py.detach(|| self.pipeline.decode_tokens(ids, skip_special_tokens))
     }
 
+    /// Runs the configured decoder on token strings, without looking up vocabulary ids.
+    ///
+    /// The strings need not be in the vocabulary. No special-token filtering is performed
+    /// before decoding.
+    /// Without a decoder, the strings are joined with spaces.
+    ///
+    /// Args:
+    ///     tokens: list[str]
+    ///         The token strings to decode, for example `["Hello", "Ġthere"]` for ByteLevel.
+    ///
+    /// Returns:
+    ///     str
+    fn decode_token_strings(&self, py: Python<'_>, tokens: Vec<String>) -> PyResult<String> {
+        py.detach(|| self.pipeline.decode_token_strings(tokens))
+            .map_err(err)
+    }
+
     /// Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
     fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<(Bound<'py, PyAny>, UnpickleArguments)> {
         let json = tk_serialize::to_json(&self.pipeline).map_err(err)?;

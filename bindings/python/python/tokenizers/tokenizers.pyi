@@ -166,6 +166,21 @@ class Tokenizer:
         Returns:
             str
         """
+    def decode_token_strings(self, /, tokens: Sequence[str]) -> str:
+        """
+        Runs the configured decoder on token strings, without looking up vocabulary ids.
+
+        The strings need not be in the vocabulary. No special-token filtering is performed
+        before decoding.
+        Without a decoder, the strings are joined with spaces.
+
+        Args:
+            tokens: list[str]
+                The token strings to decode, for example `["Hello", "Ġthere"]` for ByteLevel.
+
+        Returns:
+            str
+        """
     def decode_tokens(
         self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = False
     ) -> list[str]:
