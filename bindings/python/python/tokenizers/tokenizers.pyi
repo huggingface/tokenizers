@@ -11,6 +11,31 @@ from numpy.typing import NDArray
 __version__: Final[str]
 
 @final
+class DecodeStream:
+    """
+    Incrementally decode token ids, buffering incomplete characters between steps.
+
+    Args:
+        ids: list[int], optional
+            Initial context ids. Complete context is not emitted; an incomplete
+            character is retained until subsequent ids complete it.
+        skip_special_tokens: bool, defaults to False
+            Whether to omit special tokens from the decoded text.
+    """
+    def __copy__(self, /) -> DecodeStream: ...
+    def __deepcopy__(self, /, _memo: dict) -> DecodeStream: ...
+    def __new__(
+        cls, /, ids: Sequence[int] | None = None, skip_special_tokens: bool | None = False
+    ) -> DecodeStream: ...
+    def step(self, /, tokenizer: Tokenizer, id: int | Sequence[int]) -> str | None:
+        """
+        Append a token id or a sequence of ids and return the next decoded chunk.
+
+        Returns None while a character is incomplete or no new text is available.
+        The tokenizer's configured decoder and vocabulary are used for every step.
+        """
+
+@final
 class Encoding:
     """
     Text encoded to token ids by a tokenizer.

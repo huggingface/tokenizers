@@ -11,6 +11,45 @@ use pyo3::{Borrowed, PyTypeInfo, type_hint_identifier, type_hint_subscript, type
 
 use crate::encoding::Encoding;
 
+/// One token id or a sequence of ids to append to a decode stream.
+pub enum StreamInput {
+    Id(u32),
+    Ids(Vec<u32>),
+}
+
+impl<'py> FromPyObject<'_, 'py> for StreamInput {
+    type Error = PyErr;
+
+    const INPUT_TYPE: PyStaticExpr = type_hint_union!(
+        type_hint_identifier!("builtins", "int"),
+        type_hint_subscript!(
+            type_hint_identifier!("collections.abc", "Sequence"),
+            type_hint_identifier!("builtins", "int")
+        )
+    );
+
+    fn extract(obj: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+        if let Ok(id) = obj.extract::<u32>() {
+            Ok(Self::Id(id))
+        } else if let Ok(ids) = obj.extract::<Vec<u32>>() {
+            Ok(Self::Ids(ids))
+        } else {
+            Err(PyTypeError::new_err(
+                "StreamInput must be either an integer or a list of integers",
+            ))
+        }
+    }
+}
+
+impl StreamInput {
+    pub fn as_slice(&self) -> &[u32] {
+        match self {
+            Self::Id(id) => std::slice::from_ref(id),
+            Self::Ids(ids) => ids,
+        }
+    }
+}
+
 /// New type to implement PyO3 introspection traits on
 pub struct U32Array<'py>(pub Bound<'py, PyArray1<u32>>);
 
