@@ -874,6 +874,16 @@ impl PipelineTokenizer {
             return Ok(self.decode_byte_level(bpe, ids, skip_special_tokens));
         }
         let tokens = self.decode_tokens(ids, skip_special_tokens);
+        self.decode_token_strings(tokens)
+    }
+
+    /// Run the configured decoder on token strings, without looking up vocabulary ids.
+    ///
+    /// Unlike [`Self::decode_tokens`], this takes strings and returns the decoded text. The
+    /// strings need not be in the vocabulary. No special-token filtering is performed before
+    /// decoding.
+    /// Without a decoder, the strings are joined with spaces, as in [`Self::decode`].
+    pub fn decode_token_strings(&self, tokens: Vec<String>) -> Result<String> {
         match &self.inner.decoder {
             Some(decoder) => decoder.decode(tokens),
             None => Ok(tokens.join(" ")),
@@ -1798,6 +1808,40 @@ mod tests {
         let pipeline = hello_pipeline();
 
         assert_eq!(pipeline.decode(&[7, 4], false).unwrap(), "hello he");
+    }
+
+    #[test]
+    fn decode_token_strings_without_a_decoder() {
+        let pipeline = hello_pipeline();
+
+        assert_eq!(
+            pipeline
+                .decode_token_strings(vec!["novel".into(), "piece".into()])
+                .unwrap(),
+            "novel piece"
+        );
+        assert_eq!(pipeline.decode_token_strings(vec![]).unwrap(), "");
+    }
+
+    #[test]
+    fn decode_token_strings_uses_the_decoder_without_a_vocab_lookup() {
+        use crate::decoders::wordpiece::WordPiece;
+
+        let mut pipeline = hello_pipeline_with_special("<s>");
+        Arc::get_mut(&mut pipeline.inner).unwrap().decoder =
+            Some(DecoderRuntime::WordPiece(WordPiece::new("@@".into(), true)));
+
+        assert_eq!(
+            pipeline
+                .decode_token_strings(vec![
+                    "<s>".into(),
+                    "novel".into(),
+                    "@@piece".into(),
+                    ".".into()
+                ])
+                .unwrap(),
+            "<s> novelpiece."
+        );
     }
 
     fn hello_bpe() -> PipelineBPE {
