@@ -24,6 +24,7 @@ tk-encode    = { path = "../../tokenizers/tk-encode", default-features = false, 
   "wordpiece",
   "wordlevel",
   "unicode-scripts",
+  "fancy-regex",
 ] }
 # Default features stay on: `deserialize` is the reader, which is the entire reason this is here.
 # The component list mirrors `tk-encode`'s, because the reader has one match arm per component and
@@ -36,6 +37,7 @@ tk-serialize = { path = "../../tokenizers/tk-serialize", features = [
   "wordpiece",
   "wordlevel",
   "unicode-scripts",
+  "fancy-regex",
 ] }
 tk-convert   = { path = "../../tokenizers/tk-convert", default-features = false }
 
