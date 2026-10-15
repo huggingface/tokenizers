@@ -5,11 +5,11 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::convert::Infallible;
 use std::convert::TryInto;
-use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 use tk_encode::Result;
 use tk_encode::models::unigram::{lattice::Lattice, model::Unigram};
 use tk_encode::utils::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressStyle};
+use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 
 // A token and a score
 type SentencePiece = (String, f64);

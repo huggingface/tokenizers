@@ -6,10 +6,10 @@ use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{HashSet, VecDeque};
-use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 use tk_encode::Result;
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressStyle};
+use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
 
 #[derive(Debug, Eq)]

@@ -13,9 +13,9 @@ pub use wordpiece::*;
 
 use serde::{Deserialize, Serialize};
 
-use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 use crate::ModelWrapper;
 use tk_encode::Result;
+use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 
 use crate::Trainer;
 

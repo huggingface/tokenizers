@@ -16,15 +16,14 @@ use std::collections::HashSet;
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 // The `Word` machinery a trainer merges into is training-only, so it lives here rather than in the
 // inference crate. `PipelineBPE` is the only BPE left; a trainer reaches it through
-// `from_vocab_and_merges`, the same serde-free door a reader walks through, because its fields are
+// `from_config`, the same serde-free door a reader walks through, because its fields are
 // private to `tk-encode`.
 use word::{WithFirstLastIterator, Word};
 
 use tk_encode::Result;
-use tk_encode::models::bpe::{Merges, Pair, PipelineBPE, BpeConfig, Vocab};
+use tk_encode::models::bpe::{BpeConfig, Merges, Pair, PipelineBPE, Vocab};
 use tk_encode::parallelism::*;
 use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
-use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -208,7 +207,7 @@ impl BpeTrainerBuilder {
 /// // `PipelineBPE` has no empty state to train *into* -- it only exists once there is a
 /// // vocabulary and a merge list -- so take the parts and build it.
 /// let (vocab, merges, special_tokens) = trainer.train_vocab().unwrap();
-/// let model = PipelineBPE::from_config(BpeConfig { vocab: vocab, merges: merges, ..BpeConfig::default() }).unwrap();
+/// let model = PipelineBPE::from_config(BpeConfig { vocab, merges, ..BpeConfig::default() }).unwrap();
 /// ```
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
@@ -500,7 +499,7 @@ impl BpeTrainer {
     ///
     /// It hands back `(Vocab, Merges)` rather than filling in a model because that pair *is* what a
     /// `tokenizer.json` stores, and `PipelineBPE` can only be built from it -- see
-    /// [`PipelineBPE::from_vocab_and_merges`]. The WordPiece trainer wants the vocabulary alone, so
+    /// [`PipelineBPE::from_config`]. The WordPiece trainer wants the vocabulary alone, so
     /// splitting the two also saves it building merge tables it would throw away.
     pub fn do_train(
         &self,
@@ -665,7 +664,7 @@ impl BpeTrainer {
             .collect();
 
         // `merges` holds id pairs, highest priority first; the on-disk form is the two token
-        // strings, which is also what `from_vocab_and_merges` re-derives its ranks from. Order is
+        // strings, which is also what `from_config` re-derives its ranks from. Order is
         // the rank, so it has to be preserved.
         let merges: Merges = merges
             .into_iter()
@@ -687,7 +686,11 @@ impl Trainer for BpeTrainer {
     /// Train a BPE model
     fn train(&self, model: &mut PipelineBPE) -> Result<Vec<AddedToken>> {
         let (vocab, merges, special_tokens) = self.do_train(&self.words)?;
-        *model = PipelineBPE::from_config(BpeConfig { vocab: vocab, merges: merges, ..self.model_options() })?;
+        *model = PipelineBPE::from_config(BpeConfig {
+            vocab,
+            merges,
+            ..self.model_options()
+        })?;
         Ok(special_tokens)
     }
 
@@ -793,7 +796,7 @@ mod tests {
         assert_eq!(trained_vocab, expected_vocab);
 
         // `merges` is the pair of symbol *strings* per merge, highest priority first -- the on-disk
-        // form, and what `PipelineBPE::from_vocab_and_merges` re-derives its ranks from. Position in
+        // form, and what `PipelineBPE::from_config` re-derives its ranks from. Position in
         // the list is the rank, so the order is part of what is being asserted.
         let expected_merges: Merges = vec![
             ("r".into(), "e".into()),  // 'r' + 'e'  -> 're'
