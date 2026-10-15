@@ -70,7 +70,6 @@ default = ["progressbar"]
 progressbar = ["tk-encode/progressbar"]
 regex = ["tk-encode/fancy-regex"]
 http = ["tk-encode/http"]
-unstable_wasm = ["tk-encode/unstable_wasm"]
 
 
 [dev-dependencies]
