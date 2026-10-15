@@ -16,6 +16,8 @@ use yada::builder::DoubleArrayBuilder;
 pub enum Error {
     #[error("WordPiece error: Missing [UNK] token from the vocabulary")]
     MissingUnkToken,
+    #[error("WordPiece error: The vocabulary has no non-empty token")]
+    EmptyVocab,
 }
 
 type Vocab = AHashMap<String, u32>;
@@ -259,7 +261,13 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
         // yada requires the keyset sorted by key bytes.
         let mut keyset: Vec<_> = vocab.into_iter().collect();
         keyset.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-        let vocab_trie = DoubleArray::new(DoubleArrayBuilder::build(&keyset)?)?;
+        // yada rejects an empty trie
+        // no pre-token can be an empty string "", so it's fine to filter them out
+        let trie_keys = &keyset[keyset.partition_point(|(token, _)| token.is_empty())..];
+        if trie_keys.is_empty() {
+            return Err(Error::EmptyVocab.into());
+        }
+        let vocab_trie = DoubleArray::new(DoubleArrayBuilder::build(trie_keys)?)?;
         let max_id = keyset.iter().map(|&(_, id)| id).max().unwrap_or(0) as usize;
         let mut vocab_r = vec![None; max_id + 1];
         for (token, id) in keyset {
@@ -480,6 +488,35 @@ mod tests {
         });
 
         assert_eq!(warm, cold);
+    }
+
+    #[test]
+    fn accepts_an_empty_token_in_the_vocab() {
+        // aubmindlab/bert-base-arabert ships "" at id 0.
+        let vocab: Vocab = [("", 0u32), ("[UNK]", 1), ("hello", 2)]
+            .into_iter()
+            .map(|(token, id)| (token.to_string(), id))
+            .collect();
+        let model = WordPiece::builder().vocab(vocab).build().unwrap();
+        let model = PipelineWordPiece::try_from(model).unwrap();
+        let mut scratch = pipeline::Model::init_scratch(&model);
+
+        assert_eq!(pipeline_ids(&model, "hello", &mut scratch), [2]);
+        assert_eq!(pipeline_ids(&model, "world", &mut scratch), [1]);
+        assert_eq!(model.id_to_token(0).as_deref(), Some(""));
+    }
+
+    #[test]
+    fn refuses_a_vocab_with_only_empty_token() {
+        for tokens in [&[][..], &[""]] {
+            let vocab: Vocab = tokens.iter().map(|token| (token.to_string(), 0)).collect();
+            let model = WordPiece::builder().vocab(vocab).build().unwrap();
+            let err = PipelineWordPiece::try_from(model).err().unwrap();
+            assert!(
+                matches!(err.downcast_ref(), Some(Error::EmptyVocab)),
+                "{err}"
+            );
+        }
     }
 
     #[test]
