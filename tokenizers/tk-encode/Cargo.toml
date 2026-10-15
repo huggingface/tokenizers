@@ -55,6 +55,7 @@ hf-hub = { version = "1.0.0", features = [
 ], default-features = false, optional = true }
 fancy-regex = { version = "0.19", optional = true }
 unicode-normalization = { version = "0.1.25", optional = true }
+unicode-general-category = { version = "1.1", optional = true }
 yada = { version = "0.7.0", optional = true }
 # One `#[cfg(unix)]` `pthread_atfork` call in `utils/parallelism.rs`, which is `parallelism`-gated.
 libc = { version = "0.2", optional = true }
@@ -68,6 +69,7 @@ wordlevel = []
 normalizers = [
   "dep:unicode-normalization",
   "dep:unicode-normalization-alignments",
+  "dep:unicode-general-category",
   "dep:spm_precompiled",
   "dep:unicode-segmentation",
 ]

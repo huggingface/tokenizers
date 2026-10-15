@@ -20,7 +20,7 @@ use tk_encode::normalizers::{
     bert::BertNormalizer,
     precompiled::PrecompiledNormalizer,
     strip::StripAccents,
-    unicode::{NFC, NFD, NFKC, NFKD, Nmt},
+    unicode::{NFC, NFD, NFKC, NFKD, Nmt, UnicodeFilter},
 };
 
 pub(super) fn read_normalizers(cfg: Option<&Json<'_>>) -> Result<Vec<PipelineNormalizer>> {
@@ -104,6 +104,11 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
         #[cfg(feature = "normalizers")]
         "Nmt" => out.push(PipelineNormalizer::Nmt(Nmt)),
         #[cfg(feature = "normalizers")]
+        "UnicodeFilter" => out.push(PipelineNormalizer::UnicodeFilter(UnicodeFilter::new(
+            cfg.need(&owner, "filter_unassigned", Json::as_bool)?,
+            cfg.need(&owner, "filter_private_use", Json::as_bool)?,
+        ))),
+        #[cfg(feature = "normalizers")]
         "Precompiled" => {
             let charsmap = cfg
                 .field("precompiled_charsmap")
@@ -124,7 +129,7 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
         }
         #[cfg(not(feature = "normalizers"))]
         "BertNormalizer" | "StripAccents" | "NFC" | "NFD" | "NFKC" | "NFKD" | "Nmt"
-        | "Precompiled" => {
+        | "UnicodeFilter" | "Precompiled" => {
             return Err(needs_feature(
                 &format!("the `{kind}` normalizer"),
                 "normalizers",

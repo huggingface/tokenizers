@@ -21,7 +21,7 @@ pub use crate::normalizers::strip::Strip;
 #[cfg(feature = "normalizers")]
 pub use crate::normalizers::strip::StripAccents;
 #[cfg(feature = "normalizers")]
-pub use crate::normalizers::unicode::{NFC, NFD, NFKC, NFKD, Nmt};
+pub use crate::normalizers::unicode::{NFC, NFD, NFKC, NFKD, Nmt, UnicodeFilter};
 pub use crate::normalizers::utils::Lowercase;
 
 // `NormalizerWrapper`, its hand-written `Deserialize` (tagged, with an untagged legacy fallback)

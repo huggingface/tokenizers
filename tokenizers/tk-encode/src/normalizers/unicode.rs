@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use crate::pipeline;
 use crate::tokenizer::Result;
 
+use unicode_general_category::{GeneralCategory, get_general_category};
 use unicode_normalization::{
     IsNormalized, UnicodeNormalization, is_nfc_quick, is_nfd_quick, is_nfkc_quick, is_nfkd_quick,
 };
@@ -103,6 +104,53 @@ impl pipeline::Normalizer for Nmt {
             return Ok(Cow::Owned(normalized));
         }
 
+        Ok(input.into())
+    }
+}
+
+/// Drops code points by general category, so text carrying characters no vocabulary can have a
+/// meaning for (unassigned code points, private use areas) never reaches the model.
+///
+/// Categories come from the Unicode 16.0 tables of the `unicode-general-category` crate. With
+/// `filter_unassigned`, a character first assigned in a later Unicode version (such as U+20C1,
+/// added in 17.0) counts as unassigned and is removed.
+#[derive(Copy, Clone, Debug)]
+#[non_exhaustive]
+pub struct UnicodeFilter {
+    pub filter_unassigned: bool,
+    pub filter_private_use: bool,
+}
+
+impl UnicodeFilter {
+    pub fn new(filter_unassigned: bool, filter_private_use: bool) -> Self {
+        Self {
+            filter_unassigned,
+            filter_private_use,
+        }
+    }
+
+    fn removes(&self, c: char) -> bool {
+        match get_general_category(c) {
+            GeneralCategory::Unassigned => self.filter_unassigned,
+            GeneralCategory::PrivateUse => self.filter_private_use,
+            _ => false,
+        }
+    }
+}
+
+impl Default for UnicodeFilter {
+    fn default() -> Self {
+        Self::new(true, true)
+    }
+}
+
+impl pipeline::Normalizer for UnicodeFilter {
+    fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
+        if input.chars().any(|c| self.removes(c)) {
+            return Ok(Cow::Owned(
+                input.chars().filter(|&c| !self.removes(c)).collect(),
+            ));
+        }
         Ok(input.into())
     }
 }
@@ -210,5 +258,44 @@ mod tests {
                 "input={input:?}"
             );
         }
+    }
+
+    #[test]
+    fn pipeline_unicode_filter() {
+        // Euro sign (assigned), U+10FFFF (unassigned), U+E000 (private use, BMP) and U+F0000
+        // (private use, plane 15).
+        let input = "A\u{20AC}\u{10FFFF}\u{E000}\u{F0000}";
+        for (filter, expected) in [
+            (UnicodeFilter::default(), "A\u{20AC}"),
+            (
+                UnicodeFilter::new(true, false),
+                "A\u{20AC}\u{E000}\u{F0000}",
+            ),
+            (UnicodeFilter::new(false, true), "A\u{20AC}\u{10FFFF}"),
+            (UnicodeFilter::new(false, false), input),
+        ] {
+            assert_eq!(
+                &*pipeline::Normalizer::normalize(&filter, input, 0).unwrap(),
+                expected,
+                "filter={filter:?}"
+            );
+        }
+        let clean = UnicodeFilter::default();
+        assert!(matches!(
+            pipeline::Normalizer::normalize(&clean, "abc", 0).unwrap(),
+            Cow::Borrowed("abc")
+        ));
+    }
+
+    /// U+1FAE9 FACE WITH BAGS UNDER EYES was assigned in Unicode 16.0, after the 15.0 tables of
+    /// `unicode-general-category` 0.6, and must survive.
+    #[test]
+    fn unicode_filter_keeps_recent_assignments() {
+        // U+0378 is unassigned in every Unicode version.
+        let input = "\u{1FAE9}\u{378}\u{E000}";
+        assert_eq!(
+            &*pipeline::Normalizer::normalize(&UnicodeFilter::default(), input, 0).unwrap(),
+            "\u{1FAE9}"
+        );
     }
 }

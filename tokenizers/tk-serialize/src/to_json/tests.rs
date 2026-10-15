@@ -248,14 +248,16 @@ const REWRITTEN: &[(&str, &str, &str)] = &[
         {"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true}]"#),
 ];
 
-/// `strip_accents: null` means "decide from `lowercase`", which is why the reader requires the key.
+/// Normalizers that only exist behind the `normalizers` feature.
 #[cfg(feature = "normalizers")]
 #[rustfmt::skip]
-const BERT: &[(&str, &str)] = &[
+const FEATURE_NORMALIZERS: &[(&str, &str)] = &[
+    // `strip_accents: null` means "decide from `lowercase`", which is why the reader requires the key.
     ("normalizer", r#"{"type": "BertNormalizer", "clean_text": true, "handle_chinese_chars": true, "strip_accents": null, "lowercase": true}"#),
+    ("normalizer", r#"{"type": "UnicodeFilter", "filter_unassigned": true, "filter_private_use": false}"#),
 ];
 #[cfg(not(feature = "normalizers"))]
-const BERT: &[(&str, &str)] = &[];
+const FEATURE_NORMALIZERS: &[(&str, &str)] = &[];
 
 /// All four fields are required, so none may go missing on the way out.
 #[cfg(feature = "wordpiece")]
@@ -268,7 +270,11 @@ const WORDPIECE: &[(&str, &str)] = &[];
 
 #[test]
 fn components_round_trip_to_their_canonical_spelling() {
-    for (slot, spelling) in IDEMPOTENT.iter().chain(BERT).chain(WORDPIECE) {
+    for (slot, spelling) in IDEMPOTENT
+        .iter()
+        .chain(FEATURE_NORMALIZERS)
+        .chain(WORDPIECE)
+    {
         assert_eq!(
             written(slot, spelling),
             json(spelling),

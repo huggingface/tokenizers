@@ -8,7 +8,7 @@ use crate::normalizers::{
     bert::BertNormalizer,
     precompiled::PrecompiledNormalizer,
     strip::StripAccents,
-    unicode::{NFC, NFD, NFKC, NFKD, Nmt},
+    unicode::{NFC, NFD, NFKC, NFKD, Nmt, UnicodeFilter},
 };
 use crate::normalizers::{
     byte_level::ByteLevel as ByteLevelNormalizer, metaspace::MetaspaceNormalizer, prepend::Prepend,
@@ -46,6 +46,8 @@ pub enum PipelineNormalizer {
     NFKD(NFKD),
     #[cfg(feature = "normalizers")]
     Nmt(Nmt),
+    #[cfg(feature = "normalizers")]
+    UnicodeFilter(UnicodeFilter),
     #[cfg(feature = "normalizers")]
     Precompiled(PrecompiledNormalizer),
 }
@@ -117,6 +119,8 @@ impl Normalizer for PipelineNormalizer {
             Self::NFKD(normalizer) => normalizer.normalize(input, offset),
             #[cfg(feature = "normalizers")]
             Self::Nmt(normalizer) => normalizer.normalize(input, offset),
+            #[cfg(feature = "normalizers")]
+            Self::UnicodeFilter(normalizer) => normalizer.normalize(input, offset),
             #[cfg(feature = "normalizers")]
             Self::Precompiled(normalizer) => normalizer.normalize(input, offset),
         }
