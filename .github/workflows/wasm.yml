@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - main
+      - release/**
+    tags:
+      - v*
     paths:
       - bindings/wasm/**
       - tokenizers/**
@@ -212,3 +215,71 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make test-package HF="uvx --from huggingface_hub hf"
+
+  publish:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: [code-quality, build, test, test-package]
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      # Trusted Publishing: the job mints an OIDC token that npm exchanges for a
+      # short-lived publish token, so there is no long-lived NPM_TOKEN secret. The
+      # same id-token also signs the provenance attestation.
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: bindings/wasm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # v1
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        with:
+          workspaces: bindings/wasm
+          shared-key: wasm-release
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29  # v2.87.21
+        with:
+          tool: wasm-pack@0.15.0
+
+      # No registry-url: it writes an .npmrc with a ${NODE_AUTH_TOKEN} placeholder that OIDC can't fill.
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: latest
+
+      # Staged publishing landed in npm 11.15.0 (OIDC publishing in 11.5.1).
+      - name: Ensure npm supports staged publishing
+        run: npm install -g npm@^11.15.0
+
+      - name: Build bindings
+        run: make build
+
+      - name: Check the package version matches the tag
+        run: |
+          VERSION=$(node -p 'require("./pkg/package.json").version')
+          if [ "$VERSION" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "::error::pkg/package.json is $VERSION but the tag is $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - name: Verify package contents
+        run: npm pack --dry-run ./pkg
+
+      - name: Stage for publishing
+        run: |
+          TAG=latest
+          [[ "$GITHUB_REF_NAME" == *-* ]] && TAG=next
+          npm stage publish ./pkg --access public --provenance --tag "$TAG"

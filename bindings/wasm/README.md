@@ -4,8 +4,8 @@
   <br>
 <p>
 <p align="center">
-  <a href="https://badge.fury.io/js/tokenizers-web">
-    <img alt="Build" src="https://badge.fury.io/js/tokenizers-web.svg">
+  <a href="https://badge.fury.io/js/tokenizers-wasm">
+    <img alt="Build" src="https://badge.fury.io/js/tokenizers-wasm.svg">
   </a>
   <a href="https://github.com/huggingface/tokenizers/blob/main/LICENSE">
     <img alt="GitHub" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue">
@@ -32,13 +32,13 @@ In older browsers, importing the package throws a `WebAssembly.CompileError`.
 ## Installation
 
 ```bash
-npm install tokenizers-web@latest
+npm install tokenizers-wasm@latest
 ```
 
 ## Usage
 
 ```typescript
-import { Tokenizer } from "tokenizers-web";
+import { Tokenizer } from "tokenizers-wasm";
 
 const tokenizer = await Tokenizer.from_pretrained("openai-community/gpt2");
 const ids = tokenizer.encode("Hello world!");
