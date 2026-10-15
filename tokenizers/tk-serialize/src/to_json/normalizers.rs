@@ -100,6 +100,14 @@ fn write_one(out: &mut Out, normalizer: &PipelineNormalizer) -> Result<()> {
         #[cfg(feature = "normalizers")]
         PipelineNormalizer::Nmt(_) => bare(out, "Nmt"),
         #[cfg(feature = "normalizers")]
+        PipelineNormalizer::UnicodeFilter(filter) => {
+            out.obj_open();
+            out.type_tag("UnicodeFilter");
+            out.field_bool("filter_unassigned", filter.filter_unassigned);
+            out.field_bool("filter_private_use", filter.filter_private_use);
+            out.obj_close();
+        }
+        #[cfg(feature = "normalizers")]
         PipelineNormalizer::Precompiled(precompiled) => {
             // TODO: this will be fixed for v1!
             // The one normalizer whose configuration is a binary blob, and the one place the

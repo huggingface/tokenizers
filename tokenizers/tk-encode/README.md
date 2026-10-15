@@ -70,7 +70,7 @@ own, but it is `exclude`d from the workspace and nothing in `tokenizers` depends
   default, because none of the current SOTA models use anything else. A `tokenizer.json` naming
   a model whose feature is off is refused at load rather than mis-read.
 
-- **normalizers**: the table-backed normalizers (NFC/NFD/NFKC/NFKD, `Nmt`, `StripAccents`,
+- **normalizers**: the table-backed normalizers (NFC/NFD/NFKC/NFKD, `Nmt`, `UnicodeFilter`, `StripAccents`,
   `Bert`, SentencePiece's precompiled charsmap) and the ~150 KB of static Unicode tables behind
   them.
 
