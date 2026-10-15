@@ -33,6 +33,13 @@ pub(super) fn read_pre_tokenizer(cfg: Option<&Json<'_>>) -> Result<PipelinePreTo
         if members.iter().any(|m| m.type_tag() == Some("Sequence")) {
             return Err("Nesting Sequence pre tokenizers is not supported".into());
         }
+        if members
+            .iter()
+            .enumerate()
+            .any(|(index, member)| member.type_tag() == Some("ByteLevelPrefixSpace") && index != 0)
+        {
+            return Err("ByteLevelPrefixSpace must be first in a pre-tokenizer Sequence".into());
+        }
         let mut built = Vec::with_capacity(members.len());
         for member in members {
             built.push(read_one_pre_tokenizer(member)?);
@@ -52,6 +59,7 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
     Ok(match kind {
         "Metaspace" => return Err(unsupported("a `Metaspace` pre-tokenizer")),
         "ByteLevel" => return Err(unsupported("a `ByteLevel` pre-tokenizer")),
+        "ByteLevelPrefixSpace" => PipelinePreTokenizer::ByteLevelPrefixSpace,
         "Split" => PipelinePreTokenizer::Split(read_split(cfg)?),
         "Whitespace" => PipelinePreTokenizer::Whitespace(Whitespace),
         "WhitespaceSplit" => PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),

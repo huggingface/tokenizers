@@ -210,6 +210,7 @@ const IDEMPOTENT: &[(&str, &str)] = &[
     ("pre_tokenizer",  r#"{"type": "Digits", "individual_digits": true}"#),
     ("pre_tokenizer",  r#"{"type": "Whitespace"}"#),
     ("pre_tokenizer",  r#"{"type": "WhitespaceSplit"}"#),
+    ("pre_tokenizer",  r#"{"type": "ByteLevelPrefixSpace"}"#),
     ("pre_tokenizer",  r#"{"type": "BertPreTokenizer"}"#),
     ("pre_tokenizer",  r#"{"type": "Punctuation", "behavior": "Removed"}"#),
     ("pre_tokenizer",  r#"{"type": "CharDelimiterSplit", "delimiter": "-"}"#),
