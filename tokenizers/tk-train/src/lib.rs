@@ -9,8 +9,12 @@
 //! extension trait on `tk_convert`'s `TokenizerImpl`, and nothing in `tk-encode`
 //! replaces that type -- the pipeline tokenizer hands out its model by shared
 //! reference only. Drive a trainer directly instead: `feed`, then `train`.
+//!
+//! [`BpeTrainer`] documents the BPE training entry points, execution policy, and
+//! input limits.
 
 pub mod added_token_serde;
+mod progress;
 mod trainable;
 mod trainer;
 pub mod trainers;
