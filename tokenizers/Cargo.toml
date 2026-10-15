@@ -84,6 +84,7 @@ tracing-subscriber = "0.3.23"
 
 [profile.release]
 lto = "fat"
+codegen-units = 1
 
 # This is for a slim, on edge build. Perfs are bound to be worst than the normal release, but it reduces the crate size.
 [profile.minsize]

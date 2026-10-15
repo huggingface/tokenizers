@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use crate::normalizers::utils::Rewriter;
 use crate::pipeline;
 use crate::utils::search::Search;
 
@@ -53,29 +54,17 @@ impl Replace {
     }
 }
 
-/// Builds the text with every match swapped for `content`. Borrows the input back untouched when
-/// nothing matched, which is what keeps the common case free of allocation.
+/// Builds the text with every match swapped for `content`.
 fn replace_matches<'a>(
     input: &'a str,
     content: &str,
     matches: impl Iterator<Item = (usize, usize)>,
 ) -> Cow<'a, str> {
-    let mut replaced: Option<String> = None;
-    let mut last_end = 0;
+    let mut rewriter = Rewriter::new(input);
     for (start, end) in matches {
-        let replaced: &mut String =
-            replaced.get_or_insert_with(|| String::with_capacity(input.len()));
-        replaced.push_str(&input[last_end..start]);
-        replaced.push_str(content);
-        last_end = end;
+        rewriter.rewrite(start..end).push_str(content);
     }
-    match replaced {
-        Some(mut replaced) => {
-            replaced.push_str(&input[last_end..]);
-            Cow::Owned(replaced)
-        }
-        None => Cow::Borrowed(input),
-    }
+    rewriter.finish()
 }
 
 impl pipeline::Normalizer for Replace {
