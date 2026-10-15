@@ -23,6 +23,7 @@ use word::{WithFirstLastIterator, Word};
 use tk_encode::Result;
 use tk_encode::models::bpe::{Merges, Pair, PipelineBPE, BpeConfig, Vocab};
 use tk_encode::parallelism::*;
+use tk_encode::utils::byte_level::char_to_byte;
 use tk_encode::utils::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
 
@@ -64,6 +65,7 @@ struct Config {
     continuing_subword_prefix: Option<String>,
     end_of_word_suffix: Option<String>,
     max_token_length: Option<usize>,
+    enforce_utf8_boundaries: bool,
 }
 
 /// A `BpeTrainerBuilder` can be used to create a `BpeTrainer` with a custom
@@ -86,6 +88,7 @@ impl Default for BpeTrainerBuilder {
                 continuing_subword_prefix: None,
                 end_of_word_suffix: None,
                 max_token_length: None,
+                enforce_utf8_boundaries: false,
             },
         }
     }
@@ -173,6 +176,16 @@ impl BpeTrainerBuilder {
         self
     }
 
+    /// Set whether merges must respect UTF-8 character boundaries.
+    ///
+    /// Expects the training words to be `ByteLevel`-mapped. See
+    /// [`BpeTrainer::enforce_utf8_boundaries`].
+    #[must_use]
+    pub fn enforce_utf8_boundaries(mut self, enforce: bool) -> Self {
+        self.config.enforce_utf8_boundaries = enforce;
+        self
+    }
+
     /// Constructs the final BpeTrainer
     pub fn build(self) -> BpeTrainer {
         BpeTrainer {
@@ -186,6 +199,7 @@ impl BpeTrainerBuilder {
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             end_of_word_suffix: self.config.end_of_word_suffix,
             max_token_length: self.config.max_token_length,
+            enforce_utf8_boundaries: self.config.enforce_utf8_boundaries,
             words: AHashMap::new(),
         }
     }
@@ -240,6 +254,16 @@ pub struct BpeTrainer {
     pub end_of_word_suffix: Option<String>,
     /// An optional parameter to limit the max length of any single token
     pub max_token_length: Option<usize>,
+    /// Whether merges must respect UTF-8 character boundaries. When true, only two kinds of merge
+    /// are allowed:
+    /// 1. Two tokens that each consist of complete UTF-8 characters.
+    /// 2. A partial character and a single byte that continues it, so multi-byte characters are
+    ///    built up byte by byte from left to right.
+    ///
+    /// The words fed to the trainer must be `ByteLevel`-mapped, since the check reverses that
+    /// mapping to recover the underlying bytes.
+    #[serde(default)]
+    pub enforce_utf8_boundaries: bool,
 
     words: AHashMap<CompactString, u64>,
 }
@@ -327,6 +351,57 @@ impl BpeTrainer {
                 id2w.push(CompactString::from(&token.content));
                 w2id.insert(CompactString::from(&token.content), (id2w.len() - 1) as u32);
             }
+        }
+    }
+
+    /// The bytes a token stands for: `ByteLevel` characters map back to their byte, any other
+    /// character stands for its own UTF-8 encoding. The configured prefix and suffix are affixes,
+    /// not content, so they are stripped first.
+    fn token_bytes(&self, token: &str) -> Vec<u8> {
+        let token = match &self.continuing_subword_prefix {
+            Some(prefix) => token.strip_prefix(prefix.as_str()).unwrap_or(token),
+            None => token,
+        };
+        let token = match &self.end_of_word_suffix {
+            Some(suffix) => token.strip_suffix(suffix.as_str()).unwrap_or(token),
+            None => token,
+        };
+        let mut bytes = Vec::with_capacity(token.len());
+        for c in token.chars() {
+            match char_to_byte(c) {
+                Some(b) => bytes.push(b),
+                None => bytes.extend_from_slice(c.to_string().as_bytes()),
+            }
+        }
+        bytes
+    }
+
+    /// Whether merging `pair` is allowed under `enforce_utf8_boundaries`.
+    fn is_merge_allowed(&self, pair: &Pair, id_to_word: &[CompactString]) -> bool {
+        if !self.enforce_utf8_boundaries {
+            return true;
+        }
+
+        let bytes_a = self.token_bytes(&id_to_word[pair.0 as usize]);
+        let bytes_b = self.token_bytes(&id_to_word[pair.1 as usize]);
+
+        // A token is complete when its bytes are valid UTF-8 on their own. A lone byte of a
+        // multi-byte sequence (e.g. 0xF0) is not.
+        match (
+            std::str::from_utf8(&bytes_a).is_ok(),
+            std::str::from_utf8(&bytes_b).is_ok(),
+        ) {
+            (true, true) => true,
+            (false, false) if bytes_b.len() == 1 => {
+                let mut merged = bytes_a;
+                merged.extend_from_slice(&bytes_b);
+                // The result must be complete or still a valid prefix of a character.
+                match std::str::from_utf8(&merged) {
+                    Ok(_) => true,
+                    Err(e) => e.error_len().is_none(),
+                }
+            }
+            _ => false,
         }
     }
 
@@ -539,7 +614,7 @@ impl BpeTrainer {
         let mut queue = OctonaryHeap::with_capacity(pair_counts.len());
         where_to_update.drain().for_each(|(pair, pos)| {
             let count = pair_counts[&pair];
-            if count > 0 {
+            if count > 0 && self.is_merge_allowed(&pair, &id_to_word) {
                 queue.push(Merge {
                     pair,
                     count: count as u64,
@@ -635,7 +710,7 @@ impl BpeTrainer {
             for ((pair, change), iw) in changes {
                 let count = change * counts[iw] as i32;
                 *pair_counts.entry(pair).or_default() += count;
-                if change > 0 {
+                if change > 0 && self.is_merge_allowed(&pair, &id_to_word) {
                     where_to_update.entry(pair).or_default().insert(iw);
                 }
             }
@@ -733,6 +808,7 @@ mod tests {
     use super::{BpeTrainer, Merges};
     use ahash::AHashMap;
     use compact_str::CompactString;
+    use tk_encode::utils::byte_level::BYTES_CHAR_LOOKUP;
 
     #[test]
     fn test_train() {
@@ -802,6 +878,111 @@ mod tests {
         ];
         assert_eq!(merges, expected_merges);
     }
+    #[test]
+    fn bpe_test_enforce_utf8_boundaries() {
+        // ByteLevel-map the input the way the pre-tokenizer would.
+        let to_byte_level = |s: &str| -> CompactString {
+            s.bytes()
+                .map(|b| BYTES_CHAR_LOOKUP[b as usize])
+                .collect::<String>()
+                .into()
+        };
+        // " " + 0xF0 is the most frequent pair, but it crosses a character boundary.
+        // 0xF0 + 0x9F, the first two bytes of an emoji, is the best valid merge.
+        let word_counts: AHashMap<CompactString, u64> =
+            [(to_byte_level(" 🤗"), 10), (to_byte_level(" 𝟑"), 9)]
+                .into_iter()
+                .collect();
+        let token = |bytes: &[u8]| -> String {
+            bytes
+                .iter()
+                .map(|&b| BYTES_CHAR_LOOKUP[b as usize])
+                .collect()
+        };
+
+        let unconstrained = BpeTrainer::builder().show_progress(false).build();
+        let (vocab, _, _) = unconstrained.do_train(&word_counts).unwrap();
+        assert!(vocab.contains_key(&token(&[0x20, 0xF0])));
+
+        let constrained = BpeTrainer::builder()
+            .show_progress(false)
+            .enforce_utf8_boundaries(true)
+            .build();
+        let (vocab, merges, _) = constrained.do_train(&word_counts).unwrap();
+        assert!(!vocab.contains_key(&token(&[0x20, 0xF0])));
+        assert!(vocab.contains_key(&token(&[0xF0, 0x9F])));
+        assert_merges_respect_utf8_boundaries(&constrained, &merges);
+    }
+
+    #[test]
+    fn bpe_test_enforce_utf8_boundaries_with_affixes() {
+        let to_byte_level = |s: &str| -> CompactString {
+            s.bytes()
+                .map(|b| BYTES_CHAR_LOOKUP[b as usize])
+                .collect::<String>()
+                .into()
+        };
+        let token = |bytes: &[u8]| -> String {
+            bytes
+                .iter()
+                .map(|&b| BYTES_CHAR_LOOKUP[b as usize])
+                .collect()
+        };
+        let word_counts: AHashMap<CompactString, u64> =
+            [(to_byte_level("a🤗"), 10), (to_byte_level("🤗a"), 10)]
+                .into_iter()
+                .collect();
+        let emoji = token("🤗".as_bytes());
+
+        let with_prefix = BpeTrainer::builder()
+            .show_progress(false)
+            .enforce_utf8_boundaries(true)
+            .continuing_subword_prefix("##".into())
+            .build();
+        let (vocab, merges, _) = with_prefix.do_train(&word_counts).unwrap();
+        // The emoji is learned both word-initially and as a continuation.
+        assert!(vocab.contains_key(&emoji));
+        assert!(vocab.contains_key(&format!("##{emoji}")));
+        assert!(!vocab.contains_key(&token(&[b'a', 0xF0])));
+        assert_merges_respect_utf8_boundaries(&with_prefix, &merges);
+
+        let with_suffix = BpeTrainer::builder()
+            .show_progress(false)
+            .enforce_utf8_boundaries(true)
+            .end_of_word_suffix("</w>".into())
+            .build();
+        let (vocab, merges, _) = with_suffix.do_train(&word_counts).unwrap();
+        // Only the word-final emoji carries the suffix.
+        assert!(vocab.contains_key(&emoji));
+        assert!(vocab.contains_key(&format!("{emoji}</w>")));
+        assert!(!vocab.contains_key(&token(&[b'a', 0xF0])));
+        assert_merges_respect_utf8_boundaries(&with_suffix, &merges);
+    }
+
+    /// Both sides complete, or both incomplete with `b` a single byte and the result complete or
+    /// still a valid prefix of a character.
+    fn assert_merges_respect_utf8_boundaries(trainer: &BpeTrainer, merges: &Merges) {
+        for (a, b) in merges {
+            let (a, b) = (trainer.token_bytes(a), trainer.token_bytes(b));
+            let (a_complete, b_complete) = (
+                std::str::from_utf8(&a).is_ok(),
+                std::str::from_utf8(&b).is_ok(),
+            );
+            let allowed = if a_complete && b_complete {
+                true
+            } else if !a_complete && !b_complete && b.len() == 1 {
+                let merged = [a.as_slice(), b.as_slice()].concat();
+                match std::str::from_utf8(&merged) {
+                    Ok(_) => true,
+                    Err(e) => e.error_len().is_none(),
+                }
+            } else {
+                false
+            };
+            assert!(allowed, "merge crosses a character boundary: {a:?} + {b:?}");
+        }
+    }
+
     #[test]
     fn bpe_test_max_token_length_16() {
         /* bpe_test_max_token_length series of tests test the max_token_length flag of bpetrainer
