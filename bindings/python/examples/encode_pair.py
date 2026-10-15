@@ -24,4 +24,3 @@ for idx, encoding in enumerate(encodings):
     print(f"batch[{idx}]:  IDS=      ", encoding.ids)
     print(f"batch[{idx}]:  TYPE_IDS= ", encoding.type_ids)
     print(f"batch[{idx}]:  TOKENS=   ", tokenizer.decode_tokens(encoding.ids))
-    
