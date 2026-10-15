@@ -184,7 +184,7 @@ class Tokenizer:
     def encode(
         self,
         /,
-        input: str | tuple[str, str],
+        input: str | Sequence[str],
         *,
         add_special_tokens: bool = True,
         encode_special_tokens: bool = False,
@@ -192,11 +192,12 @@ class Tokenizer:
         truncation: Truncation | None = ...,
     ) -> Encoding:
         """
-        Encodes the given text to token ids.
+        Encodes the given text, or pair of texts, to token ids.
 
         Args:
-            text: str
-                The text to encode.
+            input: str or tuple[str, str]
+                A text, or a pair of texts given as a two-item tuple or list.
+                The post-processor joins a pair, for example as `[CLS] A [SEP] B [SEP]`.
             add_special_tokens: bool
                  Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
             encode_special_tokens: bool
@@ -215,7 +216,7 @@ class Tokenizer:
     def encode_batch(
         self,
         /,
-        inputs: Sequence[str | tuple[str, str]],
+        inputs: Sequence[str | Sequence[str]],
         *,
         add_special_tokens: bool = True,
         encode_special_tokens: bool = False,
@@ -223,12 +224,13 @@ class Tokenizer:
         truncation: Truncation | None = ...,
     ) -> list[Encoding]:
         """
-        Encodes a batch of text.
+        Encodes a batch of texts, or pairs of texts.
         The encodings come back in input order.
 
         Args:
-            texts: List[str] or List[Tuple[str, str]]
-                The batch of text to encode.
+            inputs: list[str | tuple[str, str]]
+                The batch to encode. Each item is a text, or a pair of texts given as a two-item
+                tuple or list. A batch can mix both.
             add_special_tokens: bool
                 Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
             encode_special_tokens: bool
@@ -322,7 +324,7 @@ class Tokenizer:
     def tokenize(
         self,
         /,
-        input: str | tuple[str, str],
+        input: str | Sequence[str],
         *,
         add_special_tokens: bool = True,
         encode_special_tokens: bool = False,
@@ -330,14 +332,15 @@ class Tokenizer:
         truncation: Truncation | None = ...,
     ) -> list[str]:
         """
-        Encodes the given text and returns the string representation of each token.
+        Encodes the given text, or pair of texts, and returns the string representation of each token.
 
-        Shorthand for `decode_tokens(encode(text))`.
-        If you also need to access token ids, use `encode(text)`.
+        Shorthand for `decode_tokens(encode(input))`.
+        If you also need to access token ids, use `encode(input)`.
 
         Args:
-            text: str
-                The text to tokenize.
+            input: str or tuple[str, str]
+                A text, or a pair of texts given as a two-item tuple or list.
+                The post-processor joins a pair, for example as `[CLS] A [SEP] B [SEP]`.
             add_special_tokens: bool
                  Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
             encode_special_tokens: bool

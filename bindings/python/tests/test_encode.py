@@ -80,3 +80,18 @@ def test_encode_batch_special_tokens(bert):
 
 def test_encode_batch_empty(gpt2):
     assert gpt2.encode_batch([]) == []
+
+
+@pytest.mark.parametrize("pair", [("Hello", "there"), ["Hello", "there"]])
+def test_encode_pair(bert, pair):
+    encoding = bert.encode(pair)
+
+    assert encoding.ids == [1, 27462, 2, 7495, 2]
+    assert encoding.type_ids == [0, 0, 0, 1, 1]
+    assert bert.encode_batch([pair, "Hello"]) == [encoding, bert.encode("Hello")]
+
+
+@pytest.mark.parametrize("pair", [["Hello"], ["Hello", "there", "again"]])
+def test_encode_pair_needs_two_texts(bert, pair):
+    with pytest.raises(TypeError):
+        bert.encode(pair)

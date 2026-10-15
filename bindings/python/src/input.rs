@@ -4,13 +4,13 @@ use tk_encode::pipeline::{Input, Inputs};
 #[derive(FromPyObject)]
 pub enum PyInput {
     Single(String),
-    Pair((String, String)),
+    Pair([String; 2]),
 }
 
 impl From<PyInput> for Input {
     fn from(value: PyInput) -> Self {
         match value {
-            PyInput::Pair((left, right)) => Input::Pair(left, right),
+            PyInput::Pair([left, right]) => Input::Pair(left, right),
             PyInput::Single(single) => Input::Single(single),
         }
     }
