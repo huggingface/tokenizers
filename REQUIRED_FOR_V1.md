@@ -113,8 +113,11 @@ Unigram files rather than a `tokenizer.json`:
     BPE::from_file, models::wordpiece::{from_file, from_bytes}, models::wordlevel::{from_file, read_file},
     models::unigram::{load, save}
 
-`tk_encode::models::unigram::Model::save` currently errors with a message pointing at
-`tk_convert::ModelWrapper::save`; that message needs rewording once the target is gone.
+**Status:** `tk_encode::models::unigram::Unigram` has no `load` or `save` method. The config
+layer's `ModelWrapper::save` is gone as well; there is no remaining error message to reword.
+
+**What v1 needs:** pipeline-native readers and writers for these standalone model files.
+`tk_serialize::to_json` writes a complete `tokenizer.json` (§3), not a bare model file.
 
 ## 5. Hub and file constructors on the config object
 
