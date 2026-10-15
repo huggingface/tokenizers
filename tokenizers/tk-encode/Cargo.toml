@@ -88,3 +88,8 @@ assert_approx_eq = "1.1"
 tracing = "0.1"
 tracing-subscriber = "0.3.23"
 serde_json = "1.0"
+
+[[test]]
+name = "parallelism_lifecycle"
+harness = false
+required-features = ["parallelism"]
