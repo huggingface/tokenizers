@@ -19,7 +19,7 @@ use tk_encode::tokenizer::Result;
 use tk_encode::normalizers::{
     bert::BertNormalizer,
     precompiled::PrecompiledNormalizer,
-    strip::StripAccents,
+    strip_accents::StripAccents,
     unicode::{NFC, NFD, NFKC, NFKD, Nmt},
 };
 
@@ -92,7 +92,7 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
             )));
         }
         #[cfg(feature = "normalizers")]
-        "StripAccents" => out.push(PipelineNormalizer::StripAccents(StripAccents)),
+        "StripAccents" => out.push(PipelineNormalizer::StripAccents(StripAccents::new())),
         #[cfg(feature = "normalizers")]
         "NFC" => out.push(PipelineNormalizer::NFC(NFC)),
         #[cfg(feature = "normalizers")]
