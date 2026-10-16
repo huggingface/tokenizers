@@ -54,6 +54,10 @@ tokenizer.encode("Hello", padding=None)
 
 `examples/` holds a runnable script for each of these; `make examples` runs them all.
 
+`encoding.special_tokens_mask` is 1 for tokens inserted by the post-processor or padding,
+and 0 for tokens from the input, including special tokens written in the input text.
+`encoding.special_tokens_mask_array` returns the same mask as a `uint32` numpy array.
+
 ## Worker processes
 
 Every class here can be pickled, so a tokenizer can be sent to a worker process and its encodings

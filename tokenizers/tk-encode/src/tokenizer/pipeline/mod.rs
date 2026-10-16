@@ -483,6 +483,8 @@ pub struct Encoding {
     pub(crate) type_ids: Option<Vec<u8>>,
     /// `None` if the encoding is not padded (mask is all ones)
     pub(crate) attention_mask: Option<Vec<u8>>,
+    /// `None` if no tokens were inserted by the post-processor or padding (mask is all zeros).
+    pub(crate) special_tokens_mask: Option<Vec<u8>>,
 }
 
 impl Encoding {
@@ -491,6 +493,7 @@ impl Encoding {
             ids: Vec::new(),
             type_ids: None,
             attention_mask: None,
+            special_tokens_mask: None,
         }
     }
 
@@ -504,7 +507,21 @@ impl Encoding {
             ids,
             type_ids,
             attention_mask,
+            special_tokens_mask: None,
         }
+    }
+
+    /// Attach the mask of tokens inserted by the post-processor or padding.
+    ///
+    /// The mask must contain one value per token: 1 for inserted tokens, 0 for input tokens.
+    pub fn with_special_tokens_mask(mut self, mask: Vec<u8>) -> Self {
+        assert_eq!(
+            mask.len(),
+            self.len(),
+            "one mask value per token is required"
+        );
+        self.special_tokens_mask = Some(mask);
+        self
     }
 }
 
@@ -527,6 +544,12 @@ impl Encoding {
 
     pub fn attention_mask(&self) -> Option<&[u8]> {
         self.attention_mask.as_deref()
+    }
+
+    /// 1 for tokens inserted by the post-processor or padding, 0 for tokens from the input.
+    /// `None` means all zeros, including special tokens that appeared in the input text.
+    pub fn special_tokens_mask(&self) -> Option<&[u8]> {
+        self.special_tokens_mask.as_deref()
     }
 }
 /// Iterator yields results in completion order

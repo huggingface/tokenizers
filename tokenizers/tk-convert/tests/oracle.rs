@@ -280,6 +280,13 @@ fn assert_matches_released(repo: &str, file: &str) {
             if mask != want.get_attention_mask() {
                 diverged.push(format!("attention_mask {cell:?} {text:?}"));
             }
+            let special_tokens_mask: Vec<u32> = match encoding.special_tokens_mask() {
+                Some(mask) => mask.iter().copied().map(u32::from).collect(),
+                None => vec![0; got.len()],
+            };
+            if special_tokens_mask != want.get_special_tokens_mask() {
+                diverged.push(format!("special_tokens_mask {cell:?} {text:?}"));
+            }
             let type_ids: Vec<u32> = match encoding.type_ids() {
                 Some(type_ids) => type_ids.iter().copied().map(u32::from).collect(),
                 None => vec![0; got.len()],
