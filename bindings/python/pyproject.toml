@@ -8,14 +8,15 @@ dependencies = ["huggingface_hub>=0.16.4,<3.0", "numpy"]
 
 [dependency-groups]
 dev = [
-    "maturin>=1.0,<2.0",
+    "maturin>=1.15,<2.0",
     "pytest",
     "ruff",
     "ty",
 ]
 
 [build-system]
-requires = ["maturin>=1.0,<2.0"]
+# ABI3T wheel support, including the PyModExport entry-point check fix in 1.15.
+requires = ["maturin>=1.15,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]

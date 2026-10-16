@@ -10,4 +10,4 @@ name = "stub-gen"
 path = "src/main.rs"
 
 [dependencies]
-pyo3-introspection = "0.29"
+pyo3-introspection = "0.30"

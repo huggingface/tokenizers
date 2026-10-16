@@ -107,6 +107,10 @@ jobs:
           - { runner: ubuntu-24.04,     target: x86_64,  manylinux: auto, python: "3.14t" }
           - { runner: ubuntu-24.04-arm, target: aarch64, manylinux: auto, python: "3.14t" }
 
+          # ---- Linux glibc, abi3.abi3t (one wheel for both 3.15+ builds) ---------------------
+          - { runner: ubuntu-24.04,     target: x86_64,  manylinux: auto, python: "3.15t" }
+          - { runner: ubuntu-24.04-arm, target: aarch64, manylinux: auto, python: "3.15t" }
+
           # ---- Linux musl ------------------------------------------------------------------
           - { runner: ubuntu-24.04, target: x86_64,  manylinux: musllinux_1_2, python: "3.14" }
           - { runner: ubuntu-24.04, target: aarch64, manylinux: musllinux_1_2, python: "3.14" }
@@ -114,6 +118,8 @@ jobs:
           - { runner: ubuntu-24.04, target: armv7,   manylinux: musllinux_1_2, python: "3.14" }
           - { runner: ubuntu-24.04, target: x86_64,  manylinux: musllinux_1_2, python: "3.14t" }
           - { runner: ubuntu-24.04, target: aarch64, manylinux: musllinux_1_2, python: "3.14t" }
+          - { runner: ubuntu-24.04, target: x86_64,  manylinux: musllinux_1_2, python: "3.15t" }
+          - { runner: ubuntu-24.04, target: aarch64, manylinux: musllinux_1_2, python: "3.15t" }
 
           # ---- macOS -----------------------------------------------------------------------
           # macos-latest is macOS 26 on arm64; macos-15-intel is the only current x86_64 box.
@@ -121,12 +127,15 @@ jobs:
           - { runner: macos-latest,   target: aarch64, python: "3.14" }
           - { runner: macos-15-intel, target: x86_64,  python: "3.14t" }
           - { runner: macos-latest,   target: aarch64, python: "3.14t" }
+          - { runner: macos-15-intel, target: x86_64,  python: "3.15t" }
+          - { runner: macos-latest,   target: aarch64, python: "3.15t" }
 
           # ---- Windows ---------------------------------------------------------------------
           - { runner: windows-latest, target: x86_64,  python: "3.14" }
           - { runner: windows-latest, target: i686,    python: "3.14",  python-arch: x86 }
           - { runner: windows-11-arm, target: aarch64, python: "3.14",  python-arch: arm64 }
           - { runner: windows-latest, target: x86_64,  python: "3.14t" }
+          - { runner: windows-latest, target: x86_64,  python: "3.15t" }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
@@ -139,6 +148,7 @@ jobs:
       - name: build wheels
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         with:
+          maturin-version: v1.15.0
           working-directory: bindings/python
           target: ${{ matrix.config.target }}
           manylinux: ${{ matrix.config.manylinux || 'auto' }}
@@ -183,17 +193,25 @@ jobs:
           - { runner: ubuntu-latest,    python: "3.10" }
           - { runner: ubuntu-latest,    python: "3.14" }
           - { runner: ubuntu-latest,    python: "3.14t" }
+          - { runner: ubuntu-latest,    python: "3.15+gil" }
+          - { runner: ubuntu-latest,    python: "3.15t" }
           # ---- macOS arm64 -------------------------------------------------------------------
           - { runner: macos-latest,     python: "3.10" }
           - { runner: macos-latest,     python: "3.14" }
           - { runner: macos-latest,     python: "3.14t" }
+          - { runner: macos-latest,     python: "3.15+gil" }
+          - { runner: macos-latest,     python: "3.15t" }
           # ---- Other native architectures ----------------------------------------------------
           - { runner: ubuntu-24.04-arm, python: "3.10" }
           - { runner: ubuntu-24.04-arm, python: "3.14" }
           - { runner: ubuntu-24.04-arm, python: "3.14t" }
+          - { runner: ubuntu-24.04-arm, python: "3.15+gil" }
+          - { runner: ubuntu-24.04-arm, python: "3.15t" }
           - { runner: macos-15-intel,   python: "3.10" }
           - { runner: macos-15-intel,   python: "3.14" }
           - { runner: macos-15-intel,   python: "3.14t" }
+          - { runner: macos-15-intel,   python: "3.15+gil" }
+          - { runner: macos-15-intel,   python: "3.15t" }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
@@ -216,7 +234,11 @@ jobs:
           ls dist
 
           # Setup virtual env
-          uv venv --python ${{ matrix.config.python }} .venv
+          # uv 0.13.1 can select +gil interpreters, but cannot download a +gil request.
+          # https://github.com/astral-sh/uv/issues/17437
+          version="${{ matrix.config.python }}"
+          uv python install "${version%+gil}"
+          uv venv --python "$version" .venv
           
           source .venv/bin/activate
 
@@ -227,6 +249,11 @@ jobs:
           # Install deps and pytest: tokenizers is already satisfied, so this only pulls its
           # dependencies and pytest from PyPI.
           uv pip install tokenizers pytest
+
+          # Both 3.15 builds must load the wheel built on 3.15t, not the older abi3 wheel.
+          if [[ "${{ matrix.config.python }}" == 3.15* ]]; then
+            python -c "import tokenizers.tokenizers as m; assert '.abi3t.' in m.__file__, m.__file__"
+          fi
 
           # Download data
           make test-data HF="uvx --from huggingface_hub hf"

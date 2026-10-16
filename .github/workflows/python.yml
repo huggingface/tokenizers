@@ -46,9 +46,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        # The extension is built with `abi3-py310`, so one binary covers 3.10 through 3.14: test
-        # the oldest and the newest. 3.14t has no stable ABI yet, so pyo3 builds it version-specific.
-        python: ["3.10", "3.14", "3.14t"]
+        # 3.14t needs a version-specific wheel. The 3.15t job builds one abi3.abi3t wheel
+        # and tests it on both 3.15 builds; keep 3.10 and 3.14 coverage for the older abi3 wheel.
+        python: ["3.10", "3.14", "3.14t", "3.15t"]  # 3.15 is tested below using the wheel built on 3.15t.
     defaults:
       run:
         working-directory: bindings/python
@@ -90,11 +90,31 @@ jobs:
           restore-keys: hf-test-data-python-
 
       - name: Run tests
+        if: matrix.python != '3.15t'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           source .venv/bin/activate
           make test HF="uvx --from huggingface_hub hf"
+
+      - name: Build on 3.15t and test the same wheel on 3.15 and 3.15t
+        if: matrix.python == '3.15t'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          source .venv/bin/activate
+          maturin build --release --locked -i python --out dist
+          make test-data HF="uvx --from huggingface_hub hf"
+
+          # uv 0.13.1 can select +gil interpreters, but cannot download a +gil request.
+          # https://github.com/astral-sh/uv/issues/17437
+          uv python install 3.15
+          for version in 3.15+gil 3.15t; do
+            uv venv --python "$version" ".venv-$version"
+            uv pip install --python ".venv-$version/bin/python" \
+              dist/*-cp315-abi3.abi3t-*.whl pytest
+            ".venv-$version/bin/python" -m pytest tests
+          done
 
   quality:
     permissions:

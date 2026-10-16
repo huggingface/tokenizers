@@ -3,10 +3,13 @@
 
 from collections.abc import Sequence
 from os import PathLike
-from typing import Any, Final, Literal, final
+from typing import Any, Final, Literal, SupportsIndex, final
 
+from _typeshed import SupportsGetItem, SupportsLenAndGetItem
 from numpy import integer, uint32
 from numpy.typing import NDArray
+
+__all__ = ["__version__", "Encoding", "Padding", "Tokenizer", "Truncation"]
 
 __version__: Final[str]
 
@@ -27,7 +30,11 @@ class Encoding:
         """
     def __repr__(self, /) -> str: ...
     @staticmethod
-    def _unpickle(ids: Sequence[int], type_ids: Sequence[int], attention_mask: Sequence[int]) -> Encoding:
+    def _unpickle(
+        ids: SupportsGetItem[int, SupportsIndex],
+        type_ids: SupportsGetItem[int, SupportsIndex],
+        attention_mask: SupportsGetItem[int, SupportsIndex],
+    ) -> Encoding:
         """
         Unpickles an `Encoding`
         """
@@ -76,11 +83,11 @@ class Padding:
         cls,
         /,
         direction: Literal["left", "right"] = ...,
-        pad_id: int = 0,
-        pad_type_id: int = 0,
+        pad_id: SupportsIndex = 0,
+        pad_type_id: SupportsIndex = 0,
         pad_token: str = "[PAD]",
-        length: int | None = None,
-        pad_to_multiple_of: int | None = None,
+        length: SupportsIndex | None = None,
+        pad_to_multiple_of: SupportsIndex | None = None,
     ) -> Padding:
         """
         Args:
@@ -184,7 +191,7 @@ class Tokenizer:
     def encode(
         self,
         /,
-        input: str | Sequence[str],
+        input: str | SupportsLenAndGetItem[str],
         *,
         add_special_tokens: bool = True,
         encode_special_tokens: bool = False,
@@ -216,7 +223,7 @@ class Tokenizer:
     def encode_batch(
         self,
         /,
-        inputs: Sequence[str | Sequence[str]],
+        inputs: SupportsGetItem[int, str | SupportsLenAndGetItem[str]],
         *,
         add_special_tokens: bool = True,
         encode_special_tokens: bool = False,
@@ -324,7 +331,7 @@ class Tokenizer:
     def tokenize(
         self,
         /,
-        input: str | Sequence[str],
+        input: str | SupportsLenAndGetItem[str],
         *,
         add_special_tokens: bool = True,
         encode_special_tokens: bool = False,
@@ -376,7 +383,7 @@ class Truncation:
     def __new__(
         cls,
         /,
-        max_length: int,
+        max_length: SupportsIndex,
         strategy: Literal["longest_first", "only_first", "only_second"] = ...,
         direction: Literal["left", "right"] = ...,
     ) -> Truncation:
@@ -384,12 +391,12 @@ class Truncation:
         Args:
             max_length: int
                 The maximum number of tokens, including special tokens, to keep.
-                        Encodings with more tokens will get truncated.
+        \t\tEncodings with more tokens will get truncated.
             strategy: `"longest_first"` (the default), `"only_first"` or `"only_second"`
                 Which sequence of a pair is truncated.
             direction: `"right"` (the default) or `"left"`
                 Whether to truncate tokens at the end of the sequence (`"right"`) or at
-                        the beginning of the sequence (`"left"`).
+        \t\tthe beginning of the sequence (`"left"`).
         """
     def __reduce__(
         self, /
