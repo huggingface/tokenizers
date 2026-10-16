@@ -54,6 +54,11 @@ tokenizer.encode("Hello", padding=None)
 
 `examples/` holds a runnable script for each of these; `make examples` runs them all.
 
+`encoding.tokens` retains each token's text, including unknown pieces and the whitespace consumed
+by added tokens with `lstrip` or `rstrip`. `tokenizer.tokenize(text)` returns the same list as
+`tokenizer.encode(text).tokens` with the same options. In contrast, `decode_tokens(ids)` looks up
+vocabulary entries, so unknown pieces become the unknown-token string and matched whitespace is lost.
+
 ## Worker processes
 
 Every class here can be pickled, so a tokenizer can be sent to a worker process and its encodings

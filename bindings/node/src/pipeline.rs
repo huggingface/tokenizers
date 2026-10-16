@@ -163,6 +163,7 @@ impl PipelineTokenizer {
     Ok(PipelineEncodeOptions {
       add_special_tokens: options.add_special_tokens.unwrap_or(true),
       encode_special_tokens: options.encode_special_tokens.unwrap_or(false),
+      return_tokens: false,
       padding: override_with(options.padding, PaddingOptions::params)?,
       truncation: override_with(options.truncation, TruncationOptions::params)?,
     })

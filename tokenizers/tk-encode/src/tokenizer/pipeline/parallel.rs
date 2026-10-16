@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::parallelism::pool;
 use crate::pipeline::scratch_pool::{EncodeScratch, ScratchGuard};
 use crate::pipeline::{
-    EncodeHandle, EncodeOptions, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer,
-    Segment, SpecialSegmentIterator,
+    EncodeHandle, EncodeOptions, EncodedSequence, Encoding, Input, Inputs, PipelineToken,
+    PipelineTokenizer, Segment, SpecialSegmentIterator,
 };
 
 /// Which half of an [`Input::Pair`] a chunk was cut from. [`Input::Single`] is all `A`.
@@ -70,7 +70,7 @@ impl<T> Slot<T> {
     }
 }
 
-type ChunkResult = Slot<Result<Vec<PipelineToken>>>;
+type ChunkResult = Slot<Result<EncodedSequence>>;
 /// SAFETY: we make sure each chunk's result is set by only one given thread thanks to
 /// [`EncodeBatch::next_task`]
 unsafe impl Sync for ChunkResult {}
@@ -273,7 +273,7 @@ impl Drop for StreamingIter {
     }
 }
 
-fn drain(results: &[ChunkResult]) -> Result<Vec<PipelineToken>> {
+fn drain(results: &[ChunkResult]) -> Result<EncodedSequence> {
     if let [only] = results {
         return only
             .take()
@@ -291,7 +291,21 @@ fn drain(results: &[ChunkResult]) -> Result<Vec<PipelineToken>> {
             }
         }
     }
-    Ok(out.concat())
+    let len = out.iter().map(|chunk| chunk.ids.len()).sum();
+    let mut merged = EncodedSequence {
+        ids: Vec::with_capacity(len),
+        tokens: out
+            .iter()
+            .any(|chunk| chunk.tokens.is_some())
+            .then(|| Vec::with_capacity(len)),
+    };
+    for chunk in out {
+        merged.ids.extend(chunk.ids);
+        if let (Some(tokens), Some(chunk_tokens)) = (&mut merged.tokens, chunk.tokens) {
+            tokens.extend(chunk_tokens);
+        }
+    }
+    Ok(merged)
 }
 
 impl PipelineTokenizer {
@@ -304,7 +318,7 @@ impl PipelineTokenizer {
         seq_idx: usize,
         side: Seq,
         input: &str,
-        encode_special_tokens: bool,
+        options: &EncodeOptions,
         chunks: &mut Vec<SequenceChunk>,
         seq_outputs: &mut Vec<ChunkResult>,
     ) {
@@ -325,13 +339,16 @@ impl PipelineTokenizer {
             input,
             &self.inner.added_vocabulary,
             false,
-            encode_special_tokens,
+            options.encode_special_tokens,
         ) {
             let idx = seq_outputs.len();
             let (segment, offset) = match segment {
-                Segment::SpecialToken(id) => {
+                Segment::SpecialToken { id, text } => {
                     let token = PipelineToken::from(id);
-                    seq_outputs.push(ChunkResult::new(Some(Ok(vec![token]))));
+                    seq_outputs.push(ChunkResult::new(Some(Ok(EncodedSequence {
+                        ids: vec![token],
+                        tokens: options.return_tokens.then(|| vec![text.to_owned()]),
+                    }))));
                     continue;
                 }
                 Segment::Text { text, input_offset } => (text, input_offset),
@@ -367,34 +384,13 @@ impl PipelineTokenizer {
             let mut seq_outputs = vec![];
             match input {
                 Input::Single(s) => {
-                    self.plan_sequence(
-                        seq_idx,
-                        Seq::A,
-                        s,
-                        options.encode_special_tokens,
-                        &mut chunks,
-                        &mut seq_outputs,
-                    );
+                    self.plan_sequence(seq_idx, Seq::A, s, options, &mut chunks, &mut seq_outputs);
                     side_a_len.push(seq_outputs.len());
                 }
                 Input::Pair(s1, s2) => {
-                    self.plan_sequence(
-                        seq_idx,
-                        Seq::A,
-                        s1,
-                        options.encode_special_tokens,
-                        &mut chunks,
-                        &mut seq_outputs,
-                    );
+                    self.plan_sequence(seq_idx, Seq::A, s1, options, &mut chunks, &mut seq_outputs);
                     let a_len = seq_outputs.len();
-                    self.plan_sequence(
-                        seq_idx,
-                        Seq::B,
-                        s2,
-                        options.encode_special_tokens,
-                        &mut chunks,
-                        &mut seq_outputs,
-                    );
+                    self.plan_sequence(seq_idx, Seq::B, s2, options, &mut chunks, &mut seq_outputs);
                     side_a_len.push(a_len);
                 }
             }

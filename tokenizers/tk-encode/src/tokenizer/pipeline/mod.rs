@@ -119,8 +119,8 @@ pub enum Segment<'a> {
     /// Ordinary text still to be (optonally normalized), pre-tokenized and run through the model.
     /// input_offset is the start position of `text` in the input
     Text { text: &'a str, input_offset: usize },
-    /// A matched special token, identified by its vocabulary id.
-    SpecialToken(u32),
+    /// A matched special token and its full match, including lstrip/rstrip whitespace.
+    SpecialToken { id: u32, text: &'a str },
 }
 
 /// Splits `input` into [`Segment`]s, in order: runs of ordinary text
@@ -130,7 +130,7 @@ pub enum Segment<'a> {
 /// ```ignore
 /// for segment in SpecialSegmentIterator::new(input, pattern_matcher, false, false) {
 ///     match segment {
-///         Segment::SpecialToken(id) => { /* emit the special token */ }
+///         Segment::SpecialToken { id, text } => { /* emit the special token */ }
 ///         Segment::Text { text, input_offset } => { /* tokenize this chunk */ }
 ///     }
 /// }
@@ -145,7 +145,7 @@ pub struct SpecialSegmentIterator<'a, 'b, PatternMatcher: PipelinePatternMatcher
     /// [`EncodeOptions::encode_special_tokens`], forwarded to `extract_next` on every match
     encode_special_tokens: bool,
     offset: usize,
-    pending: Option<u32>,
+    pending: Option<(u32, &'a str)>,
 }
 
 impl<'a, 'b, PatternMatcher: PipelinePatternMatcher>
@@ -178,8 +178,8 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
     /// Get the next segment of the input.
     fn next(&mut self) -> Option<Self::Item> {
         // take resets the pending option to None
-        if let Some(special_token) = self.pending.take() {
-            return Some(Segment::SpecialToken(special_token));
+        if let Some((id, text)) = self.pending.take() {
+            return Some(Segment::SpecialToken { id, text });
         }
 
         let remaining_input = &self.input[self.offset..];
@@ -200,13 +200,16 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
             if !before_token.is_empty() {
                 // The iterator returns segments in order: we need to return the chunk of text and then the special token.
                 // Store the special token to return in the next call and return a [`Segment::Text`]
-                self.pending = Some(token);
+                self.pending = Some((token, &self.input[start..end]));
                 return Some(Segment::Text {
                     text: before_token,
                     input_offset,
                 });
             } else {
-                return Some(Segment::SpecialToken(token));
+                return Some(Segment::SpecialToken {
+                    id: token,
+                    text: &self.input[start..end],
+                });
             }
         }
         let input_offset = self.offset;
@@ -479,6 +482,7 @@ impl EncodeHandle {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Encoding {
     pub(crate) ids: Vec<PipelineToken>,
+    pub(crate) tokens: Option<Vec<String>>,
     /// `None` if every token has type id 0
     pub(crate) type_ids: Option<Vec<u8>>,
     /// `None` if the encoding is not padded (mask is all ones)
@@ -489,6 +493,7 @@ impl Encoding {
     fn empty() -> Self {
         Self {
             ids: Vec::new(),
+            tokens: None,
             type_ids: None,
             attention_mask: None,
         }
@@ -502,6 +507,7 @@ impl Encoding {
         debug_assert!(type_ids.as_ref().is_none_or(|t| t.len() == ids.len()));
         Self {
             ids,
+            tokens: None,
             type_ids,
             attention_mask,
         }
@@ -509,6 +515,21 @@ impl Encoding {
 }
 
 impl Encoding {
+    /// Token strings when requested with [`EncodeOptions::return_tokens`].
+    pub fn tokens(&self) -> Option<&[String]> {
+        self.tokens.as_deref()
+    }
+
+    /// Attach token strings to an encoding reconstructed from its ids and masks.
+    ///
+    /// # Panics
+    /// Panics if there is not exactly one string per id.
+    pub fn with_tokens(mut self, tokens: Vec<String>) -> Self {
+        assert_eq!(tokens.len(), self.ids.len(), "one string per token id");
+        self.tokens = Some(tokens);
+        self
+    }
+
     pub fn is_empty(&self) -> bool {
         self.ids.len() == 0
     }
@@ -529,6 +550,13 @@ impl Encoding {
         self.attention_mask.as_deref()
     }
 }
+
+/// A sequence before truncation and post-processing. Text is absent on the ids-only path.
+struct EncodedSequence {
+    ids: Vec<PipelineToken>,
+    tokens: Option<Vec<String>>,
+}
+
 /// Iterator yields results in completion order
 pub struct HandleIter {
     handle: EncodeHandle,
@@ -689,8 +717,8 @@ impl PipelineTokenizer {
     /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside.
     fn post_process(
         &self,
-        s1: Vec<PipelineToken>,
-        s2: Option<Vec<PipelineToken>>,
+        s1: EncodedSequence,
+        s2: Option<EncodedSequence>,
         options: &EncodeOptions,
     ) -> Result<Encoding> {
         let pp = &self.inner.post_processor;
@@ -701,12 +729,40 @@ impl PipelineTokenizer {
             0
         };
         let truncation = self.resolve_truncation(&options.truncation);
-        let (s1, s2) = truncate_pair(s1, s2, truncation, num_added_specials)?;
-        Ok(if options.add_special_tokens {
+        let (b_ids, b_tokens) = s2.map_or((None, None), |s| (Some(s.ids), s.tokens));
+        let a_tokens = s1.tokens;
+        let (s1, s2) = truncate_pair(s1.ids, b_ids, truncation, num_added_specials)?;
+        let tokens = a_tokens.map(|mut a| {
+            // Use the lengths chosen by truncate_pair, rather than recomputing its pair balancing.
+            let direction =
+                truncation.map_or(crate::TruncationDirection::default(), |t| t.direction);
+            crate::utils::truncation::truncate_tokens(&mut a, s1.len(), direction);
+            let b = b_tokens.map(|mut b| {
+                crate::utils::truncation::truncate_tokens(
+                    &mut b,
+                    s2.as_ref().map_or(0, Vec::len),
+                    direction,
+                );
+                b
+            });
+            let special = |id: PipelineToken| {
+                self.decode_tokens(&[id.id()], false)
+                    .pop()
+                    .unwrap_or_default()
+            };
+            if options.add_special_tokens {
+                template.wrap::<true, _>(a, b, special)
+            } else {
+                template.wrap::<false, _>(a, b, special)
+            }
+        });
+        let mut encoding = if options.add_special_tokens {
             template.post_process::<true>(s1, s2)
         } else {
             template.post_process::<false>(s1, s2)
-        })
+        };
+        encoding.tokens = tokens;
+        Ok(encoding)
     }
 
     /// Encode one sequence, appending its ids to `output`.
@@ -723,6 +779,7 @@ impl PipelineTokenizer {
         options: &EncodeOptions,
         scratch: &mut EncodeScratch,
         output: &mut Vec<PipelineToken>,
+        mut tokens: Option<&mut Vec<String>>,
     ) -> Result<()> {
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(
@@ -732,8 +789,11 @@ impl PipelineTokenizer {
             options.encode_special_tokens,
         ) {
             match segment {
-                Segment::SpecialToken(token) => {
-                    output.push(PipelineToken::from(token));
+                Segment::SpecialToken { id, text } => {
+                    output.push(PipelineToken::from(id));
+                    if let Some(tokens) = tokens.as_deref_mut() {
+                        tokens.push(text.to_owned());
+                    }
                 }
                 Segment::Text {
                     text: chunk,
@@ -750,8 +810,11 @@ impl PipelineTokenizer {
                         options.encode_special_tokens,
                     ) {
                         match segment {
-                            Segment::SpecialToken(token) => {
-                                output.push(PipelineToken::from(token));
+                            Segment::SpecialToken { id, text } => {
+                                output.push(PipelineToken::from(id));
+                                if let Some(tokens) = tokens.as_deref_mut() {
+                                    tokens.push(text.to_owned());
+                                }
                             }
                             Segment::Text {
                                 text: normalized_chunk,
@@ -796,12 +859,22 @@ impl PipelineTokenizer {
                                 // The whole span list at once; see Model::tokenize_spans.
                                 // SAFETY: `PreTokenizer` guarantees every span is a valid range of
                                 // `normalized_chunk`, which is what lets the model slice it unchecked.
-                                self.inner.model.tokenize_spans(
-                                    normalized_chunk,
-                                    pre_tokens,
-                                    model_scratch,
-                                    output,
-                                )?;
+                                if let Some(tokens) = tokens.as_deref_mut() {
+                                    self.inner.model.tokenize_spans_with_tokens(
+                                        normalized_chunk,
+                                        pre_tokens,
+                                        model_scratch,
+                                        output,
+                                        tokens,
+                                    )?;
+                                } else {
+                                    self.inner.model.tokenize_spans(
+                                        normalized_chunk,
+                                        pre_tokens,
+                                        model_scratch,
+                                        output,
+                                    )?;
+                                }
                             }
                         }
                     }
@@ -818,10 +891,21 @@ impl PipelineTokenizer {
         offset: usize,
         options: &EncodeOptions,
         scratch: &mut EncodeScratch,
-    ) -> Result<Vec<PipelineToken>> {
+    ) -> Result<EncodedSequence> {
         let mut output = Vec::with_capacity(input.len() / 4);
-        self.encode_sequence_into(input, offset, options, scratch, &mut output)?;
-        Ok(output)
+        let mut tokens = options.return_tokens.then(Vec::new);
+        self.encode_sequence_into(
+            input,
+            offset,
+            options,
+            scratch,
+            &mut output,
+            tokens.as_mut(),
+        )?;
+        Ok(EncodedSequence {
+            ids: output,
+            tokens,
+        })
     }
 
     /// Encode `input`, appending its ids to `out`.
@@ -844,7 +928,7 @@ impl PipelineTokenizer {
             && !template.has_type_ids()
             && (!options.add_special_tokens || template.n_special() == 0);
         if reproduces_sequence {
-            return self.encode_sequence_into(input, 0, options, &mut scratch, out);
+            return self.encode_sequence_into(input, 0, options, &mut scratch, out, None);
         }
         let encoding = self.encode_one(Input::Single(input.to_owned()), options, &mut scratch)?;
         out.extend_from_slice(encoding.ids());
@@ -1030,6 +1114,35 @@ pub enum PipelineModel {
 }
 
 impl PipelineModel {
+    fn tokenize_spans_with_tokens(
+        &self,
+        chunk: &str,
+        spans: &[Span],
+        scratch: &mut PipelineModelScratch,
+        output: &mut Vec<PipelineToken>,
+        tokens: &mut Vec<String>,
+    ) -> Result<()> {
+        #[cfg(feature = "unigram")]
+        if let Self::Unigram(model) = self {
+            // This existing route caches the pieces themselves, including unknown text. The
+            // ids-only pipeline cache cannot distinguish unknown pieces sharing the same id.
+            for span in spans {
+                for token in model.tokenize(&chunk[span.range()])? {
+                    output.push(token.id.into());
+                    tokens.push(token.value);
+                }
+            }
+            return Ok(());
+        }
+        let start = output.len();
+        self.tokenize_spans(chunk, spans, scratch, output)?;
+        tokens.extend(output[start..].iter().map(|token| {
+            self.id_to_token(token.id())
+                .expect("model emitted an id outside its vocabulary")
+        }));
+        Ok(())
+    }
+
     /// `id -> token` used by [`PipelineTokenizer::decode`]
     pub fn id_to_token(&self, id: u32) -> Option<String> {
         match self {
@@ -1165,7 +1278,7 @@ mod tests {
         let segments: Vec<_> = SpecialSegmentIterator::new(input, &matcher, false, false)
             .map(|segment| match segment {
                 Segment::Text { text, .. } => (Some(text), None),
-                Segment::SpecialToken(id) => (None, Some(id)),
+                Segment::SpecialToken { id, .. } => (None, Some(id)),
             })
             .collect();
 
@@ -1186,6 +1299,52 @@ mod tests {
         let pipeline = hello_pipeline();
 
         assert!(pipeline.get_padding().is_none());
+    }
+
+    #[test]
+    fn token_strings_are_opt_in() {
+        let pipeline = hello_pipeline();
+        let options = EncodeOptions::no_specials();
+        let ids_only = pipeline.encode("hello", &options).wait().unwrap();
+        assert!(ids_only[0].tokens().is_none());
+        let options = EncodeOptions {
+            return_tokens: true,
+            ..options
+        };
+        let with_text = pipeline.encode("hello", &options).wait().unwrap();
+        assert_eq!(ids_only[0].ids(), with_text[0].ids());
+        assert_eq!(with_text[0].tokens().unwrap(), ["hello"]);
+    }
+
+    #[cfg(feature = "unigram")]
+    #[test]
+    fn unknown_unigram_pieces_keep_their_text_on_repeated_encodes() {
+        let model = Unigram::from(
+            vec![("<unk>".into(), 0.0), ("a".into(), -1.0)],
+            Some(0),
+            false,
+        )
+        .unwrap();
+        let pipeline = PipelineTokenizer::from_parts(
+            BucketAddedVocabulary::new(),
+            Vec::new(),
+            PipelinePreTokenizer::None,
+            PipelineModel::Unigram(model),
+            PipelinePostProcessor::default(),
+            None,
+            Default::default(),
+            None,
+            None,
+        );
+        let options = EncodeOptions {
+            return_tokens: true,
+            ..EncodeOptions::no_specials()
+        };
+        for _ in 0..2 {
+            let encoding = pipeline.encode("a😀😁", &options).wait().unwrap();
+            assert_eq!(encoding[0].ids(), [1, 0]);
+            assert_eq!(encoding[0].tokens().unwrap(), ["a", "😀😁"]);
+        }
     }
 
     #[test]
@@ -1663,7 +1822,7 @@ mod tests {
     fn test_fast_path_buffer() {
         let pipeline = pipeline_with(PipelinePostProcessor::default(), None);
         let sequence = tokens(1..=8);
-        let address = sequence.as_ptr();
+        let address = sequence.ids.as_ptr();
 
         let encoding = pipeline
             .post_process(sequence, None, &EncodeOptions::default())
@@ -1698,8 +1857,11 @@ mod tests {
     const CLS: u32 = 101;
     const SEP: u32 = 102;
 
-    fn tokens(sequence_ids: impl IntoIterator<Item = u32>) -> Vec<PipelineToken> {
-        sequence_ids.into_iter().map(PipelineToken::from).collect()
+    fn tokens(sequence_ids: impl IntoIterator<Item = u32>) -> EncodedSequence {
+        EncodedSequence {
+            ids: sequence_ids.into_iter().map(PipelineToken::from).collect(),
+            tokens: None,
+        }
     }
 
     fn ids(encoding: &Encoding) -> Vec<u32> {
