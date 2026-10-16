@@ -928,10 +928,7 @@ impl PipelineTokenizer {
     pub fn decode_stream(&self, skip_special_tokens: bool) -> PipelineDecodeStream<'_> {
         PipelineDecodeStream {
             tokenizer: self,
-            ids: Vec::new(),
-            skip_special_tokens,
-            prefix: String::new(),
-            prefix_index: 0,
+            state: DecodeStreamState::new(Vec::new(), skip_special_tokens),
         }
     }
 }
@@ -939,28 +936,57 @@ impl PipelineTokenizer {
 /// Streaming decoder over a [`PipelineTokenizer`]; see [`PipelineTokenizer::decode_stream`].
 pub struct PipelineDecodeStream<'tok> {
     tokenizer: &'tok PipelineTokenizer,
+    state: DecodeStreamState,
+}
+
+impl PipelineDecodeStream<'_> {
+    /// Push one id and return the text it completes, or `None` while a multi-token
+    /// (or multi-byte) unit is still forming.
+    pub fn step(&mut self, id: u32) -> Result<Option<String>> {
+        self.state.step(self.tokenizer, std::slice::from_ref(&id))
+    }
+}
+
+/// Owned incremental decoding state. The tokenizer is borrowed only during
+/// [`step`](Self::step), so bindings can keep the state without a Rust lifetime.
+#[derive(Clone)]
+pub struct DecodeStreamState {
     ids: Vec<u32>,
     skip_special_tokens: bool,
     prefix: String,
     prefix_index: usize,
 }
 
-impl PipelineDecodeStream<'_> {
-    /// Push one id and return the text it completes, or `None` while a multi-token
+impl DecodeStreamState {
+    /// Start a stream, optionally prefilled with context ids that are not emitted.
+    pub fn new(ids: Vec<u32>, skip_special_tokens: bool) -> Self {
+        Self {
+            ids,
+            skip_special_tokens,
+            prefix: String::new(),
+            prefix_index: 0,
+        }
+    }
+
+    /// Append ids and return the text they complete, or `None` while a multi-token
     /// (or multi-byte) unit is still forming. Ids past the emitted prefix are kept
     /// as decode context so cross-token decoders (byte-level, WordPiece `##`, …)
     /// see the same input a one-shot [`decode`](PipelineTokenizer::decode) would.
-    pub fn step(&mut self, id: u32) -> Result<Option<String>> {
+    pub fn step(
+        &mut self,
+        tokenizer: &PipelineTokenizer,
+        token_ids: &[u32],
+    ) -> Result<Option<String>> {
         if self.prefix.is_empty() && !self.ids.is_empty() {
-            let new_prefix = self.tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+            let new_prefix = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
             if !new_prefix.ends_with('\u{fffd}') {
                 self.prefix = new_prefix;
                 self.prefix_index = self.ids.len();
             }
         }
 
-        self.ids.push(id);
-        let string = self.tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+        self.ids.extend_from_slice(token_ids);
+        let string = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
         if string.len() > self.prefix.len() && !string.ends_with('\u{fffd}') {
             if !string.starts_with(&self.prefix) {
                 return Err(format!(
@@ -972,7 +998,7 @@ impl PipelineDecodeStream<'_> {
             let new_text = string[self.prefix.len()..].to_string();
             let new_prefix_index = self.ids.len() - self.prefix_index;
             self.ids = self.ids.split_off(self.prefix_index);
-            self.prefix = self.tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+            self.prefix = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
             self.prefix_index = new_prefix_index;
             Ok(Some(new_text))
         } else {
@@ -1798,6 +1824,31 @@ mod tests {
         let pipeline = hello_pipeline();
 
         assert_eq!(pipeline.decode(&[7, 4], false).unwrap(), "hello he");
+    }
+
+    #[test]
+    fn decode_stream_keeps_context_between_steps() {
+        let pipeline = hello_pipeline();
+        let mut stream = pipeline.decode_stream(false);
+
+        assert_eq!(stream.step(7).unwrap().as_deref(), Some("hello"));
+        assert_eq!(stream.step(7).unwrap().as_deref(), Some(" hello"));
+    }
+
+    #[test]
+    fn decode_stream_state_supports_prefill_and_batches() {
+        let pipeline = hello_pipeline();
+        let mut stream = DecodeStreamState::new(vec![7], false);
+
+        assert_eq!(stream.step(&pipeline, &[]).unwrap(), None);
+        assert_eq!(
+            stream.step(&pipeline, &[4, 1]).unwrap().as_deref(),
+            Some(" he e")
+        );
+        assert_eq!(
+            stream.step(&pipeline, &[7]).unwrap().as_deref(),
+            Some(" hello")
+        );
     }
 
     fn hello_bpe() -> PipelineBPE {

@@ -28,6 +28,10 @@ pub struct Tokenizer {
 }
 
 impl Tokenizer {
+    pub(crate) fn pipeline(&self) -> &Pipeline {
+        &self.pipeline
+    }
+
     fn make_options(
         &self,
         add_special_tokens: bool,
