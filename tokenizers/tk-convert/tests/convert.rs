@@ -560,3 +560,20 @@ fn every_fixture_canonicalises_into_something_the_canonical_reader_accepts() {
     );
     assert!(read > 0, "no fixture was actually read");
 }
+
+#[test]
+fn byte_fallback_without_any_byte_codes_is_switched_off() {
+    let model = |fallback: &str, vocab: &str| {
+        format!(r#"{{"vocab": {vocab}, "merges": [], "byte_fallback": {fallback}}}"#)
+    };
+    let flag = |v: &Value| v["model"]["byte_fallback"].as_bool();
+    // NeMo-style: no <0xNN> at all
+    assert_eq!(flag(&done(&model("true", r#"{"a": 0}"#), "")), Some(false));
+    // partial coverage is for the reader to fill or refuse
+    assert_eq!(
+        flag(&done(&model("true", r#"{"a": 0, "<0x09>": 1}"#), "")),
+        Some(true)
+    );
+    // no flag, no change
+    assert_eq!(flag(&done(BPE, "")), None);
+}
