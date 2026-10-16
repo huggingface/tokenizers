@@ -55,6 +55,10 @@ pub(super) fn read_bpe(cfg: &Json<'_>) -> Result<(Vocab, Merges, BpeConfig)> {
             .field("ignore_merges")
             .and_then(Json::as_bool)
             .unwrap_or_default(),
+        cache_capacity: cfg
+            .field("cache_capacity")
+            .and_then(Json::as_usize)
+            .unwrap_or_else(|| BpeConfig::default().cache_capacity),
         byte_level,
         ..BpeConfig::default()
     };
