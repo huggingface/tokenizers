@@ -4,6 +4,7 @@
 mod decoders;
 mod encoding;
 mod error;
+mod input;
 mod options;
 mod repr;
 mod tokenizer;

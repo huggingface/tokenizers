@@ -61,6 +61,11 @@ impl PipelineToken {
     pub const fn id(self) -> u32 {
         self.0
     }
+
+    pub const fn cast_slice(slice: &[Self]) -> &[u32] {
+        // SAFETY: `PipelineToken` is `repr(transparent)` over u32
+        unsafe { std::slice::from_raw_parts(slice.as_ptr().cast::<u32>(), slice.len()) }
+    }
 }
 
 impl From<u32> for PipelineToken {
@@ -489,12 +494,16 @@ impl Encoding {
         }
     }
 
-    fn new(ids: Vec<PipelineToken>, type_ids: Option<Vec<u8>>) -> Self {
+    pub fn new(
+        ids: Vec<PipelineToken>,
+        type_ids: Option<Vec<u8>>,
+        attention_mask: Option<Vec<u8>>,
+    ) -> Self {
         debug_assert!(type_ids.as_ref().is_none_or(|t| t.len() == ids.len()));
         Self {
             ids,
             type_ids,
-            attention_mask: None,
+            attention_mask,
         }
     }
 }
