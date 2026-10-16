@@ -84,6 +84,17 @@ fn pad_one(encoding: &mut Encoding, target_length: usize, params: &PaddingParams
         std::mem::take(&mut encoding.type_ids).unwrap_or_else(|| vec![0; original_len]);
     let mut attention_mask =
         std::mem::take(&mut encoding.attention_mask).unwrap_or_else(|| vec![1; original_len]);
+    let tokens = encoding.tokens.take().map(|mut tokens| {
+        match params.direction {
+            PaddingDirection::Left => {
+                tokens = std::iter::repeat_n(params.pad_token.clone(), pad_length)
+                    .chain(tokens)
+                    .collect();
+            }
+            PaddingDirection::Right => tokens.resize(target_length, params.pad_token.clone()),
+        }
+        tokens
+    });
 
     match params.direction {
         PaddingDirection::Left => {
@@ -103,6 +114,7 @@ fn pad_one(encoding: &mut Encoding, target_length: usize, params: &PaddingParams
 
     *encoding = Encoding {
         ids,
+        tokens,
         type_ids: Some(type_ids),
         attention_mask: Some(attention_mask),
     };
@@ -119,6 +131,7 @@ mod tests {
     fn make_encoding(ids: impl IntoIterator<Item = u32>) -> Encoding {
         Encoding {
             ids: make_tokens(ids),
+            tokens: None,
             type_ids: None,
             attention_mask: None,
         }
@@ -205,6 +218,7 @@ mod tests {
     fn test_type_ids_right() {
         let mut encodings = [Encoding {
             ids: make_tokens(0..3),
+            tokens: None,
             type_ids: Some(vec![1, 1, 1]),
             attention_mask: None,
         }];
@@ -224,6 +238,7 @@ mod tests {
     fn test_type_ids_left() {
         let mut encodings = [Encoding {
             ids: make_tokens(0..3),
+            tokens: None,
             type_ids: Some(vec![1, 1, 1]),
             attention_mask: None,
         }];

@@ -46,6 +46,10 @@ built it is read-only: getters, `encode` and `decode`, but no setters, no `save`
 one remaining job (`canonicalize_file`, re-exported by the `tokenizers` umbrella crate). What an
 authoring surface would have to add back is `REQUIRED_FOR_V1.md` at the repository root.
 
+`EncodeOptions::return_tokens` also preserves token strings in `Encoding::tokens()`, including
+unknown pieces and added-token whitespace. It defaults to `false` for callers that only need ids;
+in that case `Encoding::tokens()` returns `None`.
+
 Training is not part of the shipped crate either. `tk-train` is in the tree and builds on its
 own, but it is `exclude`d from the workspace and nothing in `tokenizers` depends on it.
 

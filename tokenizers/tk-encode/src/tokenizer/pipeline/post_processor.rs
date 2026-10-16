@@ -3,11 +3,6 @@
 use super::{Encoding, PipelineToken};
 
 #[inline]
-fn push_ids(run: &[(PipelineToken, u8)], out: &mut Vec<PipelineToken>) {
-    out.extend(run.iter().map(|&(id, _)| id));
-}
-
-#[inline]
 fn push_type_ids(run: &[(PipelineToken, u8)], out: &mut Vec<u8>) {
     out.extend(run.iter().map(|&(_, id)| id));
 }
@@ -84,42 +79,52 @@ impl Template {
             out
         });
 
-        let ids = match s2 {
-            Some(b) => self.wrap_pair::<SPECIALS>(s1, b),
+        let ids = self.wrap::<SPECIALS, _>(s1, s2, |id| id);
+        Encoding::new(ids, type_ids, None)
+    }
+
+    pub(super) fn wrap<const SPECIALS: bool, T>(
+        &self,
+        a: Vec<T>,
+        b: Option<Vec<T>>,
+        mut special: impl FnMut(PipelineToken) -> T,
+    ) -> Vec<T> {
+        match b {
+            Some(b) => self.wrap_pair::<SPECIALS, _>(a, b, special),
             None => {
                 // A's buffer already holds the front of the answer, so keep it.
                 debug_assert!(self.infix.is_empty(), "[BUG] single template with an infix");
-                let mut ids = s1;
+                let mut ids = a;
                 if SPECIALS {
                     ids.reserve(self.n_special());
-                    push_ids(&self.suffix, &mut ids);
+                    ids.extend(self.suffix.iter().map(|&(id, _)| special(id)));
                     if !self.prefix.is_empty() {
-                        ids.splice(0..0, self.prefix.iter().map(|&(id, _)| id));
+                        ids.splice(0..0, self.prefix.iter().map(|&(id, _)| special(id)));
                     }
                 }
                 ids
             }
-        };
-        Encoding::new(ids, type_ids, None)
+        }
     }
 
     #[inline(never)]
-    fn wrap_pair<const SPECIALS: bool>(
+    fn wrap_pair<const SPECIALS: bool, T>(
         &self,
-        a: Vec<PipelineToken>,
-        b: Vec<PipelineToken>,
-    ) -> Vec<PipelineToken> {
+        a: Vec<T>,
+        b: Vec<T>,
+        mut special: impl FnMut(PipelineToken) -> T,
+    ) -> Vec<T> {
         let mut ids = Vec::with_capacity(self.n_special() + a.len() + b.len());
         if SPECIALS {
-            push_ids(&self.prefix, &mut ids);
+            ids.extend(self.prefix.iter().map(|&(id, _)| special(id)));
         }
         ids.extend(a);
         if SPECIALS {
-            push_ids(&self.infix, &mut ids);
+            ids.extend(self.infix.iter().map(|&(id, _)| special(id)));
         }
         ids.extend(b);
         if SPECIALS {
-            push_ids(&self.suffix, &mut ids);
+            ids.extend(self.suffix.iter().map(|&(id, _)| special(id)));
         }
         ids
     }

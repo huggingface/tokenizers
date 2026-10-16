@@ -8,6 +8,9 @@ pub struct EncodeOptions {
     /// Whether special tokens found in the sequence should go through the tokenizer model (`true`)
     /// or be replaced by their id in the vocabulary (`false`). Defaults to `false`.
     pub encode_special_tokens: bool,
+    /// Preserve the token strings, including unknown pieces and matched added-token whitespace.
+    /// Defaults to `false` so callers that only need ids do not allocate token strings.
+    pub return_tokens: bool,
     /// Override the tokenizer's padding options. Defaults to [`Override::InheritConfig`].
     pub padding: Override<PaddingParams>,
     pub truncation: Override<TruncationParams>,
@@ -18,6 +21,7 @@ impl Default for EncodeOptions {
         Self {
             add_special_tokens: true,
             encode_special_tokens: false,
+            return_tokens: false,
             padding: Override::InheritConfig,
             truncation: Override::InheritConfig,
         }

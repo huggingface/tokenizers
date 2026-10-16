@@ -668,7 +668,7 @@ mod tests {
         SpecialSegmentIterator::new(input, vocab, normalized, encode_special_tokens)
             .map(|segment| match segment {
                 Segment::Text { text, .. } => (Some(text.to_string()), None),
-                Segment::SpecialToken(id) => (None, Some(id)),
+                Segment::SpecialToken { id, .. } => (None, Some(id)),
             })
             .collect()
     }

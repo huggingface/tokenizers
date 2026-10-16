@@ -7,7 +7,6 @@ use tk_encode::PaddingParams;
 use tk_encode::TruncationParams;
 use tk_encode::pipeline::Input;
 use tk_encode::pipeline::Inputs;
-use tk_encode::pipeline::PipelineToken;
 use tk_encode::pipeline::{EncodeOptions, Override, PipelineTokenizer as Pipeline};
 
 use crate::encoding::Encoding;
@@ -52,6 +51,7 @@ impl Tokenizer {
         Ok(EncodeOptions {
             add_special_tokens,
             encode_special_tokens,
+            return_tokens: true,
             padding,
             truncation,
         })
@@ -240,7 +240,7 @@ impl Tokenizer {
 
     /// Encodes the given text, or pair of texts, and returns the string representation of each token.
     ///
-    /// Shorthand for `decode_tokens(encode(input))`.
+    /// Shorthand for `encode(input).tokens`, preserving unknown pieces and added-token whitespace.
     /// If you also need to access token ids, use `encode(input)`.
     ///
     /// Args:
@@ -279,8 +279,10 @@ impl Tokenizer {
         )?;
         py.detach(|| -> tk_encode::Result<Vec<String>> {
             let encodings = self.pipeline.encode(input, &options).wait()?;
-            let ids: Vec<u32> = PipelineToken::cast_slice(encodings[0].ids()).to_vec();
-            Ok(self.pipeline.decode_tokens(&ids, false))
+            Ok(encodings[0]
+                .tokens()
+                .expect("token strings were requested")
+                .to_vec())
         })
         .map_err(err)
     }

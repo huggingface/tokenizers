@@ -168,7 +168,7 @@ pub fn truncate_pair(
 }
 
 /// Truncates tokens to `keep` tokens.
-fn truncate_tokens(tokens: &mut Vec<PipelineToken>, keep: usize, direction: TruncationDirection) {
+pub(crate) fn truncate_tokens<T>(tokens: &mut Vec<T>, keep: usize, direction: TruncationDirection) {
     if direction == TruncationDirection::Left {
         tokens.drain(..tokens.len().saturating_sub(keep));
     } else {

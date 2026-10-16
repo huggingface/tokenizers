@@ -21,13 +21,15 @@ class Encoding:
         The number of tokens in the encoding
         """
     def __ne__(self, value: object, /) -> bool: ...
-    def __reduce__(self, /) -> tuple[Any, tuple[list[int], list[int], list[int]]]:
+    def __reduce__(self, /) -> tuple[Any, tuple[list[int], list[int], list[int], list[str]]]:
         """
         Pickle rebuilds an `Encoding` by calling `_unpickle` with these arguments.
         """
     def __repr__(self, /) -> str: ...
     @staticmethod
-    def _unpickle(ids: Sequence[int], type_ids: Sequence[int], attention_mask: Sequence[int]) -> Encoding:
+    def _unpickle(
+        ids: Sequence[int], type_ids: Sequence[int], attention_mask: Sequence[int], tokens: Sequence[str]
+    ) -> Encoding:
         """
         Unpickles an `Encoding`
         """
@@ -52,6 +54,11 @@ class Encoding:
     def ids_array(self, /) -> NDArray[uint32]:
         """
         Returns a copy of the id of each token, as a `uint32` numpy array.
+        """
+    @property
+    def tokens(self, /) -> list[str]:
+        """
+        The text of each token, including unknown pieces and matched added-token whitespace.
         """
     @property
     def type_ids(self, /) -> list[int]:
@@ -334,7 +341,7 @@ class Tokenizer:
         """
         Encodes the given text, or pair of texts, and returns the string representation of each token.
 
-        Shorthand for `decode_tokens(encode(input))`.
+        Shorthand for `encode(input).tokens`, preserving unknown pieces and added-token whitespace.
         If you also need to access token ids, use `encode(input)`.
 
         Args:

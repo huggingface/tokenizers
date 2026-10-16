@@ -35,16 +35,25 @@ impl Encoding {
 impl PartialEq for Encoding {
     fn eq(&self, other: &Self) -> bool {
         self.ids() == other.ids()
+            && self.tokens() == other.tokens()
             && self.type_ids() == other.type_ids()
             && self.attention_mask() == other.attention_mask()
     }
 }
 
-/// What `Encoding.__reduce__` gives pickle: `ids`, `type_ids` and `attention_mask`.
-type UnpickleArguments = (Vec<u32>, Vec<u32>, Vec<u32>);
+/// What `Encoding.__reduce__` gives pickle: ids, type ids, attention mask and token strings.
+type UnpickleArguments = (Vec<u32>, Vec<u32>, Vec<u32>, Vec<String>);
 
 #[pymethods]
 impl Encoding {
+    /// The text of each token, including unknown pieces and matched added-token whitespace.
+    #[getter]
+    fn tokens(&self) -> &[String] {
+        self.inner
+            .tokens()
+            .expect("Python encodings preserve token strings")
+    }
+
     /// The id of each token, as a list of ints.
     #[getter]
     pub(crate) fn ids(&self) -> &[u32] {
@@ -106,22 +115,34 @@ impl Encoding {
             self.ids().to_vec(),
             self.type_ids().to_vec(),
             self.attention_mask().to_vec(),
+            self.tokens().to_vec(),
         );
         Ok((py.get_type::<Self>().getattr("_unpickle")?, arguments))
     }
 
     /// Unpickles an `Encoding`
     #[staticmethod]
-    fn _unpickle(ids: Vec<u32>, type_ids: Vec<u8>, attention_mask: Vec<u8>) -> Self {
-        Self {
+    fn _unpickle(
+        ids: Vec<u32>,
+        type_ids: Vec<u8>,
+        attention_mask: Vec<u8>,
+        tokens: Vec<String>,
+    ) -> PyResult<Self> {
+        if tokens.len() != ids.len() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "one string per token id is required",
+            ));
+        }
+        Ok(Self {
             inner: PipelineEncoding::new(
                 ids.into_iter().map(PipelineToken::from).collect(),
                 Some(type_ids),
                 Some(attention_mask),
-            ),
+            )
+            .with_tokens(tokens),
             type_ids: OnceLock::new(),
             attention_mask: OnceLock::new(),
-        }
+        })
     }
 
     fn __repr__(&self) -> String {

@@ -258,17 +258,19 @@ fn assert_matches_released(repo: &str, file: &str) {
 
     let cases = cases();
     let mut diverged = Vec::new();
-    for (cell, options) in cells() {
+    for (cell, mut options) in cells() {
+        options.return_tokens = true;
         let released = released_with(&base, &options);
         for text in &cases {
             let text = text.as_str();
-            let want = released
-                .encode_fast(text, options.add_special_tokens)
-                .unwrap();
+            let want = released.encode(text, options.add_special_tokens).unwrap();
             let ids = want.get_ids().to_vec();
             let encodings = pipeline.encode(text, &options).wait().unwrap();
             let encoding = &encodings[0];
             let got: Vec<u32> = encoding.ids().iter().map(|t| t.id()).collect();
+            if encoding.tokens() != Some(want.get_tokens()) {
+                diverged.push(format!("tokens {cell:?} {text:?}"));
+            }
             if ids != got {
                 diverged.push(format!("encode {cell:?} {text:?}"));
                 continue; // decoding ids we already disagree about says nothing
