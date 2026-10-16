@@ -16,12 +16,12 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use tk_encode::pipeline::{EncodeOptions, PipelineTokenizer as Pipeline};
 
-use crate::type_hints::U32Array;
+use crate::type_hints::{NDArray, U32Array};
 
 struct State {
-    claimed: usize,                      // next piece a worker takes
-    consumed: usize,                     // next piece the iterator hands out
-    ready: BTreeMap<usize, Vec<u32>>,    // finished pieces not yet handed out
+    claimed: usize,                   // next piece a worker takes
+    consumed: usize,                  // next piece the iterator hands out
+    ready: BTreeMap<usize, Vec<u32>>, // finished pieces not yet handed out
     error: Option<String>,
 }
 
@@ -40,7 +40,13 @@ pub struct EncodeStream {
 
 /// First cut >= x (or the end), read forward in 64 KiB steps: before a `\n` with an ASCII letter or digit on both
 /// sides, or before a space.
-fn cut(f: &File, size: usize, x: usize, sep: Option<u8>, scratch: &mut Vec<u8>) -> std::io::Result<usize> {
+fn cut(
+    f: &File,
+    size: usize,
+    x: usize,
+    sep: Option<u8>,
+    scratch: &mut Vec<u8>,
+) -> std::io::Result<usize> {
     if x == 0 {
         return Ok(0);
     }
@@ -54,7 +60,9 @@ fn cut(f: &File, size: usize, x: usize, sep: Option<u8>, scratch: &mut Vec<u8>) 
         f.read_exact_at(scratch, from as u64)?;
         for c in from + 1..from + n - 1 {
             let b = &scratch[c - from - 1..c - from + 2];
-            if b[1] == sep && (sep == b' ' || (b[0].is_ascii_alphanumeric() && b[2].is_ascii_alphanumeric())) {
+            if b[1] == sep
+                && (sep == b' ' || (b[0].is_ascii_alphanumeric() && b[2].is_ascii_alphanumeric()))
+            {
                 return Ok(c);
             }
         }
@@ -66,25 +74,49 @@ fn cut(f: &File, size: usize, x: usize, sep: Option<u8>, scratch: &mut Vec<u8>) 
 }
 
 impl EncodeStream {
-    pub fn start(pipeline: &Pipeline, path: &str, options: EncodeOptions, threads: usize, chunk: usize, window: usize) -> PyResult<Self> {
-        let f = Arc::new(File::open(path).map_err(|e| PyValueError::new_err(format!("{path}: {e}")))?);
-        let size = f.metadata().map_err(|e| PyValueError::new_err(e.to_string()))?.len() as usize;
+    pub fn start(
+        pipeline: &Pipeline,
+        path: &str,
+        options: EncodeOptions,
+        threads: usize,
+        chunk: usize,
+        window: usize,
+    ) -> PyResult<Self> {
+        let f =
+            Arc::new(File::open(path).map_err(|e| PyValueError::new_err(format!("{path}: {e}")))?);
+        let size = f
+            .metadata()
+            .map_err(|e| PyValueError::new_err(e.to_string()))?
+            .len() as usize;
         let sep = pipeline.stream_cut();
-        let n_pieces = if sep.is_some() { size.div_ceil(chunk).max(1) } else { 1 };
+        let n_pieces = if sep.is_some() {
+            size.div_ceil(chunk).max(1)
+        } else {
+            1
+        };
         let shared = Arc::new(Shared {
-            state: Mutex::new(State { claimed: 0, consumed: 0, ready: BTreeMap::new(), error: None }),
+            state: Mutex::new(State {
+                claimed: 0,
+                consumed: 0,
+                ready: BTreeMap::new(),
+                error: None,
+            }),
             cv: Condvar::new(),
         });
         let options = Arc::new(options);
         let workers = (0..threads.clamp(1, n_pieces))
             .map(|_| {
-                let (shared, f, pipeline, options) = (shared.clone(), f.clone(), pipeline.clone(), options.clone());
+                let (shared, f, pipeline, options) =
+                    (shared.clone(), f.clone(), pipeline.clone(), options.clone());
                 std::thread::spawn(move || {
                     let (mut data, mut scratch, mut toks) = (Vec::new(), Vec::new(), Vec::new());
                     loop {
                         let i = {
                             let mut st = shared.state.lock().unwrap();
-                            while st.claimed < n_pieces && st.claimed >= st.consumed + window && st.error.is_none() {
+                            while st.claimed < n_pieces
+                                && st.claimed >= st.consumed + window
+                                && st.error.is_none()
+                            {
                                 st = shared.cv.wait(st).unwrap();
                             }
                             if st.claimed >= n_pieces || st.error.is_some() {
@@ -94,13 +126,26 @@ impl EncodeStream {
                             st.claimed - 1
                         };
                         let piece = (|| -> Result<Vec<u32>, String> {
-                            let lo = cut(&f, size, i * chunk, sep, &mut scratch).map_err(|e| e.to_string())?;
-                            let hi = if i + 1 == n_pieces { size } else { cut(&f, size, (i + 1) * chunk, sep, &mut scratch).map_err(|e| e.to_string())? };
+                            let lo = cut(&f, size, i * chunk, sep, &mut scratch)
+                                .map_err(|e| e.to_string())?;
+                            let hi = if i + 1 == n_pieces {
+                                size
+                            } else {
+                                cut(&f, size, (i + 1) * chunk, sep, &mut scratch)
+                                    .map_err(|e| e.to_string())?
+                            };
                             toks.clear();
                             if hi > lo {
                                 data.resize(hi - lo, 0);
-                                f.read_exact_at(&mut data, lo as u64).map_err(|e| e.to_string())?;
-                                pipeline.encode_into(&String::from_utf8_lossy(&data), &options, &mut toks).map_err(|e| e.to_string())?;
+                                f.read_exact_at(&mut data, lo as u64)
+                                    .map_err(|e| e.to_string())?;
+                                pipeline
+                                    .encode_into(
+                                        &String::from_utf8_lossy(&data),
+                                        &options,
+                                        &mut toks,
+                                    )
+                                    .map_err(|e| e.to_string())?;
                             }
                             Ok(toks.iter().map(|t| t.id()).collect())
                         })();
@@ -116,7 +161,11 @@ impl EncodeStream {
                 })
             })
             .collect();
-        Ok(EncodeStream { shared, n_pieces, workers })
+        Ok(EncodeStream {
+            shared,
+            n_pieces,
+            workers,
+        })
     }
 }
 
@@ -147,7 +196,7 @@ impl EncodeStream {
             }
         });
         match ids.map_err(PyValueError::new_err)? {
-            Some(ids) => Ok(Some(U32Array(PyArray1::from_vec(py, ids)))),
+            Some(ids) => Ok(Some(NDArray(PyArray1::from_vec(py, ids)))),
             None => {
                 for w in self.workers.drain(..) {
                     let _ = w.join();
@@ -161,7 +210,12 @@ impl EncodeStream {
 impl Drop for EncodeStream {
     fn drop(&mut self) {
         // an abandoned iterator: stop the workers (they exit at their next claim)
-        self.shared.state.lock().unwrap().error.get_or_insert_with(|| "dropped".into());
+        self.shared
+            .state
+            .lock()
+            .unwrap()
+            .error
+            .get_or_insert_with(|| "dropped".into());
         self.shared.cv.notify_all();
     }
 }

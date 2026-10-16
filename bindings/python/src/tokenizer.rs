@@ -266,7 +266,8 @@ impl Tokenizer {
         window: Option<usize>,
         add_special_tokens: bool,
     ) -> PyResult<crate::stream::EncodeStream> {
-        let threads = threads.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+        let threads =
+            threads.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
         let mut options = EncodeOptions::no_specials();
         options.add_special_tokens = add_special_tokens;
         // a piece is not a sequence: padding or truncating it would change the concatenation
