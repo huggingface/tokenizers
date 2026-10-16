@@ -3,10 +3,12 @@
 
 from collections.abc import Sequence
 from os import PathLike
-from typing import Any, Final, Literal, final
+from typing import Any, Final, Literal, SupportsIndex, final
 
+from _typeshed import SupportsGetItem, SupportsLenAndGetItem
 from numpy import integer, uint32
 from numpy.typing import NDArray
+from typing_extensions import disjoint_base
 
 from . import decoders as decoders
 from . import models as models
@@ -18,6 +20,23 @@ from .models import Model
 from .normalizers import Normalizer
 from .pre_tokenizers import PreTokenizer
 from .processors import PostProcessor
+
+__all__ = [
+    "__version__",
+    "AddedToken",
+    "CompiledTokenizer",
+    "Component",
+    "Encoding",
+    "Padding",
+    "Regex",
+    "Tokenizer",
+    "Truncation",
+    "decoders",
+    "models",
+    "normalizers",
+    "pre_tokenizers",
+    "processors",
+]
 
 __version__: Final[str]
 
@@ -167,7 +186,7 @@ class CompiledTokenizer:
     def encode(
         self,
         /,
-        input: str | Sequence[str],
+        input: str | SupportsLenAndGetItem[str],
         *,
         add_special_tokens: bool = True,
         encode_special_tokens: bool = False,
@@ -199,7 +218,7 @@ class CompiledTokenizer:
     def encode_batch(
         self,
         /,
-        inputs: Sequence[str | Sequence[str]],
+        inputs: SupportsGetItem[int, str | SupportsLenAndGetItem[str]],
         *,
         add_special_tokens: bool = True,
         encode_special_tokens: bool = False,
@@ -255,7 +274,7 @@ class CompiledTokenizer:
         Returns:
             int
         """
-    def id_to_token(self, /, id: int) -> str | None:
+    def id_to_token(self, /, id: SupportsIndex) -> str | None:
         """
         Converts an id to its token.
 
@@ -282,7 +301,7 @@ class CompiledTokenizer:
     def tokenize(
         self,
         /,
-        input: str | Sequence[str],
+        input: str | SupportsLenAndGetItem[str],
         *,
         add_special_tokens: bool = True,
         encode_special_tokens: bool = False,
@@ -315,6 +334,7 @@ class CompiledTokenizer:
             list[str]
         """
 
+@disjoint_base
 class Component:
     """
     Base class of every tokenizer component: models, normalizers, pre-tokenizers, post-processors
@@ -358,7 +378,11 @@ class Encoding:
         """
     def __repr__(self, /) -> str: ...
     @staticmethod
-    def _unpickle(ids: Sequence[int], type_ids: Sequence[int], attention_mask: Sequence[int]) -> Encoding:
+    def _unpickle(
+        ids: SupportsGetItem[int, SupportsIndex],
+        type_ids: SupportsGetItem[int, SupportsIndex],
+        attention_mask: SupportsGetItem[int, SupportsIndex],
+    ) -> Encoding:
         """
         Unpickles an `Encoding`
         """
@@ -407,11 +431,11 @@ class Padding:
         cls,
         /,
         direction: Literal["left", "right"] = ...,
-        pad_id: int = 0,
-        pad_type_id: int = 0,
+        pad_id: SupportsIndex = 0,
+        pad_type_id: SupportsIndex = 0,
         pad_token: str = "[PAD]",
-        length: int | None = None,
-        pad_to_multiple_of: int | None = None,
+        length: SupportsIndex | None = None,
+        pad_to_multiple_of: SupportsIndex | None = None,
     ) -> Padding:
         """
         Args:
@@ -521,7 +545,7 @@ class Tokenizer:
     def __repr__(self, /) -> str: ...
     @staticmethod
     def _unpickle(json: bytes) -> Tokenizer: ...
-    def add_special_tokens(self, /, tokens: Sequence[str | AddedToken]) -> int:
+    def add_special_tokens(self, /, tokens: SupportsGetItem[int, str | AddedToken]) -> int:
         """
         Adds special tokens: `decode` skips them with `skip_special_tokens`.
 
@@ -534,7 +558,7 @@ class Tokenizer:
         Returns:
             The number of tokens added or changed.
         """
-    def add_tokens(self, /, tokens: Sequence[str | AddedToken]) -> int:
+    def add_tokens(self, /, tokens: SupportsGetItem[int, str | AddedToken]) -> int:
         """
         Adds tokens matched in the text before the model runs.
 
@@ -735,7 +759,7 @@ class Truncation:
     def __new__(
         cls,
         /,
-        max_length: int,
+        max_length: SupportsIndex,
         strategy: Literal["longest_first", "only_first", "only_second"] = ...,
         direction: Literal["left", "right"] = ...,
     ) -> Truncation:
@@ -743,12 +767,12 @@ class Truncation:
         Args:
             max_length: int
                 The maximum number of tokens, including special tokens, to keep.
-                        Encodings with more tokens will get truncated.
+        \t\tEncodings with more tokens will get truncated.
             strategy: `"longest_first"` (the default), `"only_first"` or `"only_second"`
                 Which sequence of a pair is truncated.
             direction: `"right"` (the default) or `"left"`
                 Whether to truncate tokens at the end of the sequence (`"right"`) or at
-                        the beginning of the sequence (`"left"`).
+        \t\tthe beginning of the sequence (`"left"`).
         """
     def __reduce__(
         self, /

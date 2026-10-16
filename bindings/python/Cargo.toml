@@ -13,14 +13,15 @@ name = "tokenizers"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "=0.29", default-features = false, features = [
+pyo3 = { version = "=0.30", default-features = false, features = [
   "macros",
   "extension-module",
   "abi3-py310",
+  "abi3t-py315",
   "experimental-inspect",
 ] }
 #TODO: this will be a soft dependency later on IMO.
-numpy = "=0.29"
+numpy = "=0.30"
 # Needed for the `Precompiled` normalizer
 base64 = "0.22"
 serde = "1.0"
@@ -41,7 +42,7 @@ tk = { package = "tokenizers", path = "../../tokenizers", default-features = fal
 pastey = "0.2.3"
 
 [build-dependencies]
-pyo3-build-config = "=0.29"
+pyo3-build-config = "=0.30"
 
 # Not a workspace member, so this does not inherit tokenizers/Cargo.toml's profile.
 [profile.release]

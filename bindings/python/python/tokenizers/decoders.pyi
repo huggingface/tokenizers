@@ -2,12 +2,28 @@
 # Regenerate with `make stubs` in bindings/python.
 
 from collections.abc import Sequence as Sequence2
-from typing import Any, final
+from typing import Any, SupportsIndex, final
 
+from _typeshed import SupportsGetItem
 from numpy import integer
 from numpy.typing import NDArray
 
 from . import CompiledTokenizer, Component, Encoding, Regex
+
+__all__ = [
+    "BPEDecoder",
+    "ByteFallback",
+    "ByteLevel",
+    "CTC",
+    "DecodeStream",
+    "Decoder",
+    "Fuse",
+    "Metaspace",
+    "Replace",
+    "Sequence",
+    "Strip",
+    "WordPiece",
+]
 
 @final
 class BPEDecoder(Decoder):
@@ -83,7 +99,9 @@ class DecodeStream:
     def __new__(
         cls, /, ids: Encoding | Sequence2[int] | NDArray[integer[Any]] | None = None, skip_special_tokens: bool = False
     ) -> DecodeStream: ...
-    def step(self, /, tokenizer: CompiledTokenizer, id: int | Sequence2[int]) -> str | None:
+    def step(
+        self, /, tokenizer: CompiledTokenizer, id: SupportsIndex | SupportsGetItem[int, SupportsIndex]
+    ) -> str | None:
         """
         Adds the next id, or several ids, to the stream and returns the new text.
 
@@ -152,10 +170,10 @@ class Sequence(Decoder):
     """
     Applies each `Decoder` in turn.
     """
-    def __getitem__(self, index: int, /) -> Decoder: ...
+    def __getitem__(self, index: SupportsIndex, /) -> Decoder: ...
     def __len__(self, /) -> int: ...
-    def __new__(cls, items: Sequence2[Decoder], /) -> Sequence: ...
-    def __setitem__(self, index: int, item: Decoder, /) -> None: ...
+    def __new__(cls, items: SupportsGetItem[int, Decoder], /) -> Sequence: ...
+    def __setitem__(self, index: SupportsIndex, item: Decoder, /) -> None: ...
 
 @final
 class Strip(Decoder):
@@ -163,7 +181,7 @@ class Strip(Decoder):
     Removes up to `start` leading and `stop` trailing `content` characters from each
     token.
     """
-    def __new__(cls, /, content: str = " ", start: int = 0, stop: int = 0) -> Strip: ...
+    def __new__(cls, /, content: str = " ", start: SupportsIndex = 0, stop: SupportsIndex = 0) -> Strip: ...
     @property
     def content(self, /) -> str: ...
     @content.setter
@@ -171,11 +189,11 @@ class Strip(Decoder):
     @property
     def start(self, /) -> int: ...
     @start.setter
-    def start(self, /, start: int) -> None: ...
+    def start(self, /, start: SupportsIndex) -> None: ...
     @property
     def stop(self, /) -> int: ...
     @stop.setter
-    def stop(self, /, stop: int) -> None: ...
+    def stop(self, /, stop: SupportsIndex) -> None: ...
 
 @final
 class WordPiece(Decoder):
