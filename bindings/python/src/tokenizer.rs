@@ -5,10 +5,14 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use tk_encode::PaddingParams;
 use tk_encode::TruncationParams;
+use tk_encode::pipeline::Input;
+use tk_encode::pipeline::Inputs;
+use tk_encode::pipeline::PipelineToken;
 use tk_encode::pipeline::{EncodeOptions, Override, PipelineTokenizer as Pipeline};
 
 use crate::encoding::Encoding;
 use crate::error::{convert_err, err, poison_err};
+use crate::input::PyInput;
 use crate::options::{OverrideSentinel, Padding, Truncation};
 use crate::repr;
 use crate::type_hints::{Token, TokenIds};
@@ -189,11 +193,12 @@ impl Tokenizer {
         Ok(())
     }
 
-    /// Encodes the given text to token ids.
+    /// Encodes the given text, or pair of texts, to token ids.
     ///
     /// Args:
-    ///     text: str
-    ///         The text to encode.
+    ///     input: str or tuple[str, str]
+    ///         A text, or a pair of texts given as a two-item tuple or list.
+    ///         The post-processor joins a pair, for example as `[CLS] A [SEP] B [SEP]`.
     ///     add_special_tokens: bool
     ///          Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
     ///     encode_special_tokens: bool
@@ -208,11 +213,11 @@ impl Tokenizer {
     ///
     /// Returns:
     ///     Encoding
-    #[pyo3(signature = (text, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
+    #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
     fn encode(
         &self,
         py: Python<'_>,
-        text: String,
+        input: PyInput,
         add_special_tokens: bool,
         encode_special_tokens: bool,
         padding: OverrideSentinel<PaddingParams>,
@@ -225,20 +230,23 @@ impl Tokenizer {
             truncation,
         )?;
         // py.detach releases the GIL while encode runs on Rust side
-        let encodings = py
-            .detach(|| self.pipeline.encode(text, &options).wait())
-            .map_err(err)?;
-        Ok(Encoding::from(&encodings[0]))
+        let encoding = py
+            .detach(|| self.pipeline.encode(input, &options).wait())
+            .map_err(err)?
+            .pop()
+            .expect("encoding has exactly one element");
+        Ok(Encoding::from(encoding))
     }
 
-    /// Encodes the given text and returns the string representation of each token.
+    /// Encodes the given text, or pair of texts, and returns the string representation of each token.
     ///
-    /// Shorthand for `decode_tokens(encode(text))`.
-    /// If you also need to access token ids, use `encode(text)`.
+    /// Shorthand for `decode_tokens(encode(input))`.
+    /// If you also need to access token ids, use `encode(input)`.
     ///
     /// Args:
-    ///     text: str
-    ///         The text to tokenize.
+    ///     input: str or tuple[str, str]
+    ///         A text, or a pair of texts given as a two-item tuple or list.
+    ///         The post-processor joins a pair, for example as `[CLS] A [SEP] B [SEP]`.
     ///     add_special_tokens: bool
     ///          Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
     ///     encode_special_tokens: bool
@@ -253,11 +261,11 @@ impl Tokenizer {
     ///
     /// Returns:
     ///     list[str]
-    #[pyo3(signature = (text, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
+    #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
     fn tokenize(
         &self,
         py: Python<'_>,
-        text: String,
+        input: PyInput,
         add_special_tokens: bool,
         encode_special_tokens: bool,
         padding: OverrideSentinel<PaddingParams>,
@@ -270,19 +278,20 @@ impl Tokenizer {
             truncation,
         )?;
         py.detach(|| -> tk_encode::Result<Vec<String>> {
-            let encodings = self.pipeline.encode(text, &options).wait()?;
-            let ids: Vec<u32> = encodings[0].ids().iter().map(|token| token.id()).collect();
+            let encodings = self.pipeline.encode(input, &options).wait()?;
+            let ids: Vec<u32> = PipelineToken::cast_slice(encodings[0].ids()).to_vec();
             Ok(self.pipeline.decode_tokens(&ids, false))
         })
         .map_err(err)
     }
 
-    /// Encodes a batch of text.
+    /// Encodes a batch of texts, or pairs of texts.
     /// The encodings come back in input order.
     ///
     /// Args:
-    ///     texts: List[str]
-    ///         The batch of text to encode.
+    ///     inputs: list[str | tuple[str, str]]
+    ///         The batch to encode. Each item is a text, or a pair of texts given as a two-item
+    ///         tuple or list. A batch can mix both.
     ///     add_special_tokens: bool
     ///         Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
     ///     encode_special_tokens: bool
@@ -297,11 +306,11 @@ impl Tokenizer {
     ///
     /// Returns:
     ///     List[Encoding]
-    #[pyo3(signature = (texts, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
+    #[pyo3(signature = (inputs, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
     fn encode_batch(
         &self,
         py: Python<'_>,
-        texts: Vec<String>,
+        inputs: Vec<PyInput>,
         add_special_tokens: bool,
         encode_special_tokens: bool,
         padding: OverrideSentinel<PaddingParams>,
@@ -313,11 +322,12 @@ impl Tokenizer {
             padding,
             truncation,
         )?;
+        let inputs = Inputs::Batch(inputs.into_iter().map(Input::from).collect());
         // py.detach releases the GIL while encode runs on Rust side
         let encodings = py
-            .detach(|| self.pipeline.encode(texts, &options).wait())
+            .detach(|| self.pipeline.encode(inputs, &options).wait())
             .map_err(err)?;
-        Ok(encodings.iter().map(Encoding::from).collect())
+        Ok(encodings.into_iter().map(Encoding::from).collect())
     }
 
     /// Decodes token ids back into text
