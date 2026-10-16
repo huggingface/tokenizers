@@ -1,8 +1,11 @@
+import copy
 import gc
+import pickle
 
 import numpy as np
+import pytest
 
-from tokenizers import Padding
+from tokenizers import Padding, Truncation
 
 
 def test_array_list_equivalence(bert):
@@ -58,3 +61,52 @@ def test_equality_ignores_which_fields_were_read(bert):
 
 def test_equality_compares_tokens(bert):
     assert bert.encode("Hello there") != bert.encode("General Kenobi")
+
+
+@pytest.mark.parametrize("add_special_tokens", [False, True])
+def test_special_tokens_mask_tracks_origin(bert, add_special_tokens):
+    encoding = bert.encode("Hello [SEP] there", add_special_tokens=add_special_tokens)
+    expected = [1, 0, 0, 0, 1] if add_special_tokens else [0, 0, 0]
+
+    assert encoding.special_tokens_mask == expected
+    array = encoding.special_tokens_mask_array
+    assert array.tolist() == expected
+    assert array.dtype == np.uint32
+    array[:] = 0
+    assert encoding.special_tokens_mask == expected
+
+
+@pytest.mark.parametrize("direction", ["left", "right"])
+def test_special_tokens_mask_after_pair_truncation_and_padding(bert, direction):
+    encoding = bert.encode(
+        ("Hello [SEP] there", "Hello there"),
+        truncation=Truncation(7, direction=direction),
+        padding=Padding(length=9, direction=direction, pad_id=3),
+    )
+    expected = [1, 0, 0, 1, 0, 0, 1]
+    expected = [1, 1] + expected if direction == "left" else expected + [1, 1]
+
+    assert encoding.special_tokens_mask == expected
+    for restored in [pickle.loads(pickle.dumps(encoding)), copy.copy(encoding), copy.deepcopy(encoding)]:
+        assert restored == encoding
+        assert restored.special_tokens_mask == expected
+
+
+def test_special_tokens_mask_without_post_processor(gpt2):
+    assert gpt2.encode("").special_tokens_mask == []
+    assert gpt2.encode("Hello<|endoftext|>world").special_tokens_mask == [0, 0, 0]
+    short, long = gpt2.encode_batch(["", "Hello there"], padding=Padding(pad_id=50256))
+    assert short.special_tokens_mask == [1, 1]
+    assert long.special_tokens_mask == [0, 0]
+
+
+def test_special_tokens_mask_distinguishes_equal_ids(bert):
+    inserted = bert.encode("Hello")
+    literal = bert.encode("[CLS] Hello [SEP]", add_special_tokens=False)
+
+    assert inserted.ids == literal.ids
+    assert inserted.type_ids == literal.type_ids
+    assert inserted.attention_mask == literal.attention_mask
+    assert inserted.special_tokens_mask == [1, 0, 1]
+    assert literal.special_tokens_mask == [0, 0, 0]
+    assert inserted != literal

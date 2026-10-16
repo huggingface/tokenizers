@@ -100,7 +100,17 @@ impl Template {
                 ids
             }
         };
-        Encoding::new(ids, type_ids, None)
+        let special_tokens_mask = (SPECIALS && self.n_special() != 0).then(|| {
+            let mut mask = vec![1; ids.len()];
+            let a_start = self.prefix.len();
+            mask[a_start..a_start + a_len].fill(0);
+            let b_start = a_start + a_len + self.infix.len();
+            mask[b_start..b_start + b_len].fill(0);
+            mask
+        });
+        let mut encoding = Encoding::new(ids, type_ids, None);
+        encoding.special_tokens_mask = special_tokens_mask;
+        encoding
     }
 
     #[inline(never)]
@@ -156,5 +166,41 @@ mod tests {
         ] {
             assert!(tagged.has_type_ids());
         }
+    }
+
+    #[test]
+    fn special_tokens_mask_follows_template_runs() {
+        let template = Template {
+            prefix: run(&[0, 0]),
+            infix: run(&[0, 0]),
+            suffix: run(&[0]),
+            b_type_id: Some(0),
+            ..Template::default()
+        };
+        let a = vec![1.into()];
+        let b = vec![1.into(), 1.into()];
+        let encoding = template.post_process::<true>(a.clone(), Some(b.clone()));
+        assert_eq!(
+            encoding.special_tokens_mask(),
+            Some([1, 1, 0, 1, 1, 0, 0, 1].as_slice())
+        );
+        assert!(
+            template
+                .post_process::<false>(a, Some(b))
+                .special_tokens_mask()
+                .is_none()
+        );
+        assert_eq!(
+            template
+                .post_process::<true>(vec![], Some(vec![]))
+                .special_tokens_mask(),
+            Some([1, 1, 1, 1, 1].as_slice())
+        );
+        assert!(
+            Template::default()
+                .post_process::<true>(vec![1.into()], None)
+                .special_tokens_mask()
+                .is_none()
+        );
     }
 }

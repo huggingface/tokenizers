@@ -12,6 +12,7 @@ pub struct Encoding {
     inner: PipelineEncoding,
     type_ids: OnceLock<Vec<u32>>,
     attention_mask: OnceLock<Vec<u32>>,
+    special_tokens_mask: OnceLock<Vec<u32>>,
 }
 
 impl From<PipelineEncoding> for Encoding {
@@ -20,6 +21,7 @@ impl From<PipelineEncoding> for Encoding {
             inner: encoding,
             type_ids: OnceLock::new(),
             attention_mask: OnceLock::new(),
+            special_tokens_mask: OnceLock::new(),
         }
     }
 }
@@ -37,11 +39,12 @@ impl PartialEq for Encoding {
         self.ids() == other.ids()
             && self.type_ids() == other.type_ids()
             && self.attention_mask() == other.attention_mask()
+            && self.special_tokens_mask() == other.special_tokens_mask()
     }
 }
 
-/// What `Encoding.__reduce__` gives pickle: `ids`, `type_ids` and `attention_mask`.
-type UnpickleArguments = (Vec<u32>, Vec<u32>, Vec<u32>);
+/// What `Encoding.__reduce__` gives pickle: ids, type ids, attention mask and special tokens mask.
+type UnpickleArguments = (Vec<u32>, Vec<u32>, Vec<u32>, Vec<u32>);
 
 #[pymethods]
 impl Encoding {
@@ -76,6 +79,19 @@ impl Encoding {
         })
     }
 
+    /// 1 for tokens inserted by the post-processor or padding, 0 for tokens from the input.
+    /// Special tokens that appeared in the input text have value 0.
+    #[getter]
+    fn special_tokens_mask(&self) -> &[u32] {
+        self.special_tokens_mask.get_or_init(|| {
+            if let Some(inner) = self.inner.special_tokens_mask() {
+                bytes_slice_to_u32(inner)
+            } else {
+                vec![0; self.inner.len()]
+            }
+        })
+    }
+
     /// Returns a copy of the id of each token, as a `uint32` numpy array.
     #[getter]
     fn ids_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
@@ -95,6 +111,12 @@ impl Encoding {
         NDArray(PyArray1::from_slice(py, self.attention_mask()))
     }
 
+    /// Returns a copy of the special tokens mask, as a `uint32` numpy array.
+    #[getter]
+    fn special_tokens_mask_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
+        NDArray(PyArray1::from_slice(py, self.special_tokens_mask()))
+    }
+
     /// The number of tokens in the encoding
     fn __len__(&self) -> usize {
         self.ids().len()
@@ -106,22 +128,35 @@ impl Encoding {
             self.ids().to_vec(),
             self.type_ids().to_vec(),
             self.attention_mask().to_vec(),
+            self.special_tokens_mask().to_vec(),
         );
         Ok((py.get_type::<Self>().getattr("_unpickle")?, arguments))
     }
 
     /// Unpickles an `Encoding`
     #[staticmethod]
-    fn _unpickle(ids: Vec<u32>, type_ids: Vec<u8>, attention_mask: Vec<u8>) -> Self {
-        Self {
+    fn _unpickle(
+        ids: Vec<u32>,
+        type_ids: Vec<u8>,
+        attention_mask: Vec<u8>,
+        special_tokens_mask: Vec<u8>,
+    ) -> PyResult<Self> {
+        if special_tokens_mask.len() != ids.len() || special_tokens_mask.iter().any(|&v| v > 1) {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "special_tokens_mask must contain one 0 or 1 per token id",
+            ));
+        }
+        Ok(Self {
             inner: PipelineEncoding::new(
                 ids.into_iter().map(PipelineToken::from).collect(),
                 Some(type_ids),
                 Some(attention_mask),
-            ),
+            )
+            .with_special_tokens_mask(special_tokens_mask),
             type_ids: OnceLock::new(),
             attention_mask: OnceLock::new(),
-        }
+            special_tokens_mask: OnceLock::new(),
+        })
     }
 
     fn __repr__(&self) -> String {
