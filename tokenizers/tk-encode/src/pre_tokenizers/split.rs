@@ -74,6 +74,12 @@ impl PartialEq for Split {
 }
 
 impl Split {
+    /// One of the recognized GPT regexes (gpt2 / cl100k-Llama-3 / o200k) as they ship: a `\n` with an ASCII
+    /// letter or digit on both sides always ends a pre-token under them.
+    pub(crate) fn is_gpt_regex(&self) -> bool {
+        self.fsm.is_some() && self.behavior == SplitDelimiterBehavior::Isolated && !self.invert
+    }
+
     pub fn new<I: Into<SplitPattern>>(
         pattern: I,
         behavior: SplitDelimiterBehavior,

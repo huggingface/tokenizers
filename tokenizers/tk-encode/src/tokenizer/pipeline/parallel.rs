@@ -27,6 +27,8 @@ use super::Result;
 // `tk-convert` now — they need a `Tokenizer` to build from — and have to size an input past
 // this threshold to reach the parallel path at all.
 pub const PARALLEL_MIN_BYTES: usize = 8 * 1024;
+/// Size of the chunks a long text is cut into when its tokenizer allows it (`can_split_text`)
+const SPLIT_BYTES: usize = 1 << 20;
 
 impl Input {
     fn len(&self) -> usize {
@@ -321,6 +323,7 @@ impl PipelineTokenizer {
             return;
         }
         let current_chunks_len = chunks.len();
+        let splittable = self.can_split_text();
         for segment in SpecialSegmentIterator::new(
             input,
             &self.inner.added_vocabulary,
@@ -336,13 +339,38 @@ impl PipelineTokenizer {
                 }
                 Segment::Text { text, input_offset } => (text, input_offset),
             };
-            chunks.push(SequenceChunk {
-                seq: seq_idx,
-                idx,
-                side,
-                range: offset..offset + segment.len(),
-            });
-            seq_outputs.push(ChunkResult::new(None));
+            // A long text is cut into ~SPLIT_BYTES chunks where encoding restarts identically (see
+            // `can_split_text`), so a single long input is encoded on every thread, not one.
+            let (bytes, end) = (input.as_bytes(), offset + segment.len());
+            let mut start = offset;
+            while start < end {
+                let mut cut = end;
+                if splittable && end - start >= 2 * SPLIT_BYTES {
+                    let mut c = start + SPLIT_BYTES;
+                    while c + 1 < end
+                        && !(bytes[c] == b'\n'
+                            && bytes[c - 1].is_ascii_alphanumeric()
+                            && bytes[c + 1].is_ascii_alphanumeric())
+                    {
+                        c += 1;
+                    }
+                    if c + 1 < end {
+                        cut = c;
+                    }
+                }
+                chunks.push(SequenceChunk {
+                    seq: seq_idx,
+                    idx: if start == offset {
+                        idx
+                    } else {
+                        seq_outputs.len()
+                    },
+                    side,
+                    range: start..cut,
+                });
+                seq_outputs.push(ChunkResult::new(None));
+                start = cut;
+            }
         }
         // make sure we have at least one chunk per sequence, otherwise we'll wait indefinitely
         // for a completion event
