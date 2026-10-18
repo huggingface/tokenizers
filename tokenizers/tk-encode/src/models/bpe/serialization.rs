@@ -9,7 +9,6 @@ use crate::utils::byte_level::{self};
 use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use std::ops::RangeInclusive;
-use std::str::from_utf8_unchecked;
 
 /// Bytes that can occur in a `&str`: everything except the overlong lead bytes
 /// OxC0 | 0xC1 and  the lead bytes past U+10FFFF (F5..=FF)
@@ -162,7 +161,9 @@ impl PipelineBPE {
             .continuing_subword_prefix
             .as_ref()
             .map_or(0, |prefix| prefix.len());
-        let mut buffer: Vec<u8> = vec![0; max_len];
+        // Reused across merges; grows if a (malformed) merge concatenates past the longest
+        // vocabulary key instead of overrunning a buffer sized to it.
+        let mut buffer = String::with_capacity(max_len);
         let merges: MergeMap = merges
             .into_iter()
             .enumerate()
@@ -173,12 +174,16 @@ impl PipelineBPE {
                 let b_id = vocab
                     .get(&b)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
-                buffer[0..a.len()].copy_from_slice(a.as_bytes());
-                let b_len = b.len() - prefix_len;
-                let merge_len = a.len() + b_len;
-                buffer[a.len()..merge_len].copy_from_slice(&b.as_bytes()[prefix_len..]);
-                // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8, even considering prefix_len
-                let new_token = unsafe { from_utf8_unchecked(&buffer[..merge_len]) };
+                // `str::get` is `None` when the prefix is longer than `b` or would split one of
+                // its characters, so a malformed merge is an error rather than a panic or a
+                // non-UTF-8 `&str`.
+                let b_tail = b
+                    .get(prefix_len..)
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
+                buffer.clear();
+                buffer.push_str(&a);
+                buffer.push_str(b_tail);
+                let new_token = buffer.as_str();
                 let new_id = vocab
                     .get(new_token)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(new_token.to_owned()))?;

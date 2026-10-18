@@ -25,6 +25,10 @@ type Mphf = FastPtrHash<NoHash, u64>;
 const FOLD_BIT: u32 = 1 << 31;
 /// The id half. 2^31 ids is far past any vocabulary.
 const VOCAB_ID_MASK: u32 = FOLD_BIT - 1;
+/// `id_to_slot` is dense over `0..=max_id`; these bound it to a small multiple of the vocabulary
+/// plus a fixed slack, so its size follows the input rather than one id written in it.
+const MAX_ID_SPARSITY: u64 = 4;
+const ID_SPACE_SLACK: u64 = 1 << 20;
 
 pub(crate) const INLINE_KEY_BYTES: usize = 7;
 
@@ -215,6 +219,30 @@ impl Default for BucketVocabStore {
 impl BucketVocabStore {
     pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Result<Self> {
         let n = tokens.len();
+
+        // Checked before anything is sized from the ids: `id_to_slot` below has one entry per id
+        // up to the largest, so a single huge id in an otherwise tiny vocabulary used to allocate
+        // gigabytes before the FOLD_BIT assertion ran.
+        let mut max_id = 0u32;
+        for (s, id) in &tokens {
+            if s.len() > u16::MAX as usize {
+                return Err(format!("token longer than 65535 bytes ({} bytes)", s.len()).into());
+            }
+            if *id > VOCAB_ID_MASK {
+                return Err(format!("token id {id} needs bit 31, which holds FOLD_BIT").into());
+            }
+            max_id = max_id.max(*id);
+        }
+        let id_space_limit = (n as u64)
+            .saturating_mul(MAX_ID_SPARSITY)
+            .saturating_add(ID_SPACE_SLACK);
+        if u64::from(max_id) >= id_space_limit {
+            return Err(format!(
+                "token id {max_id} is too sparse for a vocabulary of {n} tokens \
+                 (limit {id_space_limit})"
+            )
+            .into());
+        }
 
         let keys: Vec<u64> = tokens
             .iter()
@@ -460,6 +488,23 @@ impl BucketVocabStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One huge id in a tiny vocabulary must be refused before `id_to_slot` is sized from it.
+    #[test]
+    fn huge_sparse_id_is_an_error_without_a_huge_allocation() {
+        for id in [VOCAB_ID_MASK, VOCAB_ID_MASK + 1, u32::MAX - 1] {
+            let built = std::panic::catch_unwind(|| {
+                BucketVocabStore::build(vec![(b"a".to_vec(), id), (b"b".to_vec(), 1)]).is_err()
+            });
+            assert_eq!(built.ok(), Some(true), "id {id}");
+        }
+        let long = std::panic::catch_unwind(|| {
+            BucketVocabStore::build(vec![(vec![b'x'; 70_000], 0)]).is_err()
+        });
+        assert_eq!(long.ok(), Some(true));
+        // dense ids and modest gaps still build
+        assert!(BucketVocabStore::build(vec![(b"a".to_vec(), 0), (b"b".to_vec(), 1000)]).is_ok());
+    }
 
     // The key is a little-endian pack of the word with its length on top -- not whatever a `u64`
     // load of those bytes happens to give. Built with shifts here so the expected value is the

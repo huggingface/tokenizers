@@ -8,6 +8,15 @@ fn p(s: &str) -> Json<'_> {
 }
 
 #[test]
+fn duplicate_key_last_occurrence_wins_like_serde_json() {
+    let text = r#"{"model": 1, "x": true, "model": 2}"#;
+    let ours = p(text).get("model").and_then(Json::as_u32);
+    let serde: serde_json::Value = serde_json::from_str(text).unwrap();
+    assert_eq!(ours, Some(2));
+    assert_eq!(ours.map(u64::from), serde["model"].as_u64());
+}
+
+#[test]
 fn scalars_and_containers() {
     assert_eq!(p("null").0, Raw::Null);
     assert_eq!(p("true").0, Raw::Bool(true));
