@@ -114,7 +114,13 @@ fn read_split(cfg: &Json<'_>) -> Result<SplitPretok> {
     } else {
         return Err("Split `pattern` is neither `String` nor `Regex`".into());
     };
-    SplitPretok::native(pattern, behavior, invert)?.canonicalized_for_pipeline()
+    // Compile the fallback when available. Without it, native construction still allows
+    // DeepSeek's three individually unrecognized patterns to run as one fused sequence.
+    #[cfg(feature = "fancy-regex")]
+    let split = SplitPretok::new(pattern, behavior, invert)?;
+    #[cfg(not(feature = "fancy-regex"))]
+    let split = SplitPretok::native(pattern, behavior, invert)?;
+    split.canonicalized_for_pipeline()
 }
 
 fn read_behavior(
