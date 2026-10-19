@@ -62,10 +62,6 @@
 //!
 //! # Features
 //!
-//! - **progressbar**: The progress bar visualization is enabled by default. It might be disabled if
-//!   compilation for certain targets is not supported by the [termios](https://crates.io/crates/termios)
-//!   dependency of the [indicatif](https://crates.io/crates/indicatif) progress bar.
-//!
 //! - **http**: This feature enables downloading the tokenizer via HTTP. It is disabled by default.
 //!   It compiles `utils::from_pretrained`, the download half; the `from_pretrained` *constructor*
 //!   that used to sit on top of it went with the config layer (`REQUIRED_FOR_V1.md` §5).
@@ -130,9 +126,6 @@ pub use tokenizer::*;
 // Re-export also parallelism utils
 #[cfg(feature = "parallelism")]
 pub use utils::parallelism;
-
-// Re-export ProgressFormat for trainer configuration
-pub use utils::ProgressFormat;
 
 // Re-export for from_pretrained
 #[cfg(feature = "http")]
