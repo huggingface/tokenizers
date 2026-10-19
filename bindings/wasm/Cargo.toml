@@ -15,25 +15,15 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # ---- Tokenizer core logic ----
-tk-encode = { path = "../../tokenizers/tk-encode", default-features = false, features = [
+tokenizers = { path = "../../tokenizers", default-features = false, features = [
 	"normalizers",
 	"bpe",
 	"unigram",
 	"wordpiece",
 	"wordlevel",
 	"unicode-scripts",
-	"fancy-regex",
+	"regex",
 ] }
-tk-serialize = { path = "../../tokenizers/tk-serialize", features = [
-	"normalizers",
-	"bpe",
-	"unigram",
-	"wordpiece",
-	"wordlevel",
-	"unicode-scripts",
-	"fancy-regex",
-] }
-tk-convert = { path = "../../tokenizers/tk-convert", default-features = false }
 
 # ---- Bindings helpers ----
 # Rust-wasm interop
