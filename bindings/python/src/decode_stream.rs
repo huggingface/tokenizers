@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use tk_encode::pipeline::PipelineDecodeStream;
+use tk::pipeline::PipelineDecodeStream;
 
 use crate::error::err;
 use crate::tokenizer::Tokenizer;
