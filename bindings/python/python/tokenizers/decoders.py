@@ -1,5 +1,4 @@
-
-#This file is required for the following syntax to work:
+# This file is required for the following syntax to work:
 #
 # ```python
 # from tokenizers.decoders import DecodeStream
