@@ -2,7 +2,7 @@
 
 use super::model::{Atoms, PipelineBPE, build_byte_to_gate};
 use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
-use crate::models::bpe::tables::BpeTables;
+use crate::models::bpe::tables::{BpeTables, NO_SYMBOL};
 use crate::models::bpe::{Error, MergeMap, Merges, Pair, Vocab};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
@@ -11,9 +11,8 @@ use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use std::ops::RangeInclusive;
 use std::str::from_utf8_unchecked;
 
-/// Bytes that can occur in a `&str`: everything except the overlong lead bytes
-/// OxC0 | 0xC1 and  the lead bytes past U+10FFFF (F5..=FF)
-const VALID_UTF8_BYTES: [RangeInclusive<u8>; 2] = [0x00..=0xBF, 0xC2..=0xF4];
+/// Every byte a `&str` can hold except 0xF1 | 0xF2, which are UTF-8 lead bytes that prefix unassigned codepoints
+const VALID_UTF8_BYTES: [RangeInclusive<u8>; 3] = [0x00..=0xBF, 0xC2..=0xF0, 0xF3..=0xF4];
 
 pub struct BpeConfig {
     /// `{"token": id}`, in no particular order.
@@ -237,21 +236,19 @@ impl PipelineBPE {
             external_to_internal
                 .get(external as usize)
                 .copied()
-                .filter(|&internal| internal != u32::MAX)
+                .filter(|&internal| internal != NO_SYMBOL)
         };
         let (vocab, atoms) = if byte_level {
-            // Byte-Level: atoms are raw bytes, we check that the vocabulary has all
-            // UTF-8 reachable atoms.
             let missing: Vec<u8> = VALID_UTF8_BYTES
                 .into_iter()
                 .flatten()
-                .filter(|&byte| {
-                    // u32::MAX means the byte is missing from the table
-                    tables.byte_internal[byte as usize] == u32::MAX
-                })
+                .filter(|&byte| tables.byte_internal[byte as usize] == NO_SYMBOL)
                 .collect();
             if !missing.is_empty() {
-                return Err(Error::ByteAtomOutOfVocabulary(missing).into());
+                warn!(
+                    "this byte-level vocabulary has no token for bytes {missing:02X?}: they will be \
+                     ignored at encoding."
+                );
             }
             // Build the vocab and return it
             let mut vocab = BucketVocabStore::build(vocab.byte_content())?;
@@ -268,7 +265,7 @@ impl PipelineBPE {
             } else {
                 None
             };
-            let unk_token = unk_token.map(|external| to_internal(external).unwrap_or(u32::MAX));
+            let unk_token = unk_token.map(|external| to_internal(external).unwrap_or(NO_SYMBOL));
             let fallback_lookup = if byte_fallback {
                 let mut fallback_lookup = [0u32; 256];
                 for b in 0u8..=255 {
