@@ -921,63 +921,61 @@ impl PipelineTokenizer {
             .map(|ids| self.decode(ids, skip_special_tokens))
             .collect()
     }
-
-    /// Incremental decode: feed ids one at a time via [`PipelineDecodeStream::step`].
-    /// Same prefix-tracking scheme as the released `DecodeStream`, built on
-    /// [`decode`](Self::decode), so it is correct exactly where `decode` is.
-    pub fn decode_stream(&self, skip_special_tokens: bool) -> PipelineDecodeStream<'_> {
-        PipelineDecodeStream {
-            tokenizer: self,
-            ids: Vec::new(),
-            skip_special_tokens,
-            prefix: String::new(),
-            prefix_index: 0,
-        }
-    }
 }
 
-/// Streaming decoder over a [`PipelineTokenizer`]; see [`PipelineTokenizer::decode_stream`].
-pub struct PipelineDecodeStream<'tok> {
-    tokenizer: &'tok PipelineTokenizer,
-    ids: Vec<u32>,
+/// Helper to decode a stream of token ids
+#[derive(Clone)]
+pub struct PipelineDecodeStream {
     skip_special_tokens: bool,
+    ids: Vec<u32>,
+    /// The decode of `ids[..prefix_index]`, which the next decode has to start with
     prefix: String,
     prefix_index: usize,
 }
 
-impl PipelineDecodeStream<'_> {
-    /// Push one id and return the text it completes, or `None` while a multi-token
-    /// (or multi-byte) unit is still forming. Ids past the emitted prefix are kept
-    /// as decode context so cross-token decoders (byte-level, WordPiece `##`, …)
-    /// see the same input a one-shot [`decode`](PipelineTokenizer::decode) would.
-    pub fn step(&mut self, id: u32) -> Result<Option<String>> {
+impl PipelineDecodeStream {
+    /// A stream whose first decode is preceded by `prompt`. The prompt gives context to the
+    /// first steps and is never returned.
+    pub fn new(prompt: Vec<u32>, skip_special_tokens: bool) -> Self {
+        Self {
+            skip_special_tokens,
+            ids: prompt,
+            prefix: String::new(),
+            prefix_index: 0,
+        }
+    }
+
+    /// Push `ids` and return the text they complete, or `None` while a character is still
+    /// incomplete.
+    pub fn step(&mut self, tokenizer: &PipelineTokenizer, ids: &[u32]) -> Result<Option<String>> {
         if self.prefix.is_empty() && !self.ids.is_empty() {
-            let new_prefix = self.tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+            let new_prefix = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
             if !new_prefix.ends_with('\u{fffd}') {
                 self.prefix = new_prefix;
                 self.prefix_index = self.ids.len();
             }
         }
 
-        self.ids.push(id);
-        let string = self.tokenizer.decode(&self.ids, self.skip_special_tokens)?;
-        if string.len() > self.prefix.len() && !string.ends_with('\u{fffd}') {
-            if !string.starts_with(&self.prefix) {
-                return Err(format!(
-                    "decode stream: {string:?} does not extend prefix {:?}",
-                    self.prefix
-                )
-                .into());
-            }
-            let new_text = string[self.prefix.len()..].to_string();
-            let new_prefix_index = self.ids.len() - self.prefix_index;
-            self.ids = self.ids.split_off(self.prefix_index);
-            self.prefix = self.tokenizer.decode(&self.ids, self.skip_special_tokens)?;
-            self.prefix_index = new_prefix_index;
-            Ok(Some(new_text))
-        } else {
-            Ok(None)
+        self.ids.extend_from_slice(ids);
+        let string = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+        if string.len() <= self.prefix.len() || string.ends_with('\u{fffd}') {
+            return Ok(None);
         }
+        let Some(new_text) = string.strip_prefix(self.prefix.as_str()) else {
+            // vLLM resets its stream on this error, matching the message's first words
+            return Err(format!(
+                "Invalid prefix encountered while decoding stream. Token ID: {}, Expected prefix: '{}', Actual string: '{string}'",
+                self.ids.last().expect("a non-empty decode has at least one id"),
+                self.prefix,
+            )
+            .into());
+        };
+        let new_text = new_text.to_owned();
+        let new_prefix_index = self.ids.len() - self.prefix_index;
+        self.ids.drain(..self.prefix_index);
+        self.prefix = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+        self.prefix_index = new_prefix_index;
+        Ok(Some(new_text))
     }
 }
 
