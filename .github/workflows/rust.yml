@@ -57,7 +57,7 @@ jobs:
       # Provides `uvx`, used to run the huggingface_hub CLI that downloads
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
       - name: Run tests
         if: matrix.os != 'windows-latest'
@@ -280,7 +280,7 @@ jobs:
       # Provides `uvx`, used to run the huggingface_hub CLI that downloads
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
       # The same two fixtures the Windows leg fetches, and for the same reason:
       # tk-encode's lib tests unwrap these outright. Every other fixture is
@@ -293,7 +293,7 @@ jobs:
         run: uvx --from huggingface_hub hf download hf-internal-testing/tokenizers-test-data gpt2.json albert-base-v1-tokenizer.json --repo-type dataset --revision 54d012f11a4911b797aa6ef2dffc0fb67cbc7619 --local-dir data
 
       - name: Install cargo-hack
-        uses: taiki-e/install-action@cargo-hack
+        uses: taiki-e/install-action@d8a3af99c9218844a5b609a03d73ecfb4fdee649  # cargo-hack
 
       # `--feature-powerset --depth 2` is every one of those features alone and every pair, each
       # built with `--no-default-features` -- so it covers a model feature *without* `bpe`, which
