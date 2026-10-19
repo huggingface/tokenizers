@@ -36,6 +36,10 @@ pub struct CompiledTokenizer {
 }
 
 impl CompiledTokenizer {
+    pub(crate) fn pipeline(&self) -> &PipelineTokenizer {
+        &self.pipeline
+    }
+
     pub(crate) fn new(py: Python<'_>, spec: &TokenizerSpec) -> PyResult<Self> {
         // py.detach releases the GIL while the Rust code runs.
         let pipeline = py.detach(|| spec.compile()).map_err(err)?;
