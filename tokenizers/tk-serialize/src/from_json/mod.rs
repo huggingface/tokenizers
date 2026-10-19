@@ -125,6 +125,27 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
     if model_cfg.get("files").is_some() {
         return Err(unsupported("a model whose vocab is a file path (`files`)"));
     }
+    // transformers v5 loads a copy of tokenizer.json with the vocab emptied, to read the rest of
+    // the config cheaply.
+    let empty_vocab = model_cfg.field("vocab").is_some_and(|vocab| {
+        vocab.entries().is_some_and(|entries| entries.len() == 0)
+            || vocab.as_array().is_some_and(<[_]>::is_empty)
+    });
+    let compiled = kind == "BPE"
+        || (kind == "Unigram" && cfg!(feature = "unigram"))
+        || (kind == "WordPiece" && cfg!(feature = "wordpiece"))
+        || (kind == "WordLevel" && cfg!(feature = "wordlevel"));
+    if empty_vocab && compiled {
+        return build(
+            doc,
+            normalizers,
+            pre_tokenizer,
+            (),
+            |_| 0,
+            |_, _| None,
+            |_| Ok(PipelineModel::Empty),
+        );
+    }
 
     match kind {
         "BPE" => {

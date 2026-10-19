@@ -96,6 +96,9 @@ pub(super) fn write_model(out: &mut Out, model: &PipelineModel) -> Result<()> {
             );
             out.obj_close();
         }
+        PipelineModel::Empty => {
+            return Err("a model with an empty vocabulary cannot be written back".into());
+        }
     }
     Ok(())
 }

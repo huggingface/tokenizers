@@ -1027,7 +1027,13 @@ pub enum PipelineModel {
     WordLevel(WordLevel),
     #[cfg(feature = "wordpiece")]
     WordPiece(PipelineWordPiece),
+    /// A model whose config has an empty vocabulary. The rest of the tokenizer still loads, and
+    /// every encode returns an error.
+    Empty,
 }
+
+const EMPTY_VOCABULARY: &str =
+    "this tokenizer's model has an empty vocabulary, so it cannot encode";
 
 impl PipelineModel {
     /// `id -> token` used by [`PipelineTokenizer::decode`]
@@ -1040,6 +1046,7 @@ impl PipelineModel {
             Self::WordLevel(model) => model.id_to_token(id),
             #[cfg(feature = "wordpiece")]
             Self::WordPiece(model) => model.id_to_token(id),
+            Self::Empty => None,
         }
     }
 }
@@ -1073,6 +1080,7 @@ impl Model for PipelineModel {
             (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
                 model.tokenize_pipeline(sequence, scratch, output)
             }
+            (Self::Empty, _) => Err(EMPTY_VOCABULARY.into()),
             _ => unreachable!(),
         }
     }
@@ -1100,6 +1108,7 @@ impl Model for PipelineModel {
             (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
                 model.tokenize_spans(chunk, spans, scratch, output)
             }
+            (Self::Empty, _) => Err(EMPTY_VOCABULARY.into()),
             _ => unreachable!(),
         }
     }
@@ -1113,6 +1122,7 @@ impl Model for PipelineModel {
             Self::WordPiece(wordpiece) => Self::Scratch::WordPiece(wordpiece.init_scratch()),
             #[cfg(feature = "unigram")]
             Self::Unigram(unigram) => Self::Scratch::Unigram(unigram.init_scratch()),
+            Self::Empty => Self::Scratch::None,
         }
     }
 }

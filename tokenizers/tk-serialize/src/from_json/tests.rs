@@ -325,10 +325,53 @@ fn a_unigram_score_is_serdes_f64_one_ulp_off_the_correctly_rounded_one() {
     );
 }
 
-// transformers v5 loads a copy of each tokenizer.json with the vocab and merges emptied, to read
-// the post-processor, padding and truncation back.
+/// The model shapes of Llama, Qwen, BERT, T5 and a WordLevel config, with the vocab emptied.
+/// Released 0.23 loads each of them, and transformers v5 relies on that.
+#[rustfmt::skip]
+const EMPTY_VOCAB_MODELS: &[&str] = &[
+    r#"{"type": "BPE", "byte_level": false, "unk_token": "<unk>", "fuse_unk": true,
+        "byte_fallback": true, "vocab": {}, "merges": []}"#,
+    r#"{"type": "BPE", "byte_level": true, "vocab": {}, "merges": []}"#,
+    #[cfg(feature = "wordpiece")]
+    r###"{"type": "WordPiece", "unk_token": "[UNK]", "continuing_subword_prefix": "##",
+        "max_input_chars_per_word": 100, "vocab": {}}"###,
+    #[cfg(feature = "wordlevel")]
+    r#"{"type": "WordLevel", "unk_token": "[UNK]", "vocab": {}}"#,
+    #[cfg(feature = "unigram")]
+    r#"{"type": "Unigram", "unk_id": null, "vocab": [], "byte_fallback": false}"#,
+];
+
 #[test]
-fn an_empty_vocab_reads() {
-    let model = r#"{"type": "BPE", "byte_level": false, "vocab": {}, "merges": []}"#;
-    assert!(from_json(&config(&[("model", model)])).is_ok());
+fn an_empty_vocab_reads_the_rest_of_the_config() {
+    let padding = r#"{"strategy": "BatchLongest", "direction": "Right", "pad_to_multiple_of": null,
+        "pad_id": 0, "pad_type_id": 0, "pad_token": "[PAD]"}"#;
+    for model in EMPTY_VOCAB_MODELS {
+        let tokenizer = from_json(&config(&[("model", model), ("padding", padding)]))
+            .unwrap_or_else(|e| panic!("{model}: {e}"));
+
+        assert_eq!(
+            tokenizer.get_padding().unwrap().pad_token,
+            "[PAD]",
+            "{model}"
+        );
+    }
+}
+
+// With no vocabulary every token is unknown, and an unknown token has no id to fall back on.
+#[test]
+fn an_empty_vocab_refuses_to_encode() {
+    for model in EMPTY_VOCAB_MODELS {
+        let tokenizer = from_json(&config(&[("model", model)])).unwrap();
+
+        let result = tokenizer.encode("hello", &EncodeOptions::default()).wait();
+
+        assert!(result.is_err(), "{model}");
+    }
+}
+
+#[test]
+fn an_empty_vocab_still_needs_a_model_type_it_knows() {
+    let model = r#"{"type": "Mystery", "vocab": {}}"#;
+
+    assert!(read_err(&config(&[("model", model)])).contains("`unknown` model"));
 }

@@ -579,6 +579,14 @@ mod tests {
     }
 
     #[test]
+    fn builds_from_no_tokens() {
+        let vocab = BucketVocabStore::build(vec![]).unwrap();
+        assert!(vocab.is_empty());
+        assert_eq!(vocab.token_to_id("anything"), None);
+        assert_eq!(vocab.id_to_token(0), None);
+    }
+
+    #[test]
     fn eq_matches_on_dense_content() {
         // Models use dense ids (0..n); equality must reflect the token set on that range.
         let a = BucketVocabStore::build(vec![(b"x".to_vec(), 0), (b"y".to_vec(), 1)]).unwrap();
