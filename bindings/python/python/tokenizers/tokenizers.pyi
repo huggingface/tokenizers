@@ -11,6 +11,48 @@ from numpy.typing import NDArray
 __version__: Final[str]
 
 @final
+class DecodeStream:
+    """
+    Decodes a stream of token ids, for example a model generation.
+
+    A character can take several tokens, so `step` returns `None` if it needs more tokens to build a valid output.
+
+    Args:
+        ids:
+            Prompt ids that come before the first generated id. They give context to the first
+            steps and are never returned.
+        skip_special_tokens: bool
+            Whether special tokens should be omitted from the decoded text.
+
+    Example::
+
+        >>> from tokenizers import Tokenizer
+        >>> from tokenizers.decoders import DecodeStream
+        >>> tokenizer = Tokenizer.from_pretrained("gpt2")
+        >>> stream = DecodeStream()
+        >>> for id in tokenizer.encode("Hello, streaming world!").ids:
+        ...     print(stream.step(tokenizer, id) or "", end="")
+    """
+    def __new__(
+        cls, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]] | None = None, skip_special_tokens: bool = False
+    ) -> DecodeStream: ...
+    def step(self, /, tokenizer: Tokenizer, id: int | Sequence[int]) -> str | None:
+        """
+        Process the next id(s) and returns the decoded text, or None if more tokens are required
+        to decode to valid text.
+
+        Args:
+            tokenizer: Tokenizer
+                The tokenizer that decodes the ids.
+            id: int | list[int]
+                The next id, or several ids.
+
+        Returns:
+            str | None
+                The new text, or `None` while a character is still incomplete.
+        """
+
+@final
 class Encoding:
     """
     Text encoded to token ids by a tokenizer.
