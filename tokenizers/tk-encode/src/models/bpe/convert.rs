@@ -3,7 +3,7 @@
 use crate::models::bpe::At;
 use crate::models::bpe::merge_hot_cold_queue::{Entry, MergeQueue, QueueScratch};
 use crate::models::bpe::model::{Atoms, PipelineBPE};
-use crate::models::bpe::tables::{BpeTables, ID_MASK, RANK_MASK};
+use crate::models::bpe::tables::{BpeTables, ID_MASK, NO_SYMBOL, RANK_MASK};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
 /// Set only for the few models that decorate their atoms: `end_of_word_suffix` (CLIP, openai-gpt,
@@ -12,7 +12,7 @@ use crate::vocab::bucket_vocab_store::BucketVocabStore;
 pub(super) struct Affixes {
     pub(super) prefix: String,
     pub(super) suffix: String,
-    /// Dense `external vocab id -> internal symbol id`, `u32::MAX` where there is none. Dense
+    /// Dense `external vocab id -> internal symbol id`, [`NO_SYMBOL`] where there is none. Dense
     /// beats a hash here because external ids are `0..vocab_size`: 4 bytes a slot and one load,
     /// against 8-16 for any map. It is the array `BpeTables::build` makes anyway.
     pub(super) to_internal: Box<[u32]>,
@@ -108,7 +108,11 @@ impl<M: SinkMode> SymbolSink<M> {
     // inlining here is very important
     #[inline(always)]
     fn push(&mut self, tables: &BpeTables, symbol: u32) {
-        if self.previous_symbol != u32::MAX {
+        // This byte is not in the vocabulary: skip it
+        if symbol == NO_SYMBOL {
+            return;
+        }
+        if self.previous_symbol != NO_SYMBOL {
             let merge = tables.get_value(&self.previous_symbol, &symbol);
             self.mode.record_pair(merge, self.previous_symbol, symbol);
         }
@@ -138,7 +142,7 @@ impl PipelineBPE {
                 symbols,
                 lowest_merge: u64::MAX,
             },
-            previous_symbol: u32::MAX,
+            previous_symbol: NO_SYMBOL,
         };
         self.convert(sequence, &mut sink);
         sink.mode.lowest_merge
@@ -162,13 +166,13 @@ impl PipelineBPE {
         queue.clear(sequence.len());
         let mut sink = SymbolSink {
             mode: QueueSink { entries, queue },
-            previous_symbol: u32::MAX,
+            previous_symbol: NO_SYMBOL,
         };
         self.convert(sequence, &mut sink);
         let last = sink.previous_symbol;
         match entries.last_mut() {
             Some(entry) => entry.right_pair_index = u32::MAX, // NONE: nothing right of the final pair
-            None if last != u32::MAX => symbols.push(last),
+            None if last != NO_SYMBOL => symbols.push(last),
             None => {}
         }
     }
@@ -222,7 +226,7 @@ fn convert_bytes<M: SinkMode>(tables: &BpeTables, bytes: &[u8], sink: &mut Symbo
         let lead = bytes.at(pos);
         let char_len = UTF8_LEN[lead as usize] as usize;
         let folded = tables.fold.get_bytes(bytes, pos, lead, char_len);
-        if folded != u32::MAX {
+        if folded != NO_SYMBOL {
             sink.push(tables, folded);
         } else {
             for offset in 0..char_len {
@@ -247,7 +251,7 @@ fn convert_chars<M: SinkMode>(
     let mut in_unk_run = false;
     for character in sequence.chars() {
         let symbol = tables.fold.get_char(character);
-        if symbol != u32::MAX {
+        if symbol != NO_SYMBOL {
             in_unk_run = false;
             sink.push(tables, symbol);
             continue;
@@ -302,7 +306,7 @@ fn convert_affixed<M: SinkMode>(
             .ok()
             .and_then(|token| vocab.token_to_id(token))
             .and_then(|external| affixes.to_internal.get(external as usize).copied())
-            .filter(|&symbol| symbol != u32::MAX);
+            .filter(|&symbol| symbol != NO_SYMBOL);
         match symbol {
             Some(symbol) => sink.push(tables, symbol),
             None => push_unknown(tables, atoms, character, sink),
