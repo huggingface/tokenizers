@@ -1033,7 +1033,7 @@ pub enum PipelineModel {
 }
 
 const EMPTY_VOCABULARY: &str =
-    "this tokenizer's model has an empty vocabulary, so it cannot encode";
+    "this tokenizer's model has an empty vocabulary, so it cannot encode text";
 
 impl PipelineModel {
     /// `id -> token` used by [`PipelineTokenizer::decode`]
