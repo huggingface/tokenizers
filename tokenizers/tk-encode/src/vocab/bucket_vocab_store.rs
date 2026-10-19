@@ -262,11 +262,15 @@ impl BucketVocabStore {
 
         // 4. Place each token at its MPHF slot; build the slab and the id->slot reverse table.
         let total: usize = tokens.iter().map(|(s, _)| s.len()).sum();
-        let max_id = tokens.iter().map(|(_, id)| *id).max().unwrap();
+        let id_space = tokens
+            .iter()
+            .map(|(_, id)| *id as usize + 1)
+            .max()
+            .unwrap_or(0);
         let mut bytes = Vec::with_capacity(total);
         let mut entries = vec![Entry::default(); n_slots];
         let mut spans = vec![Span::default(); n_slots];
-        let mut id_to_slot = vec![u32::MAX; max_id as usize + 1];
+        let mut id_to_slot = vec![u32::MAX; id_space];
         for (s, id) in &tokens {
             assert!(
                 s.len() <= u16::MAX as usize,

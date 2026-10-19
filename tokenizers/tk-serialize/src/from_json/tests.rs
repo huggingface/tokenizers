@@ -324,3 +324,11 @@ fn a_unigram_score_is_serdes_f64_one_ulp_off_the_correctly_rounded_one() {
         "the score must sit exactly one ULP from the f32 the file encodes"
     );
 }
+
+// transformers v5 loads a copy of each tokenizer.json with the vocab and merges emptied, to read
+// the post-processor, padding and truncation back.
+#[test]
+fn an_empty_vocab_reads() {
+    let model = r#"{"type": "BPE", "byte_level": false, "vocab": {}, "merges": []}"#;
+    assert!(from_json(&config(&[("model", model)])).is_ok());
+}
