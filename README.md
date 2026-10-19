@@ -15,7 +15,7 @@ The SOTA tokenization library on all languages, all models, all hardwares.
 
 Our goal with `tokenizers` is to develop and maintain the industry's standard tokenization engine, making it the defacto place for everyone to contribute to the whole ecosystem.
 
-### Release candidate: v1.0.0.rc.0
+### Release candidate: v1.0.0-rc.3
 
 As we are switching from 0.23 to v1.0.0, the current library does not ship all features. If you are worried, check the [v1 features](#v1-features) section for more details of what we are bringing back.
 We will publish a blog about what breaking changes we introduced. We strived to keep them as small as possible.

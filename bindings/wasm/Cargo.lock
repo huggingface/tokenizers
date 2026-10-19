@@ -95,7 +95,7 @@ checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
 name = "bitcannon"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.3"
 
 [[package]]
 name = "bitflags"
@@ -1135,7 +1135,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tk-convert"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "bitcannon",
  "serde_json",
@@ -1144,7 +1144,7 @@ dependencies = [
 
 [[package]]
 name = "tk-encode"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "ahash",
  "bitcannon",
@@ -1168,7 +1168,7 @@ dependencies = [
 
 [[package]]
 name = "tk-serialize"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "base64 0.22.1",
  "bitcannon",
@@ -1178,7 +1178,7 @@ dependencies = [
 
 [[package]]
 name = "tk-train"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "ahash",
  "compact_str",
@@ -1194,7 +1194,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers"
-version = "1.0.0-dev.2"
+version = "1.0.0-rc.3"
 dependencies = [
  "tk-convert",
  "tk-encode",
@@ -1204,7 +1204,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers-wasm"
-version = "1.0.0-dev.2"
+version = "1.0.0-rc.3"
 dependencies = [
  "getrandom 0.3.4",
  "getrandom 0.4.3",

@@ -12,7 +12,7 @@ authors = [
 ]
 edition = "2024"
 name = "tokenizers"
-version = "1.0.0-dev.2"
+version = "1.0.0-rc.3"
 homepage = "https://github.com/huggingface/tokenizers"
 repository = "https://github.com/huggingface/tokenizers"
 documentation = "https://docs.rs/tokenizers/"
@@ -40,12 +40,12 @@ path = "src/lib.rs"
 bench = false
 
 [dependencies]
-tk-encode = { path = "tk-encode", version = "0.1.0-dev.2", default-features = false }
-tk-convert = { path = "tk-convert", version = "0.1.0-dev.2", default-features = false }
-tk-serialize = { path = "tk-serialize", version = "0.1.0-dev.2", default-features = false, features = [
+tk-encode = { path = "tk-encode", version = "0.1.0-rc.3", default-features = false }
+tk-convert = { path = "tk-convert", version = "0.1.0-rc.3", default-features = false }
+tk-serialize = { path = "tk-serialize", version = "0.1.0-rc.3", default-features = false, features = [
   "deserialize",
 ] }
-tk-train = { path = "tk-train", version = "0.1.0-dev.2", default-features = false, optional = true }
+tk-train = { path = "tk-train", version = "0.1.0-rc.3", default-features = false, optional = true }
 
 # Everything is on by default; a binding that wants a smaller build turns defaults off and picks.
 # The component features go through `tk-serialize`, which forwards each one to `tk-encode`: the
