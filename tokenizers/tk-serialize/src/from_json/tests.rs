@@ -325,8 +325,7 @@ fn a_unigram_score_is_serdes_f64_one_ulp_off_the_correctly_rounded_one() {
     );
 }
 
-/// The model shapes of Llama, Qwen, BERT, T5 and a WordLevel config, with the vocab emptied.
-/// Released 0.23 loads each of them, and transformers v5 relies on that.
+/// Mimics transformers v5 loading a tokenizer.json with empty vocabulary
 #[rustfmt::skip]
 const EMPTY_VOCAB_MODELS: &[&str] = &[
     r#"{"type": "BPE", "byte_level": false, "unk_token": "<unk>", "fuse_unk": true,
@@ -357,7 +356,6 @@ fn an_empty_vocab_reads_the_rest_of_the_config() {
     }
 }
 
-// With no vocabulary every token is unknown, and an unknown token has no id to fall back on.
 #[test]
 fn an_empty_vocab_refuses_to_encode() {
     for model in EMPTY_VOCAB_MODELS {
