@@ -31,6 +31,7 @@ tk-encode = { path = "../../tokenizers/tk-encode", default-features = false, fea
   "wordpiece",
   "wordlevel",
   "unicode-scripts",
+  "fancy-regex",
 ] }
 tk-serialize = { path = "../../tokenizers/tk-serialize", features = [
   # `serialize` for `to_json`, which `Tokenizer.__repr__` renders.
@@ -42,6 +43,7 @@ tk-serialize = { path = "../../tokenizers/tk-serialize", features = [
   "wordpiece",
   "wordlevel",
   "unicode-scripts",
+  "fancy-regex",
 ] }
 tk-convert   = { path = "../../tokenizers/tk-convert", default-features = false }
 
