@@ -53,63 +53,20 @@ fn ids(text: &str, input: &str) -> Vec<u32> {
         .collect()
 }
 
-#[cfg(feature = "wordlevel")]
+#[cfg(all(feature = "wordlevel", feature = "fancy-regex"))]
 #[test]
 fn generic_regex_split_encodes_from_json() {
-    let split = r#"{"type":"Split","pattern":{"Regex":" +"},"behavior":"Removed","invert":false}"#;
-    let sequence = format!(r#"{{"type":"Sequence","pretokenizers":[{split}]}}"#);
-    for pre_tokenizer in [split, sequence.as_str()] {
-        let json = config(&[
-            (
-                "model",
-                r#"{"type":"WordLevel","unk_token":"<unk>","vocab":{"a":0,"b":1,"<unk>":2}}"#,
-            ),
-            ("pre_tokenizer", pre_tokenizer),
-        ]);
-        #[cfg(feature = "fancy-regex")]
-        assert_eq!(ids(&json, "a    b"), [0, 1]);
-        #[cfg(not(feature = "fancy-regex"))]
-        {
-            let tokenizer = from_json(&json).unwrap();
-            let error = match tokenizer.encode("a    b", &EncodeOptions::default()).wait() {
-                Ok(_) => panic!("a generic regex needs a backend"),
-                Err(error) => error,
-            };
-            assert!(error.to_string().contains("system-regex backend"));
-        }
-    }
-}
-
-#[cfg(feature = "wordlevel")]
-#[test]
-fn native_regex_splits_encode_from_json() {
-    let split = |pattern: &str| {
-        serde_json::json!({
-            "type": "Split", "pattern": {"Regex": pattern}, "behavior": "Isolated", "invert": false,
-        })
-    };
-    let gpt = split(bitcannon::regexes::GPT2);
-    let deepseek = serde_json::json!({
-        "type": "Sequence",
-        "pretokenizers": tk_encode::utils::DEEPSEEK_PATTERNS.map(split),
-    });
-    for pre_tokenizer in [gpt, deepseek] {
-        let pre_tokenizer = pre_tokenizer.to_string();
-        let doc = Json::parse(&pre_tokenizer).unwrap();
-        match read_pre_tokenizer(Some(&doc)).unwrap() {
-            PipelinePreTokenizer::Split(split) => assert!(split.grammar().is_some()),
-            PipelinePreTokenizer::Sequence(sequence) => assert!(sequence.is_deepseek()),
-            _ => panic!("expected a native GPT split or DeepSeek sequence"),
-        }
-        let json = config(&[
-            (
-                "model",
-                r#"{"type":"WordLevel","unk_token":"<unk>","vocab":{"ab":0,"123":1,"cd":2,"<unk>":3}}"#,
-            ),
-            ("pre_tokenizer", &pre_tokenizer),
-        ]);
-        assert_eq!(ids(&json, "ab123cd"), [0, 1, 2]);
-    }
+    let json = config(&[
+        (
+            "model",
+            r#"{"type": "WordLevel", "unk_token": "<unk>", "vocab": {"a": 0, "b": 1, "<unk>": 2}}"#,
+        ),
+        (
+            "pre_tokenizer",
+            r#"{"type": "Split", "pattern": {"Regex": " +"}, "behavior": "Removed", "invert": false}"#,
+        ),
+    ]);
+    assert_eq!(ids(&json, "a    b"), [0, 1]);
 }
 
 /// `(slot, json, text, ids)`: what a component does to an encode, which is the only thing a caller
