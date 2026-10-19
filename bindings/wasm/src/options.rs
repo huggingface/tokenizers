@@ -1,8 +1,8 @@
 //! The options of `Tokenizer.encode`
 
 use serde::Deserialize;
-use tk_encode::pipeline::{self, Override};
-use tk_encode::{
+use tokenizers::pipeline::{self, Override};
+use tokenizers::{
     PaddingDirection, PaddingParams, PaddingStrategy, TruncationDirection, TruncationParams,
     TruncationStrategy,
 };
