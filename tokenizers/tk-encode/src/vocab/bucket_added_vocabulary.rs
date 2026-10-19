@@ -426,7 +426,7 @@ impl Default for AddedVocabulary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::normalizers::utils::Lowercase;
+    use crate::normalizers::Lowercase;
     use crate::pipeline::{Segment, SpecialSegmentIterator};
 
     struct ModelMock {
