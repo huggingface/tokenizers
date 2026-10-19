@@ -46,8 +46,8 @@ built it is read-only: getters, `encode` and `decode`, but no setters, no `save`
 one remaining job (`canonicalize_file`, re-exported by the `tokenizers` umbrella crate). What an
 authoring surface would have to add back is `REQUIRED_FOR_V1.md` at the repository root.
 
-Training is not part of this crate either: it lives in `tk-train`, which nothing in
-`tokenizers` depends on yet.
+Training is not part of this crate either: it lives in `tk-train`, which the `tokenizers`
+umbrella crate re-exports behind its `train` feature.
 
 ## Additional information
 
