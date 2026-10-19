@@ -262,7 +262,7 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
         let mut keyset: Vec<_> = vocab.into_iter().collect();
         keyset.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
         // yada rejects an empty trie
-        // no pre-token can be an empty string "", so it's fine to filter them out
+        // no pre-token can be the empty string "", but some vocab stored them
         let trie_keys = &keyset[keyset.partition_point(|(token, _)| token.is_empty())..];
         if trie_keys.is_empty() {
             return Err(Error::EmptyVocab.into());
