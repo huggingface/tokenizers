@@ -53,6 +53,68 @@ fn ids(text: &str, input: &str) -> Vec<u32> {
         .collect()
 }
 
+#[test]
+fn metaspace_is_applied_after_normalized_added_tokens() {
+    let model = r#"{"type":"BPE","byte_level":false,"unk_token":"<unk>",
+        "vocab":{"<unk>":0,"<s>":1,"▁":2,"▁a":3,"a":4,"é":5,"▁é":6},
+        "merges":[["▁","a"],["▁","é"]]}"#;
+    for prepend in ["first", "always", "never"] {
+        for normalized in [true, false] {
+            let normalizer = format!(
+                r#"{{"type":"Sequence","normalizers":[{{"type":"Lowercase"}},
+                    {{"type":"MetaspaceNormalizer","replacement":"▁","prepend":"{prepend}",
+                      "drop_whitespace":false}}]}}"#
+            );
+            let added = format!(
+                r#"[{{"id":1,"content":"<s>","single_word":false,"lstrip":false,
+                    "rstrip":false,"normalized":{normalized},"special":true}},
+                    {{"id":7,"content":"<raw>","single_word":false,"lstrip":false,
+                    "rstrip":false,"normalized":false,"special":true}}]"#
+            );
+            let text = config(&[
+                ("model", model),
+                ("normalizer", &normalizer),
+                ("added_tokens", &added),
+            ]);
+            // Expectations from tokenizers 0.23.1. A real leading delimiter must survive;
+            // only the synthetic prefix before an extracted token is absent.
+            let after_token = if prepend == "always" { 3 } else { 4 };
+            let first = if prepend == "never" { 4 } else { 3 };
+            let after_unicode = if prepend == "always" { 6 } else { 5 };
+            for (input, expected) in [
+                ("<s> a", vec![1, 3]),
+                ("<s>a", vec![1, after_token]),
+                ("<s>é", vec![1, after_unicode]),
+                ("<s>", vec![1]),
+                ("<s><s>a", vec![1, 1, after_token]),
+                ("a <s> a", vec![first, 2, 1, 3]),
+                ("a<s>a", vec![first, 1, after_token]),
+                ("▁<s> a", vec![2, 1, 3]),
+                (" <s> a", vec![2, 1, 3]),
+                ("<raw><s>a", vec![7, 1, after_token]),
+                ("A", vec![first]),
+            ] {
+                assert_eq!(
+                    ids(&text, input),
+                    expected,
+                    "{prepend} {normalized} {input:?}"
+                );
+            }
+            if normalized {
+                assert_eq!(ids(&text, "<S> A"), [1, 3], "{prepend}");
+                assert_eq!(ids(&text, "<S>A"), [1, after_token], "{prepend}");
+            }
+            // The raw token splits parallel work; the normalized token must still see
+            // the remaining text's position within the full sequence.
+            let long = "a".repeat(16 * 1024);
+            let mut expected = vec![4; long.len()];
+            expected[0] = first;
+            expected.extend([7, 1, after_token]);
+            assert_eq!(ids(&text, &format!("{long}<raw><s>a")), expected);
+        }
+    }
+}
+
 /// `(slot, json, text, ids)`: what a component does to an encode, which is the only thing a caller
 /// can observe. `ab` scoring better than `a`+`a` is what makes the Unigram row a lattice test.
 #[rustfmt::skip]
