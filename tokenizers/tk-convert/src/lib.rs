@@ -20,5 +20,5 @@ pub mod convert;
 
 pub use convert::{
     ConvertError, canonicalize_file, canonicalize_post_processor, canonicalize_str,
-    canonicalize_value,
+    canonicalize_value, fill_model_type,
 };

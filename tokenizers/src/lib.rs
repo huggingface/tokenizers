@@ -100,7 +100,7 @@ pub use tk_serialize::{post_processor_to_json, str_to_json, to_json};
 // ---------------------------------------------------------------------------
 pub use tk_convert::{
     ConvertError, canonicalize_file, canonicalize_post_processor, canonicalize_str,
-    canonicalize_value, convert,
+    canonicalize_value, convert, fill_model_type,
 };
 
 // ---------------------------------------------------------------------------
