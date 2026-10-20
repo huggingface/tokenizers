@@ -313,6 +313,11 @@ class Tokenizer:
         tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", local_files_only=True)
         ```
         """
+    @staticmethod
+    def from_str(json: str) -> Tokenizer:
+        """
+        Loads a tokenizer from a JSON string, accepting the same formats as `from_file`.
+        """
     @property
     def padding(self, /) -> Padding | None:
         """
@@ -321,6 +326,16 @@ class Tokenizer:
         """
     @padding.setter
     def padding(self, /, padding: Padding | None) -> None: ...
+    def save(self, /, path: str | PathLike[str]) -> None:
+        """
+        Saves canonical tokenizer JSON to a file, including current padding and truncation settings.
+
+        Accepts a string or a `pathlib.Path`. The parent directory must already exist.
+        """
+    def to_str(self, /) -> str:
+        """
+        Returns canonical tokenizer JSON, including the current padding and truncation settings.
+        """
     def tokenize(
         self,
         /,
