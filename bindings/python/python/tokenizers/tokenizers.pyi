@@ -141,13 +141,21 @@ class Tokenizer:
     """
     A tokenizer. Encodes text into token ids, and decodes token ids back into text.
     """
-    def __reduce__(self, /) -> tuple[Any, tuple[str, Padding | None, Truncation | None]]:
+    def __copy__(self, /) -> Tokenizer:
+        """
+        Copies the tokenizer. The copy holds a reference to the same underlying compiled tokenizer.
+        """
+    def __deepcopy__(self, /, _memo: dict) -> Tokenizer:
+        """
+        Copies the tokenizer. The copy holds a reference to the same underlying compiled tokenizer.
+        """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]:
         """
         Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
         """
     def __repr__(self, /) -> str: ...
     @staticmethod
-    def _unpickle(json: str, padding: Padding | None, truncation: Truncation | None) -> Tokenizer:
+    def _unpickle(json: str) -> Tokenizer:
         """
         Unpickles a `Tokenizer`
         """

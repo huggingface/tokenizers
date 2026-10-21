@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from conftest import BERT, DATA
@@ -12,3 +14,37 @@ def test_from_file(path):
 def test_missing_file():
     with pytest.raises(FileNotFoundError, match="does-not-exist.json"):
         Tokenizer.from_file(DATA / "does-not-exist.json")
+
+
+# 0.23 refuses a file with keys it does not know.
+def test_refuses_unknown_top_level_keys(tmp_path):
+    file = json.loads(BERT.read_text())
+    file["foo"] = 1
+    file["bar"] = 2
+    path = tmp_path / "tokenizer.json"
+    path.write_text(json.dumps(file))
+    with pytest.raises(ValueError, match="`foo`, `bar`"):
+        Tokenizer.from_file(path)
+
+
+def write(tmp_path, file):
+    path = tmp_path / "tokenizer.json"
+    path.write_text(json.dumps(file))
+    return path
+
+
+# "2.0" is the canonical format the Rust writer emits; the file keeps the version it came with.
+def test_keeps_the_file_version(tmp_path):
+    file = {**json.loads(BERT.read_text()), "version": "2.0"}
+
+    tokenizer = Tokenizer.from_file(write(tmp_path, file))
+
+    assert 'version="2.0"' in repr(tokenizer)
+
+
+# 0.23 refuses a version it does not know.
+def test_refuses_unknown_version(tmp_path):
+    file = {**json.loads(BERT.read_text()), "version": "3.0"}
+
+    with pytest.raises(ValueError, match="3.0"):
+        Tokenizer.from_file(write(tmp_path, file))

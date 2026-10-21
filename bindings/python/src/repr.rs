@@ -1,6 +1,6 @@
 //! Utils to render Tokenizers.__repr__
 
-use tk::json::Json;
+use serde_json::{Map, Value};
 
 /// How many items of a list are shown before `...`. A dict shows every field.
 const MAX_PROPERTIES_SHOWN: usize = 5;
@@ -10,13 +10,13 @@ const MAX_LINE_WIDTH: usize = 100;
 const INDENT: &str = "    ";
 
 /// `padding` and `truncation` can be overwritten
-pub(crate) fn tokenizer(file: &Json<'_>, padding: &str, truncation: &str) -> String {
+pub(crate) fn tokenizer(file: &Map<String, Value>, padding: &str, truncation: &str) -> String {
     let mut out = String::from("Tokenizer(");
-    for (key, value) in file.entries().unwrap() {
+    for (key, value) in file {
         newline(1, &mut out);
         out.push_str(key);
         out.push('=');
-        match key {
+        match key.as_str() {
             "padding" => push_indented(padding, &mut out),
             "truncation" => push_indented(truncation, &mut out),
             _ => write_value(key, value, Some(1), &mut out),
@@ -30,66 +30,69 @@ pub(crate) fn tokenizer(file: &Json<'_>, padding: &str, truncation: &str) -> Str
 
 /// `key` is the one `value` sits under, `""` for a list item. `indent` is `None` while a
 /// container above tries to fit on one line, so nothing spreads.
-fn write_value(key: &str, value: &Json<'_>, indent: Option<usize>, out: &mut String) {
-    if value.is_null() {
-        out.push_str("None");
-    } else if let Some(b) = value.as_bool() {
-        out.push_str(if b { "True" } else { "False" });
-    } else if let Some(n) = value.number_literal() {
-        out.push_str(n);
-    } else if let Some(s) = value.as_str() {
-        write_str(s, out);
-    } else if let Some(items) = value.as_array() {
-        out.push('[');
-        write_entries(
-            items.iter().map(|item| ("", item)),
-            |_, _| {},
-            MAX_PROPERTIES_SHOWN,
-            indent,
-            out,
-        );
-        out.push(']');
-    } else if let Some(tag) = value.type_tag() {
-        out.push_str(tag);
-        out.push('(');
-        let fields = value.entries().unwrap().filter(|(key, _)| *key != "type");
-        write_entries(
-            fields,
-            |key, out| {
-                out.push_str(key);
-                out.push('=');
-            },
-            usize::MAX,
-            indent,
-            out,
-        );
-        out.push(')');
-    } else {
-        // Truncate vocab to 5 entries
-        let limit = if key == "vocab" {
-            MAX_PROPERTIES_SHOWN
-        } else {
-            usize::MAX
-        };
-        out.push('{');
-        write_entries(
-            value.entries().unwrap(),
-            |key, out| {
-                write_str(key, out);
-                out.push_str(": ");
-            },
-            limit,
-            indent,
-            out,
-        );
-        out.push('}');
+fn write_value(key: &str, value: &Value, indent: Option<usize>, out: &mut String) {
+    match value {
+        Value::Null => out.push_str("None"),
+        Value::Bool(b) => out.push_str(if *b { "True" } else { "False" }),
+        Value::Number(n) => out.push_str(&n.to_string()),
+        Value::String(s) => write_str(s, out),
+        Value::Array(items) => {
+            out.push('[');
+            write_entries(
+                items.iter().map(|item| ("", item)),
+                |_, _| {},
+                MAX_PROPERTIES_SHOWN,
+                indent,
+                out,
+            );
+            out.push(']');
+        }
+        Value::Object(fields) => {
+            if let Some(Value::String(tag)) = fields.get("type") {
+                out.push_str(tag);
+                out.push('(');
+                write_entries(
+                    fields
+                        .iter()
+                        .filter(|(key, _)| *key != "type")
+                        .map(|(key, value)| (key.as_str(), value)),
+                    |key, out| {
+                        out.push_str(key);
+                        out.push('=');
+                    },
+                    usize::MAX,
+                    indent,
+                    out,
+                );
+                out.push(')');
+            } else {
+                // Truncate vocab to 5 entries
+                let limit = if key == "vocab" {
+                    MAX_PROPERTIES_SHOWN
+                } else {
+                    usize::MAX
+                };
+                out.push('{');
+                write_entries(
+                    fields.iter().map(|(key, value)| (key.as_str(), value)),
+                    |key, out| {
+                        write_str(key, out);
+                        out.push_str(": ");
+                    },
+                    limit,
+                    indent,
+                    out,
+                );
+                out.push('}');
+            }
+        }
     }
 }
 
 /// The entries stay on one line when it fits in [`MAX_LINE_WIDTH`] columns.
 /// Otherwise one per line.
 fn write_entries<'a>(
-    entries: impl Iterator<Item = (&'a str, &'a Json<'a>)>,
+    entries: impl Iterator<Item = (&'a str, &'a Value)>,
     write_key: fn(&str, &mut String),
     limit: usize,
     indent: Option<usize>,
@@ -109,7 +112,7 @@ fn write_entries<'a>(
 }
 
 fn write_entries_at(
-    entries: &[(&str, &Json<'_>)],
+    entries: &[(&str, &Value)],
     write_key: fn(&str, &mut String),
     limit: usize,
     indent: Option<usize>,
