@@ -119,10 +119,6 @@ impl TokenizerSpec {
             )
             .into_object()
     }
-
-    pub(crate) fn to_json(&self) -> String {
-        Value::Object(self.to_object()).to_string()
-    }
 }
 
 #[derive(Clone, Copy)]
