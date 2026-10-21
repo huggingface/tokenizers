@@ -96,6 +96,13 @@ pub(super) fn write_model(out: &mut Out, model: &PipelineModel) -> Result<()> {
             );
             out.obj_close();
         }
+        PipelineModel::Empty => {
+            return Err(
+                "this tokenizer's model has an empty vocabulary, so it cannot be written \
+                 as a tokenizer.json"
+                    .into(),
+            );
+        }
     }
     Ok(())
 }

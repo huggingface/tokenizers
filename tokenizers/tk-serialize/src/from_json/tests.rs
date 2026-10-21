@@ -340,3 +340,52 @@ fn a_unigram_score_is_serdes_f64_one_ulp_off_the_correctly_rounded_one() {
         "the score must sit exactly one ULP from the f32 the file encodes"
     );
 }
+
+/// Mimics transformers v5 loading a tokenizer.json with empty vocabulary
+#[rustfmt::skip]
+const EMPTY_VOCAB_MODELS: &[&str] = &[
+    r#"{"type": "BPE", "byte_level": false, "unk_token": "<unk>", "fuse_unk": true,
+        "byte_fallback": true, "vocab": {}, "merges": []}"#,
+    r#"{"type": "BPE", "byte_level": true, "vocab": {}, "merges": []}"#,
+    #[cfg(feature = "wordpiece")]
+    r###"{"type": "WordPiece", "unk_token": "[UNK]", "continuing_subword_prefix": "##",
+        "max_input_chars_per_word": 100, "vocab": {}}"###,
+    #[cfg(feature = "wordlevel")]
+    r#"{"type": "WordLevel", "unk_token": "[UNK]", "vocab": {}}"#,
+    #[cfg(feature = "unigram")]
+    r#"{"type": "Unigram", "unk_id": null, "vocab": [], "byte_fallback": false}"#,
+];
+
+#[test]
+fn an_empty_vocab_reads_the_rest_of_the_config() {
+    let padding = r#"{"strategy": "BatchLongest", "direction": "Right", "pad_to_multiple_of": null,
+        "pad_id": 0, "pad_type_id": 0, "pad_token": "[PAD]"}"#;
+    for model in EMPTY_VOCAB_MODELS {
+        let tokenizer = from_json(&config(&[("model", model), ("padding", padding)]))
+            .unwrap_or_else(|e| panic!("{model}: {e}"));
+
+        assert_eq!(
+            tokenizer.get_padding().unwrap().pad_token,
+            "[PAD]",
+            "{model}"
+        );
+    }
+}
+
+#[test]
+fn an_empty_vocab_refuses_to_encode() {
+    for model in EMPTY_VOCAB_MODELS {
+        let tokenizer = from_json(&config(&[("model", model)])).unwrap();
+
+        let result = tokenizer.encode("hello", &EncodeOptions::default()).wait();
+
+        assert!(result.is_err(), "{model}");
+    }
+}
+
+#[test]
+fn an_empty_vocab_still_needs_a_model_type_it_knows() {
+    let model = r#"{"type": "Mystery", "vocab": {}}"#;
+
+    assert!(read_err(&config(&[("model", model)])).contains("`unknown` model"));
+}
