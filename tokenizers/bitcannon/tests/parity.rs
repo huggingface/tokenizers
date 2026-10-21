@@ -336,9 +336,19 @@ fn classifier_matches_onig_categories() {
 
     // (oracle property, "is this tag in it?")
     type Tagged = fn(u8) -> bool;
-    let classes: [(&str, Tagged); 6] = [
-        (r"\p{Cn}", |t| t == Control as u8),
+    let classes: [(&str, Tagged); 10] = [
+        // `NumericOther` too: a digit newer than onig's Unicode is still `char::is_numeric`.
+        (r"\p{Cn}", |t| t == Control as u8 || t == NumericOther as u8),
         (r"\p{L}", |t| t & 0x0F == Letter as u8),
+        // o200k / tekken / kimi read the case refinement of `Letter`
+        (r"[\p{Lu}\p{Lt}]", |t| t == UpperLetter as u8),
+        (r"\p{Ll}", |t| t == LowerLetter as u8),
+        (r"[\p{Lm}\p{Lo}]", |t| {
+            t == Letter as u8 || t == HanLetter as u8
+        }),
+        // kimi's `[\p{Han}]+`. Han only has a refinement on the coarse classes it mostly lands in
+        // (Lm/Lo, Nl, So); a Han `Po`/`Mc` (U+16FE2, U+16FF0) has no tag to carry it yet.
+        (r"\p{Han}", |t| t & 0xF0 == 0x30 || matches!(t, 0x06 | 0x08)),
         (r"\p{N}", |t| matches!(t & 0x0F, 1 | 2)), // NumWord | NumOther
         (r"\p{M}", |t| t == Mark as u8),
         (r"[\p{P}\p{S}]", |t| {
@@ -352,8 +362,9 @@ fn classifier_matches_onig_categories() {
         let cn = prop == r"\p{Cn}";
         for (&c, (i, _)) in chars.iter().zip(text.char_indices()) {
             let oracle = re.is_match(c.encode_utf8(&mut [0; 4]));
-            // `Control` is also Cc/Cf/Co/Cs, so for `\p{Cn}` only "oracle unassigned ⇒ Control" holds.
-            let ok = if cn {
+            // `Control` is also Cc/Cf/Co/Cs, so for `\p{Cn}` only "oracle unassigned ⇒ Control" holds,
+            // and likewise a plain `Mark`/`Punct` tag says nothing about `\p{Han}`.
+            let ok = if cn || (prop == r"\p{Han}" && matches!(tags[i], 0x06 | 0x08)) {
                 !oracle || tagged(tags[i])
             } else {
                 oracle == tagged(tags[i])
@@ -371,5 +382,140 @@ fn classifier_matches_onig_categories() {
         "{} mismatches, first: {:#?}",
         bad.len(),
         &bad[..bad.len().min(20)]
+    );
+}
+
+/// One character per class a grammar can tell apart, so short strings over this alphabet reach every
+/// interaction between classes. A class is the atom tag plus the answer to every predicate the
+/// regexes ask, from the oracle, over the whole code space; each class contributes its shortest
+/// and longest UTF-8 member (the bitstream grammars work on bytes). Characters a regex names
+/// literally are added as their own class, along with the ones onig case-folds onto them.
+fn representative_alphabet() -> Vec<char> {
+    const PREDICATES: &[&str] = &[
+        r"\p{L}",
+        r"[\p{Lu}\p{Lt}]",
+        r"\p{Ll}",
+        r"[\p{Lm}\p{Lo}]",
+        r"\p{M}",
+        r"\p{N}",
+        r"\p{P}",
+        r"\p{S}",
+        r"\s",
+        r"\p{Han}",
+        "[一-龥぀-ゟ゠-ヿ]",
+    ];
+    let res: Vec<Regex> = PREDICATES
+        .iter()
+        .map(|p| Regex::new(&format!(r"\A{p}\z")).unwrap())
+        .collect();
+    let chars: Vec<char> = (0..=0x10FFFFu32).filter_map(char::from_u32).collect();
+    let text: String = chars.iter().collect();
+    let mut tags = vec![0u8; text.len()];
+    classify(text.as_bytes(), &mut tags);
+
+    let mut classes: std::collections::BTreeMap<(u8, Vec<bool>), (char, char)> = Default::default();
+    for (&c, (i, _)) in chars.iter().zip(text.char_indices()) {
+        let s = c.encode_utf8(&mut [0; 4]).to_owned();
+        let key = (tags[i], res.iter().map(|r| r.is_match(&s)).collect());
+        let e = classes.entry(key).or_insert((c, c));
+        if c.len_utf8() > e.1.len_utf8() {
+            e.1 = c;
+        }
+    }
+    let mut alphabet: Vec<char> = classes.values().flat_map(|&(a, b)| [a, b]).collect();
+    alphabet.extend("'stremvldSTREMVLD/\r\n \t!.Aa1\u{017F}\u{212A}".chars());
+    alphabet.sort_unstable();
+    alphabet.dedup();
+    alphabet
+}
+
+#[test]
+#[ignore = "exhaustive; run with --release --ignored"]
+fn representative_alphabet_parity() {
+    let alphabet = representative_alphabet();
+    eprintln!("alphabet: {} chars", alphabet.len());
+    let grammars: Vec<(&str, Split, Oracle)> = vec![
+        (
+            "byte_level",
+            bs_byte_level,
+            Oracle::Whole(Regex::new(GPT2).unwrap()),
+        ),
+        (
+            "cl100k",
+            bs_cl100k,
+            Oracle::Whole(Regex::new(CL100K).unwrap()),
+        ),
+        (
+            "qwen",
+            bs_qwen,
+            Oracle::Whole(Regex::new(&CL100K.replace(r"\p{N}{1,3}", r"\p{N}")).unwrap()),
+        ),
+        ("o200k", bs_o200k, Oracle::Whole(Regex::new(O200K).unwrap())),
+        (
+            "tekken",
+            bs_tekken,
+            Oracle::Whole(Regex::new(TEKKEN).unwrap()),
+        ),
+        ("kimi", bs_kimi, Oracle::Whole(Regex::new(KIMI_K2).unwrap())),
+        ("deepseek", bs_deepseek, Oracle::DeepSeek),
+    ];
+    let n = alphabet.len();
+    let mut failed = Vec::new();
+    for (name, f, oracle) in &grammars {
+        let mut bad: Vec<String> = Vec::new();
+        let mut count = 0usize;
+        let mut realistic: Vec<String> = Vec::new();
+        let other = Regex::new(r"\p{C}").unwrap();
+        let mut check = |t: &str| {
+            if spans(*f, t) != oracle.spans(t) {
+                count += 1;
+                if other.find(t).is_none() && realistic.len() < 6 {
+                    let show = |v: Vec<Span>| {
+                        v.iter()
+                            .map(|s| &t[s.start as usize..s.end as usize])
+                            .collect::<Vec<_>>()
+                    };
+                    realistic.push(format!(
+                        "{t:?} native={:?} onig={:?}",
+                        show(spans(*f, t)),
+                        show(oracle.spans(t))
+                    ));
+                }
+                if bad.len() < 8 {
+                    let show = |v: Vec<Span>| {
+                        v.iter()
+                            .map(|s| &t[s.start as usize..s.end as usize])
+                            .collect::<Vec<_>>()
+                    };
+                    bad.push(format!(
+                        "{t:?} native={:?} onig={:?}",
+                        show(spans(*f, t)),
+                        show(oracle.spans(t))
+                    ));
+                }
+            }
+        };
+        for i in 0..n {
+            for j in 0..n {
+                let two: String = [alphabet[i], alphabet[j]].iter().collect();
+                check(&two);
+                for k in 0..n {
+                    let three: String = [alphabet[i], alphabet[j], alphabet[k]].iter().collect();
+                    check(&three);
+                }
+            }
+        }
+        eprintln!(
+            "{name}: {count} of {} strings differ, e.g. {bad:?}",
+            n * n + n * n * n
+        );
+        eprintln!("  without \\p{{C}}: {realistic:#?}");
+        if count > 0 {
+            failed.push(*name);
+        }
+    }
+    assert!(
+        failed.is_empty(),
+        "grammars disagreeing with onig: {failed:?}"
     );
 }

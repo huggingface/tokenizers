@@ -2,67 +2,81 @@
 //! `cargo run -p bitmap_gen` calls [`generate_atom_tables`] and writes the committed
 //! `bitcannon/src/classify/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
 //! fast3 / bmp_rle / astral)
+use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::sync::OnceLock;
-use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
+use std::sync::{Mutex, OnceLock};
+use unicode_properties::GeneralCategory;
 
-/// Script=Han, sorted and disjoint — the same table `bitcannon::han` carried, now baked into the
-/// atom scheme instead of range-tested per byte at runtime. Extensions past Ext F are included
-/// because onig's `\p{Han}` has them; the parity gate pins this to the oracle's Unicode version.
-const HAN: &[(u32, u32)] = &[
-    (0x2E80, 0x2E99),
-    (0x2E9B, 0x2EF3),
-    (0x2F00, 0x2FD5),
-    (0x3005, 0x3005),
-    (0x3007, 0x3007),
-    (0x3021, 0x3029),
-    (0x3038, 0x303B),
-    (0x3400, 0x4DBF),
-    (0x4E00, 0x9FFF),
-    (0xF900, 0xFA6D),
-    (0xFA70, 0xFAD9),
-    (0x20000, 0x2A6DF),
-    (0x2A700, 0x2B739),
-    (0x2B740, 0x2B81D),
-    (0x2B820, 0x2CEA1),
-    (0x2CEB0, 0x2EBE0),
-    (0x2EBF0, 0x2EE5D),
-    (0x2F800, 0x2FA1D),
-    (0x30000, 0x3134A),
-    (0x31350, 0x323AF),
-];
-
-fn is_han(cp: u32) -> bool {
-    HAN.iter().any(|&(lo, hi)| cp >= lo && cp <= hi)
+/// Every code point of the code space that onig (the regex engine of tokenizers v0.23) puts in
+/// `prop`, one onig pass, cached.
+///
+/// Onig is the oracle: every property a grammar's regex asks about is read from it rather than from
+/// `unicode_properties` (Unicode 17) or the std library, which can be a Unicode version ahead of
+/// tokenizers 0.23. A newer version assigns code points (U+1FAEA), and also moves existing ones
+/// between categories (U+0295 `Ll` → `Lo` in Unicode 17) and scripts.
+fn onig_set(prop: &'static str) -> &'static [bool] {
+    static SETS: OnceLock<Mutex<HashMap<&'static str, &'static [bool]>>> = OnceLock::new();
+    let mut sets = SETS.get_or_init(Default::default).lock().unwrap();
+    sets.entry(prop).or_insert_with(|| {
+        let re = onig::Regex::new(&format!(r"\A{prop}\z")).expect("onig property");
+        let set: Vec<bool> = (0..=0x10FFFFu32)
+            .map(|cp| char::from_u32(cp).is_some_and(|c| re.is_match(c.encode_utf8(&mut [0; 4]))))
+            .collect();
+        set.leak()
+    })
 }
 
-/// Whether the onig crate (the regex engine of tokenizers v0.23) gives character `c`
-/// the `Cn` unicode category (= unassigned)
-///
-/// `unicode_properties` uses Unicode 17 specification, but onig and tokenizers 0.23 rely on Unicode 16 specification
-/// This is a backwards-compatibility fix
-fn onig_unassigned(c: char) -> bool {
-    static UNASSIGNED: OnceLock<Vec<bool>> = OnceLock::new();
-    // Build the unassigned table once
-    let unassigned = UNASSIGNED.get_or_init(|| {
-        // Cn is the unicode category "unassigned"
-        let re = onig::Regex::new(r"\A\p{Cn}\z").expect("onig \\p{Cn}");
-        (0..=0x10FFFFu32)
-            .map(|cp| char::from_u32(cp).is_some_and(|c| re.is_match(c.encode_utf8(&mut [0; 4]))))
-            .collect()
-    });
-    unassigned[c as usize]
+fn onig_has(prop: &'static str, c: char) -> bool {
+    onig_set(prop)[c as usize]
+}
+
+/// The general category onig gives `c`. `Unassigned` (`\p{Cn}`) when none of the others matches.
+fn onig_category(c: char) -> GeneralCategory {
+    use GeneralCategory::*;
+    const CATEGORIES: [(&str, GeneralCategory); 29] = [
+        (r"\p{Lu}", UppercaseLetter),
+        (r"\p{Ll}", LowercaseLetter),
+        (r"\p{Lt}", TitlecaseLetter),
+        (r"\p{Lm}", ModifierLetter),
+        (r"\p{Lo}", OtherLetter),
+        (r"\p{Mn}", NonspacingMark),
+        (r"\p{Mc}", SpacingMark),
+        (r"\p{Me}", EnclosingMark),
+        (r"\p{Nd}", DecimalNumber),
+        (r"\p{Nl}", LetterNumber),
+        (r"\p{No}", OtherNumber),
+        (r"\p{Pc}", ConnectorPunctuation),
+        (r"\p{Pd}", DashPunctuation),
+        (r"\p{Ps}", OpenPunctuation),
+        (r"\p{Pe}", ClosePunctuation),
+        (r"\p{Pi}", InitialPunctuation),
+        (r"\p{Pf}", FinalPunctuation),
+        (r"\p{Po}", OtherPunctuation),
+        (r"\p{Sm}", MathSymbol),
+        (r"\p{Sc}", CurrencySymbol),
+        (r"\p{Sk}", ModifierSymbol),
+        (r"\p{So}", OtherSymbol),
+        (r"\p{Zs}", SpaceSeparator),
+        (r"\p{Zl}", LineSeparator),
+        (r"\p{Zp}", ParagraphSeparator),
+        (r"\p{Cc}", Control),
+        (r"\p{Cf}", Format),
+        (r"\p{Cs}", Surrogate),
+        (r"\p{Co}", PrivateUse),
+    ];
+    CATEGORIES
+        .iter()
+        .find(|(prop, _)| onig_has(prop, c))
+        .map_or(Unassigned, |&(_, category)| category)
 }
 
 // Produce the atom tag from the character.
 fn atom(c: char) -> u8 {
     use GeneralCategory::*;
     let cp = c as u32;
-    if onig_unassigned(c) {
-        // unassigned in the onig's Unicode version
-        return 12;
-    }
-    match c.general_category() {
+    let category = onig_category(c);
+    let is_han = onig_has(r"\p{Han}", c);
+    match category {
         // \p{L}: low nibble Letter(0); high nibble = o200k case refinement (Lu∪Lt=1, Ll=2, Lm∪Lo=0).
         // Coarse consumers mask it off (`in_mask` / SIMD `& 0x0F`); only `fsm_o200k` reads the nibble.
         UppercaseLetter | TitlecaseLetter => return 0x10,
@@ -70,10 +84,10 @@ fn atom(c: char) -> u8 {
         // Script=Han takes refinement 3 wherever it lands, so kimi's `[\p{Han}]+` arm is a LUT row
         // instead of a per-byte range test. Han is orthogonal to the category (98682 Lo, 329 So,
         // 13 Nl, 2 Lm), hence a refinement on each of the three coarse classes it touches.
-        ModifierLetter | OtherLetter => return if is_han(cp) { 0x30 } else { 0 },
+        ModifierLetter | OtherLetter => return if is_han { 0x30 } else { 0 },
         // \p{N}: Nd∪Nl are numeric AND `\w` (NumWord); No is numeric-only (NumOther).
         DecimalNumber => return 1,
-        LetterNumber => return if is_han(cp) { 0x31 } else { 1 },
+        LetterNumber => return if is_han { 0x31 } else { 1 },
         OtherNumber => return 2,
         _ => {}
     }
@@ -83,7 +97,7 @@ fn atom(c: char) -> u8 {
     if cp == 0x20 {
         return 4;
     }
-    if c.is_whitespace() {
+    if onig_has(r"\s", c) {
         return 5; // \s ∖ {\r\n, 0x20}
     }
     if cp == 0x200C || cp == 0x200D {
@@ -91,26 +105,23 @@ fn atom(c: char) -> u8 {
         // deepseek/o200k FSMs end a letter run on the tag alone, no `text` peek. Coarse consumers mask it.
         return 6 | (2 << 4); // 0x26
     }
-    if matches!(
-        c.general_category(),
-        NonspacingMark | SpacingMark | EnclosingMark
-    ) {
+    if matches!(category, NonspacingMark | SpacingMark | EnclosingMark) {
         return 6; // \p{M}: real marks — ∈ deepseek/o200k `[\p{L}\p{M}]` and ∈ `\w`
     }
-    if c.is_alphabetic() {
+    if onig_has(r"\p{Alphabetic}", c) {
         // Other_Alphabetic non-mark (circled letters Ⓘ …, category So): a `\w` word char (coarse Mark →
         // WORD mask sees it) but NOT `[\p{L}\p{M}]`. High nibble = refine::ALPHA_SYM(1) tells deepseek /
         // o200k to treat it as the `\p{S}` symbol it categorically is, not a letter/mark.
         return 6 | (1 << 4); // 0x16: coarse Mark, refine ALPHA_SYM
     }
-    if c.general_category() == ConnectorPunctuation {
+    if category == ConnectorPunctuation {
         return 7; // \p{Pc}
     }
     if cp == 0x27 {
         return 9; // apostrophe
     }
     if matches!(
-        c.general_category(),
+        category,
         DashPunctuation
             | OpenPunctuation
             | ClosePunctuation
@@ -124,13 +135,16 @@ fn atom(c: char) -> u8 {
         return 8; // ASCII symbols ($ + < = > ^ ` | ~) that `[^\s\p{L}\p{N}]` / is_punc treats as punct
     }
     if c.is_numeric() {
-        return 11; // NumericOther: is_numeric ∖ \p{N}
+        // NumericOther: is_numeric ∖ \p{N}. Std's own Unicode version on purpose, since the Digits
+        // pre-tokenizer of tokenizers 0.23 splits on `char::is_numeric`: a digit newer than onig's
+        // Unicode (U+11DE0) is a digit to Digits, but stays `[^\s\p{L}\p{N}]` to every regex.
+        return 11;
     }
     if matches!(
-        c.general_category(),
+        category,
         MathSymbol | CurrencySymbol | ModifierSymbol | OtherSymbol
     ) {
-        return if is_han(cp) { 0x3A } else { 10 }; // non-ASCII \p{S}
+        return if is_han { 0x3A } else { 10 }; // non-ASCII \p{S}
     }
     12 // control ∪ unassigned
 }
