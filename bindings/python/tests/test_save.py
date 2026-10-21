@@ -2,7 +2,6 @@ import json
 
 import pytest
 
-from conftest import BERT
 from tokenizers import Padding, Tokenizer
 
 
