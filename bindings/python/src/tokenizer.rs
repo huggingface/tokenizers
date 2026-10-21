@@ -62,7 +62,7 @@ impl Tokenizer {
     }
 
     /// Returns with the lock released, so encodes can run concurrently.
-    /// Calling `self.spec().pipeline()?.encode(..)` would hold the Mutex lock for the whole encode.
+    /// Calling `self.spec().compile()?.encode(..)` would hold the Mutex lock for the whole encode.
     fn pipeline(&self) -> tk::Result<PipelineTokenizer> {
         self.spec().compile()
     }

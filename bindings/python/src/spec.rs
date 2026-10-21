@@ -12,8 +12,8 @@ pub(crate) type JsonObject = Map<String, Value>;
 
 const VERSIONS: [&str; 2] = ["1.0", "2.0"];
 
-/// Holds the specification (json) to build and a [`PipelineTokenizer`] and the compiled [`PipelineTokenizer`]
-/// Compilation is lazy
+/// Holds the specification (json) of a [`PipelineTokenizer`], and the [`PipelineTokenizer`] last
+/// compiled from it. Compilation is lazy.
 #[derive(Clone)]
 pub(crate) struct TokenizerSpec {
     /// The tokenizers.json version field
@@ -53,7 +53,7 @@ impl TokenizerSpec {
             Some(v) => return Err(format!("unknown tokenizer version {v}").into()),
         };
         let mut model = take_object(&mut file, "model")?;
-        // Older files don't have a "model" field
+        // Older files leave the model's "type" out. 0.23 fills it in when it saves the file.
         fill_model_type(&mut model);
         let spec = Self {
             version,
