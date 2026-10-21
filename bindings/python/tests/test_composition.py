@@ -104,6 +104,37 @@ def test_handle_keeps_its_component_after_reassignment(gpt2, bert):
     assert "ignore_merges" not in json.loads(gpt2.model.__getstate__())
 
 
+# 0.23 writes each of these as its type alone.
+@pytest.mark.parametrize(
+    ("key", "cls"),
+    [
+        ("normalizer", normalizers.Lowercase),
+        ("normalizer", normalizers.ByteLevel),
+        ("normalizer", normalizers.StripAccents),
+        ("normalizer", normalizers.NFC),
+        ("normalizer", normalizers.NFD),
+        ("normalizer", normalizers.NFKC),
+        ("normalizer", normalizers.NFKD),
+        ("normalizer", normalizers.Nmt),
+        ("pre_tokenizer", pre_tokenizers.Whitespace),
+        ("pre_tokenizer", pre_tokenizers.WhitespaceSplit),
+        ("pre_tokenizer", pre_tokenizers.BertPreTokenizer),
+        ("pre_tokenizer", pre_tokenizers.UnicodeScripts),
+        ("decoder", decoders.ByteFallback),
+        ("decoder", decoders.Fuse),
+    ],
+    ids=lambda param: param if isinstance(param, str) else param.__name__,
+)
+def test_stateless_component(wiki, key, cls):
+    tokenizer = copy.deepcopy(wiki)
+    component = cls()
+    assert json.loads(component.__getstate__()) == {"type": cls.__name__}
+    assert type(pickle.loads(pickle.dumps(component))) is cls
+    setattr(tokenizer, key, component)
+    assert type(getattr(tokenizer, key)) is cls
+    tokenizer.decode(tokenizer.encode(TEXT).ids)
+
+
 def test_handle_outlives_its_slot(gpt2):
     pre_tokenizer = gpt2.pre_tokenizer
     gpt2.pre_tokenizer = None

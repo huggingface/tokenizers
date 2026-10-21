@@ -21,6 +21,11 @@ impl ComponentSpec {
         Arc::new(Self(Mutex::new(Arc::new(json))))
     }
 
+    /// A new [`ComponentSpec`] whose JSON is `{"type": json_type}`.
+    pub(crate) fn of_type(json_type: &str) -> Arc<Self> {
+        Self::new(Map::from_iter([("type".to_owned(), json_type.into())]))
+    }
+
     /// A new [`ComponentSpec`] over the same JSON. An edit of either one copies the JSON first.
     pub(crate) fn detached(&self) -> Arc<Self> {
         Arc::new(Self(Mutex::new(self.json())))

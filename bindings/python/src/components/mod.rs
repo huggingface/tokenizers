@@ -72,6 +72,16 @@ pub(crate) trait ComponentKind:
         PyClassInitializer::from(Component { spec }).add_subclass(Self::default())
     }
 
+    /// Builds `subclass` around `spec`, for example a `BPE` for a model whose `"type"` is `"BPE"`.
+    fn subclass_from_spec<T: PyClass<BaseType = Self>>(
+        py: Python<'_>,
+        spec: Arc<ComponentSpec>,
+        subclass: T,
+    ) -> PyResult<Py<Self>> {
+        let init = Self::make_init(spec).add_subclass(subclass);
+        Ok(Bound::new(py, init)?.into_super().unbind())
+    }
+
     /// Get a reference to the underlying [`ComponentSpec`]
     fn spec<'a>(handle: &'a Bound<'_, Self>) -> &'a Arc<ComponentSpec> {
         &handle.as_super().get().spec

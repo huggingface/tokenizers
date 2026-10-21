@@ -26,10 +26,7 @@ impl ComponentKind for Model {
 
     fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
         match spec.json().get("type").and_then(Value::as_str) {
-            Some("BPE") => {
-                let init = Self::make_init(spec).add_subclass(Bpe);
-                Ok(Bound::new(py, init)?.into_super().unbind())
-            }
+            Some("BPE") => Self::subclass_from_spec(py, spec, Bpe),
             _ => Py::new(py, Self::make_init(spec)),
         }
     }
