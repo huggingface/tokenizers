@@ -31,7 +31,9 @@ path = "src/lib.rs"
 ############ Required dependencies ###############################
 bitcannon = { path = "../bitcannon", version = "0.1.0-dev.2" }
 rand = "0.10"
-ptr_hash = { version = "2.1.2", default-features = false }
+# No `rayon` feature: ptr_hash would build on rayon's global pool, which has no fork handler, so a
+# process forked after a load would hang on its own first load.
+ptr_hash = { version = "2.1.3", default-features = false }
 unicode_categories = "0.1"
 log = "0.4"
 thiserror = "2"
