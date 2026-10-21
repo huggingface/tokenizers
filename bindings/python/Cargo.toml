@@ -21,9 +21,11 @@ pyo3 = { version = "=0.29", default-features = false, features = [
 ] }
 #TODO: this will be a soft dependency later on IMO.
 numpy = "=0.29"
+# `preserve_order`: `repr` and the pickle keep the key order of the `tokenizer.json` as written.
+serde_json = { version = "1.0", features = ["preserve_order"] }
 # Renamed: this crate's own lib is `tokenizers` too.
 tk = { package = "tokenizers", path = "../../tokenizers", default-features = false, features = [
-  # `to_json`, for `__repr__` and pickling.
+  # `str_to_json`, for `__repr__`.
   "serialize",
   "parallelism",
   "normalizers",
