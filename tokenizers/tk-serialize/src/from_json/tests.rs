@@ -242,6 +242,46 @@ fn flattens_a_normalizer_sequence_and_drops_an_empty_one() {
     );
 }
 
+const DEEPSEEK_PRE_TOKENIZER: &str = r##"{"type": "Sequence", "pretokenizers": [
+    {"type": "Split", "pattern": {"Regex": "\\p{N}{1,3}"}, "behavior": "Isolated", "invert": false},
+    {"type": "Split", "pattern": {"Regex": "[一-龥぀-ゟ゠-ヿ]+"}, "behavior": "Isolated", "invert": false},
+    {"type": "Split", "pattern": {"Regex": "[!\"#$%&'()*+,\\-./:;<=>?@\\[\\\\\\]^_`{|}~][A-Za-z]+|[^\r\n\\p{L}\\p{P}\\p{S}]?[\\p{L}\\p{M}]+| ?[\\p{P}\\p{S}]+[\r\n]*|\\s*[\r\n]+|\\s+(?!\\S)|\\s+"}, "behavior": "Isolated", "invert": false}
+]}"##;
+
+/// regression test for issue #2557:
+/// U+1FAEA is a new codepoint in Unicode 17, so tokenizers 0.23 (onig, Unicode 16) marks it unassigned.
+/// U+1FAE9 (Unicode 16 codepoint) is the control.
+#[test]
+fn deepseek_splits_a_unicode_17_code_point_like_0_23() {
+    use tk_encode::pipeline::{PreTokenizer as _, PreTokenizerScratch};
+
+    let json = config(&[("pre_tokenizer", DEEPSEEK_PRE_TOKENIZER)]);
+    let doc = Json::parse(&json).unwrap();
+    let pretok = read_pre_tokenizer(doc.field("pre_tokenizer")).unwrap();
+    // Esnure we're testing bitcannon split
+    assert!(
+        matches!(&pretok, PipelinePreTokenizer::Sequence(seq) if seq.is_deepseek()),
+        "deepseek's sequence is not routed to its native pass"
+    );
+
+    for (text, expected) in [
+        (" \u{1FAEA}", &[" ", "\u{1FAEA}"][..]),
+        (" \u{1FAEA}\u{1FAEA}", &[" ", "\u{1FAEA}\u{1FAEA}"]),
+        ("a\u{1FAEA}b", &["a", "\u{1FAEA}b"]),
+        (" \u{1FAE9}", &[" \u{1FAE9}"]),
+    ] {
+        let mut spans = Vec::new();
+        pretok
+            .pre_tokenize(text, &mut PreTokenizerScratch::default(), &mut spans)
+            .unwrap();
+        let pieces: Vec<&str> = spans
+            .iter()
+            .map(|s| &text[s.start as usize..s.end as usize])
+            .collect();
+        assert_eq!(pieces, expected, "{text:?}");
+    }
+}
+
 /// The byte-level map is a model field, and the pre-tokenizer half it used to imply is gone: with
 /// no `pre_tokenizer` there is no splitter at all, whatever the model says.
 #[test]
