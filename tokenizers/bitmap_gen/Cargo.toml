@@ -9,7 +9,7 @@ authors = ["Arthur Zucker <arthur@huggingface.co>", "Luc Georges <luc@huggingfac
 publish = false
 
 [dependencies]
-# Current Unicode general categories (single source — replaces the frozen-at-Unicode-9.0
+# The `GeneralCategory` enum. The categories themselves come from onig below (replaces the frozen-at-Unicode-9.0
 # `unicode_categories`, whose stale `is_letter` mis-classified every post-9.0 letter).
 unicode-properties = "0.1"
 # Oracle for backwards compatibility with tokenizers 0.23
