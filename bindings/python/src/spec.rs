@@ -33,6 +33,8 @@ pub(crate) struct TokenizerSpec {
 /// Required data to build a [`PipelineTokenizer`]
 #[derive(Clone, PartialEq)]
 struct PipelineSpec {
+    /// Only in "2.0" files
+    role_to_token: Option<Arc<Value>>,
     added_tokens: Arc<Value>,
     normalizer: Option<Arc<JsonObject>>,
     pre_tokenizer: Option<Arc<JsonObject>>,
@@ -52,6 +54,11 @@ impl TokenizerSpec {
             Some(Value::String(v)) if VERSIONS.contains(&v.as_str()) => v,
             Some(v) => return Err(format!("unknown tokenizer version {v}").into()),
         };
+        // 0.23 refuses `role_to_token`, so a "1.0" file leaves it to the unknown keys below.
+        let role_to_token = match version.as_str() {
+            "2.0" => file.shift_remove("role_to_token").map(Arc::new),
+            _ => None,
+        };
         let mut model = take_object(&mut file, "model")?;
         // Older files leave the model's "type" out. 0.23 fills it in when it saves the file.
         fill_model_type(&mut model);
@@ -60,6 +67,7 @@ impl TokenizerSpec {
             truncation: truncation_from_json(&take(&mut file, "truncation").to_string())?,
             padding: padding_from_json(&take(&mut file, "padding").to_string())?,
             pipeline: PipelineSpec {
+                role_to_token,
                 added_tokens: Arc::new(take(&mut file, "added_tokens")),
                 normalizer: take_optional_object(&mut file, "normalizer")?,
                 pre_tokenizer: take_optional_object(&mut file, "pre_tokenizer")?,
@@ -93,13 +101,19 @@ impl TokenizerSpec {
 
     pub(crate) fn to_object(&self) -> JsonObject {
         let spec = &self.pipeline;
-        let keys = [
+        let head = [
             ("version", Value::from(self.version.as_str())),
             (
                 "truncation",
                 params(truncation_to_json(self.truncation.as_ref())),
             ),
             ("padding", params(padding_to_json(self.padding.as_ref()))),
+        ];
+        let role_to_token = spec
+            .role_to_token
+            .as_deref()
+            .map(|roles| ("role_to_token", roles.clone()));
+        let tail = [
             ("added_tokens", Value::clone(&spec.added_tokens)),
             ("normalizer", optional_object(&spec.normalizer)),
             ("pre_tokenizer", optional_object(&spec.pre_tokenizer)),
@@ -107,7 +121,11 @@ impl TokenizerSpec {
             ("decoder", optional_object(&spec.decoder)),
             ("model", Value::Object(JsonObject::clone(&spec.model))),
         ];
-        keys.into_iter().map(|(k, v)| (k.to_owned(), v)).collect()
+        head.into_iter()
+            .chain(role_to_token)
+            .chain(tail)
+            .map(|(k, v)| (k.to_owned(), v))
+            .collect()
     }
 
     pub(crate) fn to_json(&self) -> String {

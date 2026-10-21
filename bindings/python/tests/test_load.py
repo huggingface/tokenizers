@@ -1,4 +1,5 @@
 import json
+import pickle
 
 import pytest
 
@@ -47,4 +48,22 @@ def test_refuses_unknown_version(tmp_path):
     file = {**json.loads(BERT.read_text()), "version": "3.0"}
 
     with pytest.raises(ValueError, match="3.0"):
+        Tokenizer.from_file(write(tmp_path, file))
+
+
+# The Rust writer adds `role_to_token` to every "2.0" file.
+def test_keeps_role_to_token_in_a_2_0_file(tmp_path):
+    file = {**json.loads(BERT.read_text()), "version": "2.0"}
+    file["role_to_token"] = {"sep_token": "[SEP]"}
+
+    restored = pickle.loads(pickle.dumps(Tokenizer.from_file(write(tmp_path, file))))
+
+    assert 'role_to_token={"sep_token": "[SEP]"}' in repr(restored)
+
+
+# 0.23 refuses `role_to_token`, so a "1.0" file can't carry it.
+def test_refuses_role_to_token_in_a_1_0_file(tmp_path):
+    file = {**json.loads(BERT.read_text()), "role_to_token": None}
+
+    with pytest.raises(ValueError, match="`role_to_token`"):
         Tokenizer.from_file(write(tmp_path, file))
