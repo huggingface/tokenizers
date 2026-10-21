@@ -151,14 +151,9 @@ class Tokenizer:
         """
     def __reduce__(self, /) -> tuple[Any, tuple[str]]:
         """
-        Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
+        Pickle rebuilds a `Tokenizer` by calling `from_str` with these arguments.
         """
     def __repr__(self, /) -> str: ...
-    @staticmethod
-    def _unpickle(json: str) -> Tokenizer:
-        """
-        Unpickles a `Tokenizer`
-        """
     def decode(
         self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = True
     ) -> str:
@@ -321,6 +316,15 @@ class Tokenizer:
         tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", local_files_only=True)
         ```
         """
+    @staticmethod
+    def from_str(json: str) -> Tokenizer:
+        """
+        Loads a `tokenizer.json` from its content.
+
+        Args:
+            json:
+                The content of a `tokenizer.json`.
+        """
     @property
     def padding(self, /) -> Padding | None:
         """
@@ -329,6 +333,24 @@ class Tokenizer:
         """
     @padding.setter
     def padding(self, /, padding: Padding | None) -> None: ...
+    def save(self, /, path: str | PathLike[str], pretty: bool = True) -> None:
+        """
+        Writes the tokenizer to a `tokenizer.json` file.
+
+        Args:
+            path:
+                The file to write.
+            pretty:
+                Whether to indent the JSON.
+        """
+    def to_str(self, /, pretty: bool = False) -> str:
+        """
+        Writes the tokenizer as the content of a `tokenizer.json`.
+
+        Args:
+            pretty:
+                Whether to indent the JSON.
+        """
     def tokenize(
         self,
         /,

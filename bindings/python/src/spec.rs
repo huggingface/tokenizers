@@ -153,9 +153,6 @@ impl TokenizerSpec {
         self.file(&self.pipeline.map(|spec| spec.json()))
     }
 
-    pub(crate) fn to_json(&self) -> String {
-        Value::Object(self.to_object()).to_string()
-    }
     fn file(&self, spec: &PipelineSpec<Arc<JsonObject>>) -> JsonObject {
         let head = [
             ("version", Value::from(self.version.as_str())),
