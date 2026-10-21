@@ -445,6 +445,15 @@ class Tokenizer:
         tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", local_files_only=True)
         ```
         """
+    @staticmethod
+    def from_str(json: str) -> Tokenizer:
+        """
+        Loads a `tokenizer.json` from its content.
+
+        Args:
+            json:
+                The content of a `tokenizer.json`.
+        """
     @property
     def model(self, /) -> Model:
         """
@@ -484,6 +493,24 @@ class Tokenizer:
         """
     @pre_tokenizer.setter
     def pre_tokenizer(self, /, pre_tokenizer: PreTokenizer | None) -> None: ...
+    def save(self, /, path: str | PathLike[str], pretty: bool = True) -> None:
+        """
+        Writes the tokenizer to a `tokenizer.json` file.
+
+        Args:
+            path:
+                The file to write.
+            pretty:
+                Whether to indent the JSON.
+        """
+    def to_str(self, /, pretty: bool = False) -> str:
+        """
+        Writes the tokenizer as the content of a `tokenizer.json`.
+
+        Args:
+            pretty:
+                Whether to indent the JSON.
+        """
     @property
     def truncation(self, /) -> Truncation | None:
         """
