@@ -1,95 +1,54 @@
-//! Dev-time only (depends on `unicode-properties` and `onig`); nothing here is linked into the runtime crate.
+//! Dev-time only (depends on `onig`); nothing here is linked into the runtime crate.
 //! `cargo run -p bitmap_gen` calls [`generate_atom_tables`] and writes the committed
 //! `bitcannon/src/classify/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
 //! fast3 / bmp_rle / astral)
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::sync::{Mutex, OnceLock};
-use unicode_properties::GeneralCategory;
 
-/// Every code point of the code space that onig (the regex engine of tokenizers v0.23) puts in
-/// `prop`, one onig pass, cached.
+/// The oracle: onig, the regex engine of tokenizers 0.23, answering "is `c` in `prop`?".
 ///
-/// Onig is the oracle: every property a grammar's regex asks about is read from it rather than from
-/// `unicode_properties` (Unicode 17) or the std library, which can be a Unicode version ahead of
-/// tokenizers 0.23. A newer version assigns code points (U+1FAEA), and also moves existing ones
-/// between categories (U+0295 `Ll` → `Lo` in Unicode 17) and scripts.
-fn onig_set(prop: &'static str) -> &'static [bool] {
-    static SETS: OnceLock<Mutex<HashMap<&'static str, &'static [bool]>>> = OnceLock::new();
-    let mut sets = SETS.get_or_init(Default::default).lock().unwrap();
-    sets.entry(prop).or_insert_with(|| {
-        let re = onig::Regex::new(&format!(r"\A{prop}\z")).expect("onig property");
-        let set: Vec<bool> = (0..=0x10FFFFu32)
-            .map(|cp| char::from_u32(cp).is_some_and(|c| re.is_match(c.encode_utf8(&mut [0; 4]))))
-            .collect();
-        set.leak()
-    })
-}
+/// Fixes the unicode version and ensures backwards-compatibility with tokenizers 0.23
+#[derive(Default)]
+struct Onig(HashMap<&'static str, onig::Regex>);
 
-fn onig_has(prop: &'static str, c: char) -> bool {
-    onig_set(prop)[c as usize]
-}
-
-/// The general category onig gives `c`. `Unassigned` (`\p{Cn}`) when none of the others matches.
-fn onig_category(c: char) -> GeneralCategory {
-    use GeneralCategory::*;
-    const CATEGORIES: [(&str, GeneralCategory); 29] = [
-        (r"\p{Lu}", UppercaseLetter),
-        (r"\p{Ll}", LowercaseLetter),
-        (r"\p{Lt}", TitlecaseLetter),
-        (r"\p{Lm}", ModifierLetter),
-        (r"\p{Lo}", OtherLetter),
-        (r"\p{Mn}", NonspacingMark),
-        (r"\p{Mc}", SpacingMark),
-        (r"\p{Me}", EnclosingMark),
-        (r"\p{Nd}", DecimalNumber),
-        (r"\p{Nl}", LetterNumber),
-        (r"\p{No}", OtherNumber),
-        (r"\p{Pc}", ConnectorPunctuation),
-        (r"\p{Pd}", DashPunctuation),
-        (r"\p{Ps}", OpenPunctuation),
-        (r"\p{Pe}", ClosePunctuation),
-        (r"\p{Pi}", InitialPunctuation),
-        (r"\p{Pf}", FinalPunctuation),
-        (r"\p{Po}", OtherPunctuation),
-        (r"\p{Sm}", MathSymbol),
-        (r"\p{Sc}", CurrencySymbol),
-        (r"\p{Sk}", ModifierSymbol),
-        (r"\p{So}", OtherSymbol),
-        (r"\p{Zs}", SpaceSeparator),
-        (r"\p{Zl}", LineSeparator),
-        (r"\p{Zp}", ParagraphSeparator),
-        (r"\p{Cc}", Control),
-        (r"\p{Cf}", Format),
-        (r"\p{Cs}", Surrogate),
-        (r"\p{Co}", PrivateUse),
-    ];
-    CATEGORIES
-        .iter()
-        .find(|(prop, _)| onig_has(prop, c))
-        .map_or(Unassigned, |&(_, category)| category)
+impl Onig {
+    fn matches(&mut self, prop: &'static str, c: char) -> bool {
+        self.0
+            .entry(prop)
+            .or_insert_with(|| onig::Regex::new(&format!(r"\A{prop}\z")).expect("onig property"))
+            .is_match(c.encode_utf8(&mut [0; 4]))
+    }
 }
 
 // Produce the atom tag from the character.
-fn atom(c: char) -> u8 {
-    use GeneralCategory::*;
+fn atom(c: char, onig: &mut Onig) -> u8 {
     let cp = c as u32;
-    let category = onig_category(c);
-    let is_han = onig_has(r"\p{Han}", c);
-    match category {
-        // \p{L}: low nibble Letter(0); high nibble = o200k case refinement (Lu∪Lt=1, Ll=2, Lm∪Lo=0).
-        // Coarse consumers mask it off (`in_mask` / SIMD `& 0x0F`); only `fsm_o200k` reads the nibble.
-        UppercaseLetter | TitlecaseLetter => return 0x10,
-        LowercaseLetter => return 0x20,
-        // Script=Han takes refinement 3 wherever it lands, so kimi's `[\p{Han}]+` arm is a LUT row
-        // instead of a per-byte range test. Han is orthogonal to the category (98682 Lo, 329 So,
-        // 13 Nl, 2 Lm), hence a refinement on each of the three coarse classes it touches.
-        ModifierLetter | OtherLetter => return if is_han { 0x30 } else { 0 },
-        // \p{N}: Nd∪Nl are numeric AND `\w` (NumWord); No is numeric-only (NumOther).
-        DecimalNumber => return 1,
-        LetterNumber => return if is_han { 0x31 } else { 1 },
-        OtherNumber => return 2,
-        _ => {}
+    let mut char_matches = |prop| onig.matches(prop, c);
+    // Script=Han takes refinement 3 wherever it lands, so kimi's `[\p{Han}]+` arm is a LUT row
+    // instead of a per-byte range test. Han is orthogonal to the category (98682 Lo, 329 So,
+    // 13 Nl, 2 Lm), hence a refinement on each of the three coarse classes it touches.
+    let han = char_matches(r"\p{Han}");
+
+    // \p{L}: low nibble Letter(0); high nibble = o200k case refinement (Lu∪Lt=1, Ll=2, Lm∪Lo=0).
+    // Coarse consumers mask it off (`in_mask` / SIMD `& 0x0F`); only `fsm_o200k` reads the nibble.
+    if char_matches(r"[\p{Lu}\p{Lt}]") {
+        return 0x10;
+    }
+    if char_matches(r"\p{Ll}") {
+        return 0x20;
+    }
+    if char_matches(r"[\p{Lm}\p{Lo}]") {
+        return if han { 0x30 } else { 0 };
+    }
+    // \p{N}: Nd∪Nl are numeric AND `\w` (NumWord); No is numeric-only (NumOther).
+    if char_matches(r"\p{Nd}") {
+        return 1;
+    }
+    if char_matches(r"\p{Nl}") {
+        return if han { 0x31 } else { 1 };
+    }
+    if char_matches(r"\p{No}") {
+        return 2;
     }
     if cp == 0x0A || cp == 0x0D {
         return 3;
@@ -97,7 +56,7 @@ fn atom(c: char) -> u8 {
     if cp == 0x20 {
         return 4;
     }
-    if onig_has(r"\s", c) {
+    if char_matches(r"\s") {
         return 5; // \s ∖ {\r\n, 0x20}
     }
     if cp == 0x200C || cp == 0x200D {
@@ -105,30 +64,22 @@ fn atom(c: char) -> u8 {
         // deepseek/o200k FSMs end a letter run on the tag alone, no `text` peek. Coarse consumers mask it.
         return 6 | (2 << 4); // 0x26
     }
-    if matches!(category, NonspacingMark | SpacingMark | EnclosingMark) {
+    if char_matches(r"\p{M}") {
         return 6; // \p{M}: real marks — ∈ deepseek/o200k `[\p{L}\p{M}]` and ∈ `\w`
     }
-    if onig_has(r"\p{Alphabetic}", c) {
+    if char_matches(r"\p{Alphabetic}") {
         // Other_Alphabetic non-mark (circled letters Ⓘ …, category So): a `\w` word char (coarse Mark →
         // WORD mask sees it) but NOT `[\p{L}\p{M}]`. High nibble = refine::ALPHA_SYM(1) tells deepseek /
         // o200k to treat it as the `\p{S}` symbol it categorically is, not a letter/mark.
         return 6 | (1 << 4); // 0x16: coarse Mark, refine ALPHA_SYM
     }
-    if category == ConnectorPunctuation {
+    if char_matches(r"\p{Pc}") {
         return 7; // \p{Pc}
     }
     if cp == 0x27 {
         return 9; // apostrophe
     }
-    if matches!(
-        category,
-        DashPunctuation
-            | OpenPunctuation
-            | ClosePunctuation
-            | InitialPunctuation
-            | FinalPunctuation
-            | OtherPunctuation
-    ) {
+    if char_matches(r"\p{P}") {
         return 8; // \p{P} ∖ Pc
     }
     if cp < 0x80 && c.is_ascii_punctuation() {
@@ -140,11 +91,8 @@ fn atom(c: char) -> u8 {
         // Unicode (U+11DE0) is a digit to Digits, but stays `[^\s\p{L}\p{N}]` to every regex.
         return 11;
     }
-    if matches!(
-        category,
-        MathSymbol | CurrencySymbol | ModifierSymbol | OtherSymbol
-    ) {
-        return if is_han { 0x3A } else { 10 }; // non-ASCII \p{S}
+    if char_matches(r"\p{S}") {
+        return if han { 0x3A } else { 10 }; // non-ASCII \p{S}
     }
     12 // control ∪ unassigned
 }
@@ -401,7 +349,10 @@ fn generate_tables(struct_name: &str, kind: &str, classify: &dyn Fn(u32) -> u8) 
 /// Atom tables — the 12-way category alphabet (`ATOM_TABLES`), with the `Letter` coarse class carrying an
 /// o200k case refinement in its high nibble (see [`atom`]).
 pub fn generate_atom_tables() -> String {
-    generate_tables("ATOM_TABLES", "atom", &|cp| {
-        char::from_u32(cp).map(atom).unwrap_or(10)
-    })
+    // Classify the code space once: `generate_tables` asks about every code point several times.
+    let mut onig = Onig::default();
+    let tags: Vec<u8> = (0..=0x10FFFFu32)
+        .map(|cp| char::from_u32(cp).map_or(10, |c| atom(c, &mut onig)))
+        .collect();
+    generate_tables("ATOM_TABLES", "atom", &|cp| tags[cp as usize])
 }
