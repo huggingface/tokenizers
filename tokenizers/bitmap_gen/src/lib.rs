@@ -1,8 +1,9 @@
-//! Dev-time only (depends on `unicode-properties`); nothing here is linked into the runtime crate.
+//! Dev-time only (depends on `unicode-properties` and `onig`); nothing here is linked into the runtime crate.
 //! `cargo run -p bitmap_gen` calls [`generate_atom_tables`] and writes the committed
 //! `bitcannon/src/classify/atom_tables.rs`. It bakes the dense `Tables` layout (ascii / 2-byte group / 3-byte
 //! fast3 / bmp_rle / astral)
 use std::fmt::Write as _;
+use std::sync::OnceLock;
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
 /// Script=Han, sorted and disjoint — the same table `bitcannon::han` carried, now baked into the
@@ -35,10 +36,32 @@ fn is_han(cp: u32) -> bool {
     HAN.iter().any(|&(lo, hi)| cp >= lo && cp <= hi)
 }
 
+/// Whether the onig crate (the regex engine of tokenizers v0.23) gives character `c`
+/// the `Cn` unicode category (= unassigned)
+///
+/// `unicode_properties` uses Unicode 17 specification, but onig and tokenizers 0.23 rely on Unicode 16 specification
+/// This is a backwards-compatibility fix
+fn onig_unassigned(c: char) -> bool {
+    static UNASSIGNED: OnceLock<Vec<bool>> = OnceLock::new();
+    // Build the unassigned table once
+    let unassigned = UNASSIGNED.get_or_init(|| {
+        // Cn is the unicode category "unassigned"
+        let re = onig::Regex::new(r"\A\p{Cn}\z").expect("onig \\p{Cn}");
+        (0..=0x10FFFFu32)
+            .map(|cp| char::from_u32(cp).is_some_and(|c| re.is_match(c.encode_utf8(&mut [0; 4]))))
+            .collect()
+    });
+    unassigned[c as usize]
+}
+
 // Produce the atom tag from the character.
 fn atom(c: char) -> u8 {
     use GeneralCategory::*;
     let cp = c as u32;
+    if onig_unassigned(c) {
+        // unassigned in the onig's Unicode version
+        return 12;
+    }
     match c.general_category() {
         // \p{L}: low nibble Letter(0); high nibble = o200k case refinement (Lu∪Lt=1, Ll=2, Lm∪Lo=0).
         // Coarse consumers mask it off (`in_mask` / SIMD `& 0x0F`); only `fsm_o200k` reads the nibble.
