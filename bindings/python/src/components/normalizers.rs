@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::spec::ComponentKey;
 
-use super::{Component, ComponentKind, ComponentSpec};
+use super::{Component, ComponentKind, ComponentSequence, ComponentSpec};
 
 /// Base class for all normalizers
 #[pyclass(frozen, subclass, extends = Component, module = "tokenizers.normalizers")]
@@ -34,6 +34,7 @@ impl ComponentKind for Normalizer {
             Some("NFKC") => Self::subclass_from_spec(py, spec, Nfkc),
             Some("NFKD") => Self::subclass_from_spec(py, spec, Nfkd),
             Some("Nmt") => Self::subclass_from_spec(py, spec, Nmt),
+            Some("Sequence") => Self::subclass_from_spec(py, spec, Sequence),
             _ => Py::new(py, Self::make_init(spec)),
         }
     }
@@ -136,8 +137,43 @@ impl Nmt {
     }
 }
 
+/// Applies each normalizer in turn. Items read from it are copies: assign `seq[i] = item` to change one.
+#[pyclass(frozen, extends = Normalizer, module = "tokenizers.normalizers")]
+pub struct Sequence;
+
+impl ComponentSequence for Sequence {
+    type Kind = Normalizer;
+    const ITEMS_KEY: &'static str = "normalizers";
+}
+
+#[pymethods]
+impl Sequence {
+    #[new]
+    fn new(normalizers: Vec<Bound<'_, Normalizer>>) -> PyClassInitializer<Self> {
+        Self::from_items(normalizers, Self)
+    }
+
+    fn __len__(slf: &Bound<'_, Self>) -> usize {
+        Self::len(slf)
+    }
+
+    fn __getitem__(slf: &Bound<'_, Self>, index: usize) -> PyResult<Py<Normalizer>> {
+        Self::get(slf, index)
+    }
+
+    fn __setitem__(
+        slf: &Bound<'_, Self>,
+        index: usize,
+        item: Bound<'_, Normalizer>,
+    ) -> PyResult<()> {
+        Self::set(slf, index, &item)
+    }
+}
+
 #[pymodule]
 pub mod normalizers {
     #[pymodule_export]
-    use super::{ByteLevel, Lowercase, Nfc, Nfd, Nfkc, Nfkd, Nmt, Normalizer, StripAccents};
+    use super::{
+        ByteLevel, Lowercase, Nfc, Nfd, Nfkc, Nfkd, Nmt, Normalizer, Sequence, StripAccents,
+    };
 }

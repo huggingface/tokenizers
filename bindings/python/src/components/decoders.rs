@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::spec::ComponentKey;
 
-use super::{Component, ComponentKind, ComponentSpec};
+use super::{Component, ComponentKind, ComponentSequence, ComponentSpec};
 
 /// Base class for all decoders
 #[pyclass(frozen, subclass, extends = Component, module = "tokenizers.decoders")]
@@ -28,6 +28,7 @@ impl ComponentKind for Decoder {
         match spec.json().get("type").and_then(Value::as_str) {
             Some("ByteFallback") => Self::subclass_from_spec(py, spec, ByteFallback),
             Some("Fuse") => Self::subclass_from_spec(py, spec, Fuse),
+            Some("Sequence") => Self::subclass_from_spec(py, spec, Sequence),
             _ => Py::new(py, Self::make_init(spec)),
         }
     }
@@ -58,8 +59,25 @@ impl Fuse {
     }
 }
 
+/// Applies each decoder in turn.
+#[pyclass(frozen, extends = Decoder, module = "tokenizers.decoders")]
+pub struct Sequence;
+
+impl ComponentSequence for Sequence {
+    type Kind = Decoder;
+    const ITEMS_KEY: &'static str = "decoders";
+}
+
+#[pymethods]
+impl Sequence {
+    #[new]
+    fn new(decoders: Vec<Bound<'_, Decoder>>) -> PyClassInitializer<Self> {
+        Self::from_items(decoders, Self)
+    }
+}
+
 #[pymodule]
 pub mod decoders {
     #[pymodule_export]
-    use super::{ByteFallback, Decoder, Fuse};
+    use super::{ByteFallback, Decoder, Fuse, Sequence};
 }

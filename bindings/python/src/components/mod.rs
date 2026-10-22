@@ -20,13 +20,14 @@ pub(crate) mod processors;
 use std::sync::Arc;
 
 use pyo3::PyClass;
+use pyo3::exceptions::PyIndexError;
 use pyo3::impl_::pyclass::PyClassBaseType;
 use pyo3::prelude::*;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::error::err;
 use crate::repr;
-use crate::spec::{ComponentKey, ComponentSpec};
+use crate::spec::{ComponentKey, ComponentSpec, JsonObject};
 
 /// Base class for tokenizer components
 #[pyclass(frozen, subclass, module = "tokenizers")]
@@ -122,4 +123,52 @@ impl<K: ComponentKind, T: PyClass<BaseType = K>> JsonFields for Bound<'_, T> {
     fn set_field(&self, key: &str, value: impl Into<Value>) {
         K::spec(self.as_super()).edit(|json| json.insert(key.to_owned(), value.into()));
     }
+}
+
+/// The `Sequence` of a component kind: its JSON lists components of that kind under `ITEMS_KEY`.
+///
+/// The JSON holds copies: building a sequence copies its items, and reading an item gives a copy.
+/// `seq[i] = item` writes into the sequence, and so into a tokenizer holding it.
+pub(crate) trait ComponentSequence: PyClass<BaseType = Self::Kind> {
+    type Kind: ComponentKind;
+
+    /// The JSON key of the list, for example `"pretokenizers"` for `pre_tokenizers.Sequence`.
+    const ITEMS_KEY: &'static str;
+
+    fn from_items(items: Vec<Bound<'_, Self::Kind>>, sequence: Self) -> PyClassInitializer<Self> {
+        let items: Vec<Value> = items.iter().map(item_json).collect();
+        Self::Kind::init(
+            json!({"type": "Sequence", Self::ITEMS_KEY: items}),
+            sequence,
+        )
+    }
+
+    fn len(slf: &Bound<'_, Self>) -> usize {
+        let json = Self::Kind::spec(slf.as_super()).json();
+        json[Self::ITEMS_KEY].as_array().map_or(0, Vec::len)
+    }
+
+    fn get(slf: &Bound<'_, Self>, index: usize) -> PyResult<Py<Self::Kind>> {
+        let json = Self::Kind::spec(slf.as_super()).json();
+        let Some(Value::Object(item)) = json[Self::ITEMS_KEY].get(index) else {
+            return Err(PyIndexError::new_err("Index not found"));
+        };
+        Self::Kind::from_spec(slf.py(), ComponentSpec::new(item.clone()))
+    }
+
+    fn set(slf: &Bound<'_, Self>, index: usize, item: &Bound<'_, Self::Kind>) -> PyResult<()> {
+        let item = item_json(item);
+        Self::Kind::spec(slf.as_super()).edit(|json| {
+            let slot = json
+                .get_mut(Self::ITEMS_KEY)
+                .and_then(|items| items.get_mut(index));
+            let slot = slot.ok_or_else(|| PyIndexError::new_err("Index not found"))?;
+            *slot = item;
+            Ok(())
+        })
+    }
+}
+
+fn item_json<K: ComponentKind>(item: &Bound<'_, K>) -> Value {
+    Value::Object(JsonObject::clone(&K::spec(item).json()))
 }

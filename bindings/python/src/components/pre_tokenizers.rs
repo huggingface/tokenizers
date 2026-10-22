@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::spec::ComponentKey;
 
-use super::{Component, ComponentKind, ComponentSpec};
+use super::{Component, ComponentKind, ComponentSequence, ComponentSpec};
 
 /// Base class for all pre-tokenizers
 #[pyclass(frozen, subclass, extends = Component, module = "tokenizers.pre_tokenizers")]
@@ -30,6 +30,7 @@ impl ComponentKind for PreTokenizer {
             Some("WhitespaceSplit") => Self::subclass_from_spec(py, spec, WhitespaceSplit),
             Some("BertPreTokenizer") => Self::subclass_from_spec(py, spec, BertPreTokenizer),
             Some("UnicodeScripts") => Self::subclass_from_spec(py, spec, UnicodeScripts),
+            Some("Sequence") => Self::subclass_from_spec(py, spec, Sequence),
             _ => Py::new(py, Self::make_init(spec)),
         }
     }
@@ -85,8 +86,39 @@ impl UnicodeScripts {
     }
 }
 
+/// Applies each pre-tokenizer in turn, each one splitting the pieces the previous one made. Items read from it are copies: assign `seq[i] = item` to change one.
+#[pyclass(frozen, extends = PreTokenizer, module = "tokenizers.pre_tokenizers")]
+pub struct Sequence;
+
+impl ComponentSequence for Sequence {
+    type Kind = PreTokenizer;
+    const ITEMS_KEY: &'static str = "pretokenizers";
+}
+
+#[pymethods]
+impl Sequence {
+    #[new]
+    fn new(pre_tokenizers: Vec<Bound<'_, PreTokenizer>>) -> PyClassInitializer<Self> {
+        Self::from_items(pre_tokenizers, Self)
+    }
+
+    fn __getitem__(slf: &Bound<'_, Self>, index: usize) -> PyResult<Py<PreTokenizer>> {
+        Self::get(slf, index)
+    }
+
+    fn __setitem__(
+        slf: &Bound<'_, Self>,
+        index: usize,
+        item: Bound<'_, PreTokenizer>,
+    ) -> PyResult<()> {
+        Self::set(slf, index, &item)
+    }
+}
+
 #[pymodule]
 pub mod pre_tokenizers {
     #[pymodule_export]
-    use super::{BertPreTokenizer, PreTokenizer, UnicodeScripts, Whitespace, WhitespaceSplit};
+    use super::{
+        BertPreTokenizer, PreTokenizer, Sequence, UnicodeScripts, Whitespace, WhitespaceSplit,
+    };
 }
