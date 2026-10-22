@@ -102,6 +102,21 @@ impl Tokenizer {
 
 #[pymethods]
 impl Tokenizer {
+    /// A tokenizer made of `model` alone. Set the other components afterwards.
+    ///
+    /// The tokenizer shares `model`: an edit through either one reaches both.
+    ///
+    /// Args:
+    ///     model:
+    ///         The model that turns words into ids.
+    #[new]
+    #[pyo3(signature = (model))]
+    fn new(model: Bound<'_, Model>) -> Self {
+        Self {
+            spec: Mutex::new(TokenizerSpec::from_model(Model::spec(&model).clone())),
+        }
+    }
+
     /// Loads a `tokenizer.json`.
     ///
     /// Args:
