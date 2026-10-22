@@ -71,7 +71,9 @@ unsafe impl pipeline::PreTokenizer for UnicodeScripts {
                         end: i as u32,
                     });
                 }
-                start = Some(i as u32);
+                // A leading run of `Script::Any` emits no boundary of its own, so
+                // anchor the first span at 0 instead of skipping past it.
+                start = Some(if start.is_none() { 0 } else { i as u32 });
             }
             last_script = Some(script);
         }
@@ -79,6 +81,12 @@ unsafe impl pipeline::PreTokenizer for UnicodeScripts {
         if let Some(start) = start {
             out.push(pipeline::Span {
                 start,
+                end: text.len() as u32,
+            });
+        } else if !text.is_empty() {
+            // Every char was `Script::Any`, so keep the whole input as one span.
+            out.push(pipeline::Span {
+                start: 0,
                 end: text.len() as u32,
             });
         }
@@ -129,12 +137,13 @@ mod tests {
     fn pipeline_edge_cases() {
         let empty = Vec::<(&str, (u32, u32))>::new();
         assert_eq!(pretokenize(""), empty);
-        // all-neutral input produces nothing (no real script ever seen)
-        assert_eq!(pretokenize("   "), empty);
+        // all-neutral input is kept as one split
+        assert_eq!(pretokenize("   "), vec![("   ", (0, 3))]);
         // single script -> one split
         assert_eq!(pretokenize("hello"), vec![("hello", (0, 5))]);
-        // leading spaces are dropped (nothing before the first real script)
-        assert_eq!(pretokenize(" hi"), vec![("hi", (1, 3))]);
+        // leading spaces stay attached to the first run
+        assert_eq!(pretokenize(" hi"), vec![(" hi", (0, 3))]);
+        assert_eq!(pretokenize("  どこ"), vec![("  どこ", (0, 8))]);
     }
 
     #[test]
