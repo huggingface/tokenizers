@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - main
+      - release/**
+    tags:
+      - v*
     paths:
       - bindings/wasm/**
       - tokenizers/**
@@ -35,8 +38,9 @@ jobs:
           persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # v1
         with:
+          toolchain: stable
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
 
@@ -58,7 +62,7 @@ jobs:
       # Provides `uvx`, used to run the huggingface_hub CLI that downloads
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
       # Clippy runs on --all-targets, and the tests `include_str!` the fixtures.
       - name: Lint with RustFmt and Clippy
@@ -81,8 +85,9 @@ jobs:
           persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # v1
         with:
+          toolchain: stable
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo registry / git / target
@@ -100,7 +105,7 @@ jobs:
         run: make build
 
       - name: Install Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: latest
 
@@ -123,8 +128,9 @@ jobs:
           persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # v1
         with:
+          toolchain: stable
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo registry / git / target
@@ -150,7 +156,7 @@ jobs:
       # Provides `uvx`, used to run the huggingface_hub CLI that downloads
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
       # The runner image ships Chrome with a matching chromedriver; the one wasm-pack
       # downloads tracks the newest Chrome and can refuse the installed one.
@@ -177,8 +183,9 @@ jobs:
           persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # v1
         with:
+          toolchain: stable
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo registry / git / target
@@ -193,7 +200,7 @@ jobs:
           tool: wasm-pack@0.15.0
 
       - name: Install Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: latest
 
@@ -205,10 +212,78 @@ jobs:
           restore-keys: hf-test-data-wasm-
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
       # Also downloads a tokenizer from the Hub through `from_pretrained`; the token avoids rate limits.
       - name: Install the tarball and run it under Node
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make test-package HF="uvx --from huggingface_hub hf"
+
+  publish:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: [code-quality, build, test, test-package]
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      # Trusted Publishing: the job mints an OIDC token that npm exchanges for a
+      # short-lived publish token, so there is no long-lived NPM_TOKEN secret. The
+      # same id-token also signs the provenance attestation.
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: bindings/wasm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # v1
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry / git / target
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        with:
+          workspaces: bindings/wasm
+          shared-key: wasm-release
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29  # v2.87.21
+        with:
+          tool: wasm-pack@0.15.0
+
+      # No registry-url: it writes an .npmrc with a ${NODE_AUTH_TOKEN} placeholder that OIDC can't fill.
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: latest
+
+      # Staged publishing landed in npm 11.15.0 (OIDC publishing in 11.5.1).
+      - name: Ensure npm supports staged publishing
+        run: npm install -g npm@^11.15.0
+
+      - name: Build bindings
+        run: make build
+
+      - name: Check the package version matches the tag
+        run: |
+          VERSION=$(node -p 'require("./pkg/package.json").version')
+          if [ "$VERSION" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "::error::pkg/package.json is $VERSION but the tag is $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - name: Verify package contents
+        run: npm pack --dry-run ./pkg
+
+      - name: Stage for publishing
+        run: |
+          TAG=latest
+          [[ "$GITHUB_REF_NAME" == *-* ]] && TAG=next
+          npm stage publish ./pkg --access public --provenance --tag "$TAG"

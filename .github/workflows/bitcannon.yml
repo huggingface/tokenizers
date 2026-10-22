@@ -20,8 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with: { components: rustfmt, clippy }
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # v1
+        with: { toolchain: stable, components: "rustfmt, clippy" }
       # fmt and clippy are NOT here: rust.yml already runs `cargo fmt --all` and
       # `cargo clippy --workspace --all-targets --all-features` on every PR.
       # This is the integration tests -- rust.yml only runs --lib and --doc, so
@@ -38,7 +38,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # v1
+        with:
+          toolchain: stable
       - name: Install Intel SDE
         run: |
           # Pin to the current SDE release (update the version/URL as Intel publishes new builds).
@@ -68,8 +70,8 @@ jobs:
       RUSTFLAGS: ${{ matrix.rustflags }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with: { targets: "wasm32-wasip1,wasm32-unknown-unknown", components: clippy }
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # v1
+        with: { toolchain: stable, targets: "wasm32-wasip1,wasm32-unknown-unknown", components: clippy }
       - name: Clippy wasm32 (wasip1 + browser)
         run: cargo clippy -p bitcannon --all-targets --target wasm32-wasip1 --target wasm32-unknown-unknown -- -D warnings
       - uses: bytecodealliance/actions/wasmtime/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1.1.3

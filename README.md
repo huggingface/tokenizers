@@ -26,6 +26,17 @@ We will publish a blog about what breaking changes we introduced. We strived to 
 pip install --pre tokenizers
 ```
 
+For Rust, add the crate to your `Cargo.toml`:
+
+```toml
+[dependencies]
+tokenizers = "1.0.0"
+```
+
+Training (`train`) and downloading from the Hub (`http`) are opt-in features. The crate's
+[Using the crate](tokenizers/README.md#using-the-crate) section lists every feature and how to
+build a smaller binary.
+
 # Usage
 
 ```python
@@ -57,6 +68,8 @@ For more details, checkout https://huggingface-tokenizers-v1.static.hf.space/ind
 | C / C++ / Java / Go/ etc | 🚧 planned |
 | [Ruby](https://github.com/ankane/tokenizers-ruby) | community, external repo |
 
+
+<a name="v1-features"></a>
 
 # v1.0.0 roadmap:
 
@@ -158,6 +171,10 @@ of compatibility branches. But, the legacy code amounted to quite a lot of the f
 <summary><b><code>tk-train</code></b> — the training half</summary>
 
 The `Trainer` trait, every concrete `*Trainer`, `TrainerWrapper` and the `Trainable` extension.
+
+The `tokenizers` crate re-exports it behind the `train` feature, which is off by default. It
+trains only the models whose feature is on (`bpe`, `unigram`, `wordpiece`, `wordlevel`). Add
+`esaxx_fast` for the C++ suffix array behind Unigram training.
 
 **Why separate:** training is a batch job on a workstation; inference is a hot loop in a server.
 They have opposite constraints, so they get opposite dependency budgets.
