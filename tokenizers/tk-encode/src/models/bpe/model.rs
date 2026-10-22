@@ -112,6 +112,9 @@ impl PipelineBPE {
         let mut proven = vec![false; len];
         let mut symbols = Vec::with_capacity(64);
         let mut scratch = QueueScratch::default();
+        // With an `end_of_word_suffix`, a one-character word is looked up as `char + suffix`, so
+        // a bare single-character entry is not its own encoding.
+        let has_suffix = self.affixes.as_ref().is_some_and(|a| !a.suffix.is_empty());
         for id in 0..len as u32 {
             let Some(bytes) = self.vocab.id_to_token_bytes(id) else {
                 continue;
@@ -121,7 +124,8 @@ impl PipelineBPE {
             let Ok(text) = std::str::from_utf8(bytes) else {
                 continue;
             };
-            let foldable = if text.chars().count() <= 1 {
+            let chars = text.chars().count();
+            let foldable = if chars == 0 || (chars == 1 && !has_suffix) {
                 // A single atom has no pair to merge and is trivially its own encoding.
                 true
             } else {
