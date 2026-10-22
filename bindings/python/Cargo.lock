@@ -1324,6 +1324,7 @@ dependencies = [
 name = "tokenizers-python"
 version = "1.0.0-dev.2"
 dependencies = [
+ "base64 0.22.1",
  "numpy",
  "pyo3",
  "pyo3-build-config",

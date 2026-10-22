@@ -16,6 +16,8 @@ WIKI = DATA / "tokenizer-wiki.json"
 # Llama 3: byte-level BPE with a regex pre-tokenizer and `ignore_merges`, 256 special tokens, and a
 # post-processor that prepends `<|begin_of_text|>`.
 LLAMA3 = DATA / "llama-3-tokenizer.json"
+# ALBERT: a normalizer Sequence of Replace, NFKD, StripAccents, Lowercase and Precompiled.
+ALBERT = DATA / "albert-base-v1-tokenizer.json"
 
 
 # Loading a file takes over a second on the debug build `make develop` installs, so the tests share

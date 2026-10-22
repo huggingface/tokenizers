@@ -31,7 +31,6 @@ impl ComponentSpec {
     }
 
     /// Edits the JSON. A compiled tokenizer still holding the previous JSON keeps it.
-    #[expect(dead_code, reason = "JsonFields::set_field uses it")]
     pub(crate) fn edit<R>(&self, edit: impl FnOnce(&mut JsonObject) -> R) -> R {
         edit(Arc::make_mut(&mut self.lock()))
     }
