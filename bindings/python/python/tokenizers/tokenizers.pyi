@@ -8,7 +8,32 @@ from typing import Any, Final, Literal, final
 from numpy import integer, uint32
 from numpy.typing import NDArray
 
+from . import decoders as decoders
+from . import models as models
+from . import normalizers as normalizers
+from . import pre_tokenizers as pre_tokenizers
+from . import processors as processors
+from .decoders import Decoder
+from .models import Model
+from .normalizers import Normalizer
+from .pre_tokenizers import PreTokenizer
+from .processors import PostProcessor
+
 __version__: Final[str]
+
+class Component:
+    """
+    Base class for tokenizer components
+    """
+    def __getstate__(self, /) -> bytes:
+        """
+        The component's JSON, as `bytes`.
+        """
+    def __reduce__(self, /) -> tuple[Any, tuple[bytes]]:
+        """
+        Pickle rebuilds a component through its kind's `_unpickle`.
+        """
+    def __repr__(self, /) -> str: ...
 
 @final
 class Encoding:
@@ -137,6 +162,16 @@ class Padding:
         """
 
 @final
+class Regex:
+    """
+    A regular expression, for a component's pattern. A plain `str` pattern is a literal.
+    """
+    def __new__(cls, /, pattern: str) -> Regex:
+        """
+        Fails on a pattern the regex engine cannot compile.
+        """
+
+@final
 class Tokenizer:
     """
     A tokenizer. Encodes text into token ids, and decodes token ids back into text.
@@ -189,6 +224,10 @@ class Tokenizer:
         Returns:
             list[str]
         """
+    @property
+    def decoder(self, /) -> Decoder | None: ...
+    @decoder.setter
+    def decoder(self, /, decoder: Decoder | None) -> None: ...
     def encode(
         self,
         /,
@@ -322,6 +361,14 @@ class Tokenizer:
         ```
         """
     @property
+    def model(self, /) -> Model: ...
+    @model.setter
+    def model(self, /, model: Model) -> None: ...
+    @property
+    def normalizer(self, /) -> Normalizer | None: ...
+    @normalizer.setter
+    def normalizer(self, /, normalizer: Normalizer | None) -> None: ...
+    @property
     def padding(self, /) -> Padding | None:
         """
         The padding applied to every encode, or `None`.
@@ -329,6 +376,14 @@ class Tokenizer:
         """
     @padding.setter
     def padding(self, /, padding: Padding | None) -> None: ...
+    @property
+    def post_processor(self, /) -> PostProcessor | None: ...
+    @post_processor.setter
+    def post_processor(self, /, post_processor: PostProcessor | None) -> None: ...
+    @property
+    def pre_tokenizer(self, /) -> PreTokenizer | None: ...
+    @pre_tokenizer.setter
+    def pre_tokenizer(self, /, pre_tokenizer: PreTokenizer | None) -> None: ...
     def tokenize(
         self,
         /,
