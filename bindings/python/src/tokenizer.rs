@@ -14,6 +14,12 @@ use tk::{
 
 use crate::JsonObject;
 use crate::compiled::CompiledTokenizer;
+use crate::components::ComponentKind;
+use crate::components::decoders::Decoder;
+use crate::components::models::Model;
+use crate::components::normalizers::Normalizer;
+use crate::components::pre_tokenizers::PreTokenizer;
+use crate::components::processors::PostProcessor;
 use crate::error::err;
 use crate::options::{Padding, Truncation};
 use crate::repr;
@@ -46,7 +52,19 @@ impl Tokenizer {
         }
     }
 
-    fn spec(&self) -> MutexGuard<'_, TokenizerSpec> {
+    fn get<K: ComponentKind>(slf: &Bound<'_, Self>) -> PyResult<Option<Py<K>>> {
+        let Some(spec) = slf.get().spec().component(K::JSON_KEY).cloned() else {
+            return Ok(None);
+        };
+        K::from_spec(slf.py(), spec).map(Some)
+    }
+
+    fn set<K: ComponentKind>(&self, component: Option<Bound<'_, K>>) {
+        let spec = component.map(|c| K::spec(&c).clone());
+        self.spec().set_component(K::JSON_KEY, spec);
+    }
+
+    pub(crate) fn spec(&self) -> MutexGuard<'_, TokenizerSpec> {
         self.spec.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
@@ -143,6 +161,57 @@ impl Tokenizer {
             .call((), Some(&kwargs))?
             .extract()?;
         Self::from_file(path)
+    }
+
+    #[getter]
+    fn model(slf: &Bound<'_, Self>) -> PyResult<Py<Model>> {
+        let model = Self::get(slf)?;
+        Ok(model.expect("a TokenizerSpec always holds a model"))
+    }
+
+    #[setter]
+    fn set_model(&self, model: Bound<'_, Model>) {
+        self.set(Some(model))
+    }
+
+    #[getter]
+    fn normalizer(slf: &Bound<'_, Self>) -> PyResult<Option<Py<Normalizer>>> {
+        Self::get(slf)
+    }
+
+    #[setter]
+    fn set_normalizer(&self, normalizer: Option<Bound<'_, Normalizer>>) {
+        self.set(normalizer)
+    }
+
+    #[getter]
+    fn pre_tokenizer(slf: &Bound<'_, Self>) -> PyResult<Option<Py<PreTokenizer>>> {
+        Self::get(slf)
+    }
+
+    #[setter]
+    fn set_pre_tokenizer(&self, pre_tokenizer: Option<Bound<'_, PreTokenizer>>) {
+        self.set(pre_tokenizer)
+    }
+
+    #[getter]
+    fn post_processor(slf: &Bound<'_, Self>) -> PyResult<Option<Py<PostProcessor>>> {
+        Self::get(slf)
+    }
+
+    #[setter]
+    fn set_post_processor(&self, post_processor: Option<Bound<'_, PostProcessor>>) {
+        self.set(post_processor)
+    }
+
+    #[getter]
+    fn decoder(slf: &Bound<'_, Self>) -> PyResult<Option<Py<Decoder>>> {
+        Self::get(slf)
+    }
+
+    #[setter]
+    fn set_decoder(&self, decoder: Option<Bound<'_, Decoder>>) {
+        self.set(decoder)
     }
 
     /// The padding a tokenizer compiled from this spec applies to every encode, or `None`.
@@ -273,6 +342,28 @@ impl TokenizerSpec {
         }
     }
 
+    pub(crate) fn component(&self, key: ComponentKey) -> Option<&Arc<ComponentSpec>> {
+        match key {
+            ComponentKey::Normalizer => self.normalizer.as_ref(),
+            ComponentKey::PreTokenizer => self.pre_tokenizer.as_ref(),
+            ComponentKey::PostProcessor => self.post_processor.as_ref(),
+            ComponentKey::Decoder => self.decoder.as_ref(),
+            ComponentKey::Model => Some(&self.model),
+        }
+    }
+
+    pub(crate) fn set_component(&mut self, key: ComponentKey, spec: Option<Arc<ComponentSpec>>) {
+        match key {
+            ComponentKey::Normalizer => self.normalizer = spec,
+            ComponentKey::PreTokenizer => self.pre_tokenizer = spec,
+            ComponentKey::PostProcessor => self.post_processor = spec,
+            ComponentKey::Decoder => self.decoder = spec,
+            ComponentKey::Model => {
+                self.model = spec.expect("the model setter takes a Model, never None")
+            }
+        }
+    }
+
     /// The top-level keys and their values, in the order `to_json` writes them.
     fn fields(&self) -> [(&'static str, Field<'_>); 10] {
         let component = |spec: &Option<Arc<ComponentSpec>>| {
@@ -339,11 +430,20 @@ impl Field<'_> {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum ComponentKey {
+    Normalizer,
+    PreTokenizer,
+    PostProcessor,
+    Decoder,
+    Model,
+}
+
 /// A component's JSON spec, as a shared reference.
-struct ComponentSpec(Mutex<Arc<JsonObject>>);
+pub(crate) struct ComponentSpec(Mutex<Arc<JsonObject>>);
 
 impl ComponentSpec {
-    fn new(json: JsonObject) -> Arc<Self> {
+    pub(crate) fn new(json: JsonObject) -> Arc<Self> {
         Arc::new(Self(Mutex::new(Arc::new(json))))
     }
 
@@ -352,8 +452,14 @@ impl ComponentSpec {
         Arc::new(Self(Mutex::new(self.json())))
     }
 
-    fn json(&self) -> Arc<JsonObject> {
+    pub(crate) fn json(&self) -> Arc<JsonObject> {
         self.lock().clone()
+    }
+
+    /// Edits the JSON. A [`detached`](Self::detached) copy still holding the previous JSON keeps it.
+    #[expect(dead_code, reason = "JsonFields::set_field uses it")]
+    pub(crate) fn edit<R>(&self, edit: impl FnOnce(&mut JsonObject) -> R) -> R {
+        edit(Arc::make_mut(&mut self.lock()))
     }
 
     fn lock(&self) -> MutexGuard<'_, Arc<JsonObject>> {
