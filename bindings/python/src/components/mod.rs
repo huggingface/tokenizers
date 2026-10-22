@@ -74,7 +74,6 @@ pub(crate) trait ComponentKind:
     }
 
     /// The initializer of `subclass` over a new component holding `json`, for constructors.
-    #[expect(dead_code, reason = "the component kinds use it")]
     fn init<T: PyClass<BaseType = Self>>(json: Value, subclass: T) -> PyClassInitializer<T> {
         let Value::Object(json) = json else {
             unreachable!("constructors pass a json! object literal")
@@ -83,7 +82,6 @@ pub(crate) trait ComponentKind:
     }
 
     /// Builds `subclass` around `spec`, for example a `BPE` for a model whose `"type"` is `"BPE"`.
-    #[expect(dead_code, reason = "the component kinds use it")]
     fn subclass_from_spec<T: PyClass<BaseType = Self>>(
         py: Python<'_>,
         spec: Arc<ComponentSpec>,
@@ -132,7 +130,6 @@ impl<K: ComponentKind, T: PyClass<BaseType = K>> JsonFields for Bound<'_, T> {
 ///
 /// The JSON holds copies: building a sequence copies its items, and reading an item gives a copy.
 /// `seq[i] = item` writes into the sequence, and so into a tokenizer holding it.
-#[expect(dead_code, reason = "the component kinds use it")]
 pub(crate) trait ComponentSequence: PyClass<BaseType = Self::Kind> {
     type Kind: ComponentKind;
 
