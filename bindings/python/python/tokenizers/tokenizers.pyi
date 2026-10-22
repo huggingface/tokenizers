@@ -413,3 +413,21 @@ class Truncation:
         """
         Which sequence of a pair is truncated.
         """
+
+def num_threads() -> int:
+    """
+    The number of threads used to encode.
+
+    Returns:
+        int
+    """
+
+def set_num_threads(n: int) -> None:
+    """
+    Sets the number of threads used to encode.
+
+    0 restores the default: ``RAYON_NUM_THREADS`` if set, otherwise all available cores.
+
+    Args:
+        n: The number of threads.
+    """

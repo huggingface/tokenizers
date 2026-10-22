@@ -119,14 +119,27 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     slot.map(|slot| slot.pool.clone())
 }
 
+/// Environment variable that sets the number of threads when [`set_num_threads`] was not called, as it did for
+/// rayon's global pool before 1.0.
+pub const NUM_THREADS_ENV: &str = "RAYON_NUM_THREADS";
+
 pub fn num_threads() -> usize {
     match NUM_THREADS.load(Ordering::Acquire) {
         // 0 == default value
-        0 => std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1),
+        0 => default_num_threads(std::env::var(NUM_THREADS_ENV).ok().as_deref()),
         n => n,
     }
+}
+
+/// `RAYON_NUM_THREADS` when it is a positive number, otherwise all available cores.
+fn default_num_threads(env: Option<&str>) -> usize {
+    env.and_then(|v| v.trim().parse().ok())
+        .filter(|&n: &usize| n > 0)
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+        })
 }
 
 fn invalidate() {
@@ -387,6 +400,18 @@ mod tests {
         );
         assert_eq!(v.maybe_par_iter().sum::<u32>(), 42);
         assert_eq!(v.into_maybe_par_iter().sum::<u32>(), 42);
+    }
+
+    #[test]
+    fn default_num_threads_reads_rayon_num_threads() {
+        let all = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+        assert_eq!(default_num_threads(Some("3")), 3);
+        assert_eq!(default_num_threads(Some(" 5 ")), 5);
+        assert_eq!(default_num_threads(None), all);
+        assert_eq!(default_num_threads(Some("0")), all);
+        assert_eq!(default_num_threads(Some("many")), all);
     }
 
     #[test]
