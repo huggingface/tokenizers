@@ -31,7 +31,6 @@ impl ComponentSpec {
     }
 
     /// Edits the JSON. A compiled tokenizer still holding the previous JSON keeps it.
-    #[expect(dead_code, reason = "JsonFields::set_field uses it")]
     pub(crate) fn edit<R>(&self, edit: impl FnOnce(&mut JsonObject) -> R) -> R {
         edit(Arc::make_mut(&mut self.lock()))
     }
@@ -134,6 +133,25 @@ impl TokenizerSpec {
             return Err(format!("unknown keys: {}", keys.join(", ")).into());
         }
         Ok(spec)
+    }
+
+    /// A tokenizer made of `model` alone, written as a "1.0" file like 0.23 writes it.
+    pub(crate) fn from_model(model: Arc<ComponentSpec>) -> Self {
+        Self {
+            version: "1.0".to_owned(),
+            truncation: None,
+            padding: None,
+            pipeline: PipelineSpec {
+                role_to_token: None,
+                added_tokens: Arc::new(Value::Array(Vec::new())),
+                normalizer: None,
+                pre_tokenizer: None,
+                post_processor: None,
+                decoder: None,
+                model,
+            },
+            compiled: None,
+        }
     }
 
     /// Gets a reference to the [`PipelineTokenizer`] built from [`self.pipeline`], compiling it if needed

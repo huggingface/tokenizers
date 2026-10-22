@@ -184,6 +184,16 @@ class Tokenizer:
         """
         Copies the tokenizer. The copy holds a reference to the same underlying compiled tokenizer.
         """
+    def __new__(cls, /, model: Model) -> Tokenizer:
+        """
+        A tokenizer made of `model` alone. Set the other components afterwards.
+
+        The tokenizer shares `model`: an edit through either one reaches both.
+
+        Args:
+            model:
+                The model that turns words into ids.
+        """
     def __reduce__(self, /) -> tuple[Any, tuple[str]]:
         """
         Pickle rebuilds a `Tokenizer` by calling `from_str` with these arguments.
