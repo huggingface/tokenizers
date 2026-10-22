@@ -130,7 +130,6 @@ impl<K: ComponentKind, T: PyClass<BaseType = K>> JsonFields for Bound<'_, T> {
 ///
 /// The JSON holds copies: building a sequence copies its items, and reading an item gives a copy.
 /// `seq[i] = item` writes into the sequence, and so into a tokenizer holding it.
-#[expect(dead_code, reason = "the component kinds use it")]
 pub(crate) trait ComponentSequence: PyClass<BaseType = Self::Kind> {
     type Kind: ComponentKind;
 
