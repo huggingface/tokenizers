@@ -11,7 +11,7 @@ A `Tokenizer` holds the components and can be edited; `compile()` turns it into 
 import copy
 from pathlib import Path
 
-from tokenizers import Tokenizer, normalizers
+from tokenizers import Tokenizer, models, normalizers
 
 data = Path(__file__).parent.parent / "data"
 text = "Hello World"
@@ -45,3 +45,8 @@ twin = copy.deepcopy(gpt2)
 twin.normalizer = None
 show("copy, normalizer removed", twin)
 show("original", gpt2)
+
+# The model getter returns its concrete class, and its fields write through.
+assert isinstance(gpt2.model, models.BPE)
+gpt2.model.ignore_merges = True
+show("gpt2, ignore_merges", gpt2)
