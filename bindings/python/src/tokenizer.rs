@@ -73,6 +73,19 @@ impl Tokenizer {
 
 #[pymethods]
 impl Tokenizer {
+    /// A tokenizer made of `model` alone. Set the other components afterwards.
+    ///
+    /// The tokenizer shares `model`: an edit through either one reaches both.
+    ///
+    /// Args:
+    ///     model:
+    ///         The model that turns words into ids.
+    #[new]
+    #[pyo3(signature = (model))]
+    fn with_model(model: Bound<'_, Model>) -> Self {
+        Self::new(TokenizerSpec::from_model(Model::spec(&model).clone()))
+    }
+
     /// Loads a `tokenizer.json` and upgrades it to the 2.0 format.
     ///
     /// Errors in the file's components, such as the model or the normalizer, show up at `compile()`.
@@ -371,6 +384,21 @@ impl TokenizerSpec {
             model: component(take("model"))
                 .expect("canonicalize_value refuses a model that is not an object"),
         })
+    }
+
+    /// A tokenizer made of `model` alone.
+    pub(crate) fn from_model(model: Arc<ComponentSpec>) -> Self {
+        Self {
+            truncation: None,
+            padding: None,
+            role_to_token: Arc::new(Value::Null),
+            added_tokens: Arc::new(Value::Array(Vec::new())),
+            normalizer: None,
+            pre_tokenizer: None,
+            post_processor: None,
+            decoder: None,
+            model,
+        }
     }
 
     /// Builds a new [`PipelineTokenizer`] from the current spec, padding and truncation included.
