@@ -1,5 +1,6 @@
 #![allow(clippy::map_entry)]
 
+mod fast;
 #[cfg(feature = "parity-aware-bpe")]
 pub mod parity_trainer;
 mod word;
@@ -493,6 +494,31 @@ impl BpeTrainer {
         }
     }
 
+    /// Trains from unique `(word, count)` entries, without building a map of them (for callers that count words
+    /// themselves). Same result as [`do_train`](Self::do_train) on a map of the same entries.
+    pub fn do_train_entries(&self, entries: Vec<(CompactString, u64)>) -> Result<(Vocab, Merges, Vec<AddedToken>)> {
+        if self.continuing_subword_prefix.is_some()
+            || self.end_of_word_suffix.is_some()
+            || self.limit_alphabet.is_some()
+            || self.max_token_length.is_some()
+        {
+            return self.do_train(&entries.into_iter().collect());
+        }
+        let mut word_to_id: AHashMap<CompactString, u32> = AHashMap::with_capacity(self.vocab_size);
+        let mut id_to_word: Vec<CompactString> = Vec::with_capacity(self.vocab_size);
+        self.add_special_tokens(&mut word_to_id, &mut id_to_word);
+        let words = entries.iter().map(|(w, n)| (w.as_str(), *n)).collect();
+        let merges = fast::train(
+            words,
+            &self.initial_alphabet,
+            &mut word_to_id,
+            &mut id_to_word,
+            self.vocab_size,
+            self.min_frequency,
+        );
+        Ok(self.finish(word_to_id, id_to_word, merges))
+    }
+
     /// Runs the training and returns the vocabulary and merge list it produced, plus the special
     /// tokens the caller has to add alongside them.
     ///
@@ -514,6 +540,24 @@ impl BpeTrainer {
         // 1. Add all special tokens to the vocabulary
         //
         self.add_special_tokens(&mut word_to_id, &mut id_to_word);
+
+        // Without affixes, alphabet limit or token length limit: the fixed-coordinate trainer
+        if self.continuing_subword_prefix.is_none()
+            && self.end_of_word_suffix.is_none()
+            && self.limit_alphabet.is_none()
+            && self.max_token_length.is_none()
+        {
+            let words = word_counts.iter().map(|(w, &n)| (w.as_str(), n)).collect();
+            let merges = fast::train(
+                words,
+                &self.initial_alphabet,
+                &mut word_to_id,
+                &mut id_to_word,
+                self.vocab_size,
+                self.min_frequency,
+            );
+            return Ok(self.finish(word_to_id, id_to_word, merges));
+        }
 
         //
         // 2. Compute the initial alphabet
@@ -654,7 +698,16 @@ impl BpeTrainer {
             self.emit_json_progress("Compute merges", merges.len(), self.vocab_size);
         }
         self.finalize_progress(&progress, merges.len(), "Compute merges");
+        Ok(self.finish(word_to_id, id_to_word, merges))
+    }
 
+    /// The public parts from the trained IDs.
+    fn finish(
+        &self,
+        word_to_id: AHashMap<CompactString, u32>,
+        id_to_word: Vec<CompactString>,
+        merges: Vec<(Pair, u32)>,
+    ) -> (Vocab, Merges, Vec<AddedToken>) {
         // The vocabulary, keyed by the token string rather than by `word_to_id`'s hash: we have to
         // look the string up in `id_to_word` either way.
         let vocab: Vocab = word_to_id
@@ -675,7 +728,7 @@ impl BpeTrainer {
             })
             .collect();
 
-        Ok((vocab, merges, self.special_tokens.clone()))
+        (vocab, merges, self.special_tokens.clone())
     }
 }
 
