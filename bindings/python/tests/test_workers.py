@@ -94,9 +94,7 @@ def _load_and_encode(path):
 def test_fork_encode(gpt2):
     path = str(GPT2)
     with multiprocessing.get_context("fork").Pool(4) as pool:
-        ids = pool.map_async(lambda path: Tokenizer.from_file(path).encode("Hello there").ids, [path] * 4).get(
-            timeout=60
-        )
+        ids = pool.map_async(_load_and_encode, [path] * 4).get(timeout=60)
     assert ids == [gpt2.encode("Hello there").ids] * 4
 
 
