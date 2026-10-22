@@ -386,7 +386,7 @@ impl Tokenizer {
     /// Copies the tokenizer. The copy holds a reference to the same underlying compiled tokenizer.
     fn __copy__(&self) -> Self {
         Self {
-            spec: Mutex::new(self.spec().clone()),
+            spec: Mutex::new(self.spec().copy()),
         }
     }
 
