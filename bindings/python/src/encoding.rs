@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use numpy::PyArray1;
 use pyo3::prelude::*;
-use tk_encode::pipeline::{Encoding as PipelineEncoding, PipelineToken};
+use tk::pipeline::{Encoding as PipelineEncoding, PipelineToken};
 
 use crate::type_hints::{NDArray, U32Array};
 

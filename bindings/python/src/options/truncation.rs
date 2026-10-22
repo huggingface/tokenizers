@@ -7,7 +7,7 @@ use pyo3::{
     types::{PyString, PyType},
 };
 
-use tk_encode::{TruncationDirection, TruncationParams, TruncationStrategy};
+use tk::{TruncationDirection, TruncationParams, TruncationStrategy};
 
 use crate::error::err;
 
