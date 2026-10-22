@@ -28,6 +28,12 @@ pub(crate) fn tokenizer(file: &Map<String, Value>, padding: &str, truncation: &s
     out
 }
 
+pub(crate) fn component(json: &Map<String, Value>) -> String {
+    let mut out = String::new();
+    write_object("", json, Some(0), &mut out);
+    out
+}
+
 /// `key` is the one `value` sits under, `""` for a list item. `indent` is `None` while a
 /// container above tries to fit on one line, so nothing spreads.
 fn write_value(key: &str, value: &Value, indent: Option<usize>, out: &mut String) {

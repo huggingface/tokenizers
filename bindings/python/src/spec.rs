@@ -21,6 +21,12 @@ impl ComponentSpec {
         Arc::new(Self(Mutex::new(Arc::new(json))))
     }
 
+    /// A new [`ComponentSpec`] whose JSON is `{"type": json_type}`.
+    #[expect(dead_code, reason = "the component kinds use it")]
+    pub(crate) fn of_type(json_type: &str) -> Arc<Self> {
+        Self::new(Map::from_iter([("type".to_owned(), json_type.into())]))
+    }
+
     /// A new [`ComponentSpec`] over the same JSON. An edit of either one copies the JSON first.
     pub(crate) fn detached(&self) -> Arc<Self> {
         Arc::new(Self(Mutex::new(self.json())))
@@ -28,6 +34,12 @@ impl ComponentSpec {
 
     pub(crate) fn json(&self) -> Arc<JsonObject> {
         self.lock().clone()
+    }
+
+    /// Edits the JSON. A compiled tokenizer still holding the previous JSON keeps it.
+    #[expect(dead_code, reason = "JsonFields::set_field uses it")]
+    pub(crate) fn edit<R>(&self, edit: impl FnOnce(&mut JsonObject) -> R) -> R {
+        edit(Arc::make_mut(&mut self.lock()))
     }
 
     fn lock(&self) -> MutexGuard<'_, Arc<JsonObject>> {
@@ -50,6 +62,15 @@ pub(crate) struct TokenizerSpec {
     /// A compiled [`PipelineTokenizer`] along with the JSON used to build it
     /// When the JSON changes, it gets re-compiled
     compiled: Option<(PipelineSpec<Arc<JsonObject>>, PipelineTokenizer)>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ComponentKey {
+    Normalizer,
+    PreTokenizer,
+    PostProcessor,
+    Decoder,
+    Model,
 }
 
 /// Required data to build a [`PipelineTokenizer`]. A tokenizer holds each component as an
@@ -146,6 +167,30 @@ impl TokenizerSpec {
             padding: self.padding.clone(),
             pipeline: self.pipeline.map(|spec| spec.detached()),
             compiled: self.compiled.clone(),
+        }
+    }
+
+    pub(crate) fn component(&self, key: ComponentKey) -> Option<&Arc<ComponentSpec>> {
+        let pipeline = &self.pipeline;
+        match key {
+            ComponentKey::Normalizer => pipeline.normalizer.as_ref(),
+            ComponentKey::PreTokenizer => pipeline.pre_tokenizer.as_ref(),
+            ComponentKey::PostProcessor => pipeline.post_processor.as_ref(),
+            ComponentKey::Decoder => pipeline.decoder.as_ref(),
+            ComponentKey::Model => Some(&pipeline.model),
+        }
+    }
+
+    pub(crate) fn set_component(&mut self, key: ComponentKey, spec: Option<Arc<ComponentSpec>>) {
+        let pipeline = &mut self.pipeline;
+        match key {
+            ComponentKey::Normalizer => pipeline.normalizer = spec,
+            ComponentKey::PreTokenizer => pipeline.pre_tokenizer = spec,
+            ComponentKey::PostProcessor => pipeline.post_processor = spec,
+            ComponentKey::Decoder => pipeline.decoder = spec,
+            ComponentKey::Model => {
+                pipeline.model = spec.expect("the model setter takes a Model, never None")
+            }
         }
     }
 

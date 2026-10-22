@@ -1,4 +1,4 @@
-//! Regenerates `python/tokenizers/tokenizers.pyi` from the built extension module.
+//! Regenerates the `.pyi` stubs in `python/tokenizers/` from the built extension module.
 //!
 //! pyo3, built with its `experimental-inspect` feature, embeds every `#[pyclass]` and
 //! `#[pymethods]` signature and docstring in the cdylib. `pyo3-introspection` reads them back
@@ -42,16 +42,39 @@ fn main() -> Result<(), Box<dyn Error>> {
         .into());
     }
 
-    let mut stubs = pyo3_introspection::module_stub_files(&module);
-    let body = stubs
-        .remove(Path::new("__init__.pyi"))
-        .ok_or("pyo3-introspection wrote no root stub")?;
-    let stub = format!("{STUB_HEADER}\n{body}");
-    if !stubs.is_empty() {
-        return Err("the extension grew submodules; decide where their stubs go".into());
+    // The root module's stub is `tokenizers.pyi`. Each submodule's (`models.pyi`, ...) sits next to
+    // it, where `import tokenizers.models` finds it.
+    for (path, mut body) in pyo3_introspection::module_stub_files(&module) {
+        let name = if path == Path::new("__init__.pyi") {
+            // pyo3 leaves the submodules out of the root stub, so pyright rejects
+            // `from .tokenizers import models` in `__init__.py`.
+            for submodule in &module.modules {
+                body.insert_str(0, &format!("from . import {0} as {0}\n", submodule.name));
+            }
+            Path::new("tokenizers.pyi")
+        } else {
+            let submodule = path.file_stem().unwrap().to_str().unwrap();
+            let source = crate_dir.join("python/tokenizers").join(path.with_extension("py"));
+            std::fs::write(&source, format!("{STUB_HEADER}\n{}", submodule_source(submodule)))?;
+            println!("wrote {}", source.display());
+            &path
+        };
+        let out = crate_dir.join("python/tokenizers").join(name);
+        std::fs::write(&out, format!("{STUB_HEADER}\n{body}"))?;
+        println!("wrote {}", out.display());
     }
-    let out = crate_dir.join("python/tokenizers/tokenizers.pyi");
-    std::fs::write(&out, stub)?;
-    println!("wrote {}", out.display());
     Ok(())
+}
+
+/// The `models.py` next to `models.pyi`: Pylance warns about a stub with no source file.
+fn submodule_source(name: &str) -> String {
+    format!(
+        "\
+import sys
+
+from .tokenizers import {name}
+
+sys.modules[__name__] = {name}
+"
+    )
 }
