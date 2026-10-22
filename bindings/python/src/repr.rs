@@ -47,45 +47,47 @@ fn write_value(key: &str, value: &Value, indent: Option<usize>, out: &mut String
             );
             out.push(']');
         }
-        Value::Object(fields) => {
-            if let Some(Value::String(tag)) = fields.get("type") {
-                out.push_str(tag);
-                out.push('(');
-                write_entries(
-                    fields
-                        .iter()
-                        .filter(|(key, _)| *key != "type")
-                        .map(|(key, value)| (key.as_str(), value)),
-                    |key, out| {
-                        out.push_str(key);
-                        out.push('=');
-                    },
-                    usize::MAX,
-                    indent,
-                    out,
-                );
-                out.push(')');
-            } else {
-                // Truncate vocab to 5 entries
-                let limit = if key == "vocab" {
-                    MAX_PROPERTIES_SHOWN
-                } else {
-                    usize::MAX
-                };
-                out.push('{');
-                write_entries(
-                    fields.iter().map(|(key, value)| (key.as_str(), value)),
-                    |key, out| {
-                        write_str(key, out);
-                        out.push_str(": ");
-                    },
-                    limit,
-                    indent,
-                    out,
-                );
-                out.push('}');
-            }
-        }
+        Value::Object(fields) => write_object(key, fields, indent, out),
+    }
+}
+
+fn write_object(key: &str, fields: &Map<String, Value>, indent: Option<usize>, out: &mut String) {
+    if let Some(Value::String(tag)) = fields.get("type") {
+        out.push_str(tag);
+        out.push('(');
+        write_entries(
+            fields
+                .iter()
+                .filter(|(key, _)| *key != "type")
+                .map(|(key, value)| (key.as_str(), value)),
+            |key, out| {
+                out.push_str(key);
+                out.push('=');
+            },
+            usize::MAX,
+            indent,
+            out,
+        );
+        out.push(')');
+    } else {
+        // Truncate vocab to 5 entries
+        let limit = if key == "vocab" {
+            MAX_PROPERTIES_SHOWN
+        } else {
+            usize::MAX
+        };
+        out.push('{');
+        write_entries(
+            fields.iter().map(|(key, value)| (key.as_str(), value)),
+            |key, out| {
+                write_str(key, out);
+                out.push_str(": ");
+            },
+            limit,
+            indent,
+            out,
+        );
+        out.push('}');
     }
 }
 

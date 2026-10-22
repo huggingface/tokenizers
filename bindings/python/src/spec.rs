@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde_json::{Map, Value};
 
@@ -12,9 +12,31 @@ pub(crate) type JsonObject = Map<String, Value>;
 
 const VERSIONS: [&str; 2] = ["1.0", "2.0"];
 
+/// A component's JSON. Every handle on a component and every tokenizer holding it share one
+/// [`ComponentSpec`], so an edit through any of them reaches all of them.
+pub(crate) struct ComponentSpec(Mutex<Arc<JsonObject>>);
+
+impl ComponentSpec {
+    pub(crate) fn new(json: JsonObject) -> Arc<Self> {
+        Arc::new(Self(Mutex::new(Arc::new(json))))
+    }
+
+    /// A new [`ComponentSpec`] over the same JSON. An edit of either one copies the JSON first.
+    pub(crate) fn detached(&self) -> Arc<Self> {
+        Arc::new(Self(Mutex::new(self.json())))
+    }
+
+    pub(crate) fn json(&self) -> Arc<JsonObject> {
+        self.lock().clone()
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Arc<JsonObject>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
 /// Holds the specification (json) of a [`PipelineTokenizer`], and the [`PipelineTokenizer`] last
 /// compiled from it. Compilation is lazy.
-#[derive(Clone)]
 pub(crate) struct TokenizerSpec {
     /// The tokenizers.json version field
     version: String,
@@ -24,23 +46,38 @@ pub(crate) struct TokenizerSpec {
     pub(crate) padding: Option<PaddingParams>,
     /// Data required to build a [`PipelineTokenizer`], from the tokenizers.json.
     /// Invalidates [`self.compiled`] when it changes.
-    pipeline: PipelineSpec,
-    /// A compiled [`PipelineTokenizer`] along with the spec used to build it
-    /// When the spec changes, it gets re-compiled
-    compiled: Option<(PipelineSpec, PipelineTokenizer)>,
+    pipeline: PipelineSpec<Arc<ComponentSpec>>,
+    /// A compiled [`PipelineTokenizer`] along with the JSON used to build it
+    /// When the JSON changes, it gets re-compiled
+    compiled: Option<(PipelineSpec<Arc<JsonObject>>, PipelineTokenizer)>,
 }
 
-/// Required data to build a [`PipelineTokenizer`]
+/// Required data to build a [`PipelineTokenizer`]. A tokenizer holds each component as an
+/// `Arc<ComponentSpec>`, shared with the handles on it. The compile cache holds `Arc<JsonObject>`s.
 #[derive(Clone, PartialEq)]
-struct PipelineSpec {
+struct PipelineSpec<C> {
     /// Only in "2.0" files
     role_to_token: Option<Arc<Value>>,
     added_tokens: Arc<Value>,
-    normalizer: Option<Arc<JsonObject>>,
-    pre_tokenizer: Option<Arc<JsonObject>>,
-    post_processor: Option<Arc<JsonObject>>,
-    decoder: Option<Arc<JsonObject>>,
-    model: Arc<JsonObject>,
+    normalizer: Option<C>,
+    pre_tokenizer: Option<C>,
+    post_processor: Option<C>,
+    decoder: Option<C>,
+    model: C,
+}
+
+impl<C> PipelineSpec<C> {
+    fn map<D>(&self, f: impl Fn(&C) -> D) -> PipelineSpec<D> {
+        PipelineSpec {
+            role_to_token: self.role_to_token.clone(),
+            added_tokens: self.added_tokens.clone(),
+            normalizer: self.normalizer.as_ref().map(&f),
+            pre_tokenizer: self.pre_tokenizer.as_ref().map(&f),
+            post_processor: self.post_processor.as_ref().map(&f),
+            decoder: self.decoder.as_ref().map(&f),
+            model: f(&self.model),
+        }
+    }
 }
 
 impl TokenizerSpec {
@@ -73,7 +110,7 @@ impl TokenizerSpec {
                 pre_tokenizer: take_optional_object(&mut file, "pre_tokenizer")?,
                 post_processor: take_optional_object(&mut file, "post_processor")?,
                 decoder: take_optional_object(&mut file, "decoder")?,
-                model: Arc::new(model),
+                model: ComponentSpec::new(model),
             },
             compiled: None,
         };
@@ -87,20 +124,39 @@ impl TokenizerSpec {
     /// Gets a reference to the [`PipelineTokenizer`] built from [`self.pipeline`], compiling it if needed
     /// Changing the pipeline spec re-compiles the [`PipelineTokenizer`]
     pub(crate) fn compile(&mut self) -> Result<PipelineTokenizer> {
-        if let Some((spec, pipeline)) = &self.compiled
-            && *spec == self.pipeline
+        // The check and the build use the same snapshot, so the cache always matches what it built.
+        let json = self.pipeline.map(|spec| spec.json());
+        if let Some((compiled, pipeline)) = &self.compiled
+            && *compiled == json
         {
             return Ok(pipeline.clone());
         }
-        let mut file = Value::Object(self.to_object());
+        let mut file = Value::Object(self.file(&json));
         canonicalize_value(&mut file)?;
         let pipeline = from_json(&file.to_string())?;
-        self.compiled = Some((self.pipeline.clone(), pipeline.clone()));
+        self.compiled = Some((json, pipeline.clone()));
         Ok(pipeline)
     }
 
+    /// A copy whose components are its own: editing one leaves this tokenizer unchanged.
+    pub(crate) fn copy(&self) -> Self {
+        Self {
+            version: self.version.clone(),
+            truncation: self.truncation.clone(),
+            padding: self.padding.clone(),
+            pipeline: self.pipeline.map(|spec| spec.detached()),
+            compiled: self.compiled.clone(),
+        }
+    }
+
     pub(crate) fn to_object(&self) -> JsonObject {
-        let spec = &self.pipeline;
+        self.file(&self.pipeline.map(|spec| spec.json()))
+    }
+
+    pub(crate) fn to_json(&self) -> String {
+        Value::Object(self.to_object()).to_string()
+    }
+    fn file(&self, spec: &PipelineSpec<Arc<JsonObject>>) -> JsonObject {
         let head = [
             ("version", Value::from(self.version.as_str())),
             (
@@ -127,10 +183,6 @@ impl TokenizerSpec {
             .map(|(k, v)| (k.to_owned(), v))
             .collect()
     }
-
-    pub(crate) fn to_json(&self) -> String {
-        Value::Object(self.to_object()).to_string()
-    }
 }
 
 fn take(file: &mut JsonObject, key: &str) -> Value {
@@ -144,10 +196,10 @@ fn take_object(file: &mut JsonObject, key: &str) -> Result<JsonObject> {
     }
 }
 
-fn take_optional_object(file: &mut JsonObject, key: &str) -> Result<Option<Arc<JsonObject>>> {
+fn take_optional_object(file: &mut JsonObject, key: &str) -> Result<Option<Arc<ComponentSpec>>> {
     match take(file, key) {
         Value::Null => Ok(None),
-        Value::Object(object) => Ok(Some(Arc::new(object))),
+        Value::Object(object) => Ok(Some(ComponentSpec::new(object))),
         _ => Err(format!("`{key}` must be an object or null").into()),
     }
 }
