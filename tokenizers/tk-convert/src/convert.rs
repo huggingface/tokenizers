@@ -541,8 +541,25 @@ fn fill_model_defaults(root: &mut Map<String, Value>) -> Result<(), ConvertError
     if model.get("type").and_then(Value::as_str) == Some("BPE") {
         // Only set when the `ByteLevel` lowering did not already say otherwise.
         model.entry("byte_level").or_insert(Value::Bool(false));
+        disable_byte_fallback_without_codes(model);
     }
     Ok(())
+}
+
+/// `byte_fallback: true` with no `<0xNN>` code in the vocab at all (NeMo ASR models) can never
+/// emit a byte token, so it only ever meant "no fallback". Partial coverage is left for the
+/// reader to fill or refuse.
+fn disable_byte_fallback_without_codes(model: &mut Map<String, Value>) {
+    if model.get("byte_fallback").and_then(Value::as_bool) != Some(true) {
+        return;
+    }
+    let has_code = model
+        .get("vocab")
+        .and_then(Value::as_object)
+        .is_some_and(|vocab| (0u8..=255).any(|b| vocab.contains_key(&format!("<{b:#04X}>"))));
+    if !has_code && model.get("vocab").is_some_and(Value::is_object) {
+        model.insert("byte_fallback".to_string(), Value::Bool(false));
+    }
 }
 
 /// A `TemplateProcessing` used to name its special tokens and carry a table to look them up in.
