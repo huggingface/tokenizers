@@ -50,6 +50,8 @@ const fn lut<const HAN: bool>() -> [u8; 64] {
     t[0x09] = 9; // Apostrophe — "other" for every run rule, split out for the contraction flag
     t[0x30] = if HAN { 11 } else { 2 }; // Script=Han letter
     t[0x31] = if HAN { 11 } else { 3 }; // Script=Han \p{N} (Nl)
+    t[0x36] = if HAN { 11 } else { 10 }; // Script=Han \p{M}
+    t[0x38] = if HAN { 11 } else { 8 }; // Script=Han \p{P}
     t[0x3A] = if HAN { 11 } else { 8 }; // Script=Han \p{S} (So)
     t[0x0F] = CODE_CONT;
     t
