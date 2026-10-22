@@ -12,6 +12,12 @@ use tk::pipeline::PipelineToken;
 use tk::pipeline::PipelineTokenizer;
 use tk::pipeline::{EncodeOptions, Override};
 
+use crate::components::ComponentKind;
+use crate::components::decoders::Decoder;
+use crate::components::models::Model;
+use crate::components::normalizers::Normalizer;
+use crate::components::pre_tokenizers::PreTokenizer;
+use crate::components::processors::PostProcessor;
 use crate::encoding::Encoding;
 use crate::error::err;
 use crate::input::PyInput;
@@ -76,7 +82,19 @@ impl Tokenizer {
         })
     }
 
-    fn spec(&self) -> MutexGuard<'_, TokenizerSpec> {
+    fn get<K: ComponentKind>(slf: &Bound<'_, Self>) -> PyResult<Option<Py<K>>> {
+        let Some(spec) = slf.get().spec().component(K::JSON_KEY).cloned() else {
+            return Ok(None);
+        };
+        K::from_spec(slf.py(), spec).map(Some)
+    }
+
+    fn set<K: ComponentKind>(&self, component: Option<Bound<'_, K>>) {
+        let spec = component.map(|c| K::spec(&c).clone());
+        self.spec().set_component(K::JSON_KEY, spec);
+    }
+
+    pub(crate) fn spec(&self) -> MutexGuard<'_, TokenizerSpec> {
         // A panic during a compile leaves the previous compile in place, so the spec stays usable.
         self.spec.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -213,6 +231,57 @@ impl Tokenizer {
             .call((), Some(&kwargs))?
             .extract()?;
         Self::from_file(path)
+    }
+
+    #[getter]
+    fn model(slf: &Bound<'_, Self>) -> PyResult<Py<Model>> {
+        let model = Self::get(slf)?;
+        Ok(model.expect("a TokenizerSpec always holds a model"))
+    }
+
+    #[setter]
+    fn set_model(&self, model: Bound<'_, Model>) {
+        self.set(Some(model))
+    }
+
+    #[getter]
+    fn normalizer(slf: &Bound<'_, Self>) -> PyResult<Option<Py<Normalizer>>> {
+        Self::get(slf)
+    }
+
+    #[setter]
+    fn set_normalizer(&self, normalizer: Option<Bound<'_, Normalizer>>) {
+        self.set(normalizer)
+    }
+
+    #[getter]
+    fn pre_tokenizer(slf: &Bound<'_, Self>) -> PyResult<Option<Py<PreTokenizer>>> {
+        Self::get(slf)
+    }
+
+    #[setter]
+    fn set_pre_tokenizer(&self, pre_tokenizer: Option<Bound<'_, PreTokenizer>>) {
+        self.set(pre_tokenizer)
+    }
+
+    #[getter]
+    fn post_processor(slf: &Bound<'_, Self>) -> PyResult<Option<Py<PostProcessor>>> {
+        Self::get(slf)
+    }
+
+    #[setter]
+    fn set_post_processor(&self, post_processor: Option<Bound<'_, PostProcessor>>) {
+        self.set(post_processor)
+    }
+
+    #[getter]
+    fn decoder(slf: &Bound<'_, Self>) -> PyResult<Option<Py<Decoder>>> {
+        Self::get(slf)
+    }
+
+    #[setter]
+    fn set_decoder(&self, decoder: Option<Bound<'_, Decoder>>) {
+        self.set(decoder)
     }
 
     /// The padding applied to every encode, or `None`.
