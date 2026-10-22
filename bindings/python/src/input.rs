@@ -1,5 +1,5 @@
 use pyo3::FromPyObject;
-use tk_encode::pipeline::{Input, Inputs};
+use tk::pipeline::{Input, Inputs};
 
 #[derive(FromPyObject)]
 pub enum PyInput {

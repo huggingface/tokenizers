@@ -1,6 +1,6 @@
-use tk_convert::canonicalize_str;
-use tk_encode::pipeline::PipelineTokenizer;
-use tk_serialize::from_json;
+use tokenizers::canonicalize_str;
+use tokenizers::from_json;
+use tokenizers::pipeline::PipelineTokenizer;
 use tsify::Ts;
 
 use wasm_bindgen::prelude::*;

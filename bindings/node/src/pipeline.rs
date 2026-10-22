@@ -9,9 +9,9 @@
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use tk_encode::pipeline::{EncodeOptions as PipelineEncodeOptions, Override};
-use tk_encode::tokenizer::pipeline::PipelineTokenizer as Pipeline;
-use tk_encode::{
+use tokenizers::pipeline::{EncodeOptions as PipelineEncodeOptions, Override};
+use tokenizers::tokenizer::pipeline::PipelineTokenizer as Pipeline;
+use tokenizers::{
   PaddingDirection, PaddingParams, PaddingStrategy, TruncationDirection, TruncationParams,
   TruncationStrategy,
 };
@@ -179,8 +179,8 @@ impl PipelineTokenizer {
   /// reads the canonical form.
   #[napi(factory)]
   pub fn from_file(path: String) -> Result<Self> {
-    let canonical = tk_convert::canonicalize_file(&path).map_err(err)?;
-    Ok(Self(tk_serialize::from_json(&canonical).map_err(err)?))
+    let canonical = tokenizers::canonicalize_file(&path).map_err(err)?;
+    Ok(Self(tokenizers::from_json(&canonical).map_err(err)?))
   }
 
   /// `Uint32Array`, not `Vec<u32>`: a JS `Array` costs one napi value per token, which on
