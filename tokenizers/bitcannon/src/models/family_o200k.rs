@@ -33,9 +33,9 @@ use crate::{
 /// Atom tag → dense 4-bit code. Unlike cl100k, `\p{M}` IS a letter here (both alt classes list
 /// `\p{M}`) — but only a true mark: `AlphaSymMark` (0x16, categorically `\p{S}`) and `Zwj` (0x26,
 /// `\p{Cf}`) stay "other", which is what keeps `[\p{L}\p{M}]+` off them.
-/// `HAN` routes Script=Han to code 11 — kimi's alternative 1, which outranks every other arm.
-/// Without it Han is an ordinary caseless letter / number / symbol, which is what o200k and tekken
-/// see. This is the whole of kimi's divergence: three table rows, not a second code path.
+/// `HAN` routes Script=Han to code 11 for kimi's leading alternative. Kimi inputs with
+/// overlapping Han categories are handled in `super::kimi`; this fast path sees Han letters.
+/// Without `HAN`, each refined tag keeps its ordinary category for o200k and tekken.
 const fn lut<const HAN: bool>() -> [u8; 64] {
     let mut t = [8u8; 64]; // other = [^\s\p{L}\p{N}] (incl. Connector/Punct/Sym/Control/ASM/ZWJ)
     t[0x10] = 0; // \p{Lu} ∪ \p{Lt}
