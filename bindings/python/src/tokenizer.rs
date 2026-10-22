@@ -141,6 +141,19 @@ impl Tokenizer {
 
 #[pymethods]
 impl Tokenizer {
+    /// A tokenizer made of `model` alone. Set the other components afterwards.
+    ///
+    /// The tokenizer shares `model`: an edit through either one reaches both.
+    ///
+    /// Args:
+    ///     model:
+    ///         The model that turns words into ids.
+    #[new]
+    #[pyo3(signature = (model))]
+    fn with_model(model: Bound<'_, Model>) -> Self {
+        Self::new(TokenizerSpec::from_model(Model::spec(&model).clone()))
+    }
+
     /// Loads a tokenizer from a `tokenizer.json` file.
     ///
     /// Components are not validated at this stage. A component with an unknown type or an invalid
@@ -461,6 +474,21 @@ impl TokenizerSpec {
                     .expect("canonicalize_value refuses a model that is not an object"),
             ),
         })
+    }
+
+    /// A tokenizer made of `model` alone.
+    pub(crate) fn from_model(model: ComponentSpec) -> Self {
+        Self {
+            truncation: None,
+            padding: None,
+            role_to_token: Arc::new(Value::Null),
+            added_tokens: Arc::new(Value::Array(Vec::new())),
+            normalizer: None,
+            pre_tokenizer: None,
+            post_processor: None,
+            decoder: None,
+            model: Some(model),
+        }
     }
 
     /// Builds a new [`PipelineTokenizer`] from the current spec, padding and truncation included.

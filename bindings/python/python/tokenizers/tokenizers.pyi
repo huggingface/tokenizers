@@ -415,6 +415,16 @@ class Tokenizer:
         Returns an independent copy. Editing one tokenizer leaves the other unchanged.
         Copying is cheap, even with a large vocab.
         """
+    def __new__(cls, /, model: Model) -> Tokenizer:
+        """
+        A tokenizer made of `model` alone. Set the other components afterwards.
+
+        The tokenizer shares `model`: an edit through either one reaches both.
+
+        Args:
+            model:
+                The model that turns words into ids.
+        """
     def __reduce__(self, /) -> tuple[Any, tuple[bytes]]:
         """
         Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
