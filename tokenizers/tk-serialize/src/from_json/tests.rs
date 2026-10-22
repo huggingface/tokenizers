@@ -53,6 +53,31 @@ fn ids(text: &str, input: &str) -> Vec<u32> {
         .collect()
 }
 
+#[cfg(feature = "bpe")]
+#[test]
+fn cl100k_digit_caps_preserve_encoded_ids() {
+    let model = serde_json::json!({
+        "type": "BPE", "byte_level": false,
+        "vocab": {"1": 0, "2": 1, "3": 2, "4": 3, "12": 4, "123": 5, "1234": 6, "34": 7},
+        "merges": [["1", "2"], ["12", "3"], ["123", "4"], ["3", "4"]]
+    })
+    .to_string();
+    for (digits, expected) in [
+        (r"\p{N}", vec![0, 1, 2, 3]),
+        (r"\p{N}{1,3}", vec![5, 3]),
+        (r"\p{N}{1,2}", vec![4, 7]),
+        (r"\p{N}+", vec![6]),
+    ] {
+        let pattern = bitcannon::regexes::CL100K.replace(r"\p{N}{1,3}", digits);
+        let pre = serde_json::json!({
+            "type": "Split", "pattern": {"Regex": pattern}, "behavior": "Isolated", "invert": false
+        })
+        .to_string();
+        let json = config(&[("model", &model), ("pre_tokenizer", &pre)]);
+        assert_eq!(ids(&json, "1234"), expected, "{digits}");
+    }
+}
+
 #[cfg(all(feature = "wordlevel", feature = "fancy-regex"))]
 #[test]
 fn generic_regex_split_encodes_from_json() {

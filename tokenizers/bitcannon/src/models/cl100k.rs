@@ -36,6 +36,20 @@ pub fn bitcannon_qwen(
     cl100k(text, tags, starts, flag, out, 1)
 }
 
+/// cl100k-family pre-tokenization with a configured numeric group size.
+/// A cap of 0 or at least 64 denotes an unbounded numeric run.
+#[must_use]
+pub fn bitcannon_cl100k_with_digit_cap(
+    text: &[u8],
+    tags: &[u8],
+    starts: &mut [u64],
+    flag: &mut [u64],
+    out: &mut [Span],
+    digit_cap: usize,
+) -> usize {
+    cl100k(text, tags, starts, flag, out, digit_cap)
+}
+
 fn cl100k(
     text: &[u8],
     tags: &[u8],
