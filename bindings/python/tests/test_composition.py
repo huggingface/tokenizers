@@ -7,7 +7,7 @@ import weakref
 import pytest
 
 from conftest import GPT2
-from tokenizers import Component, Padding, decoders, models, normalizers, pre_tokenizers
+from tokenizers import Component, Padding, Tokenizer, decoders, models, normalizers, pre_tokenizers
 
 TEXT = "Hello world, how are you?"
 
@@ -133,6 +133,146 @@ def test_stateless_component(wiki, key, cls):
     setattr(tokenizer, key, component)
     assert type(getattr(tokenizer, key)) is cls
     tokenizer.decode(tokenizer.encode(TEXT).ids)
+
+
+# transformers builds most tokenizers this way, then sets the other components.
+def test_tokenizer_from_parts(gpt2):
+    tokenizer = Tokenizer(model=gpt2.model)
+    tokenizer.pre_tokenizer = gpt2.pre_tokenizer
+    tokenizer.post_processor = gpt2.post_processor
+    tokenizer.decoder = gpt2.decoder
+    ids = tokenizer.encode(TEXT).ids
+    assert ids == gpt2.encode(TEXT).ids
+    assert tokenizer.decode(ids) == gpt2.decode(ids)
+
+
+# The keys, order and version 0.23 writes, which readers like Rust tokenizers 0.21 accept.
+def test_tokenizer_json_from_a_model():
+    written = json.loads(Tokenizer(models.BPE()).to_str())
+    assert list(written) == [
+        "version",
+        "truncation",
+        "padding",
+        "added_tokens",
+        "normalizer",
+        "pre_tokenizer",
+        "post_processor",
+        "decoder",
+        "model",
+    ]
+    assert written["version"] == "1.0"
+    assert written["added_tokens"] == []
+
+
+# The keys and order 0.23 writes.
+@pytest.mark.parametrize(
+    ("model", "keys"),
+    [
+        (
+            models.BPE(),
+            ["type", "dropout", "unk_token", "continuing_subword_prefix", "end_of_word_suffix"]
+            + ["fuse_unk", "byte_fallback", "ignore_merges", "vocab", "merges"],
+        ),
+        (
+            models.WordPiece(),
+            ["type", "unk_token", "continuing_subword_prefix", "max_input_chars_per_word", "vocab"],
+        ),
+        (models.WordLevel(), ["type", "vocab", "unk_token"]),
+        (models.Unigram([("<unk>", 0.0)]), ["type", "unk_id", "vocab", "byte_fallback"]),
+    ],
+    ids=lambda param: type(param).__name__ if isinstance(param, models.Model) else None,
+)
+def test_model_json_keys(model, keys):
+    assert list(json.loads(model.__getstate__())) == keys
+    assert type(pickle.loads(pickle.dumps(model))) is type(model)
+
+
+@pytest.mark.parametrize(("state", "shown"), [(b'{"type": "Bogus"}', '"Bogus"'), (b"{}", "null")])
+def test_unpickle_refuses_an_unknown_model_type(state, shown):
+    with pytest.raises(ValueError, match=f'^Unknown model "type": {shown}$'):
+        models.Model._unpickle(state)
+
+
+def test_bpe_from_dicts(wiki):
+    declared = json.loads(wiki.to_str())["model"]
+    vocab = dict(reversed(declared["vocab"].items()))
+    merges = [tuple(merge.split(" ")) for merge in declared["merges"]]
+    tokenizer = copy.deepcopy(wiki)
+    tokenizer.model = models.BPE(vocab, merges, unk_token="[UNK]")
+    assert list(json.loads(tokenizer.model.__getstate__())["vocab"]) == list(declared["vocab"])
+    text = f"{TEXT} 😀"
+    assert tokenizer.encode(text).ids == wiki.encode(text).ids
+
+
+def test_bpe_from_files(gpt2, tmp_path):
+    declared = json.loads(gpt2.to_str())["model"]
+    vocab = tmp_path / "vocab.json"
+    vocab.write_text(json.dumps(declared["vocab"]))
+    merges = tmp_path / "merges.txt"
+    merges.write_text("#version: 0.2\n" + "\n".join(declared["merges"]) + "\n")
+    tokenizer = copy.deepcopy(gpt2)
+    tokenizer.model = models.BPE(vocab=str(vocab), merges=str(merges))
+    assert tokenizer.encode(TEXT).ids == gpt2.encode(TEXT).ids
+
+
+def test_bpe_refuses_a_bad_merges_file(tmp_path):
+    merges = tmp_path / "merges.txt"
+    merges.write_text("#version: 0.2\na b\na b c\n")
+    with pytest.raises(ValueError, match="line 3"):
+        models.BPE({}, str(merges))
+
+
+def test_bpe_options():
+    bpe = models.BPE(
+        {"a": 0, "b": 1, "ab": 2},
+        [("a", "b")],
+        dropout=0.5,
+        unk_token="a",
+        continuing_subword_prefix="",
+        end_of_word_suffix="</w>",
+        fuse_unk=True,
+        byte_fallback=True,
+        ignore_merges=True,
+    )
+    assert json.loads(bpe.__getstate__()) == {
+        "type": "BPE",
+        "dropout": 0.5,
+        "unk_token": "a",
+        "continuing_subword_prefix": "",
+        "end_of_word_suffix": "</w>",
+        "fuse_unk": True,
+        "byte_fallback": True,
+        "ignore_merges": True,
+        "vocab": {"a": 0, "b": 1, "ab": 2},
+        "merges": [["a", "b"]],
+    }
+    assert (bpe.unk_token, bpe.continuing_subword_prefix, bpe.end_of_word_suffix) == ("a", "", "</w>")
+    assert models.BPE().unk_token is None
+
+
+def test_wordpiece(bert, tmp_path):
+    declared = json.loads(bert.to_str())["model"]
+    vocab = tmp_path / "vocab.txt"
+    vocab.write_text("".join(f"{token}\n" for token in declared["vocab"]))
+    for source in (declared["vocab"], str(vocab)):
+        tokenizer = copy.deepcopy(bert)
+        tokenizer.model = models.WordPiece(source, unk_token="[UNK]")
+        assert tokenizer.model.continuing_subword_prefix == "##"
+        text = f"{TEXT} 😀"
+        assert tokenizer.encode(text).ids == bert.encode(text).ids
+
+
+def test_unigram(wiki):
+    tokenizer = copy.deepcopy(wiki)
+    vocab = [("<unk>", 0.0), ("a", -1.0), ("b", -1.0), ("ab", -1.5)]
+    tokenizer.model = models.Unigram(vocab, unk_id=0, byte_fallback=False)
+    assert tokenizer.encode("ab c", add_special_tokens=False).ids == [3, 0]
+
+
+def test_wordlevel(wiki):
+    tokenizer = copy.deepcopy(wiki)
+    tokenizer.model = models.WordLevel({"hello": 0, "[UNK]": 1}, unk_token="[UNK]")
+    assert tokenizer.encode("hello world", add_special_tokens=False).ids == [0, 1]
 
 
 def test_handle_outlives_its_slot(gpt2):

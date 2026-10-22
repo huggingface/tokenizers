@@ -72,6 +72,14 @@ pub(crate) trait ComponentKind:
         PyClassInitializer::from(Component { spec }).add_subclass(Self::default())
     }
 
+    /// The initializer of `subclass` over a new component holding `json`, for constructors.
+    fn init<T: PyClass<BaseType = Self>>(json: Value, subclass: T) -> PyClassInitializer<T> {
+        let Value::Object(json) = json else {
+            unreachable!("constructors pass a json! object literal")
+        };
+        Self::make_init(ComponentSpec::new(json)).add_subclass(subclass)
+    }
+
     /// Builds `subclass` around `spec`, for example a `BPE` for a model whose `"type"` is `"BPE"`.
     fn subclass_from_spec<T: PyClass<BaseType = Self>>(
         py: Python<'_>,

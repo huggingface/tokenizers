@@ -6,6 +6,7 @@ mod encoding;
 mod error;
 mod input;
 mod options;
+mod regex;
 mod repr;
 mod spec;
 mod tokenizer;
@@ -25,6 +26,8 @@ mod tokenizers {
     use crate::options::Padding;
     #[pymodule_export]
     use crate::options::Truncation;
+    #[pymodule_export]
+    use crate::regex::Regex;
     #[pymodule_export]
     use crate::tokenizer::Tokenizer;
 

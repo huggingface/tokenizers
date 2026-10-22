@@ -140,6 +140,25 @@ impl TokenizerSpec {
         Ok(spec)
     }
 
+    /// A tokenizer made of `model` alone, written as a "1.0" file like 0.23 writes it.
+    pub(crate) fn from_model(model: Arc<ComponentSpec>) -> Self {
+        Self {
+            version: "1.0".to_owned(),
+            truncation: None,
+            padding: None,
+            pipeline: PipelineSpec {
+                role_to_token: None,
+                added_tokens: Arc::new(Value::Array(Vec::new())),
+                normalizer: None,
+                pre_tokenizer: None,
+                post_processor: None,
+                decoder: None,
+                model,
+            },
+            compiled: None,
+        }
+    }
+
     /// Gets a reference to the [`PipelineTokenizer`] built from [`self.pipeline`], compiling it if needed
     /// Changing the pipeline spec re-compiles the [`PipelineTokenizer`]
     pub(crate) fn compile(&mut self) -> Result<PipelineTokenizer> {

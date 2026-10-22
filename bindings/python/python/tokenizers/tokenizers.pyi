@@ -162,6 +162,16 @@ class Padding:
         """
 
 @final
+class Regex:
+    """
+    A regular expression, for a component's pattern. A plain `str` pattern is a literal.
+    """
+    def __new__(cls, /, pattern: str) -> Regex:
+        """
+        Fails on a pattern the regex engine cannot compile.
+        """
+
+@final
 class Tokenizer:
     """
     A tokenizer. Encodes text into token ids, and decodes token ids back into text.
@@ -173,6 +183,16 @@ class Tokenizer:
     def __deepcopy__(self, /, _memo: dict) -> Tokenizer:
         """
         Copies the tokenizer. The copy holds a reference to the same underlying compiled tokenizer.
+        """
+    def __new__(cls, /, model: Model) -> Tokenizer:
+        """
+        A tokenizer made of `model` alone. Set the other components afterwards.
+
+        The tokenizer shares `model`: an edit through either one reaches both.
+
+        Args:
+            model:
+                The model that turns words into ids.
         """
     def __reduce__(self, /) -> tuple[Any, tuple[str]]:
         """
