@@ -46,7 +46,7 @@ Every component, at every depth, is an object tagged with `"type"`.
 | slot | `"type"` |
 |---|---|
 | **normalizer** | `Sequence` `BertNormalizer` `ByteLevel` `Lowercase` `MetaspaceNormalizer` `NFC` `NFD` `NFKC` `NFKD` `Nmt` `Precompiled` `Prepend` `Replace` `Strip` `StripAccents` |
-| **pre_tokenizer** | `Sequence` `BertPreTokenizer` `CharDelimiterSplit` `Digits` `FixedLength` `Punctuation` `Split` `UnicodeScripts` `Whitespace` `WhitespaceSplit` |
+| **pre_tokenizer** | `Sequence` `BertPreTokenizer` `ByteLevelPrefixSpace` `CharDelimiterSplit` `Digits` `FixedLength` `Punctuation` `Split` `UnicodeScripts` `Whitespace` `WhitespaceSplit` |
 | **post_processor** | `TemplateProcessing` |
 | **decoder** | `Sequence` `BPEDecoder` `ByteFallback` `ByteLevel` `CTC` `Fuse` `Metaspace` `Replace` `Strip` `WordPiece` |
 
@@ -66,7 +66,12 @@ the pipeline keeps apart — so canonically it is spelled as the two it is:
 
 There is no `ByteLevel` pre-tokenizer either. Byte-level describes how the vocabulary is encoded,
 so it is `"byte_level"` on the model; the split it used to imply is a plain `Split` on the GPT-2
-regex, or nothing at all where it said `use_regex: false`.
+regex, or nothing at all where it said `use_regex: false`. If the old pre-tokenizer also had
+`add_prefix_space: true`, a leading `ByteLevelPrefixSpace` marker preserves that operation at the
+same stage: after normalized special-token extraction and before pre-tokenization. The converter
+refuses this combination after earlier sequence pre-tokenizers, where it cannot yet preserve the
+legacy per-split behavior. The canonical reader accepts the marker only by itself or as the first
+member of a pre-tokenizer sequence; elsewhere its stage would be ambiguous.
 
 tk-convert rewrites a legacy `Metaspace` into that pair, and a legacy `ByteLevel` into the model
 flag plus that `Split`. Spelling it out beats folding it back: the

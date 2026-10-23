@@ -68,8 +68,10 @@ pub enum ConvertError {
     )]
     MetaspaceDropWhitespaceScheme { scheme: String },
 
-    #[error("a `ByteLevel` pre-tokenizer with `add_prefix_space: true` is not supported")]
-    ByteLevelAddPrefixSpace,
+    #[error(
+        "`ByteLevel` with `add_prefix_space: true` after earlier pre-tokenizers is not supported"
+    )]
+    ByteLevelAddPrefixSpaceInSequence,
 
     #[error("a `ByteLevel` pre-tokenizer must be the last member of its `Sequence`")]
     ByteLevelNotLast,
@@ -438,7 +440,9 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
 ///
 /// The byte map is a property of the vocabulary, so it becomes `"byte_level": true` on the model.
 /// What is left is the split it asked for: the GPT-2 regex when `use_regex` (the default), and
-/// nothing at all when not.
+/// nothing at all when not. `add_prefix_space` is a post-normalization, per-text-segment action,
+/// so the canonical pre-tokenizer carries a marker that the pipeline applies after special-token
+/// extraction and before splitting.
 fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), ConvertError> {
     let Some(pretok) = root.get_mut("pre_tokenizer") else {
         return Ok(());
@@ -446,26 +450,30 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
     let is_byte_level = |v: &Value| v.get("type").and_then(Value::as_str) == Some("ByteLevel");
 
     // `use_regex` defaults to true, which is what gpt2 and roberta rely on.
-    let split_for = |bl: &Value| -> Result<Option<Value>, ConvertError> {
-        if bl.get("add_prefix_space").and_then(Value::as_bool) == Some(true) {
-            return Err(ConvertError::ByteLevelAddPrefixSpace);
-        }
-        Ok(
-            match bl.get("use_regex").and_then(Value::as_bool).unwrap_or(true) {
-                true => Some(tagged(
-                    "Split",
-                    &[(
-                        "pattern",
-                        serde_json::json!({ "Regex": bitcannon::regexes::GPT2 }),
-                    )],
-                )),
-                false => None,
-            },
+    let split_for = |bl: &Value| {
+        let split = match bl.get("use_regex").and_then(Value::as_bool).unwrap_or(true) {
+            true => Some(tagged(
+                "Split",
+                &[(
+                    "pattern",
+                    serde_json::json!({ "Regex": bitcannon::regexes::GPT2 }),
+                )],
+            )),
+            false => None,
+        };
+        (
+            split,
+            bl.get("add_prefix_space").and_then(Value::as_bool) == Some(true),
         )
     };
 
     let replacement = if is_byte_level(pretok) {
-        Some(split_for(pretok)?)
+        let (split, add_prefix_space) = split_for(pretok);
+        Some(if add_prefix_space {
+            Some(byte_level_prefix_space(split))
+        } else {
+            split
+        })
     } else if pretok.get("type").and_then(Value::as_str) == Some("Sequence") {
         let members = pretok
             .get_mut("pretokenizers")
@@ -473,16 +481,24 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
         match members {
             Some(members) if members.last().is_some_and(is_byte_level) => {
                 let bl = members.pop().expect("checked by `last`");
-                if let Some(split) = split_for(&bl)? {
-                    members.push(split);
+                let (split, add_prefix_space) = split_for(&bl);
+                if add_prefix_space && !members.is_empty() {
+                    return Err(ConvertError::ByteLevelAddPrefixSpaceInSequence);
                 }
-                // A `Sequence` whose only member was the dropped `ByteLevel` is not an empty
-                // sequence, it is no pre-tokenizer at all -- which is what `use_regex: false`
-                // lowered to before.
-                if members.is_empty() {
-                    Some(None)
+                if add_prefix_space {
+                    Some(Some(byte_level_prefix_space(split)))
                 } else {
-                    None // the `Sequence` was edited in place
+                    if let Some(split) = split {
+                        members.push(split);
+                    }
+                    // A `Sequence` whose only member was the dropped `ByteLevel` is not an empty
+                    // sequence, it is no pre-tokenizer at all -- which is what `use_regex: false`
+                    // lowered to before.
+                    if members.is_empty() {
+                        Some(None)
+                    } else {
+                        None // the `Sequence` was edited in place
+                    }
                 }
             }
             // A `ByteLevel` anywhere but last never loaded: the byte map has to apply after every
@@ -514,6 +530,18 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
     }
     set_model_flag(root, "byte_level", true)?;
     Ok(())
+}
+
+/// Preserve the ByteLevel prefix operation as a pipeline marker, followed by its optional split.
+fn byte_level_prefix_space(split: Option<Value>) -> Value {
+    let mut members = vec![tagged("ByteLevelPrefixSpace", &[])];
+    if let Some(split) = split {
+        members.push(split);
+    }
+    match members.as_slice() {
+        [only] => only.clone(),
+        _ => tagged("Sequence", &[("pretokenizers", Value::Array(members))]),
+    }
 }
 
 /// Set a boolean on the `model` object.
