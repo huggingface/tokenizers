@@ -285,6 +285,14 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
 }
 
 impl PipelineWordPiece {
+    pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.vocab_trie.exact_match_search(token)
+    }
+
+    pub(crate) fn get_vocab_size(&self) -> usize {
+        self.vocab_r.iter().filter(|token| token.is_some()).count()
+    }
+
     /// One word, greedily: the longest vocabulary entry it starts with, then the
     /// longest entry the rest of it starts with once the continuing-subword prefix
     /// is put in front, and so on. A piece with no entry at all anywhere in the

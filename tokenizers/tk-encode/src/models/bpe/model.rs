@@ -9,7 +9,7 @@ use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken, Span};
 use crate::tokenizer::Result;
-use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, char_to_byte};
 use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
 use crate::vocab::bucket_vocab_store::{BucketVocabStore, key_and_hash, key_and_hash_readable};
 
@@ -72,6 +72,36 @@ pub(super) enum Atoms {
 }
 
 impl PipelineBPE {
+    pub(crate) fn get_vocab(&self) -> std::collections::HashMap<String, u32> {
+        self.vocab
+            .byte_content()
+            .into_iter()
+            .map(|(bytes, id)| {
+                let token = if self.is_byte_level() {
+                    bytes
+                        .iter()
+                        .map(|&b| BYTES_CHAR_LOOKUP[b as usize])
+                        .collect()
+                } else {
+                    String::from_utf8_lossy(&bytes).into_owned()
+                };
+                (token, id)
+            })
+            .collect()
+    }
+
+    pub(crate) fn get_vocab_size(&self) -> usize {
+        self.vocab.len()
+    }
+
+    pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
+        if !self.is_byte_level() {
+            return self.vocab.token_to_id(token);
+        }
+        let bytes: Option<Vec<u8>> = token.chars().map(char_to_byte).collect();
+        self.vocab.get_bytes(&bytes?)
+    }
+
     /// True when this model was built with `byte_level`, which means
     /// [`byte_level::transform_vocab`] already turned every vocabulary entry into its
     /// **decoded raw bytes** at load time. Decoding is then a concatenation, and running a
