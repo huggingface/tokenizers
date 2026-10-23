@@ -17,8 +17,10 @@
 //! naming what a human has to decide, rather than guessed at.
 //!
 pub mod convert;
+mod tokenizer_json;
 
 pub use convert::{
     ConvertError, canonicalize_file, canonicalize_post_processor, canonicalize_str,
     canonicalize_value, fill_model_type,
 };
+pub use tokenizer_json::TokenizerJson;

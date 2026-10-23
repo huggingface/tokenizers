@@ -27,6 +27,18 @@ pub enum ConvertError {
     #[error("`model` must be a JSON object, found {found}")]
     ModelNotObject { found: &'static str },
 
+    #[error("`{key}` must be a JSON object or null, found {found}")]
+    ComponentNotObject {
+        key: &'static str,
+        found: &'static str,
+    },
+
+    #[error("unknown tokenizer.json version {version}")]
+    UnknownVersion { version: String },
+
+    #[error("unknown keys in the tokenizer.json: {}", in_backticks(.keys))]
+    UnknownKeys { keys: Vec<String> },
+
     #[error("legacy merge {merge:?} does not split into exactly two tokens on a space")]
     BadMerge { merge: String },
 
@@ -82,6 +94,11 @@ pub enum ConvertError {
 
     #[error("the template names the special token {name:?}, which its `special_tokens` does not")]
     UnknownTemplateSpecial { name: String },
+}
+
+fn in_backticks(keys: &[String]) -> String {
+    let keys: Vec<String> = keys.iter().map(|key| format!("`{key}`")).collect();
+    keys.join(", ")
 }
 
 /// Canonicalise a `tokenizer.json` held as a string. Pretty-printed, because a human usually reads
@@ -332,7 +349,7 @@ fn canonicalize_metaspace(obj: &mut Map<String, Value>) -> Result<String, Conver
 }
 
 /// `serde_json` has no public name for a `Value`'s variant.
-fn kind_of(value: &Value) -> &'static str {
+pub(crate) fn kind_of(value: &Value) -> &'static str {
     match value {
         Value::Null => "null",
         Value::Bool(_) => "a boolean",
