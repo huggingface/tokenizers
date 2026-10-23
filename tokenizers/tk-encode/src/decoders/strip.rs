@@ -37,8 +37,7 @@ impl Decoder for Strip {
                 }
 
                 let mut stop_cut = chars.len();
-                for i in 0..self.stop {
-                    let index = chars.len() - i - 1;
+                for index in (start_cut..chars.len()).rev().take(self.stop) {
                     if chars[index] == self.content {
                         stop_cut = index;
                         continue;
@@ -71,5 +70,20 @@ mod tests {
             .decode_chain(vec!["Hey".into(), " friend!".into()])
             .unwrap();
         assert_eq!(res, vec!["He", " friend!"]);
+    }
+
+    #[test]
+    fn decode_short_tokens() {
+        // fewer chars than `stop`, all of them `content`
+        let decoder = Strip::new('H', 0, 3);
+        let res = decoder.decode_chain(vec!["".into(), "HH".into()]).unwrap();
+        assert_eq!(res, vec!["", ""]);
+
+        // the leading and trailing strips together ask for more chars than the token has
+        let decoder = Strip::new('H', 2, 2);
+        let res = decoder
+            .decode_chain(vec!["H".into(), "HHH".into(), "HeH".into()])
+            .unwrap();
+        assert_eq!(res, vec!["", "", "e"]);
     }
 }
