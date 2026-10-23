@@ -270,12 +270,8 @@ fn byte_level_is_a_model_field_not_a_pre_tokenizer() {
     let doc = Json::parse(&json).unwrap();
     let pretok = read_pre_tokenizer(doc.field("pre_tokenizer")).unwrap();
     assert!(matches!(pretok, PipelinePreTokenizer::None));
-    // Where the flag *does* land is the model, which then wants every byte to be an atom. The
-    // four-token vocab above is not one, so this is refused for that reason and no other.
-    assert!(
-        read_err(&json).contains("byte-level vocabulary has no token for bytes"),
-        "not the byte-atom refusal"
-    );
+    assert_eq!(ids(&json, "abab"), vec![3]);
+    assert_eq!(ids(&json, "ab-ab"), vec![3]);
 }
 
 /// One config per decoder variant, so a field rename fails here rather than silently producing a

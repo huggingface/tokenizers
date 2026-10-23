@@ -391,15 +391,48 @@ fn byte_level_id_to_token_spells_the_projected_alphabet() {
     assert_eq!(pipeline.id_to_token(301), None);
 }
 
-#[test]
-fn byte_level_requires_full_byte_coverage() {
-    // An ASCII-only vocab covers no control/high bytes: building the
-    // byte-level pipeline must be a build error, not a panic.
-    assert!(
-        hello(BpeConfig {
-            byte_level: true,
-            ..Default::default()
-        })
-        .is_err()
+/// The gpt2-shaped miniature without a token for each byte in `missing`
+fn byte_level_bpe_without(missing: &[u8], merges: &[(&str, &str)]) -> Result<PipelineBPE> {
+    let mut vocab: Vocab = (0..=255u8)
+        .filter(|b| !missing.contains(b))
+        .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
+        .collect();
+    vocab.extend(
+        (300..)
+            .zip(merges)
+            .map(|(id, (a, b))| (format!("{a}{b}"), id)),
     );
+    let merges: Merges = merges
+        .iter()
+        .map(|&(a, b)| (a.to_string(), b.to_string()))
+        .collect();
+    PipelineBPE::from_config(BpeConfig {
+        vocab,
+        merges,
+        byte_level: true,
+        ..Default::default()
+    })
+}
+
+#[test]
+fn byte_level_merges_across_a_dropped_byte() {
+    let pipeline = byte_level_bpe_without(b"-", &[("a", "b")]).unwrap();
+    let ab = pipeline.vocab.token_to_id("ab").unwrap();
+    assert_eq!(pipeline_ids(&pipeline, "a-b"), vec![ab]);
+}
+
+#[test]
+fn byte_level_drops_bytes_real_text_can_contain() {
+    // bloom has no token for 0x0B, SmolLM none for 0x04: it loads, warns, and drops the byte.
+    let pipeline = byte_level_bpe_without(&[0x0B, 0x04], &[]).unwrap();
+    assert_eq!(
+        pipeline_ids(&pipeline, "a\x0bb\x04"),
+        vec![u32::from(b'a'), u32::from(b'b')]
+    );
+    // A pretoken made only of missing bytes encodes to nothing.
+    assert_eq!(pipeline_ids(&pipeline, "\x0b\x0b"), Vec::<u32>::new());
+    // A word long enough for the hot/cold queue engine drops the same way.
+    let long = "ab\x0b".repeat(64);
+    let want: Vec<u32> = "ab".repeat(64).bytes().map(u32::from).collect();
+    assert_eq!(pipeline_ids(&pipeline, &long), want);
 }
