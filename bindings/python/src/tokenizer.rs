@@ -52,6 +52,7 @@ impl Tokenizer {
         }
     }
 
+    /// Generic getter for a component kind
     fn get<K: ComponentKind>(slf: &Bound<'_, Self>) -> PyResult<Option<Py<K>>> {
         let Some(spec) = slf.get().spec().component(K::JSON_KEY).cloned() else {
             return Ok(None);
@@ -59,6 +60,7 @@ impl Tokenizer {
         K::from_spec(slf.py(), spec).map(Some)
     }
 
+    /// Generic setter for a component kind
     fn set<K: ComponentKind>(&self, component: Option<Bound<'_, K>>) {
         let spec = component.map(|c| K::spec(&c).clone());
         self.spec().set_component(K::JSON_KEY, spec);
@@ -359,7 +361,7 @@ impl TokenizerSpec {
             ComponentKey::PostProcessor => self.post_processor = spec,
             ComponentKey::Decoder => self.decoder = spec,
             ComponentKey::Model => {
-                self.model = spec.expect("the model setter takes a Model, never None")
+                self.model = spec.expect("calling set_component on model should never pass None")
             }
         }
     }
@@ -456,8 +458,13 @@ impl ComponentSpec {
         self.lock().clone()
     }
 
-    /// Edits the JSON. A [`detached`](Self::detached) copy still holding the previous JSON keeps it.
-    #[expect(dead_code, reason = "JsonFields::set_field uses it")]
+    /// Runs `edit` on the JSON, and store a reference to the new value in `self`.
+    /// Other pointers to the component (eg a compiled snapshot or a [`detached`](Self::detached) copy)
+    /// are unaffected and point to the previous value.
+    #[expect(
+        dead_code,
+        reason = "will be called when we add concrete component pyclasses"
+    )]
     pub(crate) fn edit<R>(&self, edit: impl FnOnce(&mut JsonObject) -> R) -> R {
         edit(Arc::make_mut(&mut self.lock()))
     }
