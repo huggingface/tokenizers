@@ -1,4 +1,4 @@
-//! Component pyclasses to support write through efficiently:
+//! Component pyclasses:
 //!
 //! ```python
 //! tokenizer.pre_tokenizer = NFC()
@@ -28,7 +28,7 @@ use crate::error::err;
 use crate::repr;
 use crate::tokenizer::{ComponentKey, ComponentSpec};
 
-/// Base class for tokenizer components
+/// Base class for stand-alone / detached tokenizer components
 #[pyclass(frozen, subclass, module = "tokenizers")]
 pub struct Component {
     spec: Arc<ComponentSpec>,
@@ -54,42 +54,26 @@ impl Component {
     }
 }
 
-/// Boilerplate implementation for subclasses of Component representing component kinds:
+/// Boilerplate methods for subclasses of Component representing component kinds:
 /// Model, Normalizer, PreTokenizer, ...
 pub(crate) trait ComponentKind:
     PyClass<BaseType = Component> + PyClassBaseType<Initializer = PyClassInitializer<Self>> + Default
 {
     /// The `tokenizer.json` key where the spec for this component kind is stored.
-    /// For example, `"pre_tokenizer"` for the `PreTokenizer` component.
+    /// For example, `ComponentKey::PreTokenizer` for the `PreTokenizer` component.
     const JSON_KEY: ComponentKey;
 
-    /// Override this to instantiate leaf classes (eg, instantiate a BPE for models)
-    fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
-        Py::new(py, Self::make_init(spec))
+    /// Builds the Python object for `spec`, as the class its `"type"` names.
+    fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>>;
+
+    /// A plain instance of this kind, for a `"type"` with no Python class of its own.
+    fn default_component(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
+        Py::new(py, Self::default_initializer(spec))
     }
 
-    fn make_init(spec: Arc<ComponentSpec>) -> PyClassInitializer<Self> {
+    /// The initializer of this kind over `spec`, with no concrete class on top.
+    fn default_initializer(spec: Arc<ComponentSpec>) -> PyClassInitializer<Self> {
         PyClassInitializer::from(Component { spec }).add_subclass(Self::default())
-    }
-
-    /// The initializer of `subclass` over a new component holding `json`, for constructors.
-    #[expect(dead_code, reason = "the component kinds use it")]
-    fn init<T: PyClass<BaseType = Self>>(json: Value, subclass: T) -> PyClassInitializer<T> {
-        let Value::Object(json) = json else {
-            unreachable!("constructors pass a json! object literal")
-        };
-        Self::make_init(ComponentSpec::new(json)).add_subclass(subclass)
-    }
-
-    /// Builds `subclass` around `spec`, for example a `BPE` for a model whose `"type"` is `"BPE"`.
-    #[expect(dead_code, reason = "the component kinds use it")]
-    fn subclass_from_spec<T: PyClass<BaseType = Self>>(
-        py: Python<'_>,
-        spec: Arc<ComponentSpec>,
-        subclass: T,
-    ) -> PyResult<Py<Self>> {
-        let init = Self::make_init(spec).add_subclass(subclass);
-        Ok(Bound::new(py, init)?.into_super().unbind())
     }
 
     /// Get a reference to the underlying [`ComponentSpec`]
@@ -107,8 +91,21 @@ pub(crate) trait ComponentKind:
     }
 }
 
+/// Boilerplate methods for the concrete classes of a component kind: BPE, Prepend, ...
+pub(crate) trait ComponentType: PyClass<BaseType: ComponentKind> + Default {
+    fn initializer(spec: Arc<ComponentSpec>) -> PyClassInitializer<Self> {
+        Self::BaseType::default_initializer(spec).add_subclass(Self::default())
+    }
+
+    /// Builds the Python object for `spec`, typed as its kind.
+    fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self::BaseType>> {
+        Ok(Bound::new(py, Self::initializer(spec))?
+            .into_super()
+            .unbind())
+    }
+}
+
 /// Reads and writes one field of a component's JSON.
-#[expect(dead_code, reason = "the component kinds use it")]
 pub(crate) trait JsonFields {
     /// A missing key reads as `null`, so `Option<T>` reads it as `None`.
     fn field<T: serde::de::DeserializeOwned>(&self, key: &str) -> PyResult<T>;

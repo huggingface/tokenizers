@@ -182,7 +182,7 @@ class CompiledTokenizer:
 
 class Component:
     """
-    Base class for tokenizer components
+    Base class for stand-alone / detached tokenizer components
     """
     def __getstate__(self, /) -> bytes:
         """

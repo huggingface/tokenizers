@@ -107,3 +107,18 @@ def test_move_component(gpt2_spec, bert_spec):
     gpt2_spec.normalizer = bert_spec.normalizer
     assert gpt2_spec.normalizer.__getstate__() == bert_spec.normalizer.__getstate__()
     assert gpt2_spec.compile().encode("HELLO WORLD").ids == lowercased
+
+
+# --------------------------------------------------------------------------------------------------
+# concrete components
+# --------------------------------------------------------------------------------------------------
+
+
+def test_editing_a_component_writes_through(gpt2_spec):
+    unchanged = copy.deepcopy(gpt2_spec)
+    prepend = normalizers.Prepend("a")
+    gpt2_spec.normalizer = prepend
+    prepend.prepend = "b"
+    assert type(gpt2_spec.normalizer) is normalizers.Prepend
+    assert gpt2_spec.normalizer.prepend == "b"
+    assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode("b" + TEXT).ids
