@@ -104,7 +104,8 @@ impl TokenizerSpec {
             ComponentKey::PostProcessor => pipeline.post_processor = spec,
             ComponentKey::Decoder => pipeline.decoder = spec,
             ComponentKey::Model => {
-                pipeline.model = spec.expect("the model setter takes a Model, never None")
+                pipeline.model =
+                    spec.expect("calling set_component on model should never pass None")
             }
         }
     }
@@ -201,8 +202,13 @@ impl ComponentSpec {
         self.lock().clone()
     }
 
-    /// Edits the JSON. A compiled tokenizer still holding the previous JSON keeps it.
-    #[expect(dead_code, reason = "JsonFields::set_field uses it")]
+    /// Runs `edit` on the JSON, and store a reference to the new value in `self`.
+    /// Other pointers to the component (eg a compiled snapshot or a [`detached`](Self::detached) copy)
+    /// are unaffected and point to the previous value.
+    #[expect(
+        dead_code,
+        reason = "will be called when we add concrete component pyclasses"
+    )]
     pub(crate) fn edit<R>(&self, edit: impl FnOnce(&mut JsonObject) -> R) -> R {
         edit(Arc::make_mut(&mut self.lock()))
     }

@@ -81,6 +81,7 @@ impl Tokenizer {
         })
     }
 
+    /// Generic getter for a component kind
     fn get<K: ComponentKind>(slf: &Bound<'_, Self>) -> PyResult<Option<Py<K>>> {
         let Some(spec) = slf.get().spec().component(K::JSON_KEY).cloned() else {
             return Ok(None);
@@ -88,6 +89,7 @@ impl Tokenizer {
         K::from_spec(slf.py(), spec).map(Some)
     }
 
+    /// Generic setter for a component kind
     fn set<K: ComponentKind>(&self, component: Option<Bound<'_, K>>) {
         let spec = component.map(|c| K::spec(&c).clone());
         self.spec().set_component(K::JSON_KEY, spec);
