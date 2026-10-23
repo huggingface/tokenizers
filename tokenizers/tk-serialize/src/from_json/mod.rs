@@ -104,6 +104,23 @@ pub fn post_processor_from_json(text: &str) -> Result<tk_encode::pipeline::Pipel
     read_post_processor(Some(&doc))
 }
 
+/// Read a lone `padding`, the value of that one key. `null` means no padding.
+///
+/// The bindings hold padding apart from the rest of the file, so they need this half of the reader.
+pub fn padding_from_json(text: &str) -> Result<Option<tk_encode::tokenizer::PaddingParams>> {
+    let doc = Json::parse(text).map_err(|e| -> tk_encode::Error { e.to_string().into() })?;
+    read_padding(Some(&doc).filter(|doc| !doc.is_null()))
+}
+
+/// Read a lone `truncation`, the value of that one key. `null` means no truncation.
+///
+/// The bindings hold truncation apart from the rest of the file, so they need this half of the
+/// reader.
+pub fn truncation_from_json(text: &str) -> Result<Option<tk_encode::tokenizer::TruncationParams>> {
+    let doc = Json::parse(text).map_err(|e| -> tk_encode::Error { e.to_string().into() })?;
+    read_truncation(Some(&doc).filter(|doc| !doc.is_null()))
+}
+
 fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
     // `2.0` is the canonical format this crate reads and writes. A `1.0` file is a legacy file:
     // tk-convert turns one into a `2.0` file, and this reader never sees it.

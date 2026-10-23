@@ -91,15 +91,20 @@ pub use tk_encode::FromPretrainedParameters;
 // ---------------------------------------------------------------------------
 // The reader and the writer — re-exported from `tk-serialize`.
 // ---------------------------------------------------------------------------
-pub use tk_serialize::{from_json, from_json_file, json, post_processor_from_json};
+pub use tk_serialize::{
+    from_json, from_json_file, json, padding_from_json, post_processor_from_json,
+    truncation_from_json,
+};
 #[cfg(feature = "serialize")]
-pub use tk_serialize::{post_processor_to_json, str_to_json, to_json};
+pub use tk_serialize::{
+    padding_to_json, post_processor_to_json, str_to_json, to_json, truncation_to_json,
+};
 
 // ---------------------------------------------------------------------------
 // The legacy-config upgrade pass — all that is left of the config layer.
 // ---------------------------------------------------------------------------
 pub use tk_convert::{
-    ConvertError, canonicalize_file, canonicalize_post_processor, canonicalize_str,
+    ConvertError, TokenizerJson, canonicalize_file, canonicalize_post_processor, canonicalize_str,
     canonicalize_value, convert,
 };
 

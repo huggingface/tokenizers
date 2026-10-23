@@ -6,6 +6,7 @@ mod error;
 mod input;
 mod options;
 mod repr;
+mod spec;
 mod tokenizer;
 mod type_hints;
 
