@@ -61,7 +61,7 @@ impl TokenizerJson {
             .keys()
             .filter(|key| {
                 !KEYS.contains(&key.as_str())
-                    && !(key.as_str() == "role_to_token" || version.as_str() == "2.0")
+                    && !(key.as_str() == "role_to_token" && version.as_str() == "2.0")
             })
             .cloned()
             .collect();
