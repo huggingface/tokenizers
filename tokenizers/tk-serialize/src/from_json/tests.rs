@@ -53,6 +53,39 @@ fn ids(text: &str, input: &str) -> Vec<u32> {
         .collect()
 }
 
+#[cfg(feature = "bpe")]
+#[test]
+fn kimi_han_categories_preserve_encoded_ids() {
+    let pre = serde_json::json!({
+        "type": "Split",
+        "pattern": {"Regex": bitcannon::regexes::KIMI_K2},
+        "behavior": "Isolated",
+        "invert": false
+    })
+    .to_string();
+    let model = serde_json::json!({
+        "type": "BPE", "byte_level": false,
+        "vocab": {
+            "1": 0, "〇": 1, "1〇": 2, "⺀": 3, " ": 4, " ⺀": 5,
+            "!": 6, " !": 7, " !⺀": 8, "a": 9, "\u{16FE2}": 10,
+            "\u{16FF0}": 11, "a\u{16FF0}": 12, "\u{16FE2}a": 13
+        },
+        "merges": [["1", "〇"], [" ", "⺀"], [" ", "!"], [" !", "⺀"],
+            ["a", "\u{16FF0}"], ["\u{16FE2}", "a"]]
+    })
+    .to_string();
+    let json = config(&[("model", &model), ("pre_tokenizer", &pre)]);
+    for (text, expected) in [
+        ("1〇", vec![2]),
+        (" ⺀", vec![5]),
+        (" !⺀", vec![8]),
+        ("\u{16FE2}a", vec![10, 9]),
+        ("a\u{16FF0}", vec![9, 11]),
+    ] {
+        assert_eq!(ids(&json, text), expected, "{text:?}");
+    }
+}
+
 #[cfg(all(feature = "wordlevel", feature = "fancy-regex"))]
 #[test]
 fn generic_regex_split_encodes_from_json() {
