@@ -1,4 +1,7 @@
-//! [`Regex`], and [`Pattern`]: the `str | Regex` argument of the components that search the text.
+//! The pattern argument of the components that search the text, like `Split` and `Replace`.
+//!
+//! Python passes either a `str`, matched literally, or a [`Regex`]. [`Pattern`] takes both and
+//! converts them to the JSON `tokenizer.json` stores.
 
 use pyo3::prelude::*;
 use serde_json::{Value, json};

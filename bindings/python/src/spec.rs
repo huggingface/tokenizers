@@ -205,10 +205,6 @@ impl ComponentSpec {
     /// Runs `edit` on the JSON, and store a reference to the new value in `self`.
     /// Other pointers to the component (eg a compiled snapshot or a [`detached`](Self::detached) copy)
     /// are unaffected and point to the previous value.
-    #[expect(
-        dead_code,
-        reason = "will be called when we add concrete component pyclasses"
-    )]
     pub(crate) fn edit<R>(&self, edit: impl FnOnce(&mut JsonObject) -> R) -> R {
         edit(Arc::make_mut(&mut self.lock()))
     }
