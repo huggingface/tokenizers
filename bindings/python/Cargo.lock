@@ -1327,6 +1327,7 @@ dependencies = [
  "numpy",
  "pyo3",
  "pyo3-build-config",
+ "serde",
  "serde_json",
  "tokenizers",
 ]

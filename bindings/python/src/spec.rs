@@ -85,6 +85,31 @@ impl TokenizerSpec {
         }
     }
 
+    pub(crate) fn component(&self, key: ComponentKey) -> Option<&Arc<ComponentSpec>> {
+        let pipeline = &self.pipeline_spec;
+        match key {
+            ComponentKey::Normalizer => pipeline.normalizer.as_ref(),
+            ComponentKey::PreTokenizer => pipeline.pre_tokenizer.as_ref(),
+            ComponentKey::PostProcessor => pipeline.post_processor.as_ref(),
+            ComponentKey::Decoder => pipeline.decoder.as_ref(),
+            ComponentKey::Model => Some(&pipeline.model),
+        }
+    }
+
+    pub(crate) fn set_component(&mut self, key: ComponentKey, spec: Option<Arc<ComponentSpec>>) {
+        let pipeline = &mut self.pipeline_spec;
+        match key {
+            ComponentKey::Normalizer => pipeline.normalizer = spec,
+            ComponentKey::PreTokenizer => pipeline.pre_tokenizer = spec,
+            ComponentKey::PostProcessor => pipeline.post_processor = spec,
+            ComponentKey::Decoder => pipeline.decoder = spec,
+            ComponentKey::Model => {
+                pipeline.model =
+                    spec.expect("calling set_component on model should never pass None")
+            }
+        }
+    }
+
     /// Returns a snapshot of the spec as a `JsonObject`
     pub(crate) fn to_object(&self) -> JsonObject {
         self.take_snapshot()
@@ -99,6 +124,15 @@ impl TokenizerSpec {
     pub(crate) fn to_json(&self) -> String {
         Value::Object(self.to_object()).to_string()
     }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ComponentKey {
+    Normalizer,
+    PreTokenizer,
+    PostProcessor,
+    Decoder,
+    Model,
 }
 
 /// Specification for building a [`PipelineTokenizer`].
@@ -166,6 +200,13 @@ impl ComponentSpec {
 
     pub(crate) fn json(&self) -> Arc<JsonObject> {
         self.lock().clone()
+    }
+
+    /// Runs `edit` on the JSON, and store a reference to the new value in `self`.
+    /// Other pointers to the component (eg a compiled snapshot or a [`detached`](Self::detached) copy)
+    /// are unaffected and point to the previous value.
+    pub(crate) fn edit<R>(&self, edit: impl FnOnce(&mut JsonObject) -> R) -> R {
+        edit(Arc::make_mut(&mut self.lock()))
     }
 
     fn lock(&self) -> MutexGuard<'_, Arc<JsonObject>> {
