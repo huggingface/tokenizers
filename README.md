@@ -15,10 +15,16 @@ The SOTA tokenization library on all languages, all models, all hardwares.
 
 Our goal with `tokenizers` is to develop and maintain the industry's standard tokenization engine, making it the defacto place for everyone to contribute to the whole ecosystem.
 
-### Release candidate: v1.0.0.rc.0
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://huggingface.co/spaces/sbrandeis/tokenizers-v1-compat/resolve/main/banner-dark.png">
+  <img alt="tokenizers v1.0.0 progress" src="https://huggingface.co/spaces/sbrandeis/tokenizers-v1-compat/resolve/main/banner-light.png">
+</picture>
+
+### Release candidate: v1.0.0.rc.x
 
 As we are switching from 0.23 to v1.0.0, the current library does not ship all features. If you are worried, check the [v1 features](#v1-features) section for more details of what we are bringing back.
 We will publish a blog about what breaking changes we introduced. We strived to keep them as small as possible.
+
 
 # Installation
 
