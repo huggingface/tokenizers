@@ -203,7 +203,7 @@ fn append_normalizer(root: &mut Map<String, Value>, normalizer: Value) {
 /// `merges` **must** be tested before `continuing_subword_prefix`: a serialized BPE writes
 /// `"continuing_subword_prefix": null`, so gpt2 would otherwise read as a WordPiece with no merges.
 /// Key presence, not non-null, for the same reason.
-pub fn fill_model_type(model: &mut Map<String, Value>) {
+pub(crate) fn fill_model_type(model: &mut Map<String, Value>) {
     // An unknown tag is not this pass's business to refuse; a newer reader may know it.
     if model.get("type").and_then(Value::as_str).is_some() {
         return;

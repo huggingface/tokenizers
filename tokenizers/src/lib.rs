@@ -105,7 +105,7 @@ pub use tk_serialize::{
 // ---------------------------------------------------------------------------
 pub use tk_convert::{
     ConvertError, TokenizerJson, canonicalize_file, canonicalize_post_processor, canonicalize_str,
-    canonicalize_value, convert, fill_model_type,
+    canonicalize_value, convert,
 };
 
 // ---------------------------------------------------------------------------

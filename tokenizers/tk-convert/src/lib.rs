@@ -21,6 +21,6 @@ mod tokenizer_json;
 
 pub use convert::{
     ConvertError, canonicalize_file, canonicalize_post_processor, canonicalize_str,
-    canonicalize_value, fill_model_type,
+    canonicalize_value,
 };
 pub use tokenizer_json::TokenizerJson;
