@@ -54,8 +54,12 @@ impl<'a> Json<'a> {
     /// A `null` value reads as present; [`Json::field`] treats it as absent.
     pub fn get(&self, key: &str) -> Option<&Json<'a>> {
         match &self.0 {
+            // The LAST occurrence wins, as it does in `serde_json` (which `tk-convert`, the
+            // Python binding and v0.x read with). First-wins here made one file describe two
+            // different tokenizers depending on the entry point.
             Raw::Object(entries) => entries
                 .iter()
+                .rev()
                 .find(|(k, _)| k == key)
                 .map(|(_, v)| Json::wrap(v)),
             _ => None,

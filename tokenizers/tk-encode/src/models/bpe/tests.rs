@@ -45,6 +45,49 @@ fn pipeline_ids(model: &PipelineBPE, sequence: &str) -> Vec<u32> {
     out.iter().map(|t| t.id()).collect()
 }
 
+/// A merge whose concatenation is longer than every vocabulary key (#2094)
+/// and a continuing-subword prefix longer than the right-hand token must be load errors.
+#[test]
+fn malformed_merges_are_errors_not_panics() {
+    let overlong = std::panic::catch_unwind(|| {
+        PipelineBPE::from_config(BpeConfig {
+            vocab: v(&[("aa", 0), ("bb", 1)]),
+            merges: m(&[("aa", "bb")]),
+            ..Default::default()
+        })
+        .is_err()
+    });
+    assert_eq!(overlong.ok(), Some(true));
+    let prefix = std::panic::catch_unwind(|| {
+        PipelineBPE::from_config(BpeConfig {
+            vocab: v(&[("aaaa", 0), ("b", 1), ("aaaab", 2)]),
+            merges: m(&[("aaaa", "b")]),
+            continuing_subword_prefix: Some("##".into()),
+            ..Default::default()
+        })
+        .is_err()
+    });
+    assert_eq!(prefix.ok(), Some(true));
+    // a prefix that would split a multi-byte character of `b`
+    let split = std::panic::catch_unwind(|| {
+        PipelineBPE::from_config(BpeConfig {
+            vocab: v(&[("a", 0), ("\u{e9}", 1), ("a\u{e9}", 2)]),
+            merges: m(&[("a", "\u{e9}")]),
+            continuing_subword_prefix: Some("X".into()),
+            ..Default::default()
+        })
+        .is_err()
+    });
+    assert_eq!(split.ok(), Some(true));
+    // the well-formed control still builds
+    assert!(PipelineBPE::from_config(BpeConfig {
+        vocab: v(&[("aa", 0), ("bb", 1), ("aabb", 2)]),
+        merges: m(&[("aa", "bb")]),
+        ..Default::default()
+    })
+    .is_ok());
+}
+
 #[test]
 fn applies_merges() {
     let pipeline = hello(BpeConfig::default()).unwrap();

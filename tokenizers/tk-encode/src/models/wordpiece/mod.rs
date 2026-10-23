@@ -370,7 +370,9 @@ impl pipeline::Model for PipelineWordPiece {
 
     fn init_scratch(&self) -> Self::Scratch {
         Self::Scratch {
-            candidate_str: String::with_capacity(self.max_input_chars_per_word),
+            // A hint only: `max_input_chars_per_word` is read from the file (up to 2^53), and the
+            // buffer grows on demand, so cap the up-front reservation.
+            candidate_str: String::with_capacity(self.max_input_chars_per_word.min(1024)),
             word_cache: WordCache::new(DEFAULT_CACHE_CAPACITY),
         }
     }
@@ -414,6 +416,25 @@ mod tests {
     #[test]
     fn test_error_display() {
         assert!(format!("{}", Error::MissingUnkToken).contains("Missing [UNK] token"));
+    }
+
+    /// A file-supplied `max_input_chars_per_word` of 2^40 used to abort the process
+    /// ("memory allocation ... failed") the first time a scratch was created.
+    #[test]
+    fn huge_max_input_chars_per_word_does_not_preallocate() {
+        let vocab: Vocab = [("[UNK]", 0u32), ("a", 1)]
+            .into_iter()
+            .map(|(t, i)| (t.to_string(), i))
+            .collect();
+        let model = WordPiece::builder()
+            .vocab(vocab)
+            .max_input_chars_per_word(1usize << 40)
+            .build()
+            .unwrap();
+        let model = PipelineWordPiece::try_from(model).unwrap();
+        let mut scratch = pipeline::Model::init_scratch(&model);
+        assert!(scratch.candidate_str.capacity() <= 4096);
+        assert_eq!(pipeline_ids(&model, "a", &mut scratch), vec![1]);
     }
 
     /// `hello` is in the vocabulary whole and as `hell` + `##o`, so the
