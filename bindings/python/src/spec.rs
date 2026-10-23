@@ -23,7 +23,7 @@ pub(crate) struct TokenizerSpec {
     pipeline_spec: PipelineSpec<Arc<ComponentSpec>>,
     /// A compiled [`PipelineTokenizer`] along with the JSON used to build it.
     /// Gets invalidated when pipeline_spec changes, and recompiled lazily
-    compiled: Option<(PipelineSpec<Arc<JsonObject>>, PipelineTokenizer)>,
+    compiled: Option<(PipelineSpecSnapshot, PipelineTokenizer)>,
 }
 
 impl TokenizerSpec {
@@ -47,24 +47,34 @@ impl TokenizerSpec {
         })
     }
 
+    /// A snapshot of the current PipelineSpec
+    fn take_snapshot(&self) -> PipelineSpecSnapshot {
+        self.pipeline_spec.map(|spec| spec.json())
+    }
+
     /// Gets a reference to the [`PipelineTokenizer`] built from [`self.pipeline`], compiling it if needed
     /// Changing the pipeline spec re-compiles the [`PipelineTokenizer`]
     pub(crate) fn compile(&mut self) -> Result<PipelineTokenizer> {
         // The check and the build use the same snapshot, so the cache always matches what it built.
-        let json = self.pipeline_spec.map(|spec| spec.json());
-        if let Some((compiled, pipeline)) = &self.compiled
-            && *compiled == json
+        let snapshot = self.take_snapshot();
+        if let Some((previous_snapshot, pipeline)) = &self.compiled
+            && *previous_snapshot == snapshot
         {
             return Ok(pipeline.clone());
         }
-        let mut file = Value::Object(self.file(&json));
-        canonicalize_value(&mut file)?;
-        let pipeline = from_json(&file.to_string())?;
-        self.compiled = Some((json, pipeline.clone()));
+        let mut tokenizer_json = Value::Object(
+            snapshot
+                .tokenizer_json(self.version.clone(), Value::Null, Value::Null)
+                .into_object(),
+        );
+        canonicalize_value(&mut tokenizer_json)?;
+        // XXX: the .to_string() copies JSON data a second time, could be improved
+        let pipeline = from_json(&tokenizer_json.to_string())?;
+        self.compiled = Some((snapshot, pipeline.clone()));
         Ok(pipeline)
     }
 
-    /// A copy whose components are its own: editing one leaves this tokenizer unchanged.
+    /// An independent copy: editing components of the new object do not affect `self`'s components
     pub(crate) fn copy(&self) -> Self {
         Self {
             version: self.version.clone(),
@@ -75,28 +85,19 @@ impl TokenizerSpec {
         }
     }
 
+    /// Returns a snapshot of the spec as a `JsonObject`
     pub(crate) fn to_object(&self) -> JsonObject {
-        self.file(&self.pipeline_spec.map(|spec| spec.json()))
+        self.take_snapshot()
+            .tokenizer_json(
+                self.version.clone(),
+                params(truncation_to_json(self.truncation.as_ref())),
+                params(padding_to_json(self.padding.as_ref())),
+            )
+            .into_object()
     }
 
     pub(crate) fn to_json(&self) -> String {
         Value::Object(self.to_object()).to_string()
-    }
-    fn file(&self, spec: &PipelineSpec<Arc<JsonObject>>) -> JsonObject {
-        let component = |object: &Option<Arc<JsonObject>>| object.as_deref().cloned();
-        TokenizerJson {
-            version: self.version.clone(),
-            truncation: params(truncation_to_json(self.truncation.as_ref())),
-            padding: params(padding_to_json(self.padding.as_ref())),
-            role_to_token: spec.role_to_token.as_deref().cloned(),
-            added_tokens: Value::clone(&spec.added_tokens),
-            normalizer: component(&spec.normalizer),
-            pre_tokenizer: component(&spec.pre_tokenizer),
-            post_processor: component(&spec.post_processor),
-            decoder: component(&spec.decoder),
-            model: JsonObject::clone(&spec.model),
-        }
-        .into_object()
     }
 }
 
@@ -114,6 +115,9 @@ struct PipelineSpec<C> {
     model: C,
 }
 
+/// A snapshot of [`PipelineSpec`]
+type PipelineSpecSnapshot = PipelineSpec<Arc<JsonObject>>;
+
 impl<C> PipelineSpec<C> {
     fn map<D>(&self, f: impl Fn(&C) -> D) -> PipelineSpec<D> {
         PipelineSpec {
@@ -124,6 +128,25 @@ impl<C> PipelineSpec<C> {
             post_processor: self.post_processor.as_ref().map(&f),
             decoder: self.decoder.as_ref().map(&f),
             model: f(&self.model),
+        }
+    }
+}
+
+impl PipelineSpecSnapshot {
+    /// Clones the *content* of the snapshot as a [`TokenizerJson`]
+    fn tokenizer_json(&self, version: String, truncation: Value, padding: Value) -> TokenizerJson {
+        let clone_component = |object: &Option<Arc<JsonObject>>| object.as_deref().cloned();
+        TokenizerJson {
+            version,
+            truncation,
+            padding,
+            role_to_token: self.role_to_token.as_deref().cloned(),
+            added_tokens: Value::clone(&self.added_tokens),
+            normalizer: clone_component(&self.normalizer),
+            pre_tokenizer: clone_component(&self.pre_tokenizer),
+            post_processor: clone_component(&self.post_processor),
+            decoder: clone_component(&self.decoder),
+            model: JsonObject::clone(&self.model),
         }
     }
 }
