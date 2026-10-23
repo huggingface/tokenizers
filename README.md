@@ -15,16 +15,33 @@ The SOTA tokenization library on all languages, all models, all hardwares.
 
 Our goal with `tokenizers` is to develop and maintain the industry's standard tokenization engine, making it the defacto place for everyone to contribute to the whole ecosystem.
 
-### Release candidate: v1.0.0.rc.0
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://huggingface.co/spaces/sbrandeis/tokenizers-v1-compat/resolve/main/banner-dark.png">
+  <img alt="tokenizers v1.0.0 progress" src="https://huggingface.co/spaces/sbrandeis/tokenizers-v1-compat/resolve/main/banner-light.png">
+</picture>
+
+### Release candidate: v1.0.0.rc.x
 
 As we are switching from 0.23 to v1.0.0, the current library does not ship all features. If you are worried, check the [v1 features](#v1-features) section for more details of what we are bringing back.
 We will publish a blog about what breaking changes we introduced. We strived to keep them as small as possible.
+
 
 # Installation
 
 ```bash
 pip install --pre tokenizers
 ```
+
+For Rust, add the crate to your `Cargo.toml`:
+
+```toml
+[dependencies]
+tokenizers = "1.0.0"
+```
+
+Training (`train`) and downloading from the Hub (`http`) are opt-in features. The crate's
+[Using the crate](tokenizers/README.md#using-the-crate) section lists every feature and how to
+build a smaller binary.
 
 # Usage
 
@@ -57,6 +74,8 @@ For more details, checkout https://huggingface-tokenizers-v1.static.hf.space/ind
 | C / C++ / Java / Go/ etc | 🚧 planned |
 | [Ruby](https://github.com/ankane/tokenizers-ruby) | community, external repo |
 
+
+<a name="v1-features"></a>
 
 # v1.0.0 roadmap:
 
@@ -158,6 +177,10 @@ of compatibility branches. But, the legacy code amounted to quite a lot of the f
 <summary><b><code>tk-train</code></b> — the training half</summary>
 
 The `Trainer` trait, every concrete `*Trainer`, `TrainerWrapper` and the `Trainable` extension.
+
+The `tokenizers` crate re-exports it behind the `train` feature, which is off by default. It
+trains only the models whose feature is on (`bpe`, `unigram`, `wordpiece`, `wordlevel`). Add
+`esaxx_fast` for the C++ suffix array behind Unigram training.
 
 **Why separate:** training is a batch job on a workstation; inference is a hot loop in a server.
 They have opposite constraints, so they get opposite dependency budgets.

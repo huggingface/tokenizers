@@ -73,7 +73,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # v1
         if: ${{ !matrix.settings.docker }}
         with:
           toolchain: stable
@@ -179,7 +179,7 @@ jobs:
 
   publish:
     # Tag pushes only: this workflow also runs on workflow_dispatch, and a dispatch would
-    # otherwise push whatever version package.json happens to hold. rc tags DO publish now —
+    # otherwise push whatever version package.json happens to hold. prerelease tags DO publish now —
     # they just don't take the `latest` dist-tag (see --tag in the Publish step below).
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     permissions:
@@ -235,9 +235,7 @@ jobs:
         run: npm pack --dry-run --ignore-scripts
       - name: Publish
         working-directory: ./bindings/node
-        # npm has no prerelease exclusion the way cargo and PyPI do: an untagged rc becomes
-        # what plain `npm install tokenizers` serves. Keep rc off `latest`.
         run: |
           TAG=latest
-          [[ "$GITHUB_REF" == *rc* ]] && TAG=rc
+          [[ "$GITHUB_REF_NAME" == *-* ]] && TAG=next
           npm publish --access public --provenance --ignore-scripts --tag "$TAG"

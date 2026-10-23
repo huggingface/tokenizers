@@ -114,7 +114,11 @@ fn read_split(cfg: &Json<'_>) -> Result<SplitPretok> {
     } else {
         return Err("Split `pattern` is neither `String` nor `Regex`".into());
     };
-    SplitPretok::native(pattern, behavior, invert)?.canonicalized_for_pipeline()
+    #[cfg(feature = "fancy-regex")]
+    let split = SplitPretok::new(pattern, behavior, invert)?;
+    #[cfg(not(feature = "fancy-regex"))]
+    let split = SplitPretok::native(pattern, behavior, invert)?;
+    split.canonicalized_for_pipeline()
 }
 
 fn read_behavior(
