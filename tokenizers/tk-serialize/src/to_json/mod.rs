@@ -30,6 +30,7 @@ use self::truncation::write_truncation;
 use self::writer::{Out, escape_into};
 use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::tokenizer::Result;
+use tk_encode::{PaddingParams, TruncationParams};
 
 /// Write a lone `post_processor` -- the value of that one key -- rather than a whole
 /// `tokenizer.json`. The default frame comes back as `null`, which is how a config spells it.
@@ -53,15 +54,32 @@ pub fn str_to_json(value: &str) -> String {
 
 /// Write a `tokenizer.json` as a string.
 pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
+    to_json_with_config(
+        tokenizer,
+        tokenizer.get_padding(),
+        tokenizer.get_truncation(),
+    )
+}
+
+/// Write a `tokenizer.json` using the supplied padding and truncation configuration.
+///
+/// This is for callers that store mutable configuration separately from the pipeline.
+/// `None` disables the corresponding setting, even if the pipeline has a default.
+/// The pipeline itself is not changed.
+pub fn to_json_with_config(
+    tokenizer: &PipelineTokenizer,
+    padding: Option<&PaddingParams>,
+    truncation: Option<&TruncationParams>,
+) -> Result<String> {
     let mut out = Out::new();
     let model = tokenizer.get_model();
     let normalizers = tokenizer.get_normalizers();
     out.obj_open();
     out.field_str("version", "2.0");
     out.key("truncation");
-    write_truncation(&mut out, tokenizer.get_truncation());
+    write_truncation(&mut out, truncation);
     out.key("padding");
-    write_padding(&mut out, tokenizer.get_padding());
+    write_padding(&mut out, padding);
     // Which token plays which role, so this file can stand in for a `tokenizer_config.json`.
     out.key("role_to_token");
     let roles = tokenizer.get_role_to_token();
