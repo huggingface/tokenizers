@@ -11,7 +11,7 @@ use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
 pub use crate::pipeline::encode_options::EncodeOptions;
 pub use crate::pipeline::encode_options::Override;
-use crate::utils::truncation::truncate_pair;
+use crate::utils::truncation::{TruncatedPair, truncate_pair_with_windows};
 use crate::{
     DecoderRuntime, PaddingParams, TruncationParams,
     models::bpe::{BpeScratch, PipelineBPE},
@@ -483,6 +483,10 @@ pub struct Encoding {
     pub(crate) type_ids: Option<Vec<u8>>,
     /// `None` if the encoding is not padded (mask is all ones)
     pub(crate) attention_mask: Option<Vec<u8>>,
+    /// The windows a truncation cut this sequence into, each one a complete row of its own: the
+    /// same post-processor template, the same type ids, padded together with this encoding.
+    /// Empty when truncation removed nothing.
+    pub(crate) overflowing: Vec<Encoding>,
 }
 
 impl Encoding {
@@ -491,6 +495,7 @@ impl Encoding {
             ids: Vec::new(),
             type_ids: None,
             attention_mask: None,
+            overflowing: Vec::new(),
         }
     }
 
@@ -504,6 +509,7 @@ impl Encoding {
             ids,
             type_ids,
             attention_mask,
+            overflowing: Vec::new(),
         }
     }
 }
@@ -527,6 +533,16 @@ impl Encoding {
 
     pub fn attention_mask(&self) -> Option<&[u8]> {
         self.attention_mask.as_deref()
+    }
+
+    /// The windows a truncation cut this sequence into, in the order the released crate returns
+    /// them. Empty when the sequence was not truncated.
+    pub fn overflowing(&self) -> &[Encoding] {
+        &self.overflowing
+    }
+
+    pub fn set_overflowing(&mut self, overflowing: Vec<Encoding>) {
+        self.overflowing = overflowing;
     }
 }
 /// Iterator yields results in completion order
@@ -687,6 +703,9 @@ impl PipelineTokenizer {
     /// Pick the template the input shape calls for and let it add the specials.
     ///
     /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside.
+    ///
+    /// A truncation that removed something also returns the windows the input tiles into, and
+    /// every window combination comes back as an overflowing encoding of its own.
     fn post_process(
         &self,
         s1: Vec<PipelineToken>,
@@ -701,12 +720,51 @@ impl PipelineTokenizer {
             0
         };
         let truncation = self.resolve_truncation(&options.truncation);
-        let (s1, s2) = truncate_pair(s1, s2, truncation, num_added_specials)?;
-        Ok(if options.add_special_tokens {
-            template.post_process::<true>(s1, s2)
-        } else {
-            template.post_process::<false>(s1, s2)
-        })
+        let TruncatedPair {
+            first,
+            first_windows,
+            second,
+            second_windows,
+        } = truncate_pair_with_windows(s1, s2, truncation, num_added_specials)?;
+
+        let templated = |a: Vec<PipelineToken>, b: Option<Vec<PipelineToken>>| {
+            if options.add_special_tokens {
+                template.post_process::<true>(a, b)
+            } else {
+                template.post_process::<false>(a, b)
+            }
+        };
+
+        // Each window combination goes through the same template as the encoding itself, so a row
+        // carries the specials and the type ids. The order is released `Encoding::merge_with`'s
+        // (tokenizer/encoding.rs): for each first-sequence window the kept second sequence, then
+        // the second-sequence windows; then the kept first sequence with each second-sequence
+        // window. Released also nested duplicate rows inside each other there, which is a quirk
+        // of its merge rather than anything a caller can use, so the rows come back flat.
+        let mut overflowing = Vec::new();
+        match &second {
+            Some(second_kept) => {
+                for first_window in &first_windows {
+                    overflowing.push(templated(first_window.clone(), Some(second_kept.clone())));
+                    for second_window in &second_windows {
+                        overflowing
+                            .push(templated(first_window.clone(), Some(second_window.clone())));
+                    }
+                }
+                for second_window in &second_windows {
+                    overflowing.push(templated(first.clone(), Some(second_window.clone())));
+                }
+            }
+            None => {
+                for first_window in &first_windows {
+                    overflowing.push(templated(first_window.clone(), None));
+                }
+            }
+        }
+
+        let mut encoding = templated(first, second);
+        encoding.set_overflowing(overflowing);
+        Ok(encoding)
     }
 
     /// Encode one sequence, appending its ids to `output`.
@@ -1863,5 +1921,266 @@ mod tests {
 
     fn hello_pipeline_with_truncation(truncation: TruncationParams) -> PipelineTokenizer {
         hello_pipeline_with(PipelinePostProcessor::default(), None, Some(truncation))
+    }
+
+    fn overflowing_ids(encoding: &Encoding) -> Vec<Vec<u32>> {
+        encoding.overflowing().iter().map(ids).collect()
+    }
+
+    // Overflowing windows: the input re-tiled (`Encoding::truncate`'s shapes, pinned in
+    // `utils/truncation.rs` against the legacy copy), each row through the same template as the
+    // encoding itself.
+    #[test]
+    fn truncation_returns_the_windows_as_overflowing() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(5, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::default())
+            .unwrap();
+
+        // room = 5 - 2 specials = 3, so the sequence tiles into 3, 3 and 2 tokens.
+        assert_eq!(ids(&encoding), [CLS, 1, 2, 3, SEP]);
+        assert_eq!(
+            overflowing_ids(&encoding),
+            vec![vec![CLS, 4, 5, 6, SEP], vec![CLS, 7, 8, SEP]]
+        );
+    }
+
+    #[test]
+    fn a_sequence_that_fits_has_no_overflowing() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(5, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=3), None, &EncodeOptions::default())
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 1, 2, 3, SEP]);
+        assert!(encoding.overflowing().is_empty());
+    }
+
+    // A window starts `max_length - stride` tokens after the previous one, so consecutive windows
+    // share `stride` tokens.
+    #[test]
+    fn overflowing_windows_share_stride_tokens() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            Some(TruncationParams {
+                max_length: 5,
+                stride: 1,
+                ..TruncationParams::default()
+            }),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::default())
+            .unwrap();
+
+        assert_eq!(
+            overflowing_ids(&encoding),
+            vec![
+                vec![CLS, 3, 4, 5, SEP],
+                vec![CLS, 5, 6, 7, SEP],
+                vec![CLS, 7, 8, SEP]
+            ]
+        );
+    }
+
+    // `Left` windows walk from the end of the sequence: the encoding keeps the tail and the
+    // windows come back right to left.
+    #[test]
+    fn left_windows_walk_from_the_end() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            Some(TruncationParams {
+                max_length: 5,
+                direction: TruncationDirection::Left,
+                ..TruncationParams::default()
+            }),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::default())
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 6, 7, 8, SEP]);
+        assert_eq!(
+            overflowing_ids(&encoding),
+            vec![vec![CLS, 3, 4, 5, SEP], vec![CLS, 1, 2, SEP]]
+        );
+    }
+
+    // `max_length` 1 cannot hold `[CLS] [SEP]`, so there is no room to tile into. The sequence
+    // survives whole as the single window released `Encoding::truncate(0, ..)` produces.
+    #[test]
+    fn no_room_keeps_the_sequence_in_one_window() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(1, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::default())
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, SEP]);
+        assert_eq!(
+            overflowing_ids(&encoding),
+            vec![vec![CLS, 1, 2, 3, 4, 5, 6, 7, 8, SEP]]
+        );
+    }
+
+    // `merge_with`'s order (tokenizer/encoding.rs): for each A window the kept B, then the B
+    // windows; then the kept A with each B window. Released also nested duplicates of the
+    // A-window/B-window rows inside the A-window/kept-B rows; the rows come back flat here.
+    #[test]
+    fn pair_windows_combine_in_the_released_order_with_type_ids() {
+        // room = 7 - 3 pair specials = 4, split 2 and 2 by `LongestFirst`.
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            truncation(7, TruncationStrategy::LongestFirst),
+        );
+
+        let encoding = pipeline
+            .post_process(
+                tokens(1..=4),
+                Some(tokens(11..=14)),
+                &EncodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 1, 2, SEP, 11, 12, SEP]);
+        assert_eq!(
+            overflowing_ids(&encoding),
+            vec![
+                vec![CLS, 3, 4, SEP, 11, 12, SEP],
+                vec![CLS, 3, 4, SEP, 13, 14, SEP],
+                vec![CLS, 1, 2, SEP, 13, 14, SEP],
+            ]
+        );
+        // A window carries the template's type ids like any other row. Released 0.23 left them
+        // at 0 on every window (issue #1908).
+        for row in encoding.overflowing() {
+            assert_eq!(row.type_ids().unwrap(), [0, 0, 0, 0, 1, 1, 1]);
+        }
+    }
+
+    #[test]
+    fn a_stride_at_least_the_room_errors_once_a_sequence_overflows() {
+        // room = 5 - 2 specials = 3, so a stride of 3 can never advance a window. Released
+        // `Encoding::truncate` panics here.
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            Some(TruncationParams {
+                max_length: 5,
+                stride: 3,
+                ..TruncationParams::default()
+            }),
+        );
+
+        let err = pipeline
+            .post_process(tokens(1..=8), None, &EncodeOptions::default())
+            .err()
+            .unwrap();
+
+        assert!(matches!(
+            err.downcast_ref::<TruncationError>(),
+            Some(TruncationError::StrideTooLarge { stride: 3, room: 3 })
+        ));
+    }
+
+    #[test]
+    fn a_too_large_stride_only_errors_once_a_sequence_actually_overflows() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            Some(TruncationParams {
+                max_length: 5,
+                stride: 3,
+                ..TruncationParams::default()
+            }),
+        );
+
+        let encoding = pipeline
+            .post_process(tokens(1..=3), None, &EncodeOptions::default())
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [CLS, 1, 2, 3, SEP]);
+        assert!(encoding.overflowing().is_empty());
+    }
+
+    // A window is padded together with its encoding, through the same `wait()` a batch and the
+    // parallel encoder use.
+    #[test]
+    fn overflowing_windows_pad_with_their_encoding() {
+        let pipeline =
+            hello_pipeline_with(bert_post_processor(), Some(pad_to(8)), Some(truncate_to(5)));
+
+        let encoding = encode_six_tokens(&pipeline, &EncodeOptions::default());
+
+        // room = 5 - 2 specials = 3, so the six ids tile 3 and 3.
+        assert_eq!(ids(&encoding), [CLS, 0, 0, 0, SEP, PAD, PAD, PAD]);
+        assert_eq!(
+            overflowing_ids(&encoding),
+            vec![vec![CLS, 0, 0, 7, SEP, PAD, PAD, PAD]]
+        );
+        assert_eq!(
+            encoding.overflowing()[0].attention_mask().unwrap(),
+            [1, 1, 1, 1, 1, 0, 0, 0]
+        );
+    }
+
+    // The batch and parallel encode paths reach the same `post_process` and the same `wait()`
+    // padding: two sequences over the parallel threshold, whose rows have to tile the ids the
+    // untruncated encode produces, padding included.
+    #[test]
+    fn overflowing_windows_survive_the_batch_encode_path() {
+        // 10 KB each, well over `PARALLEL_MIN_BYTES` (8 KB), which is where the parallel encoder
+        // takes over from the serial loop when the `parallelism` feature is on.
+        let long = "hhhhhhello".repeat(1000);
+        let pipeline = hello_pipeline_with(
+            PipelinePostProcessor::default(),
+            Some(pad_to(8)),
+            Some(truncate_to(3)),
+        );
+        let options = EncodeOptions::default();
+
+        let encodings = pipeline
+            .encode(vec![long.clone(), long.clone()], &options)
+            .wait()
+            .unwrap();
+        let full = pipeline
+            .encode(
+                vec![long],
+                &EncodeOptions {
+                    truncation: Override::Off,
+                    padding: Override::Off,
+                    ..options
+                },
+            )
+            .wait()
+            .unwrap()
+            .remove(0);
+        let full_ids = ids(&full);
+
+        for encoding in &encodings {
+            let mut tiled = Vec::new();
+            for row in std::iter::once(encoding).chain(encoding.overflowing()) {
+                // every row is a 3-token window padded out to 8
+                assert_eq!(row.len(), 8);
+                let body = row
+                    .attention_mask()
+                    .unwrap()
+                    .iter()
+                    .filter(|&&m| m == 1)
+                    .count();
+                tiled.extend_from_slice(&ids(row)[..body]);
+            }
+            assert_eq!(tiled, full_ids);
+        }
     }
 }

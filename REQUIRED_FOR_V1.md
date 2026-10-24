@@ -112,10 +112,11 @@ read path; `from_pretrained` needs a pipeline-native equivalent — `tk-encode` 
 
 ## 6. Truncation and padding on the object model
 
-`with_truncation` / `with_padding` and the `TruncationParams` / `PaddingParams` config types. The
-pipeline currently *swallows* truncation and padding declared in a `tokenizer.json` rather than
-erroring, which is the more dangerous of the two behaviours — a config that asks for truncation gets
-silently untruncated output. Worth fixing before v1 even if the feature itself lands later.
+The pipeline applies truncation and padding from `tokenizer.json` or per-call `EncodeOptions`
+overrides. Truncation returns overlapping windows through `Encoding::overflowing`, including the
+configured `stride`; Python exposes these as `Truncation.stride` and `Encoding.overflowing`.
+Every window receives the post-processor's special tokens and type ids, and is padded together
+with its encoding. The object-authoring setters remain part of the surface described in §1.
 
 ## 7. The cross-reader id oracle
 

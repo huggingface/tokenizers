@@ -31,17 +31,37 @@ impl Encoding {
 }
 
 // The core stores "all zeros" type ids and an "all ones" mask as `None`, so equality compares
-// the values Python sees, not the core's storage or which caches were filled.
+// the values Python sees, not the core's storage or which caches were filled. Overflowing
+// windows are values Python sees too, and are compared the same way, recursively.
 impl PartialEq for Encoding {
     fn eq(&self, other: &Self) -> bool {
-        self.ids() == other.ids()
-            && self.type_ids() == other.type_ids()
-            && self.attention_mask() == other.attention_mask()
+        fn visible_type_ids(encoding: &PipelineEncoding) -> Vec<u32> {
+            encoding
+                .type_ids()
+                .map_or_else(|| vec![0; encoding.len()], bytes_slice_to_u32)
+        }
+        fn visible_attention_mask(encoding: &PipelineEncoding) -> Vec<u32> {
+            encoding
+                .attention_mask()
+                .map_or_else(|| vec![1; encoding.len()], bytes_slice_to_u32)
+        }
+        fn rows_eq(a: &PipelineEncoding, b: &PipelineEncoding) -> bool {
+            PipelineToken::cast_slice(a.ids()) == PipelineToken::cast_slice(b.ids())
+                && visible_type_ids(a) == visible_type_ids(b)
+                && visible_attention_mask(a) == visible_attention_mask(b)
+                && a.overflowing().len() == b.overflowing().len()
+                && a.overflowing()
+                    .iter()
+                    .zip(b.overflowing())
+                    .all(|(a, b)| rows_eq(a, b))
+        }
+        rows_eq(&self.inner, &other.inner)
     }
 }
 
-/// What `Encoding.__reduce__` gives pickle: `ids`, `type_ids` and `attention_mask`.
-type UnpickleArguments = (Vec<u32>, Vec<u32>, Vec<u32>);
+/// What `Encoding.__reduce__` gives pickle: `ids`, `type_ids`, `attention_mask` and the
+/// `overflowing` encodings, which pickle through their own `__reduce__`.
+type UnpickleArguments = (Vec<u32>, Vec<u32>, Vec<u32>, Vec<Encoding>);
 
 #[pymethods]
 impl Encoding {
@@ -76,6 +96,24 @@ impl Encoding {
         })
     }
 
+    /// The overflowing encodings a truncation produced, as a list of `Encoding`.
+    ///
+    /// A truncated encoding keeps one window of the input -- from the start or the end, as its
+    /// truncation `direction` says -- and returns the rest as these windows, which follow the
+    /// kept one sharing `stride` tokens with the previous piece. Each is a complete row: same
+    /// special tokens, same type ids, padded together with this encoding. Empty when the
+    /// encoding was not truncated. With no room at all for sequence tokens, the encoding keeps
+    /// only its special tokens and one window carries the sequence whole.
+    #[getter]
+    fn overflowing(&self) -> Vec<Encoding> {
+        self.inner
+            .overflowing()
+            .iter()
+            .cloned()
+            .map(Encoding::from)
+            .collect()
+    }
+
     /// Returns a copy of the id of each token, as a `uint32` numpy array.
     #[getter]
     fn ids_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
@@ -106,14 +144,22 @@ impl Encoding {
             self.ids().to_vec(),
             self.type_ids().to_vec(),
             self.attention_mask().to_vec(),
+            self.overflowing(),
         );
         Ok((py.get_type::<Self>().getattr("_unpickle")?, arguments))
     }
 
-    /// Unpickles an `Encoding`
+    /// Unpickles an `Encoding`. `overflowing` defaults to none for a pickle written before
+    /// overflowing encodings were exposed.
     #[staticmethod]
-    fn _unpickle(ids: Vec<u32>, type_ids: Vec<u8>, attention_mask: Vec<u8>) -> Self {
-        Self {
+    #[pyo3(signature = (ids, type_ids, attention_mask, overflowing=None))]
+    fn _unpickle(
+        ids: Vec<u32>,
+        type_ids: Vec<u8>,
+        attention_mask: Vec<u8>,
+        overflowing: Option<Vec<PyRef<'_, Encoding>>>,
+    ) -> Self {
+        let mut encoding = Self {
             inner: PipelineEncoding::new(
                 ids.into_iter().map(PipelineToken::from).collect(),
                 Some(type_ids),
@@ -121,15 +167,25 @@ impl Encoding {
             ),
             type_ids: OnceLock::new(),
             attention_mask: OnceLock::new(),
-        }
+        };
+        encoding.inner.set_overflowing(
+            overflowing
+                .unwrap_or_default()
+                .into_iter()
+                .map(|window| window.inner.clone())
+                .collect(),
+        );
+        encoding
     }
 
     fn __repr__(&self) -> String {
+        let overflowing: Vec<String> = self.overflowing().iter().map(Encoding::__repr__).collect();
         format!(
-            "Encoding(ids={:?}, type_ids={:?}, attention_mask={:?})",
+            "Encoding(ids={:?}, type_ids={:?}, attention_mask={:?}, overflowing=[{}])",
             self.ids(),
             self.type_ids(),
-            self.attention_mask()
+            self.attention_mask(),
+            overflowing.join(", "),
         )
     }
 }
