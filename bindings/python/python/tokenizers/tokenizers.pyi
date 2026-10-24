@@ -21,15 +21,21 @@ class Encoding:
         The number of tokens in the encoding
         """
     def __ne__(self, value: object, /) -> bool: ...
-    def __reduce__(self, /) -> tuple[Any, tuple[list[int], list[int], list[int]]]:
+    def __reduce__(self, /) -> tuple[Any, tuple[list[int], list[int], list[int], list[Encoding]]]:
         """
         Pickle rebuilds an `Encoding` by calling `_unpickle` with these arguments.
         """
     def __repr__(self, /) -> str: ...
     @staticmethod
-    def _unpickle(ids: Sequence[int], type_ids: Sequence[int], attention_mask: Sequence[int]) -> Encoding:
+    def _unpickle(
+        ids: Sequence[int],
+        type_ids: Sequence[int],
+        attention_mask: Sequence[int],
+        overflowing: Sequence[Encoding] | None = None,
+    ) -> Encoding:
         """
-        Unpickles an `Encoding`
+        Unpickles an `Encoding`. `overflowing` defaults to none for a pickle written before
+        overflowing encodings were exposed.
         """
     @property
     def attention_mask(self, /) -> list[int]:
@@ -52,6 +58,18 @@ class Encoding:
     def ids_array(self, /) -> NDArray[uint32]:
         """
         Returns a copy of the id of each token, as a `uint32` numpy array.
+        """
+    @property
+    def overflowing(self, /) -> list[Encoding]:
+        """
+        The overflowing encodings a truncation produced, as a list of `Encoding`.
+
+        A truncated encoding keeps one window of the input -- from the start or the end, as its
+        truncation `direction` says -- and returns the rest as these windows, which follow the
+        kept one sharing `stride` tokens with the previous piece. Each is a complete row: same
+        special tokens, same type ids, padded together with this encoding. Empty when the
+        encoding was not truncated. With no room at all for sequence tokens, the encoding keeps
+        only its special tokens and one window carries the sequence whole.
         """
     @property
     def type_ids(self, /) -> list[int]:
@@ -379,21 +397,34 @@ class Truncation:
         max_length: int,
         strategy: Literal["longest_first", "only_first", "only_second"] = ...,
         direction: Literal["left", "right"] = ...,
+        stride: int = 0,
     ) -> Truncation:
         """
         Args:
             max_length: int
-                The maximum number of tokens, including special tokens, to keep.
-                        Encodings with more tokens will get truncated.
+                The maximum number of tokens, including special tokens, to keep. Encodings with
+                        more tokens are truncated to one window of the input: from the start when
+                        `direction` is `"right"` (the default), from the end when it is `"left"`. For a
+                        pair, `strategy` decides which sequence gives up tokens and the room the special
+                        tokens leave is shared between the two.
             strategy: `"longest_first"` (the default), `"only_first"` or `"only_second"`
                 Which sequence of a pair is truncated.
             direction: `"right"` (the default) or `"left"`
                 Whether to truncate tokens at the end of the sequence (`"right"`) or at
                         the beginning of the sequence (`"left"`).
+            stride: int
+                The length of previous content to be included in each overflowing piece.
+
+                The kept window is returned as the encoding and the rest as `Encoding.overflowing`.
+                For each truncated sequence, successive windows advance by its content room minus
+                `stride`. This room excludes special tokens and, for pairs, depends on `strategy`.
+                The last window can be shorter. With no content room, the whole sequence is returned
+                as one overflow window. `stride` must be strictly less than a truncated sequence's
+                nonzero content room; a sequence that fits is never windowed.
         """
     def __reduce__(
         self, /
-    ) -> tuple[type, tuple[int, Literal["longest_first", "only_first", "only_second"], Literal["left", "right"]]]:
+    ) -> tuple[type, tuple[int, Literal["longest_first", "only_first", "only_second"], Literal["left", "right"], int]]:
         """
         Pickle rebuilds a `Truncation` by calling the class with these constructor arguments.
         """
@@ -412,4 +443,9 @@ class Truncation:
     def strategy(self, /) -> Literal["longest_first", "only_first", "only_second"]:
         """
         Which sequence of a pair is truncated.
+        """
+    @property
+    def stride(self, /) -> int:
+        """
+        The length of previous content to be included in each overflowing piece.
         """

@@ -110,28 +110,40 @@ impl<'py> IntoPyObject<'py> for Direction {
 }
 
 /// What `Truncation.__reduce__` gives pickle: every argument of the constructor, in its order.
-type UnpickleArguments = (usize, Strategy, Direction);
+/// A pickle written before `stride` existed carries the first three and gets `stride` 0.
+type UnpickleArguments = (usize, Strategy, Direction, usize);
 
 #[pymethods]
 impl Truncation {
     /// Args:
     ///     max_length: int
-    ///         The maximum number of tokens, including special tokens, to keep.
-    /// 		Encodings with more tokens will get truncated.
+    ///         The maximum number of tokens, including special tokens, to keep. Encodings with
+    /// 		more tokens are truncated to one window of the input: from the start when
+    /// 		`direction` is `"right"` (the default), from the end when it is `"left"`. For a
+    /// 		pair, `strategy` decides which sequence gives up tokens and the room the special
+    /// 		tokens leave is shared between the two.
     ///     strategy: `"longest_first"` (the default), `"only_first"` or `"only_second"`
     ///         Which sequence of a pair is truncated.
     ///     direction: `"right"` (the default) or `"left"`
     ///         Whether to truncate tokens at the end of the sequence (`"right"`) or at
     /// 		the beginning of the sequence (`"left"`).
+    ///     stride: int
+    ///         The length of previous content to be included in each overflowing piece.
+    ///
+    ///         The kept window is returned as the encoding and the rest as `Encoding.overflowing`.
+    ///         For each truncated sequence, successive windows advance by its content room minus
+    ///         `stride`. This room excludes special tokens and, for pairs, depends on `strategy`.
+    ///         The last window can be shorter. With no content room, the whole sequence is returned
+    ///         as one overflow window. `stride` must be strictly less than a truncated sequence's
+    ///         nonzero content room; a sequence that fits is never windowed.
     #[new]
-    #[pyo3(signature = (max_length, strategy=Strategy(TruncationStrategy::LongestFirst), direction=Direction(TruncationDirection::Right)))]
-    fn new(max_length: usize, strategy: Strategy, direction: Direction) -> Self {
+    #[pyo3(signature = (max_length, strategy=Strategy(TruncationStrategy::LongestFirst), direction=Direction(TruncationDirection::Right), stride=0))]
+    fn new(max_length: usize, strategy: Strategy, direction: Direction, stride: usize) -> Self {
         Self(TruncationParams {
             max_length,
             strategy: strategy.0,
             direction: direction.0,
-            // TODO: Stride is not implemented yet
-            stride: 0,
+            stride,
         })
     }
 
@@ -153,18 +165,30 @@ impl Truncation {
         Direction(self.0.direction)
     }
 
+    /// The length of previous content to be included in each overflowing piece.
+    #[getter]
+    fn stride(&self) -> usize {
+        self.0.stride
+    }
+
     /// Pickle rebuilds a `Truncation` by calling the class with these constructor arguments.
     fn __reduce__<'py>(&self, py: Python<'py>) -> (Bound<'py, PyType>, UnpickleArguments) {
-        let arguments = (self.max_length(), self.strategy(), self.direction());
+        let arguments = (
+            self.max_length(),
+            self.strategy(),
+            self.direction(),
+            self.stride(),
+        );
         (py.get_type::<Self>(), arguments)
     }
 
     pub(crate) fn __repr__(&self) -> String {
         format!(
-            "Truncation(max_length={}, strategy={:?}, direction={:?})",
+            "Truncation(max_length={}, strategy={:?}, direction={:?}, stride={})",
             self.max_length(),
             self.0.strategy.as_ref(),
             self.0.direction.as_ref(),
+            self.0.stride,
         )
     }
 }

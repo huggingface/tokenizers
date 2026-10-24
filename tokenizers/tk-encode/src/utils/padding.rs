@@ -46,6 +46,12 @@ pub enum PaddingStrategy {
     Fixed(usize),
 }
 
+/// Pad every encoding of a batch to one length, its overflowing windows included: a window is a
+/// row of its own and shares the target of the encoding it came from. `BatchLongest` measures
+/// every row, windows included and recursively, so the batch comes out rectangular whatever the
+/// truncation left behind: a window longer than every encoding -- the single window of a
+/// truncation with no room -- is what sets the length then. `Fixed` names the length instead,
+/// and a row already longer than it is left alone.
 pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Result<()> {
     if encodings.is_empty() {
         return Ok(());
@@ -53,7 +59,7 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
 
     let mut pad_length = match params.strategy {
         PaddingStrategy::Fixed(size) => size,
-        PaddingStrategy::BatchLongest => encodings.iter().map(Encoding::len).max().unwrap(),
+        PaddingStrategy::BatchLongest => encodings.iter().map(longest_row).max().unwrap(),
     };
 
     if let Some(multiple) = params.pad_to_multiple_of
@@ -70,9 +76,31 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
     Ok(())
 }
 
+/// The length of the longest row of an encoding: the encoding itself or any window it carries,
+/// windows inside windows included.
+fn longest_row(encoding: &Encoding) -> usize {
+    encoding.len().max(
+        encoding
+            .overflowing
+            .iter()
+            .map(longest_row)
+            .max()
+            .unwrap_or(0),
+    )
+}
+
 fn pad_one(encoding: &mut Encoding, target_length: usize, params: &PaddingParams) {
+    // A window is a row of its own and gets the same target length as the encoding it came from.
+    // One that is already longer -- the single window of a truncation with no room at all -- is
+    // left alone: padding lengthens, it does not shorten.
+    let mut overflowing = std::mem::take(&mut encoding.overflowing);
+    for window in &mut overflowing {
+        pad_one(window, target_length, params);
+    }
+
     let original_len = encoding.ids.len();
     if original_len >= target_length {
+        encoding.overflowing = overflowing;
         return;
     }
     let pad_length = target_length - original_len;
@@ -105,6 +133,7 @@ fn pad_one(encoding: &mut Encoding, target_length: usize, params: &PaddingParams
         ids,
         type_ids: Some(type_ids),
         attention_mask: Some(attention_mask),
+        overflowing,
     };
 }
 
@@ -121,6 +150,7 @@ mod tests {
             ids: make_tokens(ids),
             type_ids: None,
             attention_mask: None,
+            overflowing: Vec::new(),
         }
     }
 
@@ -207,6 +237,7 @@ mod tests {
             ids: make_tokens(0..3),
             type_ids: Some(vec![1, 1, 1]),
             attention_mask: None,
+            overflowing: Vec::new(),
         }];
         let params = PaddingParams {
             strategy: PaddingStrategy::Fixed(5),
@@ -226,6 +257,7 @@ mod tests {
             ids: make_tokens(0..3),
             type_ids: Some(vec![1, 1, 1]),
             attention_mask: None,
+            overflowing: Vec::new(),
         }];
         let params = PaddingParams {
             strategy: PaddingStrategy::Fixed(5),
@@ -252,5 +284,86 @@ mod tests {
         pad_encodings(&mut encodings, &params).unwrap();
 
         assert_eq!(encodings[0].type_ids().unwrap(), [0, 0, 0, 7, 7]);
+    }
+
+    // An overflowing window is a row of its own and is padded together with the encoding it came
+    // from: same target length, same direction, padding at the same end.
+    #[test]
+    fn test_windows_are_padded_with_their_encoding() {
+        let mut encoding = make_encoding(0..3);
+        encoding.overflowing = vec![make_encoding(0..2)];
+        let params = PaddingParams {
+            strategy: PaddingStrategy::Fixed(5),
+            direction: PaddingDirection::Right,
+            pad_id: 99,
+            ..PaddingParams::default()
+        };
+
+        pad_encodings(std::slice::from_mut(&mut encoding), &params).unwrap();
+
+        assert_eq!(encoding.ids(), make_tokens([0, 1, 2, 99, 99]));
+        let window = &encoding.overflowing[0];
+        assert_eq!(window.ids(), make_tokens([0, 1, 99, 99, 99]));
+        assert_eq!(window.attention_mask().unwrap(), [1, 1, 0, 0, 0]);
+    }
+
+    // A `Fixed` target names the length, so a window that is already longer -- the single window
+    // of a truncation with no room at all -- stays as it is: padding lengthens, it does not
+    // shorten. `BatchLongest` measures every row instead and would reach that window's length.
+    #[test]
+    fn test_a_window_longer_than_the_target_is_left_alone() {
+        let mut encoding = make_encoding(0..2);
+        encoding.overflowing = vec![make_encoding(0..7)];
+        let params = PaddingParams {
+            strategy: PaddingStrategy::Fixed(5),
+            ..PaddingParams::default()
+        };
+
+        pad_encodings(std::slice::from_mut(&mut encoding), &params).unwrap();
+
+        assert_eq!(encoding.ids().len(), 5);
+        assert_eq!(encoding.overflowing[0].ids().len(), 7);
+    }
+
+    // In a batch every row of every encoding reaches the same length, so the rows a caller
+    // flattens stay rectangular.
+    #[test]
+    fn test_batch_windows_reach_the_batch_length() {
+        let mut first = make_encoding(0..3);
+        first.overflowing = vec![make_encoding(0..1)];
+        let mut encodings = [first, make_encoding(0..5)];
+        let params = PaddingParams {
+            strategy: PaddingStrategy::BatchLongest,
+            ..PaddingParams::default()
+        };
+
+        pad_encodings(&mut encodings, &params).unwrap();
+
+        assert_eq!(encodings[0].ids().len(), 5);
+        assert_eq!(encodings[0].overflowing[0].ids().len(), 5);
+        assert_eq!(encodings[1].ids().len(), 5);
+    }
+
+    // A truncation with no room leaves the sequence as one window longer than its encoding, and
+    // an unpickled `Encoding` can carry windows inside windows. `BatchLongest` has to measure
+    // every row, deepest first, or the batch comes out ragged and cannot become an array.
+    #[test]
+    fn test_batch_longest_measures_the_windows_recursively() {
+        let mut nested = make_encoding(0..7);
+        nested.overflowing = vec![make_encoding(0..9)];
+        let mut with_window = make_encoding(0..2);
+        with_window.overflowing = vec![nested];
+        let mut encodings = [with_window, make_encoding(0..3)];
+        let params = PaddingParams {
+            strategy: PaddingStrategy::BatchLongest,
+            ..PaddingParams::default()
+        };
+
+        pad_encodings(&mut encodings, &params).unwrap();
+
+        assert_eq!(encodings[0].len(), 9);
+        assert_eq!(encodings[0].overflowing[0].len(), 9);
+        assert_eq!(encodings[0].overflowing[0].overflowing[0].len(), 9);
+        assert_eq!(encodings[1].len(), 9);
     }
 }
