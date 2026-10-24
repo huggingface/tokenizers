@@ -84,6 +84,8 @@ fn pad_one(encoding: &mut Encoding, target_length: usize, params: &PaddingParams
         std::mem::take(&mut encoding.type_ids).unwrap_or_else(|| vec![0; original_len]);
     let mut attention_mask =
         std::mem::take(&mut encoding.attention_mask).unwrap_or_else(|| vec![1; original_len]);
+    let mut special_tokens_mask =
+        std::mem::take(&mut encoding.special_tokens_mask).unwrap_or_else(|| vec![0; original_len]);
 
     match params.direction {
         PaddingDirection::Left => {
@@ -93,11 +95,16 @@ fn pad_one(encoding: &mut Encoding, target_length: usize, params: &PaddingParams
                 .chain(type_ids)
                 .collect();
             attention_mask = (0..pad_length).map(|_| 0).chain(attention_mask).collect();
+            special_tokens_mask = (0..pad_length)
+                .map(|_| 1)
+                .chain(special_tokens_mask)
+                .collect();
         }
         PaddingDirection::Right => {
             ids.extend((0..pad_length).map(|_| pad_id));
             type_ids.extend((0..pad_length).map(|_| pad_type_id));
             attention_mask.extend((0..pad_length).map(|_| 0));
+            special_tokens_mask.extend((0..pad_length).map(|_| 1));
         }
     }
 
@@ -105,6 +112,7 @@ fn pad_one(encoding: &mut Encoding, target_length: usize, params: &PaddingParams
         ids,
         type_ids: Some(type_ids),
         attention_mask: Some(attention_mask),
+        special_tokens_mask: Some(special_tokens_mask),
     };
 }
 
@@ -121,6 +129,7 @@ mod tests {
             ids: make_tokens(ids),
             type_ids: None,
             attention_mask: None,
+            special_tokens_mask: None,
         }
     }
 
@@ -167,6 +176,7 @@ mod tests {
 
         assert_eq!(encodings[0].ids(), make_tokens(0..5));
         assert!(encodings[0].attention_mask().is_none());
+        assert!(encodings[0].special_tokens_mask().is_none());
     }
 
     #[test]
@@ -183,6 +193,7 @@ mod tests {
 
         assert_eq!(encodings[0].ids(), make_tokens([0, 1, 2, 99, 99]));
         assert_eq!(encodings[0].attention_mask().unwrap(), [1, 1, 1, 0, 0]);
+        assert_eq!(encodings[0].special_tokens_mask().unwrap(), [0, 0, 0, 1, 1]);
     }
 
     #[test]
@@ -199,6 +210,7 @@ mod tests {
 
         assert_eq!(encodings[0].ids(), make_tokens([99, 99, 0, 1, 2]));
         assert_eq!(encodings[0].attention_mask().unwrap(), [0, 0, 1, 1, 1]);
+        assert_eq!(encodings[0].special_tokens_mask().unwrap(), [1, 1, 0, 0, 0]);
     }
 
     #[test]
@@ -207,6 +219,7 @@ mod tests {
             ids: make_tokens(0..3),
             type_ids: Some(vec![1, 1, 1]),
             attention_mask: None,
+            special_tokens_mask: None,
         }];
         let params = PaddingParams {
             strategy: PaddingStrategy::Fixed(5),
@@ -226,6 +239,7 @@ mod tests {
             ids: make_tokens(0..3),
             type_ids: Some(vec![1, 1, 1]),
             attention_mask: None,
+            special_tokens_mask: None,
         }];
         let params = PaddingParams {
             strategy: PaddingStrategy::Fixed(5),
