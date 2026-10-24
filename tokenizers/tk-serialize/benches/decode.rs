@@ -8,6 +8,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use tk_encode::pipeline::EncodeOptions;
+use tk_encode::pipeline::PipelineDecodeStream;
 use tk_encode::pipeline::PipelineTokenizer;
 
 const BATCH_SIZE: usize = 1_000;
@@ -101,9 +102,9 @@ pub fn decode(c: &mut Criterion) {
         group.bench_function("decode_stream, short lines", |bencher| {
             bencher.iter(|| {
                 for line in stream_lines {
-                    let mut stream = tokenizer.decode_stream(false);
+                    let mut stream = PipelineDecodeStream::new(Vec::new(), false);
                     for &id in line {
-                        black_box(stream.step(id).unwrap());
+                        black_box(stream.step(&tokenizer, &[id]).unwrap());
                     }
                 }
             })
@@ -115,9 +116,9 @@ pub fn decode(c: &mut Criterion) {
         group.bench_function("decode_stream, long lines", |bencher| {
             bencher.iter(|| {
                 for line in stream_fused {
-                    let mut stream = tokenizer.decode_stream(false);
+                    let mut stream = PipelineDecodeStream::new(Vec::new(), false);
                     for &id in line {
-                        black_box(stream.step(id).unwrap());
+                        black_box(stream.step(&tokenizer, &[id]).unwrap());
                     }
                 }
             })
