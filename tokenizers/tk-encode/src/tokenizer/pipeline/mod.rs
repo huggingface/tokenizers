@@ -853,14 +853,14 @@ impl PipelineTokenizer {
 
     /// Decode token ids back to a `String`.
     ///
-    /// Two routes, picked by what the model's vocab store actually holds:
+    /// Two routes, picked by the model's vocab store and the configured decoder:
     ///
-    /// * **byte-level BPE** -- [`byte_level::transform_vocab`] already replaced every entry with
-    ///   its decoded raw bytes when the model was built, so decoding is a concatenation of
-    ///   borrowed slices. See [`Self::decode_byte_level`].
-    /// * **everything else** -- the store holds the token strings as written, so the configured
-    ///   [`DecoderWrapper`] still has to invert whatever the pre-tokenizer did. Same shape as the
-    ///   released `Tokenizer::decode`.
+    /// * **byte-level BPE with a `ByteLevel` decoder** -- [`byte_level::transform_vocab`] already
+    ///   replaced every entry with its decoded raw bytes when the model was built, so decoding
+    ///   is a concatenation of borrowed slices. See [`Self::decode_byte_level`].
+    /// * **everything else** -- recover the vocabulary's token strings and run the configured
+    ///   decoder, or join them with spaces if none is configured. Decoder sequences must run
+    ///   in their declared order, even when the model stores decoded raw bytes.
     ///
     /// [`byte_level::transform_vocab`]: crate::utils::byte_level::transform_vocab
     pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
@@ -870,6 +870,7 @@ impl PipelineTokenizer {
         #[allow(irrefutable_let_patterns)]
         if let PipelineModel::BPE(bpe) = &self.inner.model
             && bpe.is_byte_level()
+            && matches!(&self.inner.decoder, Some(DecoderRuntime::ByteLevel(_)))
         {
             return Ok(self.decode_byte_level(bpe, ids, skip_special_tokens));
         }
