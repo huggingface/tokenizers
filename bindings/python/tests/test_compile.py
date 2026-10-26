@@ -5,7 +5,7 @@ import pickle
 import pytest
 
 from conftest import BERT, GPT2
-from tokenizers import Padding, TokenizerSpec, Truncation
+from tokenizers import Padding, Tokenizer, Truncation
 
 TEXT = "Hello there, how are you today?"
 EOT = 50256
@@ -42,7 +42,7 @@ def test_compile_error(tmp_path):
     declared["pre_tokenizer"]["type"] = "NotAPreTokenizer"
     path = tmp_path / "tokenizer.json"
     path.write_text(json.dumps(declared))
-    spec = TokenizerSpec.from_file(path)
+    spec = Tokenizer.from_file(path)
 
     with pytest.raises(ValueError, match="NotAPreTokenizer"):
         spec.compile()
@@ -50,7 +50,7 @@ def test_compile_error(tmp_path):
 
 # Rendering the model's JSON would mean writing the whole vocabulary back out on every call.
 def test_repr():
-    spec = TokenizerSpec.from_file(BERT)
+    spec = Tokenizer.from_file(BERT)
     spec.padding = Padding(length=12, pad_id=3)
     spec.truncation = Truncation(10)
 
@@ -94,4 +94,4 @@ def test_spec_repr_charsmap(tmp_path):
     path = tmp_path / "tokenizer.json"
     path.write_text(json.dumps(declared))
 
-    assert "    normalizer=Precompiled(precompiled_charsmap=...)," in repr(TokenizerSpec.from_file(path))
+    assert "    normalizer=Precompiled(precompiled_charsmap=...)," in repr(Tokenizer.from_file(path))

@@ -25,7 +25,7 @@ mod tokenizers {
     #[pymodule_export]
     use crate::options::Truncation;
     #[pymodule_export]
-    use crate::spec::PyTokenizerSpec;
+    use crate::spec::Tokenizer;
 
     // TODO: bind trainers
 }

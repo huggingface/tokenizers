@@ -17,27 +17,27 @@ use crate::options::{Padding, Truncation};
 use crate::repr;
 use crate::type_hints::Token;
 
-/// This class is used to spec and build a `CompiledTokenizer`
+/// The contents of a `tokenizer.json`, which can be edited.
 ///
 /// Call `compile()` to get a `CompiledTokenizer`, which encodes and decodes.
 ///
 /// Example:
 /// ```python
-/// from tokenizers import TokenizerSpec, Truncation
+/// from tokenizers import Tokenizer, Truncation
 ///
-/// spec = TokenizerSpec.from_pretrained("deepseek-ai/DeepSeek-V4.1-Flash")
+/// spec = Tokenizer.from_pretrained("deepseek-ai/DeepSeek-V4.1-Flash")
 /// spec.truncation = Truncation(max_length=512)
 /// tokenizer = spec.compile()
 /// ids = tokenizer.encode("Hello, World!").ids
 /// print(ids)
 /// print(tokenizer.decode_tokens(ids))
 /// ```
-#[pyclass(name = "TokenizerSpec", frozen, dict, weakref, module = "tokenizers")]
-pub struct PyTokenizerSpec {
+#[pyclass(frozen, dict, weakref, module = "tokenizers")]
+pub struct Tokenizer {
     spec: Mutex<TokenizerSpec>,
 }
 
-impl PyTokenizerSpec {
+impl Tokenizer {
     fn new(spec: TokenizerSpec) -> Self {
         Self {
             spec: Mutex::new(spec),
@@ -50,7 +50,7 @@ impl PyTokenizerSpec {
 }
 
 #[pymethods]
-impl PyTokenizerSpec {
+impl Tokenizer {
     /// Loads a `tokenizer.json`.
     ///
     /// The file is only read here. Errors in its components show up at `compile()`.
@@ -67,7 +67,7 @@ impl PyTokenizerSpec {
         Ok(Self::new(TokenizerSpec::from_json(&text).map_err(err)?))
     }
 
-    /// Instantiate a new `TokenizerSpec` from an existing file on the Hugging Face Hub.
+    /// Instantiate a new `Tokenizer` from an existing file on the Hugging Face Hub.
     ///
     /// Defers downloading and caching to `huggingface_hub.hf_hub_download`.
     ///
@@ -95,22 +95,22 @@ impl PyTokenizerSpec {
     ///         specify it here.
     ///
     /// Returns:
-    ///     `TokenizerSpec`: The tokenizer the file describes.
+    ///     `Tokenizer`: The tokenizer the file describes.
     ///
     /// Examples:
     ///
     /// ```python
     /// # Download tokenizer.json from huggingface.co and cache it.
-    /// tokenizer = TokenizerSpec.from_pretrained("openai-community/gpt2")
+    /// tokenizer = Tokenizer.from_pretrained("openai-community/gpt2")
     ///
     /// # Pin a revision: a branch name, a tag name or a commit id.
-    /// tokenizer = TokenizerSpec.from_pretrained("openai-community/gpt2", revision="607a30d783dfa663caf39e06633721c8d4cfcd7e")
+    /// tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", revision="607a30d783dfa663caf39e06633721c8d4cfcd7e")
     ///
     /// # A private or gated repo, with the token `hf auth login` stored.
-    /// tokenizer = TokenizerSpec.from_pretrained("my-org/my-model", token=True)
+    /// tokenizer = Tokenizer.from_pretrained("my-org/my-model", token=True)
     ///
     /// # Read the cache without contacting the Hub.
-    /// tokenizer = TokenizerSpec.from_pretrained("openai-community/gpt2", local_files_only=True)
+    /// tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", local_files_only=True)
     /// ```
     #[staticmethod]
     #[pyo3(signature = (identifier, revision="main", token=None, *, cache_dir=None, force_download=false, local_files_only=false, subfolder=None))]
@@ -186,13 +186,13 @@ impl PyTokenizerSpec {
         self.__copy__()
     }
 
-    /// Pickle rebuilds a `TokenizerSpec` by calling `_unpickle` with these arguments.
+    /// Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
     fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
         let json = self.spec().to_json();
         Ok((py.get_type::<Self>().getattr("_unpickle")?, (json,)))
     }
 
-    /// Unpickles a `TokenizerSpec`
+    /// Unpickles a `Tokenizer`
     #[staticmethod]
     fn _unpickle(json: &str) -> PyResult<Self> {
         Ok(Self::new(TokenizerSpec::from_json(json).map_err(err)?))
@@ -200,7 +200,7 @@ impl PyTokenizerSpec {
 
     fn __repr__(&self) -> String {
         let spec = self.spec();
-        repr::tokenizer_spec(
+        repr::tokenizer(
             &spec.to_object(),
             spec.padding.as_ref(),
             spec.truncation.as_ref(),

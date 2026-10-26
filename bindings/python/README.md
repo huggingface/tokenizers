@@ -13,13 +13,13 @@ uv sync
 ## Usage
 
 ```python
-from tokenizers import Padding, TokenizerSpec
+from tokenizers import Padding, Tokenizer
 
-# A `TokenizerSpec` is the contents of a `tokenizer.json`, and can be edited.
-spec = TokenizerSpec.from_file("tokenizer.json")
+# A `Tokenizer` is the contents of a `tokenizer.json`, and can be edited.
+spec = Tokenizer.from_file("tokenizer.json")
 # Or the `tokenizer.json` of a model repo on the Hub. `huggingface_hub` downloads and caches it,
 # with the same cache, login token and offline switch as transformers.
-spec = TokenizerSpec.from_pretrained("openai-community/gpt2", revision="main")
+spec = Tokenizer.from_pretrained("openai-community/gpt2", revision="main")
 
 # `compile()` builds a `CompiledTokenizer`, which encodes and decodes. It cannot be changed, so
 # threads can share it. Every call builds a new one, and later edits of the spec don't reach it.
@@ -65,7 +65,7 @@ Every class here can be pickled, so a tokenizer can be sent to a worker process 
 sent back: `multiprocessing`, a PyTorch `DataLoader`, `datasets.map(num_proc=...)`.
 
 A pickled `CompiledTokenizer` carries its whole `tokenizer.json`, and unpickling compiles it again.
-So send the `TokenizerSpec` once per worker, through the pool's `initializer`, and compile it
+So send the `Tokenizer` once per worker, through the pool's `initializer`, and compile it
 there:
 
 ```python

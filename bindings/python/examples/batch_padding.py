@@ -4,14 +4,14 @@ Pad a batch of encodings, every way padding can be set
     python examples/batch_padding.py
 
 Runs on the GPT-2 fixture `make test` fetches into `data/`. The `padding` attribute of a
-`TokenizerSpec` applies to every encode of a tokenizer compiled from it; the `padding=` keyword of
+`Tokenizer` applies to every encode of a tokenizer compiled from it; the `padding=` keyword of
 `encode` and `encode_batch` applies to that one call. `None` switches padding off in both places.
 The expected ids come from released tokenizers 0.23.1.
 """
 
 from pathlib import Path
 
-from tokenizers import Padding, TokenizerSpec
+from tokenizers import Padding, Tokenizer
 
 path = Path(__file__).parent.parent / "data" / "gpt2.json"
 prompts = ["Hello, I'm a", "The weather today is quite a bit warmer than expected"]
@@ -30,7 +30,7 @@ def show(title, encodings):
         print(f"          mask {encoding.attention_mask}")
 
 
-spec = TokenizerSpec.from_file(path)
+spec = Tokenizer.from_file(path)
 assert spec.padding is None
 
 tokenizer = spec.compile()

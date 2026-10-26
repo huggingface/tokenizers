@@ -1,7 +1,7 @@
 import pytest
 
 from conftest import GPT2
-from tokenizers import Padding, TokenizerSpec
+from tokenizers import Padding, Tokenizer
 
 SHORT_AND_LONG = ["Hello", "Hello there, how are you today?"]
 EOT = 50256
@@ -69,7 +69,7 @@ def test_pad_type_id(gpt2):
 
 
 def test_padding_from_file(padded_wiki):
-    spec = TokenizerSpec.from_file(padded_wiki)
+    spec = Tokenizer.from_file(padded_wiki)
 
     assert spec.padding == Padding(pad_id=3, pad_token="[PAD]")
     short, long = spec.compile().encode_batch(SHORT_AND_LONG)
@@ -77,7 +77,7 @@ def test_padding_from_file(padded_wiki):
 
 
 def test_set_padding(padded_wiki):
-    spec = TokenizerSpec.from_file(padded_wiki)
+    spec = Tokenizer.from_file(padded_wiki)
 
     spec.padding = Padding(direction="left", pad_id=3)
     assert spec.padding == Padding(direction="left", pad_id=3)
@@ -91,7 +91,7 @@ def test_set_padding(padded_wiki):
 
 @pytest.fixture(scope="module")
 def padded_gpt2():
-    spec = TokenizerSpec.from_file(GPT2)
+    spec = Tokenizer.from_file(GPT2)
     spec.padding = Padding(length=4, pad_id=EOT)
     return spec.compile()
 

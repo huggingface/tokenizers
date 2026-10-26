@@ -1,7 +1,7 @@
 import pytest
 
 from conftest import GPT2
-from tokenizers import TokenizerSpec, Truncation
+from tokenizers import Tokenizer, Truncation
 
 LONG = "Hello there, how are you today?"
 
@@ -56,14 +56,14 @@ def test_encode_error_is_a_value_error(gpt2):
 
 
 def test_truncation_from_file(truncated_wiki):
-    spec = TokenizerSpec.from_file(truncated_wiki)
+    spec = Tokenizer.from_file(truncated_wiki)
 
     assert spec.truncation == Truncation(4)
     assert len(spec.compile().encode(LONG)) == 4
 
 
 def test_set_truncation(truncated_wiki, wiki):
-    spec = TokenizerSpec.from_file(truncated_wiki)
+    spec = Tokenizer.from_file(truncated_wiki)
 
     spec.truncation = Truncation(2)
     assert spec.truncation == Truncation(2)
@@ -76,7 +76,7 @@ def test_set_truncation(truncated_wiki, wiki):
 
 @pytest.fixture(scope="module")
 def truncated_gpt2():
-    spec = TokenizerSpec.from_file(GPT2)
+    spec = Tokenizer.from_file(GPT2)
     spec.truncation = Truncation(4)
     return spec.compile()
 

@@ -13,7 +13,7 @@ __version__: Final[str]
 @final
 class CompiledTokenizer:
     """
-    A tokenizer built by `TokenizerSpec.compile()`. Encodes text into token ids, and decodes token
+    A tokenizer built by `Tokenizer.compile()`. Encodes text into token ids, and decodes token
     ids back into text.
 
     A compiled tokenizer is immutable and can be shared across threads.
@@ -299,17 +299,17 @@ class Padding:
         """
 
 @final
-class TokenizerSpec:
+class Tokenizer:
     """
-    This class is used to spec and build a `CompiledTokenizer`
+    The contents of a `tokenizer.json`, which can be edited.
 
     Call `compile()` to get a `CompiledTokenizer`, which encodes and decodes.
 
     Example:
     ```python
-    from tokenizers import TokenizerSpec, Truncation
+    from tokenizers import Tokenizer, Truncation
 
-    spec = TokenizerSpec.from_pretrained("deepseek-ai/DeepSeek-V4.1-Flash")
+    spec = Tokenizer.from_pretrained("deepseek-ai/DeepSeek-V4.1-Flash")
     spec.truncation = Truncation(max_length=512)
     tokenizer = spec.compile()
     ids = tokenizer.encode("Hello, World!").ids
@@ -317,23 +317,23 @@ class TokenizerSpec:
     print(tokenizer.decode_tokens(ids))
     ```
     """
-    def __copy__(self, /) -> TokenizerSpec:
+    def __copy__(self, /) -> Tokenizer:
         """
         An independent copy: editing one spec leaves the other unchanged.
         """
-    def __deepcopy__(self, /, _memo: dict) -> TokenizerSpec:
+    def __deepcopy__(self, /, _memo: dict) -> Tokenizer:
         """
         An independent copy: editing one spec leaves the other unchanged.
         """
     def __reduce__(self, /) -> tuple[Any, tuple[str]]:
         """
-        Pickle rebuilds a `TokenizerSpec` by calling `_unpickle` with these arguments.
+        Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
         """
     def __repr__(self, /) -> str: ...
     @staticmethod
-    def _unpickle(json: str) -> TokenizerSpec:
+    def _unpickle(json: str) -> Tokenizer:
         """
-        Unpickles a `TokenizerSpec`
+        Unpickles a `Tokenizer`
         """
     def compile(self, /) -> CompiledTokenizer:
         """
@@ -343,7 +343,7 @@ class TokenizerSpec:
         compiled tokenizer: compile again to see them.
         """
     @staticmethod
-    def from_file(path: str | PathLike[str]) -> TokenizerSpec:
+    def from_file(path: str | PathLike[str]) -> Tokenizer:
         """
         Loads a `tokenizer.json`.
 
@@ -363,9 +363,9 @@ class TokenizerSpec:
         force_download: bool = False,
         local_files_only: bool = False,
         subfolder: str | None = None,
-    ) -> TokenizerSpec:
+    ) -> Tokenizer:
         """
-        Instantiate a new `TokenizerSpec` from an existing file on the Hugging Face Hub.
+        Instantiate a new `Tokenizer` from an existing file on the Hugging Face Hub.
 
         Defers downloading and caching to `huggingface_hub.hf_hub_download`.
 
@@ -393,22 +393,22 @@ class TokenizerSpec:
                 specify it here.
 
         Returns:
-            `TokenizerSpec`: The tokenizer the file describes.
+            `Tokenizer`: The tokenizer the file describes.
 
         Examples:
 
         ```python
         # Download tokenizer.json from huggingface.co and cache it.
-        tokenizer = TokenizerSpec.from_pretrained("openai-community/gpt2")
+        tokenizer = Tokenizer.from_pretrained("openai-community/gpt2")
 
         # Pin a revision: a branch name, a tag name or a commit id.
-        tokenizer = TokenizerSpec.from_pretrained("openai-community/gpt2", revision="607a30d783dfa663caf39e06633721c8d4cfcd7e")
+        tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", revision="607a30d783dfa663caf39e06633721c8d4cfcd7e")
 
         # A private or gated repo, with the token `hf auth login` stored.
-        tokenizer = TokenizerSpec.from_pretrained("my-org/my-model", token=True)
+        tokenizer = Tokenizer.from_pretrained("my-org/my-model", token=True)
 
         # Read the cache without contacting the Hub.
-        tokenizer = TokenizerSpec.from_pretrained("openai-community/gpt2", local_files_only=True)
+        tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", local_files_only=True)
         ```
         """
     @property

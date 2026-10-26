@@ -2,7 +2,7 @@ import multiprocessing
 import pickle
 
 from conftest import GPT2
-from tokenizers import CompiledTokenizer, Padding, TokenizerSpec, Truncation
+from tokenizers import CompiledTokenizer, Padding, Tokenizer, Truncation
 
 TEXTS = ["Hello there", "General Kenobi", "You are a bold one"]
 
@@ -14,7 +14,7 @@ def test_pickle_compiled_tokenizer(bert):
 
 
 def test_pickle_spec_padding(padded_wiki):
-    spec = TokenizerSpec.from_file(padded_wiki)
+    spec = Tokenizer.from_file(padded_wiki)
 
     spec.padding = Padding(direction="left", length=8, pad_id=3)
     assert pickle.loads(pickle.dumps(spec)).padding == Padding(direction="left", length=8, pad_id=3)
@@ -24,7 +24,7 @@ def test_pickle_spec_padding(padded_wiki):
 
 
 def test_pickle_spec_truncation(truncated_wiki):
-    spec = TokenizerSpec.from_file(truncated_wiki)
+    spec = Tokenizer.from_file(truncated_wiki)
 
     spec.truncation = Truncation(2, direction="left")
     assert pickle.loads(pickle.dumps(spec)).truncation == Truncation(2, direction="left")
@@ -75,7 +75,7 @@ def _encode_batch(texts):
 
 def test_multiprocessing():
     # spawn, not fork: the spec travels to the worker as a pickle, and the worker compiles it.
-    spec = TokenizerSpec.from_file(GPT2)
+    spec = Tokenizer.from_file(GPT2)
     spec.padding = Padding(pad_id=50256)
 
     with multiprocessing.get_context("spawn").Pool(1, initializer=_compile, initargs=(spec,)) as pool:

@@ -17,7 +17,7 @@ use crate::repr;
 use crate::spec::TokenizerSpec;
 use crate::type_hints::TokenIds;
 
-/// A tokenizer built by `TokenizerSpec.compile()`. Encodes text into token ids, and decodes token
+/// A tokenizer built by `Tokenizer.compile()`. Encodes text into token ids, and decodes token
 /// ids back into text.
 ///
 /// A compiled tokenizer is immutable and can be shared across threads.

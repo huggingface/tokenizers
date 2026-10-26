@@ -21,7 +21,7 @@ import multiprocessing
 import sys
 from pathlib import Path
 
-from tokenizers import CompiledTokenizer, Encoding, TokenizerSpec
+from tokenizers import CompiledTokenizer, Encoding, Tokenizer
 
 path = sys.argv[1] if len(sys.argv) > 1 else str(Path(__file__).parent.parent / "data" / "gpt2.json")
 texts = ["Hello, I'm a", "The weather today is quite a bit warmer than expected"] * 100
@@ -30,7 +30,7 @@ workers = 4
 tokenizer: CompiledTokenizer
 
 
-def compile_tokenizer(spec: TokenizerSpec):
+def compile_tokenizer(spec: Tokenizer):
     """Runs once in each worker process, when it starts."""
     global tokenizer
     tokenizer = spec.compile()
@@ -44,7 +44,7 @@ def encode(text: str) -> Encoding:
 # Each worker imports this file to find `encode`, so everything below has to run in the parent
 # only. Without this guard, a worker would start workers of its own.
 if __name__ == "__main__":
-    spec = TokenizerSpec.from_file(path)
+    spec = Tokenizer.from_file(path)
 
     # "spawn" starts every worker as a fresh interpreter, so the spec has to travel as a pickle.
     # "fork", the default on Linux before Python 3.14, hands the worker a copy of this process

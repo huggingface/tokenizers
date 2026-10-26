@@ -15,13 +15,13 @@ const MAX_LINE_WIDTH: usize = 100;
 
 const INDENT: &str = "    ";
 
-/// Renders `file` as `TokenizerSpec(...)`, one line per `tokenizer.json` key.
-pub(crate) fn tokenizer_spec(
+/// Renders `file` as `Tokenizer(...)`, one line per `tokenizer.json` key.
+pub(crate) fn tokenizer(
     file: &Map<String, Value>,
     padding: Option<&PaddingParams>,
     truncation: Option<&TruncationParams>,
 ) -> String {
-    let mut out = String::from("TokenizerSpec(");
+    let mut out = String::from("Tokenizer(");
     for (key, value) in file {
         field(key, &mut out, |out| match key.as_str() {
             "padding" => push_indented(&padding_repr(padding), out),

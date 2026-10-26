@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from tokenizers import TokenizerSpec
+from tokenizers import Tokenizer
 
 # `make test` fetches these; see the Makefile's TESTS_RESOURCES.
 DATA = Path(__file__).parent.parent / "data"
@@ -22,27 +22,27 @@ LLAMA3 = DATA / "llama-3-tokenizer.json"
 # compiled tokenizer per file. A compiled tokenizer cannot change, so no test can leak state into another.
 @pytest.fixture(scope="session")
 def gpt2():
-    return TokenizerSpec.from_file(GPT2).compile()
+    return Tokenizer.from_file(GPT2).compile()
 
 
 @pytest.fixture(scope="session")
 def bert():
-    return TokenizerSpec.from_file(BERT).compile()
+    return Tokenizer.from_file(BERT).compile()
 
 
 @pytest.fixture(scope="session")
 def wiki():
-    return TokenizerSpec.from_file(WIKI).compile()
+    return Tokenizer.from_file(WIKI).compile()
 
 
 @pytest.fixture(scope="session")
 def llama3():
-    return TokenizerSpec.from_file(LLAMA3).compile()
+    return Tokenizer.from_file(LLAMA3).compile()
 
 
 @pytest.fixture
 def gpt2_spec():
-    return TokenizerSpec.from_file(GPT2)
+    return Tokenizer.from_file(GPT2)
 
 
 @pytest.fixture
