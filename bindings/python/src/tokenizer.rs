@@ -280,8 +280,8 @@ impl TokenizerSpec {
         };
         TokenizerJson {
             version: self.version.clone(),
-            truncation: params(truncation_to_json(self.truncation.as_ref())),
-            padding: params(padding_to_json(self.padding.as_ref())),
+            truncation: parse_json(truncation_to_json(self.truncation.as_ref())),
+            padding: parse_json(padding_to_json(self.padding.as_ref())),
             role_to_token: self.role_to_token.as_deref().cloned(),
             added_tokens: Value::clone(&self.added_tokens),
             normalizer: json(&self.normalizer),
@@ -320,6 +320,6 @@ impl ComponentSpec {
     }
 }
 
-fn params(json: String) -> Value {
+fn parse_json(json: String) -> Value {
     serde_json::from_str(&json).expect("tk-serialize writes valid JSON")
 }
