@@ -90,9 +90,9 @@ def test_set_padding(padded_wiki):
 
 @pytest.fixture(scope="module")
 def padded_gpt2():
-    spec = Tokenizer.from_file(GPT2)
-    spec.padding = Padding(length=4, pad_id=EOT)
-    return spec.compile()
+    tokenizer = Tokenizer.from_file(GPT2)
+    tokenizer.padding = Padding(length=4, pad_id=EOT)
+    return tokenizer.compile()
 
 
 def test_encode_padding_off(gpt2, padded_gpt2):

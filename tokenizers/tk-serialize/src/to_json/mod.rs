@@ -44,38 +44,6 @@ pub fn post_processor_to_json(
     Ok(out.finish())
 }
 
-/// Write a lone `added_tokens`, the value of that one key, in id order.
-pub fn added_tokens_to_json(
-    added: &tk_encode::vocab::bucket_added_vocabulary::AddedVocabulary,
-) -> String {
-    let mut out = Out::new();
-    write_added_tokens(&mut out, added);
-    out.finish()
-}
-
-/// Write a lone `normalizer`, the value of that one key. An empty chain comes back as `null`.
-pub fn normalizer_to_json(chain: &[tk_encode::pipeline::PipelineNormalizer]) -> Result<String> {
-    let mut out = Out::new();
-    write_normalizer(&mut out, chain)?;
-    Ok(out.finish())
-}
-
-/// Write a lone `pre_tokenizer`, the value of that one key.
-pub fn pre_tokenizer_to_json(
-    pre_tokenizer: &tk_encode::pipeline::PipelinePreTokenizer,
-) -> Result<String> {
-    let mut out = Out::new();
-    write_pre_tokenizer(&mut out, pre_tokenizer)?;
-    Ok(out.finish())
-}
-
-/// Write a lone `decoder`, the value of that one key. `None` comes back as `null`.
-pub fn decoder_to_json(decoder: Option<&tk_encode::decoders::DecoderRuntime>) -> Result<String> {
-    let mut out = Out::new();
-    write_decoder(&mut out, decoder)?;
-    Ok(out.finish())
-}
-
 /// Write a lone `padding`, the value of that one key. `None` comes back as `null`.
 ///
 /// The counterpart of [`padding_from_json`](crate::padding_from_json).

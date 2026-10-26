@@ -16,16 +16,16 @@ uv sync
 from tokenizers import Padding, Tokenizer
 
 # A `Tokenizer` is the contents of a `tokenizer.json`, and can be edited.
-spec = Tokenizer.from_file("tokenizer.json")
+tokenizer = Tokenizer.from_file("tokenizer.json")
 # Or the `tokenizer.json` of a model repo on the Hub. `huggingface_hub` downloads and caches it,
 # with the same cache, login token and offline switch as transformers.
-spec = Tokenizer.from_pretrained("openai-community/gpt2", revision="main")
+tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", revision="main")
 
 # `compile()` builds a `CompiledTokenizer`, which encodes and decodes. It cannot be changed, so
-# threads can share it. Every call builds a new one, and later edits of the spec don't reach it.
-tokenizer = spec.compile()
+# threads can share it. Every call builds a new one, and later edits of the `Tokenizer` don't reach it.
+compiled = tokenizer.compile()
 
-encoding = tokenizer.encode("Hello there, how are you?")
+encoding = compiled.encode("Hello there, how are you?")
 encoding.ids             # [101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102]
 encoding.type_ids        # [0, 0, 0, 0, 0, 0, 0, 0, 0]
 encoding.attention_mask  # [1, 1, 1, 1, 1, 1, 1, 1, 1]
@@ -36,24 +36,24 @@ encoding.type_ids_array        # array([0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=uint32
 encoding.attention_mask_array  # array([1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=uint32)
 torch.from_numpy(encoding.ids_array)  # no-copy translation
 
-tokenizer.encode("Hello", add_special_tokens=False).ids  # no [CLS]/[SEP]
-tokenizer.decode(encoding.ids)                           # "hello there, how are you?"
-tokenizer.decode(encoding.ids_array)                     # a numpy array works too
-tokenizer.decode(encoding.ids, skip_special_tokens=False)
+compiled.encode("Hello", add_special_tokens=False).ids  # no [CLS]/[SEP]
+compiled.decode(encoding.ids)                           # "hello there, how are you?"
+compiled.decode(encoding.ids_array)                     # a numpy array works too
+compiled.decode(encoding.ids, skip_special_tokens=False)
 
 # Pad one call. `length=None` pads each batch to its longest item.
-short, long = tokenizer.encode_batch(
+short, long = compiled.encode_batch(
     ["Hello", "Hello there, how are you?"],
     padding=Padding(direction="left", pad_id=0, pad_token="[PAD]"),
 )
 len(short) == len(long)  # True
 short.attention_mask     # [0, 0, 0, 0, 0, 0, 1, 1, 1]
-tokenizer.encode("Hello", padding=Padding(length=16))  # exactly 16 ids
+compiled.encode("Hello", padding=Padding(length=16))  # exactly 16 ids
 
-# Or set a default on the spec: every encode of a tokenizer compiled from it pads.
+# Or set a default on the `Tokenizer`: every encode of a tokenizer compiled from it pads.
 # `padding=None` switches the default off for one call.
-spec.padding = Padding(pad_to_multiple_of=8)
-padded = spec.compile()
+tokenizer.padding = Padding(pad_to_multiple_of=8)
+padded = tokenizer.compile()
 padded.encode("Hello", padding=None)
 ```
 
@@ -69,16 +69,16 @@ So send the `Tokenizer` once per worker, through the pool's `initializer`, and c
 there:
 
 ```python
-def compile_tokenizer(spec):
-    global tokenizer
-    tokenizer = spec.compile()
+def compile_tokenizer(tokenizer):
+    global compiled
+    compiled = tokenizer.compile()
 
 
 def encode(text):
-    return tokenizer.encode(text)
+    return compiled.encode(text)
 
 
-with multiprocessing.get_context("spawn").Pool(4, initializer=compile_tokenizer, initargs=(spec,)) as pool:
+with multiprocessing.get_context("spawn").Pool(4, initializer=compile_tokenizer, initargs=(tokenizer,)) as pool:
     encoded = list(pool.imap(encode, texts, chunksize=32))
 ```
 

@@ -309,12 +309,12 @@ class Tokenizer:
     ```python
     from tokenizers import Tokenizer, Truncation
 
-    spec = Tokenizer.from_pretrained("deepseek-ai/DeepSeek-V4.1-Flash")
-    spec.truncation = Truncation(max_length=512)
-    tokenizer = spec.compile()
-    ids = tokenizer.encode("Hello, World!").ids
+    tokenizer = Tokenizer.from_pretrained("deepseek-ai/DeepSeek-V4.1-Flash")
+    tokenizer.truncation = Truncation(max_length=512)
+    compiled = tokenizer.compile()
+    ids = compiled.encode("Hello, World!").ids
     print(ids)
-    print(tokenizer.decode_tokens(ids))
+    print(compiled.decode_tokens(ids))
     ```
     """
     def __copy__(self, /) -> Tokenizer:

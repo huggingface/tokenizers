@@ -258,7 +258,16 @@ impl CompiledTokenizer {
         Self::new(py, &TokenizerSpec::from_json(json).map_err(err)?)
     }
 
-    fn __repr__(&self) -> PyResult<String> {
-        repr::compiled_tokenizer(&self.pipeline).map_err(err)
+    // If that gets too slow, we can customize the render to avoid transitioning through
+    // the json representation (which has to write the whole vocab)
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        let json = py.detach(|| to_json(&self.pipeline)).map_err(err)?;
+        let file = serde_json::from_str(&json).expect("to_json writes a JSON object");
+        Ok(repr::tokenizer(
+            "CompiledTokenizer",
+            &file,
+            self.pipeline.get_padding(),
+            self.pipeline.get_truncation(),
+        ))
     }
 }

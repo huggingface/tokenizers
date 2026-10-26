@@ -42,40 +42,25 @@ def test_compile_error(tmp_path):
     declared["pre_tokenizer"]["type"] = "NotAPreTokenizer"
     path = tmp_path / "tokenizer.json"
     path.write_text(json.dumps(declared))
-    spec = Tokenizer.from_file(path)
+    tokenizer = Tokenizer.from_file(path)
 
     with pytest.raises(ValueError, match="NotAPreTokenizer"):
-        spec.compile()
+        tokenizer.compile()
 
 
-# Rendering the model's JSON would mean writing the whole vocabulary back out on every call.
 def test_repr():
-    spec = Tokenizer.from_file(BERT)
-    spec.padding = Padding(length=12, pad_id=3)
-    spec.truncation = Truncation(10)
+    tokenizer = Tokenizer.from_file(BERT)
+    tokenizer.padding = Padding(length=12, pad_id=3)
+    tokenizer.truncation = Truncation(10)
 
-    rendered = repr(spec.compile())
+    rendered = repr(tokenizer.compile())
 
-    assert rendered.startswith("CompiledTokenizer(\n    added_tokens=[\n")
-    assert rendered[rendered.index("    normalizer=") :] == "\n".join(
-        [
-            "    normalizer=Sequence(normalizers=[NFD(), Lowercase(), StripAccents()]),",
-            "    pre_tokenizer=Whitespace(),",
-            "    model=WordPiece,",
-            '    post_processor=Template(single="[CLS] $A [SEP]", pair="[CLS] $A [SEP] $B:1 [SEP]:1"),',
-            "    decoder=None,",
-            "    padding=Padding(",
-            '        direction="right",',
-            "        pad_id=3,",
-            "        pad_type_id=0,",
-            '        pad_token="[PAD]",',
-            "        length=12,",
-            "        pad_to_multiple_of=None,",
-            "    ),",
-            '    truncation=Truncation(max_length=10, strategy="longest_first", direction="right"),',
-            ")",
-        ]
+    assert rendered.startswith(
+        'CompiledTokenizer(\n    version="2.0",\n'
+        '    truncation=Truncation(max_length=10, strategy="longest_first", direction="right"),\n'
+        "    padding=Padding(\n"
     )
+    assert '        vocab={"[UNK]": 0, "[CLS]": 1, "[SEP]": 2, "[PAD]": 3, "[MASK]": 4, ...},\n' in rendered
 
 
 def test_repr_nested(llama3):

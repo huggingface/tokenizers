@@ -30,52 +30,53 @@ def show(title, encodings):
         print(f"          mask {encoding.attention_mask}")
 
 
-spec = Tokenizer.from_file(path)
-assert spec.padding is None
+tokenizer = Tokenizer.from_file(path)
+assert tokenizer.padding is None
 
-tokenizer = spec.compile()
-short, long = tokenizer.encode_batch(prompts)
+compiled = tokenizer.compile()
+short, long = compiled.encode_batch(prompts)
 show("no padding", (short, long))
 assert short.ids == SHORT
 assert long.ids == LONG
 
-spec.padding = Padding(direction="left", pad_id=EOT, pad_token=EOT_TOKEN)
-tokenizer = spec.compile()
-short, long = tokenizer.encode_batch(prompts)
+tokenizer.padding = Padding(direction="left", pad_id=EOT, pad_token=EOT_TOKEN)
+compiled = tokenizer.compile()
+short, long = compiled.encode_batch(prompts)
 show("attribute: left, to the longest in the batch", (short, long))
 assert short.ids == [EOT] * 5 + SHORT
 assert short.attention_mask == [0] * 5 + [1] * 5
 assert long.ids == LONG
 assert long.attention_mask == [1] * 10
 
-short, long = tokenizer.encode_batch(prompts, padding=Padding(length=16, pad_id=EOT, pad_token=EOT_TOKEN))
+short, long = compiled.encode_batch(prompts, padding=Padding(length=16, pad_id=EOT, pad_token=EOT_TOKEN))
 show("keyword, this call only: right, to a fixed length of 16", (short, long))
 assert short.ids == SHORT + [EOT] * 11
 assert short.attention_mask == [1] * 5 + [0] * 11
 assert long.ids == LONG + [EOT] * 6
 assert long.attention_mask == [1] * 10 + [0] * 6
+assert tokenizer.padding == Padding(direction="left", pad_id=EOT, pad_token=EOT_TOKEN)
 
-short, long = tokenizer.encode_batch(prompts, padding=None)
+short, long = compiled.encode_batch(prompts, padding=None)
 show("keyword None, this call only: switched off", (short, long))
 assert short.ids == SHORT
 assert long.ids == LONG
-assert tokenizer.encode_batch(prompts)[0].ids == [EOT] * 5 + SHORT
+assert compiled.encode_batch(prompts)[0].ids == [EOT] * 5 + SHORT
 
-spec.padding = Padding(pad_to_multiple_of=8, pad_id=EOT, pad_token=EOT_TOKEN)
-tokenizer = spec.compile()
-short, long = tokenizer.encode_batch(prompts)
+tokenizer.padding = Padding(pad_to_multiple_of=8, pad_id=EOT, pad_token=EOT_TOKEN)
+compiled = tokenizer.compile()
+short, long = compiled.encode_batch(prompts)
 show("attribute: right, to a multiple of 8", (short, long))
 assert short.ids == SHORT + [EOT] * 11
 assert long.ids == LONG + [EOT] * 6
 
-encoding = tokenizer.encode(prompts[0], padding=Padding(length=8, pad_id=EOT, pad_token=EOT_TOKEN))
+encoding = compiled.encode(prompts[0], padding=Padding(length=8, pad_id=EOT, pad_token=EOT_TOKEN))
 show("keyword on a single encode: right, to a fixed length of 8", (encoding,))
 assert encoding.ids == SHORT + [EOT] * 3
 assert encoding.attention_mask == [1] * 5 + [0] * 3
 
-spec.padding = None
-tokenizer = spec.compile()
-short, long = tokenizer.encode_batch(prompts)
+tokenizer.padding = None
+compiled = tokenizer.compile()
+short, long = compiled.encode_batch(prompts)
 show("attribute None: switched off", (short, long))
 assert short.ids == SHORT
 assert long.ids == LONG

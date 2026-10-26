@@ -25,12 +25,12 @@ use crate::type_hints::Token;
 /// ```python
 /// from tokenizers import Tokenizer, Truncation
 ///
-/// spec = Tokenizer.from_pretrained("deepseek-ai/DeepSeek-V4.1-Flash")
-/// spec.truncation = Truncation(max_length=512)
-/// tokenizer = spec.compile()
-/// ids = tokenizer.encode("Hello, World!").ids
+/// tokenizer = Tokenizer.from_pretrained("deepseek-ai/DeepSeek-V4.1-Flash")
+/// tokenizer.truncation = Truncation(max_length=512)
+/// compiled = tokenizer.compile()
+/// ids = compiled.encode("Hello, World!").ids
 /// print(ids)
-/// print(tokenizer.decode_tokens(ids))
+/// print(compiled.decode_tokens(ids))
 /// ```
 #[pyclass(frozen, dict, weakref, module = "tokenizers")]
 pub struct Tokenizer {
@@ -201,6 +201,7 @@ impl Tokenizer {
     fn __repr__(&self) -> String {
         let spec = self.spec();
         repr::tokenizer(
+            "Tokenizer",
             &spec.to_object(),
             spec.padding.as_ref(),
             spec.truncation.as_ref(),

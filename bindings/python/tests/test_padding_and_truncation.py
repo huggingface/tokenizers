@@ -12,10 +12,10 @@ def ids(batch):
     return [encoding.ids for encoding in batch]
 
 
-def compile_with(spec, truncation, padding):
-    spec.truncation = truncation
-    spec.padding = padding
-    return spec.compile()
+def compile_with(tokenizer, truncation, padding):
+    tokenizer.truncation = truncation
+    tokenizer.padding = padding
+    return tokenizer.compile()
 
 
 # Omitting a kwarg inherits the configured value, None switches it off, a value replaces it.

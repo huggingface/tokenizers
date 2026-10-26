@@ -1,9 +1,6 @@
 //! Utils to render Tokenizers.__repr__
 
-use std::fmt::Write as _;
-
 use serde_json::{Map, Value};
-use tk::pipeline::{PipelineModel, PipelineToken, PipelineTokenizer, Template};
 use tk::{PaddingParams, TruncationParams};
 
 use crate::options::{Padding, Truncation};
@@ -15,115 +12,28 @@ const MAX_LINE_WIDTH: usize = 100;
 
 const INDENT: &str = "    ";
 
-/// Renders `file` as `Tokenizer(...)`, one line per `tokenizer.json` key.
+/// Renders `file` as `name(...)`, one line per `tokenizer.json` key.
 pub(crate) fn tokenizer(
+    name: &str,
     file: &Map<String, Value>,
     padding: Option<&PaddingParams>,
     truncation: Option<&TruncationParams>,
 ) -> String {
-    let mut out = String::from("Tokenizer(");
+    let mut out = format!("{name}(");
     for (key, value) in file {
-        field(key, &mut out, |out| match key.as_str() {
-            "padding" => push_indented(&padding_repr(padding), out),
-            "truncation" => push_indented(&truncation_repr(truncation), out),
-            _ => write_value(key, value, Some(1), out),
-        });
+        newline(1, &mut out);
+        out.push_str(key);
+        out.push('=');
+        match key.as_str() {
+            "padding" => push_indented(&padding_repr(padding), &mut out),
+            "truncation" => push_indented(&truncation_repr(truncation), &mut out),
+            _ => write_value(key, value, Some(1), &mut out),
+        }
+        out.push(',');
     }
     newline(0, &mut out);
     out.push(')');
     out
-}
-
-/// Renders `CompiledTokenizer(...)` from the components the built pipeline runs, in the order it
-/// runs them. A component the pipeline rebuilt as another shows under its new kind, such as a
-/// Metaspace pre-tokenizer among the normalizers.
-pub(crate) fn compiled_tokenizer(pipeline: &PipelineTokenizer) -> tk::Result<String> {
-    let added_tokens = component(tk::added_tokens_to_json(pipeline.get_added_vocabulary()));
-    let normalizer = component(tk::normalizer_to_json(pipeline.get_normalizers())?);
-    let pre_tokenizer = component(tk::pre_tokenizer_to_json(pipeline.get_pre_tokenizer())?);
-    let decoder = component(tk::decoder_to_json(pipeline.get_decoder())?);
-    let post_processor = pipeline.get_post_processor();
-    let mut out = String::from("CompiledTokenizer(");
-    field("added_tokens", &mut out, |out| {
-        write_value("added_tokens", &added_tokens, Some(1), out)
-    });
-    field("normalizer", &mut out, |out| {
-        write_value("normalizer", &normalizer, Some(1), out)
-    });
-    field("pre_tokenizer", &mut out, |out| {
-        write_value("pre_tokenizer", &pre_tokenizer, Some(1), out)
-    });
-    // The model's JSON is the whole vocabulary, so only its kind shows.
-    field("model", &mut out, |out| {
-        out.push_str(model_name(pipeline.get_model()))
-    });
-    field("post_processor", &mut out, |out| {
-        write!(
-            out,
-            "Template(single={}, pair={})",
-            template(pipeline, &post_processor.single),
-            template(pipeline, &post_processor.pair)
-        )
-        .expect("writing to a String cannot fail")
-    });
-    field("decoder", &mut out, |out| {
-        write_value("decoder", &decoder, Some(1), out)
-    });
-    field("padding", &mut out, |out| {
-        push_indented(&padding_repr(pipeline.get_padding()), out)
-    });
-    field("truncation", &mut out, |out| {
-        push_indented(&truncation_repr(pipeline.get_truncation()), out)
-    });
-    newline(0, &mut out);
-    out.push(')');
-    Ok(out)
-}
-
-fn component(json: String) -> Value {
-    serde_json::from_str(&json).expect("tk-serialize writes valid JSON")
-}
-
-fn field(key: &str, out: &mut String, write: impl FnOnce(&mut String)) {
-    newline(1, out);
-    out.push_str(key);
-    out.push('=');
-    write(out);
-    out.push(',');
-}
-
-fn model_name(model: &PipelineModel) -> &'static str {
-    match model {
-        PipelineModel::BPE(_) => "BPE",
-        PipelineModel::Unigram(_) => "Unigram",
-        PipelineModel::WordLevel(_) => "WordLevel",
-        PipelineModel::WordPiece(_) => "WordPiece",
-    }
-}
-
-/// Spells `template` the way a `TemplateProcessing` string does: `[CLS] $A [SEP] $B:1 [SEP]:1`.
-fn template(pipeline: &PipelineTokenizer, template: &Template) -> String {
-    let pieces: Vec<String> = tokens(pipeline, &template.prefix)
-        .chain([("$A".to_owned(), template.a_type_id)])
-        .chain(tokens(pipeline, &template.infix))
-        .chain(template.b_type_id.map(|type_id| ("$B".to_owned(), type_id)))
-        .chain(tokens(pipeline, &template.suffix))
-        .map(|(piece, type_id)| match type_id {
-            0 => piece,
-            _ => format!("{piece}:{type_id}"),
-        })
-        .collect();
-    tk::str_to_json(&pieces.join(" "))
-}
-
-fn tokens<'a>(
-    pipeline: &'a PipelineTokenizer,
-    run: &'a [(PipelineToken, u8)],
-) -> impl Iterator<Item = (String, u8)> + 'a {
-    run.iter().map(|&(token, type_id)| {
-        let content = pipeline.decode_tokens(&[token.id()], false).concat();
-        (content, type_id)
-    })
 }
 
 fn padding_repr(padding: Option<&PaddingParams>) -> String {

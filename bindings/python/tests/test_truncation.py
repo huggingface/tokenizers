@@ -76,9 +76,9 @@ def test_set_truncation(truncated_wiki, wiki):
 
 @pytest.fixture(scope="module")
 def truncated_gpt2():
-    spec = Tokenizer.from_file(GPT2)
-    spec.truncation = Truncation(4)
-    return spec.compile()
+    tokenizer = Tokenizer.from_file(GPT2)
+    tokenizer.truncation = Truncation(4)
+    return tokenizer.compile()
 
 
 def test_encode_truncation_off(gpt2, truncated_gpt2):

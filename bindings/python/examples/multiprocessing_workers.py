@@ -1,5 +1,5 @@
 """
-Encode in a `multiprocessing.Pool`, with the tokenizer spec sent to each worker once
+Encode in a `multiprocessing.Pool`, with the `Tokenizer` sent to each worker once
 
     python examples/multiprocessing_workers.py [path/to/tokenizer.json]
 
@@ -9,8 +9,8 @@ encodings travel with the tasks. A `CompiledTokenizer` can be pickled too, but i
 `tokenizer.json` and is compiled again on arrival, so passing one with every task would compile a
 tokenizer per task.
 
-The tokenizer is a module global, set once per worker process. Each worker has its own copy of this
-module, so nothing is shared between workers.
+The compiled tokenizer is a module global, set once per worker process. Each worker has its own
+copy of this module, so nothing is shared between workers.
 
 Try one process first: `encode_batch` already spreads a large batch over every core.
 
@@ -27,33 +27,35 @@ path = sys.argv[1] if len(sys.argv) > 1 else str(Path(__file__).parent.parent / 
 texts = ["Hello, I'm a", "The weather today is quite a bit warmer than expected"] * 100
 workers = 4
 
-tokenizer: CompiledTokenizer
+compiled: CompiledTokenizer
 
 
-def compile_tokenizer(spec: Tokenizer):
+def compile_tokenizer(tokenizer: Tokenizer):
     """Runs once in each worker process, when it starts."""
-    global tokenizer
-    tokenizer = spec.compile()
+    global compiled
+    compiled = tokenizer.compile()
 
 
 def encode(text: str) -> Encoding:
     """Runs in a worker process, once per text."""
-    return tokenizer.encode(text)
+    return compiled.encode(text)
 
 
 # Each worker imports this file to find `encode`, so everything below has to run in the parent
 # only. Without this guard, a worker would start workers of its own.
 if __name__ == "__main__":
-    spec = Tokenizer.from_file(path)
+    tokenizer = Tokenizer.from_file(path)
 
-    # "spawn" starts every worker as a fresh interpreter, so the spec has to travel as a pickle.
+    # "spawn" starts every worker as a fresh interpreter, so the `Tokenizer` has to travel as a pickle.
     # "fork", the default on Linux before Python 3.14, hands the worker a copy of this process
     # instead: compile before starting the pool and the workers inherit the compiled tokenizer.
-    with multiprocessing.get_context("spawn").Pool(workers, initializer=compile_tokenizer, initargs=(spec,)) as pool:
+    with multiprocessing.get_context("spawn").Pool(
+        workers, initializer=compile_tokenizer, initargs=(tokenizer,)
+    ) as pool:
         encoded = list(pool.imap(encode, texts, chunksize=32))
 
     print(f"{len(encoded)} texts, {sum(len(encoding) for encoding in encoded)} tokens")
-    here = spec.compile()
+    here = tokenizer.compile()
     print(
         "same ids as encoding here:",
         [encoding.ids for encoding in encoded] == [here.encode(text).ids for text in texts],
