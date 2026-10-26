@@ -14,7 +14,7 @@ use crate::error::err;
 use crate::input::PyInput;
 use crate::options::OverrideSentinel;
 use crate::repr;
-use crate::spec::TokenizerSpec;
+use crate::tokenizer::TokenizerSpec;
 use crate::type_hints::TokenIds;
 
 /// A tokenizer built by `Tokenizer.compile()`. Encodes text into token ids, and decodes token

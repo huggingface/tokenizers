@@ -1,36 +1,35 @@
 import multiprocessing
 import pickle
 
-from conftest import GPT2
-from tokenizers import CompiledTokenizer, Padding, Tokenizer, Truncation
+from tokenizers import Padding, Tokenizer, Truncation
 
 TEXTS = ["Hello there", "General Kenobi", "You are a bold one"]
 
 
-def test_pickle_compiled_tokenizer(bert):
+def test_pickle_tokenizer(bert):
     restored = pickle.loads(pickle.dumps(bert))
 
     assert [e.ids for e in restored.encode_batch(TEXTS)] == [e.ids for e in bert.encode_batch(TEXTS)]
 
 
-def test_pickle_spec_padding(padded_wiki):
-    spec = Tokenizer.from_file(padded_wiki)
+def test_pickle_tokenizer_padding(padded_wiki):
+    tokenizer = Tokenizer.from_file(padded_wiki)
 
-    spec.padding = Padding(direction="left", length=8, pad_id=3)
-    assert pickle.loads(pickle.dumps(spec)).padding == Padding(direction="left", length=8, pad_id=3)
+    tokenizer.padding = Padding(direction="left", length=8, pad_id=3)
+    assert pickle.loads(pickle.dumps(tokenizer)).padding == Padding(direction="left", length=8, pad_id=3)
 
-    spec.padding = None
-    assert pickle.loads(pickle.dumps(spec)).padding is None
+    tokenizer.padding = None
+    assert pickle.loads(pickle.dumps(tokenizer)).padding is None
 
 
-def test_pickle_spec_truncation(truncated_wiki):
-    spec = Tokenizer.from_file(truncated_wiki)
+def test_pickle_tokenizer_truncation(truncated_wiki):
+    tokenizer = Tokenizer.from_file(truncated_wiki)
 
-    spec.truncation = Truncation(2, direction="left")
-    assert pickle.loads(pickle.dumps(spec)).truncation == Truncation(2, direction="left")
+    tokenizer.truncation = Truncation(2, direction="left")
+    assert pickle.loads(pickle.dumps(tokenizer)).truncation == Truncation(2, direction="left")
 
-    spec.truncation = None
-    assert pickle.loads(pickle.dumps(spec)).truncation is None
+    tokenizer.truncation = None
+    assert pickle.loads(pickle.dumps(tokenizer)).truncation is None
 
 
 def test_pickle_encoding(bert):
@@ -61,26 +60,17 @@ def test_pickle_truncation():
     assert pickle.loads(pickle.dumps(truncation)) == truncation
 
 
-compiled: CompiledTokenizer
+def _encode_batch(tokenizer, texts):
+    return tokenizer.encode_batch(texts)
 
 
-def _compile(spec):
-    global compiled
-    compiled = spec.compile()
+def test_multiprocessing(gpt2_spec):
+    # spawn, not fork: the tokenizer travels to the worker as a pickle.
+    gpt2_spec.padding = Padding(pad_id=50256)
+    gpt2 = gpt2_spec.compile()
 
+    with multiprocessing.get_context("spawn").Pool(1) as pool:
+        encoded = pool.apply(_encode_batch, (gpt2, TEXTS))
 
-def _encode_batch(texts):
-    return compiled.encode_batch(texts)
-
-
-def test_multiprocessing():
-    # spawn, not fork: the spec travels to the worker as a pickle, and the worker compiles it.
-    spec = Tokenizer.from_file(GPT2)
-    spec.padding = Padding(pad_id=50256)
-
-    with multiprocessing.get_context("spawn").Pool(1, initializer=_compile, initargs=(spec,)) as pool:
-        encoded = pool.apply(_encode_batch, (TEXTS,))
-
-    expected = spec.compile().encode_batch(TEXTS)
-    assert [e.ids for e in encoded] == [e.ids for e in expected]
-    assert [e.attention_mask for e in encoded] == [e.attention_mask for e in expected]
+    assert [e.ids for e in encoded] == [e.ids for e in gpt2.encode_batch(TEXTS)]
+    assert [e.attention_mask for e in encoded] == [e.attention_mask for e in gpt2.encode_batch(TEXTS)]

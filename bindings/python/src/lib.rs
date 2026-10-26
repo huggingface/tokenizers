@@ -7,7 +7,7 @@ mod error;
 mod input;
 mod options;
 mod repr;
-mod spec;
+mod tokenizer;
 mod type_hints;
 
 #[pyo3::pymodule]
@@ -25,7 +25,7 @@ mod tokenizers {
     #[pymodule_export]
     use crate::options::Truncation;
     #[pymodule_export]
-    use crate::spec::Tokenizer;
+    use crate::tokenizer::Tokenizer;
 
     // TODO: bind trainers
 }

@@ -38,7 +38,6 @@ def test_unknown_direction():
 
 def test_no_padding(gpt2):
     short, long = gpt2.encode_batch(SHORT_AND_LONG)
-
     assert len(short) < len(long)
 
 
@@ -69,23 +68,23 @@ def test_pad_type_id(gpt2):
 
 
 def test_padding_from_file(padded_wiki):
-    spec = Tokenizer.from_file(padded_wiki)
+    tokenizer = Tokenizer.from_file(padded_wiki)
 
-    assert spec.padding == Padding(pad_id=3, pad_token="[PAD]")
-    short, long = spec.compile().encode_batch(SHORT_AND_LONG)
+    assert tokenizer.padding == Padding(pad_id=3, pad_token="[PAD]")
+    short, long = tokenizer.compile().encode_batch(SHORT_AND_LONG)
     assert len(short) == len(long)
 
 
 def test_set_padding(padded_wiki):
-    spec = Tokenizer.from_file(padded_wiki)
+    tokenizer = Tokenizer.from_file(padded_wiki)
 
-    spec.padding = Padding(direction="left", pad_id=3)
-    assert spec.padding == Padding(direction="left", pad_id=3)
-    assert spec.compile().encode_batch(SHORT_AND_LONG)[0].ids[0] == 3
+    tokenizer.padding = Padding(direction="left", pad_id=3)
+    assert tokenizer.padding == Padding(direction="left", pad_id=3)
+    assert tokenizer.compile().encode_batch(SHORT_AND_LONG)[0].ids[0] == 3
 
-    spec.padding = None
-    assert spec.padding is None
-    short, long = spec.compile().encode_batch(SHORT_AND_LONG)
+    tokenizer.padding = None
+    assert tokenizer.padding is None
+    short, long = tokenizer.compile().encode_batch(SHORT_AND_LONG)
     assert len(short) < len(long)
 
 
@@ -101,12 +100,12 @@ def test_encode_padding_off(gpt2, padded_gpt2):
     assert len(padded_gpt2.encode("Hello")) == 4
 
 
-def test_encode_padding_override(padded_gpt2):
+def test_encode_padding_override_replaces_config(padded_gpt2):
     assert len(padded_gpt2.encode("Hello", padding=Padding(length=6, pad_id=EOT))) == 6
     assert len(padded_gpt2.encode("Hello")) == 4
 
 
-def test_encode_batch_padding(gpt2):
+def test_encode_batch_padding_override(gpt2):
     short, long = gpt2.encode_batch(SHORT_AND_LONG, padding=Padding(pad_id=EOT))
 
     assert len(short) == len(long)

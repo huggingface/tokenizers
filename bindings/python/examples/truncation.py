@@ -15,22 +15,23 @@ path = sys.argv[1] if len(sys.argv) > 1 else str(Path(__file__).parent.parent / 
 prompt = "The weather today is quite a bit warmer than expected"
 
 
-def show(title, spec):
+def show(title, tokenizer):
     print(f"== {title}")
-    print("truncation:", spec.truncation)
-    encoding = spec.compile().encode(prompt)
+    print("truncation:", tokenizer.truncation)
+    encoding = tokenizer.compile().encode(prompt)
     print(f"  {len(encoding):>2} ids  {encoding.ids}")
 
 
-spec = Tokenizer.from_file(path)
-spec.truncation = Truncation(6)
-show("right, to 6 tokens", spec)
+tokenizer = Tokenizer.from_file(path)
+tokenizer.truncation = Truncation(6)
+show("right, to 6 tokens", tokenizer)
 
-spec.truncation = Truncation(6, direction="left")
-show("left, to 6 tokens", spec)
+tokenizer.truncation = Truncation(6, direction="left")
+show("left, to 6 tokens", tokenizer)
 
-spec.truncation = None
-show("switched off", spec)
+tokenizer.truncation = None
+show("switched off", tokenizer)
 
 print("== right, to 3 tokens, for this call only")
-print(f"   3 ids  {spec.compile().encode(prompt, truncation=Truncation(3)).ids}")
+print(f"   3 ids  {tokenizer.compile().encode(prompt, truncation=Truncation(3)).ids}")
+print("truncation, still:", tokenizer.truncation)

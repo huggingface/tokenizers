@@ -56,22 +56,22 @@ def test_encode_error_is_a_value_error(gpt2):
 
 
 def test_truncation_from_file(truncated_wiki):
-    spec = Tokenizer.from_file(truncated_wiki)
+    tokenizer = Tokenizer.from_file(truncated_wiki)
 
-    assert spec.truncation == Truncation(4)
-    assert len(spec.compile().encode(LONG)) == 4
+    assert tokenizer.truncation == Truncation(4)
+    assert len(tokenizer.compile().encode(LONG)) == 4
 
 
 def test_set_truncation(truncated_wiki, wiki):
-    spec = Tokenizer.from_file(truncated_wiki)
+    tokenizer = Tokenizer.from_file(truncated_wiki)
 
-    spec.truncation = Truncation(2)
-    assert spec.truncation == Truncation(2)
-    assert len(spec.compile().encode(LONG)) == 2
+    tokenizer.truncation = Truncation(2)
+    assert tokenizer.truncation == Truncation(2)
+    assert len(tokenizer.compile().encode(LONG)) == 2
 
-    spec.truncation = None
-    assert spec.truncation is None
-    assert spec.compile().encode(LONG).ids == wiki.encode(LONG).ids
+    tokenizer.truncation = None
+    assert tokenizer.truncation is None
+    assert tokenizer.compile().encode(LONG).ids == wiki.encode(LONG).ids
 
 
 @pytest.fixture(scope="module")
@@ -86,12 +86,12 @@ def test_encode_truncation_off(gpt2, truncated_gpt2):
     assert len(truncated_gpt2.encode(LONG)) == 4
 
 
-def test_encode_truncation_override(truncated_gpt2):
+def test_encode_truncation_override_replaces_config(truncated_gpt2):
     assert len(truncated_gpt2.encode(LONG, truncation=Truncation(2))) == 2
     assert len(truncated_gpt2.encode(LONG)) == 4
 
 
-def test_encode_batch_truncation(gpt2):
+def test_encode_batch_truncation_override(gpt2):
     assert [len(e) for e in gpt2.encode_batch([LONG] * 2, truncation=Truncation(4))] == [4, 4]
 
 

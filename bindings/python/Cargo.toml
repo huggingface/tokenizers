@@ -25,9 +25,9 @@ numpy = "=0.29"
 # unsloth relies on key order to fix tokenizers:
 # https://github.com/unslothai/unsloth/blob/61b2ffe04a1041e507135328ee0e25019dfb629e/unsloth/tokenizer_utils.py#L554-L557
 serde_json = { version = "1.0", features = ["preserve_order"] }
-# Renamed to avoid conflict with this crate's own lib
+# Renamed: this crate's own lib is `tokenizers` too.
 tk = { package = "tokenizers", path = "../../tokenizers", default-features = false, features = [
-  # needed for `__repr__`.
+  # `to_json`, for `__repr__` and pickling.
   "serialize",
   "parallelism",
   "normalizers",
