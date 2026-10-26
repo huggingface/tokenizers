@@ -384,6 +384,39 @@ fn byte_level_ignore_merges_whole_word() {
 }
 
 #[test]
+fn byte_level_end_of_word_suffix_decorates_the_last_byte() {
+    // "é" is C3 A9, spelled "Ã©" in the projected alphabet
+    let (c3, a9) = (BYTES_CHAR_LOOKUP[0xC3], BYTES_CHAR_LOOKUP[0xA9]);
+    let mut vocab: Vocab = (0..=255u8)
+        .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
+        .collect();
+    vocab.extend([
+        ("x</w>".to_string(), 256),
+        (format!("{a9}</w>"), 257),
+        (format!("{c3}{a9}"), 258),
+        (format!("{a9}x</w>"), 259),
+    ]);
+    let pipeline = PipelineBPE::from_config(BpeConfig {
+        vocab,
+        merges: vec![
+            (a9.to_string(), "x</w>".to_string()),
+            (c3.to_string(), a9.to_string()),
+        ],
+        end_of_word_suffix: Some("</w>".into()),
+        byte_level: true,
+        ..Default::default()
+    })
+    .unwrap();
+    // the suffix goes on the last byte of "é", not on the whole character
+    assert_eq!(
+        pipeline_ids(&pipeline, "xé"),
+        vec![u32::from(b'x'), 0xC3, 257]
+    );
+    // merging starts from bytes even though "é" is in the vocab, so (©, x</w>) wins over (Ã, ©)
+    assert_eq!(pipeline_ids(&pipeline, "éx"), vec![0xC3, 259]);
+}
+
+#[test]
 fn byte_level_id_to_token_spells_the_projected_alphabet() {
     let pipeline = byte_level_bpe(&[(" he", 300)], &[], true).unwrap();
     assert_eq!(pipeline.id_to_token(300).as_deref(), Some("Ġhe"));

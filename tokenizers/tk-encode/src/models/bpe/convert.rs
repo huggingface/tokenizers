@@ -12,6 +12,11 @@ use crate::vocab::bucket_vocab_store::BucketVocabStore;
 pub(super) struct Affixes {
     pub(super) prefix: String,
     pub(super) suffix: String,
+    /// `prefix` and `suffix` as they appear in the vocab's keys: mapped to raw bytes for a
+    /// byte-level vocab, like its keys (see `byte_level::transform_vocab`), else their UTF-8.
+    /// Only the byte-level conversion reads them.
+    pub(super) prefix_bytes: Box<[u8]>,
+    pub(super) suffix_bytes: Box<[u8]>,
     /// Dense `external vocab id -> internal symbol id`, `u32::MAX` where there is none. Dense
     /// beats a hash here because external ids are `0..vocab_size`: 4 bytes a slot and one load,
     /// against 8-16 for any map. It is the array `BpeTables::build` makes anyway.
@@ -175,14 +180,28 @@ impl PipelineBPE {
 
     fn convert<M: SinkMode>(&self, sequence: &str, sink: &mut SymbolSink<M>) {
         if let Some(affixes) = &self.affixes {
-            convert_affixed(
-                &self.tables,
-                &self.vocab,
-                &self.atoms,
-                affixes,
-                sequence,
-                sink,
-            );
+            match &self.atoms {
+                Atoms::Bytes => convert_affixed_bytes(
+                    &self.tables,
+                    &self.vocab,
+                    affixes,
+                    sequence.as_bytes(),
+                    sink,
+                ),
+                Atoms::Chars {
+                    byte_fallback,
+                    unk_token,
+                    ..
+                } => convert_affixed(
+                    &self.tables,
+                    &self.vocab,
+                    byte_fallback.as_ref(),
+                    *unk_token,
+                    affixes,
+                    sequence,
+                    sink,
+                ),
+            }
         } else {
             match &self.atoms {
                 Atoms::Bytes => convert_bytes(&self.tables, sequence.as_bytes(), sink),
@@ -274,7 +293,8 @@ fn convert_chars<M: SinkMode>(
 fn convert_affixed<M: SinkMode>(
     tables: &BpeTables,
     vocab: &BucketVocabStore,
-    atoms: &Atoms,
+    byte_fallback: Option<&[u32; 256]>,
+    unk_token: Option<u32>,
     affixes: &Affixes,
     sequence: &str,
     sink: &mut SymbolSink<M>,
@@ -305,30 +325,58 @@ fn convert_affixed<M: SinkMode>(
             .filter(|&symbol| symbol != u32::MAX);
         match symbol {
             Some(symbol) => sink.push(tables, symbol),
-            None => push_unknown(tables, atoms, character, sink),
+            None => push_unknown(tables, byte_fallback, unk_token, character, sink),
         }
+    }
+}
+
+/// Byte-level models decorate bytes, not characters: a byte-level word reaches the model spelled
+/// one character per byte, so `continuing_subword_prefix` goes on every byte but the first and
+/// `end_of_word_suffix` on the last, and merging starts from those bytes even where a whole
+/// character is also a vocab entry. A decorated byte missing from the vocab falls back to the
+/// plain byte.
+fn convert_affixed_bytes<M: SinkMode>(
+    tables: &BpeTables,
+    vocab: &BucketVocabStore,
+    affixes: &Affixes,
+    bytes: &[u8],
+    sink: &mut SymbolSink<M>,
+) {
+    let mut buf = [0u8; AFFIX_BUF];
+    for (position, &byte) in bytes.iter().enumerate() {
+        let mut len = 0;
+        if position > 0 {
+            len = affixes.prefix_bytes.len();
+            buf[..len].copy_from_slice(&affixes.prefix_bytes);
+        }
+        buf[len] = byte;
+        len += 1;
+        if position + 1 == bytes.len() {
+            let suffix = &affixes.suffix_bytes;
+            buf[len..len + suffix.len()].copy_from_slice(suffix);
+            len += suffix.len();
+        }
+
+        let symbol = vocab
+            .get_bytes(&buf[..len])
+            .and_then(|external| affixes.to_internal.get(external as usize).copied())
+            .filter(|&symbol| symbol != u32::MAX)
+            .unwrap_or(tables.byte_internal.at(byte as usize));
+        sink.push(tables, symbol);
     }
 }
 
 /// A character with no atom of its own: bytes if the model has `byte_fallback`, else `unk`.
 fn push_unknown<M: SinkMode>(
     tables: &BpeTables,
-    atoms: &Atoms,
+    byte_fallback: Option<&[u32; 256]>,
+    unk_token: Option<u32>,
     character: char,
     sink: &mut SymbolSink<M>,
 ) {
-    match atoms {
-        Atoms::Bytes => sink.push_char_bytes(tables, &tables.byte_internal, character),
-        Atoms::Chars {
-            byte_fallback,
-            unk_token,
-            ..
-        } => {
-            if let Some(fallback) = byte_fallback {
-                sink.push_char_bytes(tables, fallback, character);
-            } else if let Some(unk) = unk_token {
-                sink.push(tables, *unk);
-            }
-        }
+    if let Some(fallback) = byte_fallback {
+        sink.push_char_bytes(tables, fallback, character);
+    } else if let Some(unk) = unk_token {
+        sink.push(tables, unk);
     }
 }
