@@ -23,11 +23,10 @@ use crate::type_hints::Token;
 ///
 /// Example:
 /// ```python
-/// from tokenizers import TokenizerSpec
-/// from tokenizers.normalizers import NFC
+/// from tokenizers import TokenizerSpec, Truncation
 ///
 /// spec = TokenizerSpec.from_pretrained("deepseek-ai/DeepSeek-V4.1-Flash")
-/// spec.normalizer = NFC()
+/// spec.truncation = Truncation(max_length=512)
 /// tokenizer = spec.compile()
 /// ids = tokenizer.encode("Hello, World!").ids
 /// print(ids)

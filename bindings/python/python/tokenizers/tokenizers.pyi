@@ -16,8 +16,9 @@ class CompiledTokenizer:
     A tokenizer built by `TokenizerSpec.compile()`. Encodes text into token ids, and decodes token
     ids back into text.
 
-    A compiled tokenizer cannot be changed, so threads can share one.
-    Pickling one writes its whole `tokenizer.json`, and unpickling builds the tokenizer again.
+    A compiled tokenizer is immutable and can be shared across threads.
+    Pickling serializes the compiled tokenizer as its `tokenizer.json` JSON representation.
+    Unpickling builds the compiled tokenizer from that JSON spec.
     """
     def __copy__(self, /) -> CompiledTokenizer:
         """
@@ -32,14 +33,9 @@ class CompiledTokenizer:
         Pickle rebuilds a `CompiledTokenizer` by calling `_unpickle` with these arguments.
 
         The pickle holds the whole `tokenizer.json`, written from the built tokenizer, and unpickling
-        compiles it again. To use a tokenizer in worker processes, send the `TokenizerSpec` once per
-        worker and compile there.
+        compiles it again.
         """
-    def __repr__(self, /) -> str:
-        """
-        Names the components instead of rendering the `tokenizer.json`, which would write the
-        whole vocabulary back out on every call.
-        """
+    def __repr__(self, /) -> str: ...
     @staticmethod
     def _unpickle(json: str) -> CompiledTokenizer:
         """
@@ -305,9 +301,21 @@ class Padding:
 @final
 class TokenizerSpec:
     """
-    The contents of a `tokenizer.json`, editable.
+    This class is used to spec and build a `CompiledTokenizer`
 
     Call `compile()` to get a `CompiledTokenizer`, which encodes and decodes.
+
+    Example:
+    ```python
+    from tokenizers import TokenizerSpec, Truncation
+
+    spec = TokenizerSpec.from_pretrained("deepseek-ai/DeepSeek-V4.1-Flash")
+    spec.truncation = Truncation(max_length=512)
+    tokenizer = spec.compile()
+    ids = tokenizer.encode("Hello, World!").ids
+    print(ids)
+    print(tokenizer.decode_tokens(ids))
+    ```
     """
     def __copy__(self, /) -> TokenizerSpec:
         """
