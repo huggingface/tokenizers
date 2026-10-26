@@ -13,12 +13,17 @@ uv sync
 ## Usage
 
 ```python
-from tokenizers import Padding, Tokenizer
+from tokenizers import Padding, TokenizerSpec
 
-tokenizer = Tokenizer.from_file("tokenizer.json")
+# A `TokenizerSpec` is the contents of a `tokenizer.json`, and can be edited.
+spec = TokenizerSpec.from_file("tokenizer.json")
 # Or the `tokenizer.json` of a model repo on the Hub. `huggingface_hub` downloads and caches it,
 # with the same cache, login token and offline switch as transformers.
-tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", revision="main")
+spec = TokenizerSpec.from_pretrained("openai-community/gpt2", revision="main")
+
+# `compile()` builds a `CompiledTokenizer`, which encodes and decodes. It cannot be changed, so
+# threads can share it. Every call builds a new one, and later edits of the spec don't reach it.
+tokenizer = spec.compile()
 
 encoding = tokenizer.encode("Hello there, how are you?")
 encoding.ids             # [101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102]
@@ -36,20 +41,20 @@ tokenizer.decode(encoding.ids)                           # "hello there, how are
 tokenizer.decode(encoding.ids_array)                     # a numpy array works too
 tokenizer.decode(encoding.ids, skip_special_tokens=False)
 
-# Override the `Padding` settings. `length=None` pads each batch to its longest
-# item; `None` switches padding off.
-tokenizer.padding = Padding(direction="left", pad_id=0, pad_token="[PAD]")
-short, long = tokenizer.encode_batch(["Hello", "Hello there, how are you?"])
+# Pad one call. `length=None` pads each batch to its longest item.
+short, long = tokenizer.encode_batch(
+    ["Hello", "Hello there, how are you?"],
+    padding=Padding(direction="left", pad_id=0, pad_token="[PAD]"),
+)
 len(short) == len(long)  # True
 short.attention_mask     # [0, 0, 0, 0, 0, 0, 1, 1, 1]
+tokenizer.encode("Hello", padding=Padding(length=16))  # exactly 16 ids
 
-tokenizer.padding = Padding(length=16)            # every encoding is exactly 16 ids
-tokenizer.padding = Padding(pad_to_multiple_of=8)
-tokenizer.padding = None
-
-# Or for one call only, leaving the attribute as it is. `None` switches it off for that call.
-tokenizer.encode_batch(["Hello", "Hello there"], padding=Padding(length=16))
-tokenizer.encode("Hello", padding=None)
+# Or set a default on the spec: every encode of a tokenizer compiled from it pads.
+# `padding=None` switches the default off for one call.
+spec.padding = Padding(pad_to_multiple_of=8)
+padded = spec.compile()
+padded.encode("Hello", padding=None)
 ```
 
 `examples/` holds a runnable script for each of these; `make examples` runs them all.
@@ -59,17 +64,26 @@ tokenizer.encode("Hello", padding=None)
 Every class here can be pickled, so a tokenizer can be sent to a worker process and its encodings
 sent back: `multiprocessing`, a PyTorch `DataLoader`, `datasets.map(num_proc=...)`.
 
+A pickled `CompiledTokenizer` carries its whole `tokenizer.json`, and unpickling compiles it again.
+So send the `TokenizerSpec` once per worker, through the pool's `initializer`, and compile it
+there:
+
 ```python
-def encode(tokenizer, texts):
-    return tokenizer.encode_batch(texts)
+def compile_tokenizer(spec):
+    global tokenizer
+    tokenizer = spec.compile()
 
 
-with multiprocessing.get_context("spawn").Pool(4) as pool:
-    encoded = pool.starmap(encode, [(tokenizer, chunk) for chunk in chunks])
+def encode(text):
+    return tokenizer.encode(text)
+
+
+with multiprocessing.get_context("spawn").Pool(4, initializer=compile_tokenizer, initargs=(spec,)) as pool:
+    encoded = list(pool.imap(encode, texts, chunksize=32))
 ```
 
-The tokenizer is pickled again with every task it is sent with, so give each worker one big chunk
-of texts rather than many small tasks. `examples/multiprocessing_workers.py` is the whole script.
+With `fork`, compile before starting the pool instead: the workers inherit the compiled tokenizer
+and nothing is pickled. `examples/multiprocessing_workers.py` is the whole script.
 
 ## Day to day
 

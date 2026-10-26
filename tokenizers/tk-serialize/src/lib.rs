@@ -30,5 +30,6 @@ mod to_json;
 
 #[cfg(feature = "serialize")]
 pub use to_json::{
-    padding_to_json, post_processor_to_json, str_to_json, to_json, truncation_to_json,
+    added_tokens_to_json, decoder_to_json, normalizer_to_json, padding_to_json,
+    post_processor_to_json, pre_tokenizer_to_json, str_to_json, to_json, truncation_to_json,
 };

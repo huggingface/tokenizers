@@ -1,6 +1,7 @@
 import pytest
 
-from tokenizers import Tokenizer, Truncation
+from conftest import GPT2
+from tokenizers import TokenizerSpec, Truncation
 
 LONG = "Hello there, how are you today?"
 
@@ -38,78 +39,64 @@ def test_max_length_is_required():
         Truncation()  # ty: ignore[missing-argument]
 
 
-def test_no_truncation(gpt2):
-    assert gpt2.truncation is None
-
-
 def test_max_length(gpt2):
-    gpt2.truncation = Truncation(4)
-
-    assert len(gpt2.encode(LONG)) == 4
+    assert len(gpt2.encode(LONG, truncation=Truncation(4))) == 4
 
 
 def test_left_keeps_the_tail(gpt2):
     full = gpt2.encode(LONG).ids
-    gpt2.truncation = Truncation(4, direction="left")
 
-    assert gpt2.encode(LONG).ids == full[-4:]
+    assert gpt2.encode(LONG, truncation=Truncation(4, direction="left")).ids == full[-4:]
 
 
-# Tokenizer.encode takes one sequence, so only_second never has the sequence it cuts.
+# CompiledTokenizer.encode takes one sequence, so only_second never has the sequence it cuts.
 def test_encode_error_is_a_value_error(gpt2):
-    gpt2.truncation = Truncation(4, strategy="only_second")
-
     with pytest.raises(ValueError, match="Second sequence not provided"):
-        gpt2.encode(LONG)
+        gpt2.encode(LONG, truncation=Truncation(4, strategy="only_second"))
 
 
 def test_truncation_from_file(truncated_wiki):
-    tokenizer = Tokenizer.from_file(truncated_wiki)
+    spec = TokenizerSpec.from_file(truncated_wiki)
 
-    assert tokenizer.truncation == Truncation(4)
-    assert len(tokenizer.encode(LONG)) == 4
+    assert spec.truncation == Truncation(4)
+    assert len(spec.compile().encode(LONG)) == 4
 
 
 def test_set_truncation(truncated_wiki, wiki):
-    tokenizer = Tokenizer.from_file(truncated_wiki)
+    spec = TokenizerSpec.from_file(truncated_wiki)
 
-    tokenizer.truncation = Truncation(2)
-    assert tokenizer.truncation == Truncation(2)
-    assert len(tokenizer.encode(LONG)) == 2
+    spec.truncation = Truncation(2)
+    assert spec.truncation == Truncation(2)
+    assert len(spec.compile().encode(LONG)) == 2
 
-    tokenizer.truncation = None
-    assert tokenizer.truncation is None
-    assert tokenizer.encode(LONG).ids == wiki.encode(LONG).ids
-
-
-def test_encode_truncation_override(gpt2):
-    assert len(gpt2.encode(LONG, truncation=Truncation(4))) == 4
-    assert gpt2.truncation is None
+    spec.truncation = None
+    assert spec.truncation is None
+    assert spec.compile().encode(LONG).ids == wiki.encode(LONG).ids
 
 
-def test_encode_truncation_off(gpt2):
-    full = gpt2.encode(LONG).ids
-    gpt2.truncation = Truncation(4)
-
-    assert gpt2.encode(LONG, truncation=None).ids == full
-    assert len(gpt2.encode(LONG)) == 4
-
-
-def test_encode_truncation_override_replaces_config(gpt2):
-    gpt2.truncation = Truncation(4)
-
-    assert len(gpt2.encode(LONG, truncation=Truncation(2))) == 2
-    assert len(gpt2.encode(LONG)) == 4
+@pytest.fixture(scope="module")
+def truncated_gpt2():
+    spec = TokenizerSpec.from_file(GPT2)
+    spec.truncation = Truncation(4)
+    return spec.compile()
 
 
-def test_encode_batch_truncation_override(gpt2):
+def test_encode_truncation_off(gpt2, truncated_gpt2):
+    assert truncated_gpt2.encode(LONG, truncation=None).ids == gpt2.encode(LONG).ids
+    assert len(truncated_gpt2.encode(LONG)) == 4
+
+
+def test_encode_truncation_override(truncated_gpt2):
+    assert len(truncated_gpt2.encode(LONG, truncation=Truncation(2))) == 2
+    assert len(truncated_gpt2.encode(LONG)) == 4
+
+
+def test_encode_batch_truncation(gpt2):
     assert [len(e) for e in gpt2.encode_batch([LONG] * 2, truncation=Truncation(4))] == [4, 4]
-    assert gpt2.truncation is None
 
 
-def test_encode_batch_truncation_off(gpt2):
+def test_encode_batch_truncation_off(gpt2, truncated_gpt2):
     full = gpt2.encode(LONG).ids
-    gpt2.truncation = Truncation(4)
 
-    assert [e.ids for e in gpt2.encode_batch([LONG] * 2, truncation=None)] == [full, full]
-    assert [len(e) for e in gpt2.encode_batch([LONG] * 2)] == [4, 4]
+    assert [e.ids for e in truncated_gpt2.encode_batch([LONG] * 2, truncation=None)] == [full, full]
+    assert [len(e) for e in truncated_gpt2.encode_batch([LONG] * 2)] == [4, 4]

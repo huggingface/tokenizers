@@ -10,12 +10,12 @@ transformers downloads, and reads it from there on the next run.
 
 import sys
 
-from tokenizers import Tokenizer
+from tokenizers import TokenizerSpec
 
 repo_id = sys.argv[1] if len(sys.argv) > 1 else "openai-community/gpt2"
 revision = sys.argv[2] if len(sys.argv) > 2 else "main"
 
-tokenizer = Tokenizer.from_pretrained(repo_id, revision=revision)
+tokenizer = TokenizerSpec.from_pretrained(repo_id, revision=revision).compile()
 print(tokenizer)
 
 

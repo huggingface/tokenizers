@@ -9,10 +9,10 @@ Defaults to the Llama 3 fixture `make test` fetches into `data/`.
 import sys
 from pathlib import Path
 
-from tokenizers import Tokenizer
+from tokenizers import TokenizerSpec
 
 path = sys.argv[1] if len(sys.argv) > 1 else str(Path(__file__).parent.parent / "data" / "llama-3-tokenizer.json")
-tokenizer = Tokenizer.from_file(path)
+tokenizer = TokenizerSpec.from_file(path).compile()
 
 text = "Hello there, how are you?"
 encoding = tokenizer.encode(text)

@@ -4,7 +4,7 @@ import pickle
 import pytest
 
 from conftest import BERT, DATA
-from tokenizers import Tokenizer
+from tokenizers import TokenizerSpec
 
 
 @pytest.fixture
@@ -12,19 +12,19 @@ def load_bert_with(tmp_path):
     def load(**keys):
         path = tmp_path / "tokenizer.json"
         path.write_text(json.dumps({**json.loads(BERT.read_text()), **keys}))
-        return Tokenizer.from_file(path)
+        return TokenizerSpec.from_file(path)
 
     return load
 
 
 @pytest.mark.parametrize("path", [BERT, str(BERT)])
 def test_from_file(path):
-    assert Tokenizer.from_file(path).encode("Hello there").ids == [1, 27462, 7495, 2]
+    assert TokenizerSpec.from_file(path).compile().encode("Hello there").ids == [1, 27462, 7495, 2]
 
 
 def test_missing_file():
     with pytest.raises(FileNotFoundError, match="does-not-exist.json"):
-        Tokenizer.from_file(DATA / "does-not-exist.json")
+        TokenizerSpec.from_file(DATA / "does-not-exist.json")
 
 
 @pytest.mark.parametrize(
