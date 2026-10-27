@@ -184,3 +184,20 @@ test('a truncation direction other than left or right is refused', () => {
   const up: EncodeOptions = { truncation: { maxLength: 4, direction: 'up' } }
   assert.throws(() => tok.encode(LONG, up), /truncation direction must be 'left' or 'right'/)
 })
+
+// Its post-processor wraps every text in `[CLS] ... [SEP]`.
+const BERT = new URL('../data/bert-wiki.json', import.meta.url).pathname
+
+test('decode skips special tokens unless told otherwise', () => {
+  const tok = PipelineTokenizer.fromFile(BERT)
+  const ids = tok.encode('Hello there')
+  assert.strictEqual(tok.decode(ids), 'hello there')
+  assert.strictEqual(tok.decode(ids, false), '[CLS] hello there [SEP]')
+})
+
+test('decodeTokens keeps special tokens unless told otherwise', () => {
+  const tok = PipelineTokenizer.fromFile(BERT)
+  const ids = tok.encode('Hello there')
+  assert.deepStrictEqual(tok.decodeTokens(ids), ['[CLS]', 'hello', 'there', '[SEP]'])
+  assert.deepStrictEqual(tok.decodeTokens(ids, true), ['hello', 'there'])
+})

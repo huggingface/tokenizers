@@ -18,6 +18,20 @@ export declare class PipelineTokenizer {
    * (388 ns of a 789 ns call). Returns how many ids were written.
    */
   encodeBytesInto(text: Uint8Array, out: Uint32Array, options?: EncodeOptions | undefined | null): number
+  /**
+   * Decodes token ids back into text.
+   *
+   * `skipSpecialTokens` drops special tokens from the text. `true` when left out.
+   */
+  decode(ids: Uint32Array, skipSpecialTokens?: boolean | undefined | null): string
+  /**
+   * Converts token ids to their tokens. This does not run the decoder, so each token keeps its
+   * spelling in the vocabulary: a byte-level BPE token reads `Ġworld`, not ` world`.
+   *
+   * `skipSpecialTokens` drops special tokens. `false` when left out. Ids not in the vocabulary
+   * are dropped.
+   */
+  decodeTokens(ids: Uint32Array, skipSpecialTokens?: boolean | undefined | null): Array<string>
 }
 
 /** Per-call settings. A field left out keeps the tokenizer's own behaviour. */

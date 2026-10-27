@@ -230,4 +230,27 @@ impl PipelineTokenizer {
     }
     Ok(ids.len() as u32)
   }
+
+  /// Decodes token ids back into text.
+  ///
+  /// `skipSpecialTokens` drops special tokens from the text. `true` when left out.
+  #[napi]
+  pub fn decode(&self, ids: &[u32], skip_special_tokens: Option<bool>) -> Result<String> {
+    self
+      .0
+      .decode(ids, skip_special_tokens.unwrap_or(true))
+      .map_err(err)
+  }
+
+  /// Converts token ids to their tokens. This does not run the decoder, so each token keeps its
+  /// spelling in the vocabulary: a byte-level BPE token reads `Ġworld`, not ` world`.
+  ///
+  /// `skipSpecialTokens` drops special tokens. `false` when left out. Ids not in the vocabulary
+  /// are dropped.
+  #[napi]
+  pub fn decode_tokens(&self, ids: &[u32], skip_special_tokens: Option<bool>) -> Vec<String> {
+    self
+      .0
+      .decode_tokens(ids, skip_special_tokens.unwrap_or(false))
+  }
 }
