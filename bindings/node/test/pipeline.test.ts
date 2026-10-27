@@ -36,11 +36,13 @@ test('fromFile reads a legacy tokenizer.json', () => {
   assert.ok(tok instanceof PipelineTokenizer)
 })
 
-test('encode returns a Uint32Array of ids', () => {
+test('encode returns an Encoding of typed arrays', () => {
   const tok = PipelineTokenizer.fromFile(MODEL)
-  const ids = tok.encode('Hello there, how are you?')
-  assert.ok(ids instanceof Uint32Array, 'ids must marshal as a typed array, not a JS Array')
-  assert.ok(ids.length > 0)
+  const encoding = tok.encode('Hello', { padding: { length: 3 } })
+  assert.ok(encoding.ids instanceof Uint32Array, 'ids must marshal as a typed array, not a JS Array')
+  assert.deepStrictEqual(encoding.ids, Uint32Array.of(LONG_IDS[0], 0, 0))
+  assert.deepStrictEqual(encoding.typeIds, Uint32Array.of(0, 0, 0))
+  assert.deepStrictEqual(encoding.attentionMask, Uint32Array.of(1, 0, 0))
 })
 
 // The two entry points run the same encode; the only difference is who owns the buffer. If they
@@ -48,7 +50,7 @@ test('encode returns a Uint32Array of ids', () => {
 test('encodeBytesInto writes the same ids as encode', () => {
   const tok = PipelineTokenizer.fromFile(MODEL)
   const text = 'Hello there, how are you?'
-  const want = tok.encode(text)
+  const want = tok.encode(text).ids
   const out = new Uint32Array(want.length)
   const n = tok.encodeBytesInto(Buffer.from(text, 'utf8'), out)
   assert.strictEqual(n, want.length)
@@ -64,8 +66,8 @@ test('encodeBytesInto rejects a buffer that is too small', () => {
 
 test('addSpecialTokens is honoured', () => {
   const tok = PipelineTokenizer.fromFile(MODEL)
-  const withSpecials = tok.encode('Hello', { addSpecialTokens: true })
-  const without = tok.encode('Hello', { addSpecialTokens: false })
+  const withSpecials = tok.encode('Hello', { addSpecialTokens: true }).ids
+  const without = tok.encode('Hello', { addSpecialTokens: false }).ids
   assert.ok(withSpecials.length >= without.length)
 })
 
@@ -74,17 +76,17 @@ test('encodeSpecialTokens sends a special token through the model', () => {
   const sepId = JSON.parse(readFileSync(MODEL, 'utf8')).added_tokens.find(
     (t: { content: string; id: number }) => t.content === '[SEP]',
   ).id
-  const carved = tok.encode('[SEP]', { addSpecialTokens: false })
-  const encoded = tok.encode('[SEP]', { addSpecialTokens: false, encodeSpecialTokens: true })
+  const carved = tok.encode('[SEP]', { addSpecialTokens: false }).ids
+  const encoded = tok.encode('[SEP]', { addSpecialTokens: false, encodeSpecialTokens: true }).ids
   assert.deepStrictEqual(carved, Uint32Array.of(sepId))
   // `Whitespace` cuts `[SEP]` into `[`, `SEP`, `]`: the same pieces the spaced spelling gives.
-  assert.deepStrictEqual(encoded, tok.encode('[ SEP ]', { addSpecialTokens: false }))
+  assert.deepStrictEqual(encoded, tok.encode('[ SEP ]', { addSpecialTokens: false }).ids)
 })
 
 test('padding.length pads to a fixed length', () => {
   const tok = PipelineTokenizer.fromFile(MODEL)
-  const plain = tok.encode('Hello')
-  const padded = tok.encode('Hello', { padding: { length: 16 } })
+  const plain = tok.encode('Hello').ids
+  const padded = tok.encode('Hello', { padding: { length: 16 } }).ids
   assert.ok(plain.length < 16)
   assert.strictEqual(padded.length, 16)
   assert.deepStrictEqual(padded.subarray(0, plain.length), plain)
@@ -93,14 +95,14 @@ test('padding.length pads to a fixed length', () => {
 
 test('padding: false turns the configured padding off', () => {
   const tok = PipelineTokenizer.fromFile(modelWith({ padding: PADDING }))
-  assert.strictEqual(tok.encode('Hello').length, 16)
-  assert.ok(tok.encode('Hello', { padding: false }).length < 16)
+  assert.strictEqual(tok.encode('Hello').ids.length, 16)
+  assert.ok(tok.encode('Hello', { padding: false }).ids.length < 16)
 })
 
 test('a padding override replaces the configured padding', () => {
   const tok = PipelineTokenizer.fromFile(modelWith({ padding: PADDING }))
-  assert.deepStrictEqual(Array.from(tok.encode('Hello')), [LONG_IDS[0], ...Array(15).fill(7)])
-  assert.deepStrictEqual(Array.from(tok.encode('Hello', { padding: { length: 4 } })), [LONG_IDS[0], 0, 0, 0])
+  assert.deepStrictEqual(Array.from(tok.encode('Hello').ids), [LONG_IDS[0], ...Array(15).fill(7)])
+  assert.deepStrictEqual(Array.from(tok.encode('Hello', { padding: { length: 4 } }).ids), [LONG_IDS[0], 0, 0, 0])
 })
 
 test('encodeBytesInto takes the same options', () => {
@@ -118,34 +120,34 @@ test('a padding direction other than left or right is refused', () => {
 
 test('truncation.maxLength keeps the first ids', () => {
   const tok = PipelineTokenizer.fromFile(MODEL)
-  assert.deepStrictEqual(Array.from(tok.encode(LONG)), LONG_IDS)
-  assert.deepStrictEqual(Array.from(tok.encode(LONG, { truncation: { maxLength: 4 } })), LONG_IDS.slice(0, 4))
+  assert.deepStrictEqual(Array.from(tok.encode(LONG).ids), LONG_IDS)
+  assert.deepStrictEqual(Array.from(tok.encode(LONG, { truncation: { maxLength: 4 } }).ids), LONG_IDS.slice(0, 4))
 })
 
 test('a text shorter than maxLength is left alone', () => {
   const tok = PipelineTokenizer.fromFile(MODEL)
-  assert.deepStrictEqual(tok.encode('Hello there', { truncation: { maxLength: 4 } }), tok.encode('Hello there'))
+  assert.deepStrictEqual(tok.encode('Hello there', { truncation: { maxLength: 4 } }).ids, tok.encode('Hello there').ids)
 })
 
 test('truncation.direction left keeps the last ids', () => {
   const tok = PipelineTokenizer.fromFile(MODEL)
-  const left = tok.encode(LONG, { truncation: { maxLength: 4, direction: 'left' } })
+  const left = tok.encode(LONG, { truncation: { maxLength: 4, direction: 'left' } }).ids
   assert.deepStrictEqual(Array.from(left), LONG_IDS.slice(-4))
 })
 
 test('fromFile reads a truncation block', () => {
   const tok = PipelineTokenizer.fromFile(modelWith({ truncation: TRUNCATION }))
-  assert.deepStrictEqual(Array.from(tok.encode(LONG)), LONG_IDS.slice(-4))
+  assert.deepStrictEqual(Array.from(tok.encode(LONG).ids), LONG_IDS.slice(-4))
 })
 
 test('truncation: false turns the configured truncation off', () => {
   const tok = PipelineTokenizer.fromFile(modelWith({ truncation: TRUNCATION }))
-  assert.deepStrictEqual(Array.from(tok.encode(LONG, { truncation: false })), LONG_IDS)
+  assert.deepStrictEqual(Array.from(tok.encode(LONG, { truncation: false }).ids), LONG_IDS)
 })
 
 test('a truncation override replaces the configured truncation', () => {
   const tok = PipelineTokenizer.fromFile(modelWith({ truncation: TRUNCATION }))
-  assert.deepStrictEqual(Array.from(tok.encode(LONG, { truncation: { maxLength: 2 } })), LONG_IDS.slice(0, 2))
+  assert.deepStrictEqual(Array.from(tok.encode(LONG, { truncation: { maxLength: 2 } }).ids), LONG_IDS.slice(0, 2))
 })
 
 test('truncation.maxLength is required', () => {
@@ -160,8 +162,8 @@ test('truncation.maxLength is required', () => {
 test('truncation cuts before padding fills', () => {
   const tok = PipelineTokenizer.fromFile(MODEL)
   const options = { truncation: { maxLength: 4 }, padding: { length: 6 } }
-  assert.deepStrictEqual(Array.from(tok.encode('Hello', options)), [LONG_IDS[0], 0, 0, 0, 0, 0])
-  assert.deepStrictEqual(Array.from(tok.encode(LONG, options)), [...LONG_IDS.slice(0, 4), 0, 0])
+  assert.deepStrictEqual(Array.from(tok.encode('Hello', options).ids), [LONG_IDS[0], 0, 0, 0, 0, 0])
+  assert.deepStrictEqual(Array.from(tok.encode(LONG, options).ids), [...LONG_IDS.slice(0, 4), 0, 0])
 })
 
 // `encode` takes one sequence, so `only_second` never has the sequence it cuts.
@@ -190,14 +192,14 @@ const BERT = new URL('../data/bert-wiki.json', import.meta.url).pathname
 
 test('decode skips special tokens unless told otherwise', () => {
   const tok = PipelineTokenizer.fromFile(BERT)
-  const ids = tok.encode('Hello there')
+  const ids = tok.encode('Hello there').ids
   assert.strictEqual(tok.decode(ids), 'hello there')
   assert.strictEqual(tok.decode(ids, false), '[CLS] hello there [SEP]')
 })
 
 test('decodeTokens keeps special tokens unless told otherwise', () => {
   const tok = PipelineTokenizer.fromFile(BERT)
-  const ids = tok.encode('Hello there')
+  const ids = tok.encode('Hello there').ids
   assert.deepStrictEqual(tok.decodeTokens(ids), ['[CLS]', 'hello', 'there', '[SEP]'])
   assert.deepStrictEqual(tok.decodeTokens(ids, true), ['hello', 'there'])
 })

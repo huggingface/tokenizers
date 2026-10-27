@@ -9,7 +9,9 @@
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use tokenizers::pipeline::{EncodeOptions as PipelineEncodeOptions, Override};
+use tokenizers::pipeline::{
+  EncodeOptions as PipelineEncodeOptions, Encoding as PipelineEncoding, Override,
+};
 use tokenizers::tokenizer::pipeline::PipelineTokenizer as Pipeline;
 use tokenizers::{
   PaddingDirection, PaddingParams, PaddingStrategy, TruncationDirection, TruncationParams,
@@ -169,6 +171,42 @@ impl PipelineTokenizer {
   }
 }
 
+/// Text encoded to token ids by a tokenizer.
+///
+/// Each getter returns a `Uint32Array`, not a JS `Array`: an `Array` costs one napi value per
+/// token, which on token-dense input is 13x the encode itself (gpt2 chinese 31 vs 616 MB/s).
+#[napi]
+pub struct Encoding(PipelineEncoding);
+
+#[napi]
+impl Encoding {
+  /// The id of each token.
+  #[napi(getter)]
+  pub fn ids(&self) -> Uint32Array {
+    Uint32Array::new(self.0.ids().iter().map(|token| token.id()).collect())
+  }
+
+  /// The type id of each token: 0 for the first sequence of a pair, 1 for the second.
+  #[napi(getter)]
+  pub fn type_ids(&self) -> Uint32Array {
+    widen(self.0.type_ids(), 0, self.0.len())
+  }
+
+  /// 1 for each token, 0 for each padding token.
+  #[napi(getter)]
+  pub fn attention_mask(&self) -> Uint32Array {
+    widen(self.0.attention_mask(), 1, self.0.len())
+  }
+}
+
+// The core leaves out the all-zeros type ids and the all-ones mask.
+fn widen(values: Option<&[u8]>, absent: u32, len: usize) -> Uint32Array {
+  Uint32Array::new(match values {
+    Some(values) => values.iter().map(|&value| value as u32).collect(),
+    None => vec![absent; len],
+  })
+}
+
 #[napi]
 pub struct PipelineTokenizer(Pipeline);
 
@@ -183,20 +221,17 @@ impl PipelineTokenizer {
     Ok(Self(tokenizers::from_json(&canonical).map_err(err)?))
   }
 
-  /// `Uint32Array`, not `Vec<u32>`: a JS `Array` costs one napi value per token, which on
-  /// token-dense input is 13x the encode itself (gpt2 chinese 31 vs 616 MB/s).
+  /// Encodes the given text to token ids.
   #[napi]
-  pub fn encode(&self, text: String, options: Option<EncodeOptions>) -> Result<Uint32Array> {
-    let encodings = self
+  pub fn encode(&self, text: String, options: Option<EncodeOptions>) -> Result<Encoding> {
+    let encoding = self
       .0
-      .encode(text.as_str(), &Self::encode_options(options)?)
+      .encode(text, &Self::encode_options(options)?)
       .wait()
-      .map_err(err)?;
-    let ids = encodings
-      .first()
-      .map(|e| e.ids().iter().map(|t| t.id()).collect())
-      .unwrap_or_default();
-    Ok(Uint32Array::new(ids))
+      .map_err(err)?
+      .pop()
+      .expect("encoding a single input gives exactly one encoding");
+    Ok(Encoding(encoding))
   }
 
   /// Drops the two remaining per-call costs of [`Self::encode`]: the JS string -> UTF-8 copy

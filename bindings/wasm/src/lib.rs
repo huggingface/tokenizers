@@ -5,11 +5,13 @@ use tsify::Ts;
 
 use wasm_bindgen::prelude::*;
 
+mod encoding;
 mod hub;
 mod options;
 
 use options::convert_encode_options;
 
+pub use encoding::Encoding;
 pub use hub::PretrainedOptions;
 pub use options::EncodeOptions;
 
@@ -22,7 +24,7 @@ pub use options::EncodeOptions;
 /// @example
 /// ```ts
 /// using tokenizer = Tokenizer.from_json(json);
-/// const ids = tokenizer.encode("Hello world");
+/// const { ids } = tokenizer.encode("Hello world");
 /// ```
 pub struct Tokenizer(PipelineTokenizer);
 
@@ -65,25 +67,27 @@ impl Tokenizer {
     /// @param text - The text to encode into tokens.
     /// @param options - Settings for this call: whether to add special tokens, padding or
     /// truncation. Defaults to the tokenizer's config. See {@link EncodeOptions}.
-    /// @returns The token ids.
+    /// @returns The {@link Encoding}.
     /// @throws If the options do not match {@link EncodeOptions}.
     pub fn encode(
         &self,
         text: &str,
         options: Option<Ts<EncodeOptions>>,
-    ) -> Result<Vec<u32>, JsError> {
+    ) -> Result<Encoding, JsError> {
         let options = convert_encode_options(options)?;
-        let encodings = self.0.encode(text, &options).wait().map_err(js_err)?;
-        let ids = encodings
-            .first()
-            .map(|e| e.ids().iter().map(|t| t.id()).collect())
-            .unwrap_or_default();
-        Ok(ids)
+        let encoding = self
+            .0
+            .encode(text, &options)
+            .wait()
+            .map_err(js_err)?
+            .pop()
+            .expect("encoding a single input gives exactly one encoding");
+        Ok(Encoding(encoding))
     }
 
     /// Decodes token ids back into text.
     ///
-    /// @param ids - The ids to convert. Can be the result of {@link Tokenizer.encode}.
+    /// @param ids - The ids to convert, such as {@link Encoding.ids}.
     /// @param skip_special_tokens - Whether special tokens are ignored. `true` when not specified.
     /// @returns The decoded text.
     pub fn decode(
@@ -99,7 +103,7 @@ impl Tokenizer {
     /// Converts token ids to their tokens. This does not run the decoder, so each token keeps its
     /// spelling in the vocabulary: a byte-level BPE token reads `Ġworld`, not ` world`.
     ///
-    /// @param ids - The ids to convert. Can be the result of {@link Tokenizer.encode}.
+    /// @param ids - The ids to convert, such as {@link Encoding.ids}.
     /// @param skip_special_tokens - Whether special tokens are ignored. `false` when not specified.
     /// @returns The token of each id found in the vocabulary. Ids not in the vocabulary are dropped.
     pub fn decode_tokens(&self, ids: &[u32], skip_special_tokens: Option<bool>) -> Vec<String> {

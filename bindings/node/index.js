@@ -736,3 +736,4 @@ if (!nativeBinding) {
 
 module.exports = nativeBinding
 module.exports.PipelineTokenizer = nativeBinding.PipelineTokenizer
+module.exports.Encoding = nativeBinding.Encoding

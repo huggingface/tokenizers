@@ -34,7 +34,19 @@ fn core_encode() -> Vec<u32> {
 #[wasm_bindgen_test]
 fn test_from_json() {
     let tokenizer = unwrap(Tokenizer::from_json(BERT));
-    assert_eq!(unwrap(tokenizer.encode(TEXT, None)), core_encode());
+    assert_eq!(unwrap(tokenizer.encode(TEXT, None)).ids(), core_encode());
+}
+
+#[wasm_bindgen_test]
+fn test_encode_returns_encoding() {
+    let tokenizer = unwrap(Tokenizer::from_json(BERT));
+    let options = Ts::new_unchecked(JSON::parse(r#"{"padding": {"length": 6}}"#).unwrap());
+    let encoding = unwrap(tokenizer.encode(TEXT, Some(options)));
+    let mut padded = core_encode();
+    padded.resize(6, 0);
+    assert_eq!(encoding.ids(), padded);
+    assert_eq!(encoding.type_ids(), [0; 6]);
+    assert_eq!(encoding.attention_mask(), [1, 1, 1, 1, 0, 0]);
 }
 
 #[wasm_bindgen_test]
