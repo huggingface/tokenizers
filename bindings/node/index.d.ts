@@ -15,13 +15,14 @@ export declare class Encoding {
   get attentionMask(): Uint32Array
 }
 
-export declare class PipelineTokenizer {
+/** A tokenizer. Encodes text into token ids, and decodes token ids back into text. */
+export declare class Tokenizer {
   /**
    * Read a `tokenizer.json`. The file is put through the legacy "1.0" -> canonical "2.0"
    * upgrade first, so the tokenizers already on disk keep loading; `tk_serialize` itself only
    * reads the canonical form.
    */
-  static fromFile(path: string): PipelineTokenizer
+  static fromFile(path: string): Tokenizer
   /**
    * Encodes the given text, or pair of texts, to token ids. The post-processor joins a pair,
    * for example as `[CLS] A [SEP] B [SEP]`.

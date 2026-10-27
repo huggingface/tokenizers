@@ -3,7 +3,7 @@ import assert from 'node:assert'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PipelineTokenizer, type EncodeOptions } from '../index.js'
+import { Tokenizer, type EncodeOptions } from '../index.js'
 
 // `make test` fetches this one; see the Makefile's TESTS_RESOURCES.
 const MODEL = new URL('../data/tokenizer-wiki.json', import.meta.url).pathname
@@ -32,12 +32,12 @@ function modelWith(blocks: Record<string, unknown>): string {
 }
 
 test('fromFile reads a legacy tokenizer.json', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
-  assert.ok(tok instanceof PipelineTokenizer)
+  const tok = Tokenizer.fromFile(MODEL)
+  assert.ok(tok instanceof Tokenizer)
 })
 
 test('encode returns an Encoding of typed arrays', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   const encoding = tok.encode('Hello', { padding: { length: 3 } })
   assert.ok(encoding.ids instanceof Uint32Array, 'ids must marshal as a typed array, not a JS Array')
   assert.deepStrictEqual(encoding.ids, Uint32Array.of(LONG_IDS[0], 0, 0))
@@ -48,7 +48,7 @@ test('encode returns an Encoding of typed arrays', () => {
 // The two entry points run the same encode; the only difference is who owns the buffer. If they
 // ever disagree, one of them is marshalling wrong.
 test('encodeBytesInto writes the same ids as encode', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   const text = 'Hello there, how are you?'
   const want = tok.encode(text).ids
   const out = new Uint32Array(want.length)
@@ -58,21 +58,21 @@ test('encodeBytesInto writes the same ids as encode', () => {
 })
 
 test('encodeBytesInto rejects a buffer that is too small', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   const text = 'Hello there, how are you?'
   const tooSmall = new Uint32Array(1)
   assert.throws(() => tok.encodeBytesInto(Buffer.from(text, 'utf8'), tooSmall), /buffer holds 1/)
 })
 
 test('addSpecialTokens is honoured', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   const withSpecials = tok.encode('Hello', { addSpecialTokens: true }).ids
   const without = tok.encode('Hello', { addSpecialTokens: false }).ids
   assert.ok(withSpecials.length >= without.length)
 })
 
 test('encodeSpecialTokens sends a special token through the model', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   const sepId = JSON.parse(readFileSync(MODEL, 'utf8')).added_tokens.find(
     (t: { content: string; id: number }) => t.content === '[SEP]',
   ).id
@@ -84,7 +84,7 @@ test('encodeSpecialTokens sends a special token through the model', () => {
 })
 
 test('padding.length pads to a fixed length', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   const plain = tok.encode('Hello').ids
   const padded = tok.encode('Hello', { padding: { length: 16 } }).ids
   assert.ok(plain.length < 16)
@@ -94,64 +94,64 @@ test('padding.length pads to a fixed length', () => {
 })
 
 test('padding: false turns the configured padding off', () => {
-  const tok = PipelineTokenizer.fromFile(modelWith({ padding: PADDING }))
+  const tok = Tokenizer.fromFile(modelWith({ padding: PADDING }))
   assert.strictEqual(tok.encode('Hello').ids.length, 16)
   assert.ok(tok.encode('Hello', { padding: false }).ids.length < 16)
 })
 
 test('a padding override replaces the configured padding', () => {
-  const tok = PipelineTokenizer.fromFile(modelWith({ padding: PADDING }))
+  const tok = Tokenizer.fromFile(modelWith({ padding: PADDING }))
   assert.deepStrictEqual(Array.from(tok.encode('Hello').ids), [LONG_IDS[0], ...Array(15).fill(7)])
   assert.deepStrictEqual(Array.from(tok.encode('Hello', { padding: { length: 4 } }).ids), [LONG_IDS[0], 0, 0, 0])
 })
 
 test('encodeBytesInto takes the same options', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   const out = new Uint32Array(16)
   const n = tok.encodeBytesInto(Buffer.from('Hello', 'utf8'), out, { padding: { length: 16 } })
   assert.strictEqual(n, 16)
 })
 
 test('a padding direction other than left or right is refused', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   // @ts-expect-error the union is the whole point of the check
   assert.throws(() => tok.encode('Hello', { padding: { direction: 'up' } }), /'left' or 'right'/)
 })
 
 test('truncation.maxLength keeps the first ids', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   assert.deepStrictEqual(Array.from(tok.encode(LONG).ids), LONG_IDS)
   assert.deepStrictEqual(Array.from(tok.encode(LONG, { truncation: { maxLength: 4 } }).ids), LONG_IDS.slice(0, 4))
 })
 
 test('a text shorter than maxLength is left alone', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   assert.deepStrictEqual(tok.encode('Hello there', { truncation: { maxLength: 4 } }).ids, tok.encode('Hello there').ids)
 })
 
 test('truncation.direction left keeps the last ids', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   const left = tok.encode(LONG, { truncation: { maxLength: 4, direction: 'left' } }).ids
   assert.deepStrictEqual(Array.from(left), LONG_IDS.slice(-4))
 })
 
 test('fromFile reads a truncation block', () => {
-  const tok = PipelineTokenizer.fromFile(modelWith({ truncation: TRUNCATION }))
+  const tok = Tokenizer.fromFile(modelWith({ truncation: TRUNCATION }))
   assert.deepStrictEqual(Array.from(tok.encode(LONG).ids), LONG_IDS.slice(-4))
 })
 
 test('truncation: false turns the configured truncation off', () => {
-  const tok = PipelineTokenizer.fromFile(modelWith({ truncation: TRUNCATION }))
+  const tok = Tokenizer.fromFile(modelWith({ truncation: TRUNCATION }))
   assert.deepStrictEqual(Array.from(tok.encode(LONG, { truncation: false }).ids), LONG_IDS)
 })
 
 test('a truncation override replaces the configured truncation', () => {
-  const tok = PipelineTokenizer.fromFile(modelWith({ truncation: TRUNCATION }))
+  const tok = Tokenizer.fromFile(modelWith({ truncation: TRUNCATION }))
   assert.deepStrictEqual(Array.from(tok.encode(LONG, { truncation: { maxLength: 2 } }).ids), LONG_IDS.slice(0, 2))
 })
 
 test('truncation.maxLength is required', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   // @ts-expect-error the required field is the whole point of the check
   const noLength: EncodeOptions = { truncation: {} }
   assert.throws(() => tok.encode(LONG, noLength), /none of these types .*TruncationOptions/)
@@ -160,7 +160,7 @@ test('truncation.maxLength is required', () => {
 // Padding to more than maxLength tells the two orders apart: padding first would leave the long
 // text at 4 ids, cutting first pads it back out to 6.
 test('truncation cuts before padding fills', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   const options = { truncation: { maxLength: 4 }, padding: { length: 6 } }
   assert.deepStrictEqual(Array.from(tok.encode('Hello', options).ids), [LONG_IDS[0], 0, 0, 0, 0, 0])
   assert.deepStrictEqual(Array.from(tok.encode(LONG, options).ids), [...LONG_IDS.slice(0, 4), 0, 0])
@@ -168,20 +168,20 @@ test('truncation cuts before padding fills', () => {
 
 // A single text has no second sequence for `only_second` to cut.
 test('only_second has nothing to cut', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   const onlySecond = { truncation: { maxLength: 4, strategy: 'only_second' as const } }
   assert.throws(() => tok.encode(LONG, onlySecond), /Second sequence not provided/)
 })
 
 test('a truncation strategy other than the three is refused', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   // @ts-expect-error the union is the whole point of the check
   const sideways: EncodeOptions = { truncation: { maxLength: 4, strategy: 'sideways' } }
   assert.throws(() => tok.encode(LONG, sideways), /'longest_first', 'only_first' or 'only_second'/)
 })
 
 test('a truncation direction other than left or right is refused', () => {
-  const tok = PipelineTokenizer.fromFile(MODEL)
+  const tok = Tokenizer.fromFile(MODEL)
   // @ts-expect-error the union is the whole point of the check
   const up: EncodeOptions = { truncation: { maxLength: 4, direction: 'up' } }
   assert.throws(() => tok.encode(LONG, up), /truncation direction must be 'left' or 'right'/)
@@ -191,34 +191,34 @@ test('a truncation direction other than left or right is refused', () => {
 const BERT = new URL('../data/bert-wiki.json', import.meta.url).pathname
 
 test('decode skips special tokens unless told otherwise', () => {
-  const tok = PipelineTokenizer.fromFile(BERT)
+  const tok = Tokenizer.fromFile(BERT)
   const ids = tok.encode('Hello there').ids
   assert.strictEqual(tok.decode(ids), 'hello there')
   assert.strictEqual(tok.decode(ids, false), '[CLS] hello there [SEP]')
 })
 
 test('decodeTokens keeps special tokens unless told otherwise', () => {
-  const tok = PipelineTokenizer.fromFile(BERT)
+  const tok = Tokenizer.fromFile(BERT)
   const ids = tok.encode('Hello there').ids
   assert.deepStrictEqual(tok.decodeTokens(ids), ['[CLS]', 'hello', 'there', '[SEP]'])
   assert.deepStrictEqual(tok.decodeTokens(ids, true), ['hello', 'there'])
 })
 
 test('encode takes a pair of texts', () => {
-  const tok = PipelineTokenizer.fromFile(BERT)
+  const tok = Tokenizer.fromFile(BERT)
   const encoding = tok.encode(['Hello', 'there'])
   assert.deepStrictEqual(tok.decodeTokens(encoding.ids), ['[CLS]', 'hello', '[SEP]', 'there', '[SEP]'])
   assert.deepStrictEqual(encoding.typeIds, Uint32Array.of(0, 0, 0, 1, 1))
 })
 
 test('encode refuses an array that is not a pair', () => {
-  const tok = PipelineTokenizer.fromFile(BERT)
+  const tok = Tokenizer.fromFile(BERT)
   // @ts-expect-error the tuple type is the whole point of the check
   assert.throws(() => tok.encode(['Hello', 'there', 'again']), /a pair holds 2 texts, not 3/)
 })
 
 test('encodeBatch encodes texts and pairs in input order', () => {
-  const tok = PipelineTokenizer.fromFile(BERT)
+  const tok = Tokenizer.fromFile(BERT)
   const inputs: Array<string | [string, string]> = ['Hello there', ['Hello', 'there'], 'Hello']
   const batch = tok.encodeBatch(inputs)
   assert.deepStrictEqual(
@@ -228,7 +228,7 @@ test('encodeBatch encodes texts and pairs in input order', () => {
 })
 
 test('encodeBatch pads the whole batch to its longest item', () => {
-  const tok = PipelineTokenizer.fromFile(BERT)
+  const tok = Tokenizer.fromFile(BERT)
   const batch = tok.encodeBatch(['Hello', 'Hello there'], { padding: {} })
   assert.deepStrictEqual(
     batch.map((encoding) => encoding.attentionMask),
@@ -237,7 +237,7 @@ test('encodeBatch pads the whole batch to its longest item', () => {
 })
 
 test('tokenize is decodeTokens of encode, with the same options', () => {
-  const tok = PipelineTokenizer.fromFile(BERT)
+  const tok = Tokenizer.fromFile(BERT)
   assert.deepStrictEqual(tok.tokenize(['Hello', 'there']), ['[CLS]', 'hello', '[SEP]', 'there', '[SEP]'])
   assert.deepStrictEqual(tok.tokenize(['Hello', 'there'], { addSpecialTokens: false }), ['hello', 'there'])
 })

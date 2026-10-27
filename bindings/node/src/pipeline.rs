@@ -1,11 +1,4 @@
-//! The pipeline encode path, over napi.
-//!
-//! This is the whole Node surface. The classes that used to live beside it -- `Tokenizer`,
-//! `Model`, `Normalizer`, `PreTokenizer`, `Processor`, `Decoder`, the trainers and their async
-//! tasks -- wrapped the pre-v1 engine, which no longer exists: `DecoderWrapper`,
-//! `PostProcessorWrapper`, `BpeBuilder`, `TrainerWrapper`, `Trainable` and `NormalizedString`
-//! were all removed with it, and this crate had stopped compiling. Rather than port wrappers for
-//! an engine that is gone, the binding now exposes the path that replaced it.
+//! The Node surface: a [`Tokenizer`] loaded from a `tokenizer.json`, and its [`Encoding`].
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -160,7 +153,7 @@ impl TruncationOptions {
   }
 }
 
-impl PipelineTokenizer {
+impl Tokenizer {
   fn encode_options(options: Option<EncodeOptions>) -> Result<PipelineEncodeOptions> {
     let options = options.unwrap_or_default();
     Ok(PipelineEncodeOptions {
@@ -222,11 +215,12 @@ fn text_input(input: TextInput) -> Result<Input> {
   }
 }
 
+/// A tokenizer. Encodes text into token ids, and decodes token ids back into text.
 #[napi]
-pub struct PipelineTokenizer(Pipeline);
+pub struct Tokenizer(Pipeline);
 
 #[napi]
-impl PipelineTokenizer {
+impl Tokenizer {
   /// Read a `tokenizer.json`. The file is put through the legacy "1.0" -> canonical "2.0"
   /// upgrade first, so the tokenizers already on disk keep loading; `tk_serialize` itself only
   /// reads the canonical form.
