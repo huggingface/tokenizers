@@ -256,6 +256,23 @@ impl PipelineTokenizer {
     Ok(Encoding(encoding))
   }
 
+  /// Encodes a batch of texts, or pairs of texts. A batch can mix both. The encodings come back
+  /// in input order.
+  #[napi]
+  pub fn encode_batch(
+    &self,
+    #[napi(ts_arg_type = "Array<string | [string, string]>")] inputs: Vec<TextInput>,
+    options: Option<EncodeOptions>,
+  ) -> Result<Vec<Encoding>> {
+    let inputs = inputs.into_iter().map(text_input).collect::<Result<_>>()?;
+    let encodings = self
+      .0
+      .encode(Inputs::Batch(inputs), &Self::encode_options(options)?)
+      .wait()
+      .map_err(err)?;
+    Ok(encodings.into_iter().map(Encoding).collect())
+  }
+
   /// Drops the two remaining per-call costs of [`Self::encode`]: the JS string -> UTF-8 copy
   /// (as fast as the tokenizer itself, so it halves throughput) and the fresh `ArrayBuffer`
   /// (388 ns of a 789 ns call). Returns how many ids were written.

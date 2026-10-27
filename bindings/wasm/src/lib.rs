@@ -1,6 +1,6 @@
 use tokenizers::canonicalize_str;
 use tokenizers::from_json;
-use tokenizers::pipeline::PipelineTokenizer;
+use tokenizers::pipeline::{Inputs, PipelineTokenizer};
 use tsify::Ts;
 
 use wasm_bindgen::prelude::*;
@@ -87,6 +87,31 @@ impl Tokenizer {
             .pop()
             .expect("encoding a single input gives exactly one encoding");
         Ok(Encoding(encoding))
+    }
+
+    /// Encodes a batch of texts, or pairs of texts.
+    ///
+    /// @param inputs - The batch to encode. Each item is a text, or a pair of texts given as a
+    /// two-item array. A batch can mix both.
+    /// @param options - Settings for this call, applied to every item. See {@link EncodeOptions}.
+    /// @returns The {@link Encoding} of each item, in input order.
+    /// @throws If an item is not a text or a pair, or the options do not match {@link EncodeOptions}.
+    pub fn encode_batch(
+        &self,
+        inputs: Vec<Ts<TextInput>>,
+        options: Option<Ts<EncodeOptions>>,
+    ) -> Result<Vec<Encoding>, JsError> {
+        let inputs = inputs
+            .into_iter()
+            .map(|input| Ok(input.to_rust()?.into()))
+            .collect::<Result<_, JsError>>()?;
+        let options = convert_encode_options(options)?;
+        let encodings = self
+            .0
+            .encode(Inputs::Batch(inputs), &options)
+            .wait()
+            .map_err(js_err)?;
+        Ok(encodings.into_iter().map(Encoding).collect())
     }
 
     /// Decodes token ids back into text.

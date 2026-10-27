@@ -77,6 +77,20 @@ fn test_encode_refuses_what_is_not_a_text_or_pair() {
 }
 
 #[wasm_bindgen_test]
+fn test_encode_batch() {
+    let tokenizer = unwrap(Tokenizer::from_json(BERT));
+    let inputs = [r#""Hello world""#, r#"["Hello", "world"]"#, r#""Hello""#];
+    let batch =
+        unwrap(tokenizer.encode_batch(inputs.map(js).to_vec(), Some(js(r#"{"padding": {}}"#))));
+    let longest = unwrap(tokenizer.encode(js(inputs[1]), None)).ids().len();
+    for (encoding, input) in batch.iter().zip(inputs) {
+        let mut ids = unwrap(tokenizer.encode(js(input), None)).ids();
+        ids.resize(longest, 0);
+        assert_eq!(encoding.ids(), ids, "{input}");
+    }
+}
+
+#[wasm_bindgen_test]
 fn test_from_json_error() {
     assert!(Tokenizer::from_json("not json").is_err());
     assert!(Tokenizer::from_json("{}").is_err());

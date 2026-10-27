@@ -216,3 +216,22 @@ test('encode refuses an array that is not a pair', () => {
   // @ts-expect-error the tuple type is the whole point of the check
   assert.throws(() => tok.encode(['Hello', 'there', 'again']), /a pair holds 2 texts, not 3/)
 })
+
+test('encodeBatch encodes texts and pairs in input order', () => {
+  const tok = PipelineTokenizer.fromFile(BERT)
+  const inputs: Array<string | [string, string]> = ['Hello there', ['Hello', 'there'], 'Hello']
+  const batch = tok.encodeBatch(inputs)
+  assert.deepStrictEqual(
+    batch.map((encoding) => encoding.ids),
+    inputs.map((input) => tok.encode(input).ids),
+  )
+})
+
+test('encodeBatch pads the whole batch to its longest item', () => {
+  const tok = PipelineTokenizer.fromFile(BERT)
+  const batch = tok.encodeBatch(['Hello', 'Hello there'], { padding: {} })
+  assert.deepStrictEqual(
+    batch.map((encoding) => encoding.attentionMask),
+    [Uint32Array.of(1, 1, 1, 0), Uint32Array.of(1, 1, 1, 1)],
+  )
+})

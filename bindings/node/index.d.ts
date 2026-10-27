@@ -28,6 +28,11 @@ export declare class PipelineTokenizer {
    */
   encode(input: string | [string, string], options?: EncodeOptions | undefined | null): Encoding
   /**
+   * Encodes a batch of texts, or pairs of texts. A batch can mix both. The encodings come back
+   * in input order.
+   */
+  encodeBatch(inputs: Array<string | [string, string]>, options?: EncodeOptions | undefined | null): Array<Encoding>
+  /**
    * Drops the two remaining per-call costs of [`Self::encode`]: the JS string -> UTF-8 copy
    * (as fast as the tokenizer itself, so it halves throughput) and the fresh `ArrayBuffer`
    * (388 ns of a 789 ns call). Returns how many ids were written.
