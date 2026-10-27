@@ -1,6 +1,6 @@
 use tokenizers::canonicalize_str;
 use tokenizers::from_json;
-use tokenizers::pipeline::{Inputs, PipelineTokenizer};
+use tokenizers::pipeline::{Inputs, PipelineToken, PipelineTokenizer};
 use tsify::Ts;
 
 use wasm_bindgen::prelude::*;
@@ -87,6 +87,23 @@ impl Tokenizer {
             .pop()
             .expect("encoding a single input gives exactly one encoding");
         Ok(Encoding(encoding))
+    }
+
+    /// Encodes the given text, or pair of texts, and returns the token of each id.
+    ///
+    /// Shorthand for `decode_tokens(encode(input, options).ids)`.
+    ///
+    /// @param input - A text, or a pair of texts given as a two-item array.
+    /// @param options - Settings for this call. See {@link EncodeOptions}.
+    /// @returns The token of each id, special tokens included.
+    /// @throws If the input is not a text or a pair, or the options do not match {@link EncodeOptions}.
+    pub fn tokenize(
+        &self,
+        input: Ts<TextInput>,
+        options: Option<Ts<EncodeOptions>>,
+    ) -> Result<Vec<String>, JsError> {
+        let encoding = self.encode(input, options)?;
+        Ok(self.decode_tokens(PipelineToken::cast_slice(encoding.0.ids()), None))
     }
 
     /// Encodes a batch of texts, or pairs of texts.

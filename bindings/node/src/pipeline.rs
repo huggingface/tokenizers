@@ -11,6 +11,7 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use tokenizers::pipeline::{
   EncodeOptions as PipelineEncodeOptions, Encoding as PipelineEncoding, Input, Inputs, Override,
+  PipelineToken,
 };
 use tokenizers::tokenizer::pipeline::PipelineTokenizer as Pipeline;
 use tokenizers::{
@@ -254,6 +255,19 @@ impl PipelineTokenizer {
       .pop()
       .expect("encoding a single input gives exactly one encoding");
     Ok(Encoding(encoding))
+  }
+
+  /// Encodes the given text, or pair of texts, and returns the token of each id.
+  ///
+  /// Shorthand for `decodeTokens(encode(input, options).ids)`.
+  #[napi]
+  pub fn tokenize(
+    &self,
+    #[napi(ts_arg_type = "string | [string, string]")] input: TextInput,
+    options: Option<EncodeOptions>,
+  ) -> Result<Vec<String>> {
+    let encoding = self.encode(input, options)?;
+    Ok(self.decode_tokens(PipelineToken::cast_slice(encoding.0.ids()), None))
   }
 
   /// Encodes a batch of texts, or pairs of texts. A batch can mix both. The encodings come back

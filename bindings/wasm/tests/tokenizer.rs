@@ -91,6 +91,21 @@ fn test_encode_batch() {
 }
 
 #[wasm_bindgen_test]
+fn test_tokenize() {
+    let tokenizer = unwrap(Tokenizer::from_json(BERT));
+    let pair = r#"["Hello", "world"]"#;
+    assert_eq!(
+        unwrap(tokenizer.tokenize(js(pair), None)),
+        ["[CLS]", "hello", "[SEP]", "world", "[SEP]"]
+    );
+    let options = js(r#"{"addSpecialTokens": false}"#);
+    assert_eq!(
+        unwrap(tokenizer.tokenize(js(pair), Some(options))),
+        ["hello", "world"]
+    );
+}
+
+#[wasm_bindgen_test]
 fn test_from_json_error() {
     assert!(Tokenizer::from_json("not json").is_err());
     assert!(Tokenizer::from_json("{}").is_err());

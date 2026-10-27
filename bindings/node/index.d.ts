@@ -28,6 +28,12 @@ export declare class PipelineTokenizer {
    */
   encode(input: string | [string, string], options?: EncodeOptions | undefined | null): Encoding
   /**
+   * Encodes the given text, or pair of texts, and returns the token of each id.
+   *
+   * Shorthand for `decodeTokens(encode(input, options).ids)`.
+   */
+  tokenize(input: string | [string, string], options?: EncodeOptions | undefined | null): Array<string>
+  /**
    * Encodes a batch of texts, or pairs of texts. A batch can mix both. The encodings come back
    * in input order.
    */

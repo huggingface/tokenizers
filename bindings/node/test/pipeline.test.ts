@@ -235,3 +235,9 @@ test('encodeBatch pads the whole batch to its longest item', () => {
     [Uint32Array.of(1, 1, 1, 0), Uint32Array.of(1, 1, 1, 1)],
   )
 })
+
+test('tokenize is decodeTokens of encode, with the same options', () => {
+  const tok = PipelineTokenizer.fromFile(BERT)
+  assert.deepStrictEqual(tok.tokenize(['Hello', 'there']), ['[CLS]', 'hello', '[SEP]', 'there', '[SEP]'])
+  assert.deepStrictEqual(tok.tokenize(['Hello', 'there'], { addSpecialTokens: false }), ['hello', 'there'])
+})
