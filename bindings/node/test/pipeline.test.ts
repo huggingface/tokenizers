@@ -166,7 +166,7 @@ test('truncation cuts before padding fills', () => {
   assert.deepStrictEqual(Array.from(tok.encode(LONG, options).ids), [...LONG_IDS.slice(0, 4), 0, 0])
 })
 
-// `encode` takes one sequence, so `only_second` never has the sequence it cuts.
+// A single text has no second sequence for `only_second` to cut.
 test('only_second has nothing to cut', () => {
   const tok = PipelineTokenizer.fromFile(MODEL)
   const onlySecond = { truncation: { maxLength: 4, strategy: 'only_second' as const } }
@@ -202,4 +202,17 @@ test('decodeTokens keeps special tokens unless told otherwise', () => {
   const ids = tok.encode('Hello there').ids
   assert.deepStrictEqual(tok.decodeTokens(ids), ['[CLS]', 'hello', 'there', '[SEP]'])
   assert.deepStrictEqual(tok.decodeTokens(ids, true), ['hello', 'there'])
+})
+
+test('encode takes a pair of texts', () => {
+  const tok = PipelineTokenizer.fromFile(BERT)
+  const encoding = tok.encode(['Hello', 'there'])
+  assert.deepStrictEqual(tok.decodeTokens(encoding.ids), ['[CLS]', 'hello', '[SEP]', 'there', '[SEP]'])
+  assert.deepStrictEqual(encoding.typeIds, Uint32Array.of(0, 0, 0, 1, 1))
+})
+
+test('encode refuses an array that is not a pair', () => {
+  const tok = PipelineTokenizer.fromFile(BERT)
+  // @ts-expect-error the tuple type is the whole point of the check
+  assert.throws(() => tok.encode(['Hello', 'there', 'again']), /a pair holds 2 texts, not 3/)
 })

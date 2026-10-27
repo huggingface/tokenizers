@@ -7,12 +7,14 @@ use wasm_bindgen::prelude::*;
 
 mod encoding;
 mod hub;
+mod input;
 mod options;
 
 use options::convert_encode_options;
 
 pub use encoding::Encoding;
 pub use hub::PretrainedOptions;
+pub use input::TextInput;
 pub use options::EncodeOptions;
 
 #[wasm_bindgen]
@@ -62,22 +64,24 @@ impl Tokenizer {
         Ok(Self::from_json(&json)?)
     }
 
-    /// Encodes the given text to token ids.
+    /// Encodes the given text, or pair of texts, to token ids.
     ///
-    /// @param text - The text to encode into tokens.
+    /// @param input - A text, or a pair of texts given as a two-item array. The post-processor
+    /// joins a pair, for example as `[CLS] A [SEP] B [SEP]`.
     /// @param options - Settings for this call: whether to add special tokens, padding or
     /// truncation. Defaults to the tokenizer's config. See {@link EncodeOptions}.
     /// @returns The {@link Encoding}.
-    /// @throws If the options do not match {@link EncodeOptions}.
+    /// @throws If the input is not a text or a pair, or the options do not match {@link EncodeOptions}.
     pub fn encode(
         &self,
-        text: &str,
+        input: Ts<TextInput>,
         options: Option<Ts<EncodeOptions>>,
     ) -> Result<Encoding, JsError> {
+        let input = input.to_rust()?;
         let options = convert_encode_options(options)?;
         let encoding = self
             .0
-            .encode(text, &options)
+            .encode(input, &options)
             .wait()
             .map_err(js_err)?
             .pop()

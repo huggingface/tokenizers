@@ -22,8 +22,11 @@ export declare class PipelineTokenizer {
    * reads the canonical form.
    */
   static fromFile(path: string): PipelineTokenizer
-  /** Encodes the given text to token ids. */
-  encode(text: string, options?: EncodeOptions | undefined | null): Encoding
+  /**
+   * Encodes the given text, or pair of texts, to token ids. The post-processor joins a pair,
+   * for example as `[CLS] A [SEP] B [SEP]`.
+   */
+  encode(input: string | [string, string], options?: EncodeOptions | undefined | null): Encoding
   /**
    * Drops the two remaining per-call costs of [`Self::encode`]: the JS string -> UTF-8 copy
    * (as fast as the tokenizer itself, so it halves throughput) and the fresh `ArrayBuffer`

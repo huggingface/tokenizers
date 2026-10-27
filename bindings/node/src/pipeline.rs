@@ -10,7 +10,7 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use tokenizers::pipeline::{
-  EncodeOptions as PipelineEncodeOptions, Encoding as PipelineEncoding, Override,
+  EncodeOptions as PipelineEncodeOptions, Encoding as PipelineEncoding, Input, Inputs, Override,
 };
 use tokenizers::tokenizer::pipeline::PipelineTokenizer as Pipeline;
 use tokenizers::{
@@ -207,6 +207,20 @@ fn widen(values: Option<&[u8]>, absent: u32, len: usize) -> Uint32Array {
   })
 }
 
+/// A text, or a pair of texts.
+type TextInput = Either<String, Vec<String>>;
+
+// napi's tuple conversion would drop a third text without a word.
+fn text_input(input: TextInput) -> Result<Input> {
+  match input {
+    Either::A(text) => Ok(Input::Single(text)),
+    Either::B(pair) => match <[String; 2]>::try_from(pair) {
+      Ok([first, second]) => Ok(Input::Pair(first, second)),
+      Err(texts) => Err(err(format!("a pair holds 2 texts, not {}", texts.len()))),
+    },
+  }
+}
+
 #[napi]
 pub struct PipelineTokenizer(Pipeline);
 
@@ -221,12 +235,20 @@ impl PipelineTokenizer {
     Ok(Self(tokenizers::from_json(&canonical).map_err(err)?))
   }
 
-  /// Encodes the given text to token ids.
+  /// Encodes the given text, or pair of texts, to token ids. The post-processor joins a pair,
+  /// for example as `[CLS] A [SEP] B [SEP]`.
   #[napi]
-  pub fn encode(&self, text: String, options: Option<EncodeOptions>) -> Result<Encoding> {
+  pub fn encode(
+    &self,
+    #[napi(ts_arg_type = "string | [string, string]")] input: TextInput,
+    options: Option<EncodeOptions>,
+  ) -> Result<Encoding> {
     let encoding = self
       .0
-      .encode(text, &Self::encode_options(options)?)
+      .encode(
+        Inputs::Single(text_input(input)?),
+        &Self::encode_options(options)?,
+      )
       .wait()
       .map_err(err)?
       .pop()
