@@ -307,16 +307,46 @@ fn a_byte_level_pre_tokenizer_becomes_a_model_flag_and_a_split() {
     // A model that never had one still has to say so.
     assert_eq!(done(BPE, "")["model"]["byte_level"], false);
 
+    // `add_prefix_space: true` is the conditional leading space 0.23 applied before the GPT-2
+    // split. It becomes a `Prepend` with `only_if_absent`, after any declared normalizer.
+    let v = done(
+        BPE,
+        r#", "normalizer": {"type": "NFKC"}
+           , "pre_tokenizer": {"type": "ByteLevel", "add_prefix_space": true}"#,
+    );
+    assert_eq!(v["model"]["byte_level"], true);
+    assert_eq!(
+        v["pre_tokenizer"]["pattern"]["Regex"],
+        bitcannon::regexes::GPT2
+    );
+    let chain = &v["normalizer"]["normalizers"];
+    assert_eq!(chain[0]["type"], "NFKC");
+    assert_eq!(
+        chain[1],
+        serde_json::json!({"type": "Prepend", "prepend": " ", "only_if_absent": true})
+    );
+    // Same lowering when the ByteLevel is the last member of a Sequence.
+    let v = done(
+        BPE,
+        r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
+             {"type": "WhitespaceSplit"},
+             {"type": "ByteLevel", "add_prefix_space": true}]}"#,
+    );
+    assert_eq!(
+        v["normalizer"],
+        serde_json::json!({"type": "Prepend", "prepend": " ", "only_if_absent": true})
+    );
+    assert_eq!(
+        v["pre_tokenizer"]["pretokenizers"],
+        serde_json::json!([
+            {"type": "WhitespaceSplit"},
+            {"type": "Split", "pattern": {"Regex": bitcannon::regexes::GPT2}}
+        ])
+    );
+
     // Guards the canonical reader no longer carries: it reads `byte_level` only off a BPE, so
     // one anywhere else would be silently ignored rather than refused.
     let bl = r#", "pre_tokenizer": {"type": "ByteLevel"}"#;
-    assert!(
-        err(
-            BPE,
-            r#", "pre_tokenizer": {"type": "ByteLevel", "add_prefix_space": true}"#
-        )
-        .contains("add_prefix_space")
-    );
     assert!(
         err(
             BPE,
@@ -505,7 +535,7 @@ fn every_fixture_canonicalises_into_something_the_canonical_reader_accepts() {
     /// Fixtures with no canonical form, each with a substring its refusal must contain. Every
     /// entry is a limit of what the pipeline can *build*, not a gap in this pass; listing them
     /// makes adding one a diff a reviewer sees. Checked both ways, so a stale entry fails too.
-    const UNCONVERTIBLE: &[(&str, &str)] = &[("tokenizer.json", "add_prefix_space")];
+    const UNCONVERTIBLE: &[(&str, &str)] = &[];
 
     let Ok(entries) = std::fs::read_dir(std::path::Path::new(DATA)) else {
         eprintln!("skipping: no fixtures at {DATA} (populated by `make data models`)");
@@ -559,4 +589,39 @@ fn every_fixture_canonicalises_into_something_the_canonical_reader_accepts() {
         "{read} converted and read; {unconvertible} with no canonical form; {skipped} not configs"
     );
     assert!(read > 0, "no fixture was actually read");
+}
+
+/// Issue #2460: gpt2 with `add_prefix_space: true` must load and keep 0.23's ids for
+/// `"Hello world"` — `[18435, 995]` (`ĠHello`, `Ġworld`). A leading space already present
+/// must not be doubled.
+#[test]
+fn byte_level_add_prefix_space_preserves_encode_ids() {
+    let path = format!("{DATA}/gpt2.json");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        eprintln!("skipping: no fixture at {path}");
+        return;
+    };
+    let mut value: Value = serde_json::from_str(&text).unwrap();
+    value["pre_tokenizer"]["add_prefix_space"] = Value::Bool(true);
+    canonicalize_value(&mut value).expect("add_prefix_space: true must convert");
+    assert_eq!(
+        value["normalizer"],
+        serde_json::json!({"type": "Prepend", "prepend": " ", "only_if_absent": true})
+    );
+    let pipe = tk_serialize::from_json(&serde_json::to_string(&value).unwrap())
+        .expect("canonical reader must accept the conversion");
+    let ids = |text: &str| -> Vec<u32> {
+        pipe.encode(text, &tk_encode::pipeline::EncodeOptions::no_specials())
+            .wait()
+            .unwrap()
+            .remove(0)
+            .ids()
+            .iter()
+            .map(|t| t.id())
+            .collect()
+    };
+    // Same ids 0.23.2 reported in #2460.
+    assert_eq!(ids("Hello world"), vec![18435, 995]);
+    // Conditional: already-prefixed input must not get a second space.
+    assert_eq!(ids(" Hello world"), vec![18435, 995]);
 }

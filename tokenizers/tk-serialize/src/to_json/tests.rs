@@ -199,6 +199,7 @@ fn reversing_the_written_merges_moves_ids() {
 const IDEMPOTENT: &[(&str, &str)] = &[
     ("normalizer",     r#"{"type": "Lowercase"}"#),
     ("normalizer",     r#"{"type": "Prepend", "prepend": "_"}"#),
+    ("normalizer",     r#"{"type": "Prepend", "prepend": " ", "only_if_absent": true}"#),
     ("normalizer",     r#"{"type": "Replace", "pattern": {"String": " "}, "content": "_"}"#),
     ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "always", "drop_whitespace": false}"#),
     ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "first", "drop_whitespace": false}"#),

@@ -61,6 +61,10 @@ fn write_one(out: &mut Out, normalizer: &PipelineNormalizer) -> Result<()> {
             out.obj_open();
             out.type_tag("Prepend");
             out.field_str("prepend", &prepend.prepend);
+            // Omit when false so older-looking configs and the default round-trip stay compact.
+            if prepend.only_if_absent {
+                out.field_bool("only_if_absent", true);
+            }
             out.obj_close();
         }
         PipelineNormalizer::Strip(strip) => {

@@ -21,7 +21,8 @@
 //! - a `Metaspace` decoder with no `prepend_scheme` — it defaulted to `always`
 //! - a `ByteLevel` *pre-tokenizer* — it becomes `"byte_level": true` on the model plus, for
 //!   `use_regex: true`, a `Split` on the GPT-2 regex with `Isolated`; `use_regex: false` leaves no
-//!   pre-tokenizer at all. `add_prefix_space: true` on one is still unsupported downstream
+//!   pre-tokenizer at all. `add_prefix_space: true` becomes a `Prepend` normalizer with
+//!   `only_if_absent: true` (a leading space, skipped when the input already starts with one)
 //!
 //! Refused by both, because nothing converts it: a vocabulary named by path (`files`).
 mod added_tokens;
