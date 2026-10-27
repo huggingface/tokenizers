@@ -79,6 +79,17 @@ tk-encode = { path = "../tk-encode", features = ["parallelism"] }
 # library itself still links no serde.
 serde_json = "1.0"
 
+# Encode-path gates: a `tokenizer.json` that declares truncation/padding must apply them
+# under `EncodeOptions`'s default `InheritConfig`. WordLevel keeps the fixture tiny; the
+# feature must be on or the reader refuses the model.
+[[test]]
+name = "config_truncation"
+required-features = ["deserialize", "wordlevel"]
+
+[[test]]
+name = "config_padding"
+required-features = ["deserialize", "wordlevel"]
+
 [[example]]
 name = "binsize_pipeline"
 # It calls `from_json_file`, so it cannot build without the reader. Declared rather than left
