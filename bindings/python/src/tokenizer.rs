@@ -165,6 +165,7 @@ impl Tokenizer {
         Self::from_file(path)
     }
 
+    /// The tokenizer model, which turns text into token ids.
     #[getter]
     fn model(slf: &Bound<'_, Self>) -> PyResult<Py<Model>> {
         let model = Self::get(slf)?;
@@ -176,6 +177,8 @@ impl Tokenizer {
         self.set(Some(model))
     }
 
+    /// The normalizer, which cleans up the text before it is split.
+    /// `None` if the tokenizer has no normalizer.
     #[getter]
     fn normalizer(slf: &Bound<'_, Self>) -> PyResult<Option<Py<Normalizer>>> {
         Self::get(slf)
@@ -186,6 +189,8 @@ impl Tokenizer {
         self.set(normalizer)
     }
 
+    /// The pre-tokenizer, which splits the text into words.
+    /// `None` if the tokenizer has no pre-tokenizer.
     #[getter]
     fn pre_tokenizer(slf: &Bound<'_, Self>) -> PyResult<Option<Py<PreTokenizer>>> {
         Self::get(slf)
@@ -196,6 +201,8 @@ impl Tokenizer {
         self.set(pre_tokenizer)
     }
 
+    /// The post-processor, which adds special tokens.
+    /// `None` if the tokenizer has no post-processor.
     #[getter]
     fn post_processor(slf: &Bound<'_, Self>) -> PyResult<Option<Py<PostProcessor>>> {
         Self::get(slf)
@@ -206,6 +213,8 @@ impl Tokenizer {
         self.set(post_processor)
     }
 
+    /// The decoder, which turns token ids back into text.
+    /// `None` if the tokenizer has no decoder.
     #[getter]
     fn decoder(slf: &Bound<'_, Self>) -> PyResult<Option<Py<Decoder>>> {
         Self::get(slf)

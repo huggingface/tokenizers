@@ -91,7 +91,7 @@ pub(crate) trait ComponentKind:
     }
 }
 
-/// Boilerplate methods for the concrete classes of a component kind: BPE, Prepend, ...
+/// Boilerplate methods for the concrete classes of a component kind: BPE, BertNormalizer, ...
 pub(crate) trait ComponentType: PyClass<BaseType: ComponentKind> + Default {
     fn initializer(spec: Arc<ComponentSpec>) -> PyClassInitializer<Self> {
         Self::BaseType::default_initializer(spec).add_subclass(Self::default())

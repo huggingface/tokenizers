@@ -372,7 +372,11 @@ class Tokenizer:
         compiled tokenizer: compile again to see them.
         """
     @property
-    def decoder(self, /) -> Decoder | None: ...
+    def decoder(self, /) -> Decoder | None:
+        """
+        The decoder, which turns token ids back into text.
+        `None` if the tokenizer has no decoder.
+        """
     @decoder.setter
     def decoder(self, /, decoder: Decoder | None) -> None: ...
     @staticmethod
@@ -445,11 +449,18 @@ class Tokenizer:
         ```
         """
     @property
-    def model(self, /) -> Model: ...
+    def model(self, /) -> Model:
+        """
+        The tokenizer model, which turns text into token ids.
+        """
     @model.setter
     def model(self, /, model: Model) -> None: ...
     @property
-    def normalizer(self, /) -> Normalizer | None: ...
+    def normalizer(self, /) -> Normalizer | None:
+        """
+        The normalizer, which cleans up the text before it is split.
+        `None` if the tokenizer has no normalizer.
+        """
     @normalizer.setter
     def normalizer(self, /, normalizer: Normalizer | None) -> None: ...
     @property
@@ -461,11 +472,19 @@ class Tokenizer:
     @padding.setter
     def padding(self, /, padding: Padding | None) -> None: ...
     @property
-    def post_processor(self, /) -> PostProcessor | None: ...
+    def post_processor(self, /) -> PostProcessor | None:
+        """
+        The post-processor, which adds special tokens.
+        `None` if the tokenizer has no post-processor.
+        """
     @post_processor.setter
     def post_processor(self, /, post_processor: PostProcessor | None) -> None: ...
     @property
-    def pre_tokenizer(self, /) -> PreTokenizer | None: ...
+    def pre_tokenizer(self, /) -> PreTokenizer | None:
+        """
+        The pre-tokenizer, which splits the text into words.
+        `None` if the tokenizer has no pre-tokenizer.
+        """
     @pre_tokenizer.setter
     def pre_tokenizer(self, /, pre_tokenizer: PreTokenizer | None) -> None: ...
     @property
