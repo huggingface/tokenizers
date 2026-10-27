@@ -110,7 +110,7 @@ impl<'py> IntoPyObject<'py> for Direction {
 }
 
 /// What `Truncation.__reduce__` gives pickle: every argument of the constructor, in its order.
-type UnpickleArguments = (usize, Strategy, Direction);
+type UnpickleArguments = (usize, Strategy, Direction, usize);
 
 #[pymethods]
 impl Truncation {
@@ -123,15 +123,17 @@ impl Truncation {
     ///     direction: `"right"` (the default) or `"left"`
     ///         Whether to truncate tokens at the end of the sequence (`"right"`) or at
     /// 		the beginning of the sequence (`"left"`).
+    ///     stride: int
+    ///         How many tokens each window shares with the previous one, in
+    /// 		`Tokenizer.encode_windows`. `Tokenizer.encode` keeps the first window only.
     #[new]
-    #[pyo3(signature = (max_length, strategy=Strategy(TruncationStrategy::LongestFirst), direction=Direction(TruncationDirection::Right)))]
-    fn new(max_length: usize, strategy: Strategy, direction: Direction) -> Self {
+    #[pyo3(signature = (max_length, strategy=Strategy(TruncationStrategy::LongestFirst), direction=Direction(TruncationDirection::Right), stride=0))]
+    fn new(max_length: usize, strategy: Strategy, direction: Direction, stride: usize) -> Self {
         Self(TruncationParams {
             max_length,
             strategy: strategy.0,
             direction: direction.0,
-            // TODO: Stride is not implemented yet
-            stride: 0,
+            stride,
         })
     }
 
@@ -153,18 +155,30 @@ impl Truncation {
         Direction(self.0.direction)
     }
 
+    /// How many tokens each window shares with the previous one, in `Tokenizer.encode_windows`.
+    #[getter]
+    fn stride(&self) -> usize {
+        self.0.stride
+    }
+
     /// Pickle rebuilds a `Truncation` by calling the class with these constructor arguments.
     fn __reduce__<'py>(&self, py: Python<'py>) -> (Bound<'py, PyType>, UnpickleArguments) {
-        let arguments = (self.max_length(), self.strategy(), self.direction());
+        let arguments = (
+            self.max_length(),
+            self.strategy(),
+            self.direction(),
+            self.stride(),
+        );
         (py.get_type::<Self>(), arguments)
     }
 
     pub(crate) fn __repr__(&self) -> String {
         format!(
-            "Truncation(max_length={}, strategy={:?}, direction={:?})",
+            "Truncation(max_length={}, strategy={:?}, direction={:?}, stride={})",
             self.max_length(),
             self.0.strategy.as_ref(),
             self.0.direction.as_ref(),
+            self.0.stride,
         )
     }
 }

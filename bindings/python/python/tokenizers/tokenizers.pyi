@@ -246,6 +246,77 @@ class Tokenizer:
         Returns:
             List[Encoding]
         """
+    def encode_batch_windows(
+        self,
+        /,
+        inputs: Sequence[str | Sequence[str]],
+        *,
+        add_special_tokens: bool = True,
+        encode_special_tokens: bool = False,
+        padding: Padding | None = ...,
+        truncation: Truncation | None = ...,
+    ) -> list[list[Encoding]]:
+        """
+        Encodes a batch of texts, or pairs of texts, into every window the truncation cuts each
+        of them into. See `encode_windows`.
+        The lists of windows come back in input order. Padding pads every window of every input
+        to one length.
+
+        Args:
+            inputs: list[str | tuple[str, str]]
+                The batch to encode. Each item is a text, or a pair of texts given as a two-item
+                tuple or list. A batch can mix both.
+            add_special_tokens: bool
+                Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+            encode_special_tokens: bool
+                Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
+                or be replaced by their id in the added vocabulary.
+            padding: `Padding` or `None`
+                Padding options. Pass `None` to disable padding.
+                When omitted, defaults to the padding options configured on the tokenizer.
+            truncation: `Truncation` or `None`
+                Truncation options. Pass `None` to disable truncation, which gives one window.
+                When omitted, defaults to the truncation options configured on the tokenizer.
+
+        Returns:
+            list[list[Encoding]]
+        """
+    def encode_windows(
+        self,
+        /,
+        input: str | Sequence[str],
+        *,
+        add_special_tokens: bool = True,
+        encode_special_tokens: bool = False,
+        padding: Padding | None = ...,
+        truncation: Truncation | None = ...,
+    ) -> list[Encoding]:
+        """
+        Encodes the given text, or pair of texts, into every window the truncation cuts it into.
+
+        The first window is what `encode` returns. Each next window overlaps the previous one by
+        the truncation's `stride` tokens, and gets the special tokens of the post-processor.
+        A pair that overflows needs the `"only_first"` or `"only_second"` strategy, which names the
+        text to cut.
+
+        Args:
+            input: str or tuple[str, str]
+                A text, or a pair of texts given as a two-item tuple or list.
+            add_special_tokens: bool
+                 Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+            encode_special_tokens: bool
+                Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
+                or be replaced by their id in the added vocabulary.
+            padding: `Padding` or `None`
+                Padding options, applied to every window. Pass `None` to disable padding.
+                When omitted, defaults to the padding options configured on the tokenizer.
+            truncation: `Truncation` or `None`
+                Truncation options. Pass `None` to disable truncation, which gives one window.
+                When omitted, defaults to the truncation options configured on the tokenizer.
+
+        Returns:
+            list[Encoding]
+        """
     @staticmethod
     def from_file(path: str | PathLike[str]) -> Tokenizer:
         """
@@ -379,6 +450,7 @@ class Truncation:
         max_length: int,
         strategy: Literal["longest_first", "only_first", "only_second"] = ...,
         direction: Literal["left", "right"] = ...,
+        stride: int = 0,
     ) -> Truncation:
         """
         Args:
@@ -390,10 +462,13 @@ class Truncation:
             direction: `"right"` (the default) or `"left"`
                 Whether to truncate tokens at the end of the sequence (`"right"`) or at
                         the beginning of the sequence (`"left"`).
+            stride: int
+                How many tokens each window shares with the previous one, in
+                        `Tokenizer.encode_windows`. `Tokenizer.encode` keeps the first window only.
         """
     def __reduce__(
         self, /
-    ) -> tuple[type, tuple[int, Literal["longest_first", "only_first", "only_second"], Literal["left", "right"]]]:
+    ) -> tuple[type, tuple[int, Literal["longest_first", "only_first", "only_second"], Literal["left", "right"], int]]:
         """
         Pickle rebuilds a `Truncation` by calling the class with these constructor arguments.
         """
@@ -412,4 +487,9 @@ class Truncation:
     def strategy(self, /) -> Literal["longest_first", "only_first", "only_second"]:
         """
         Which sequence of a pair is truncated.
+        """
+    @property
+    def stride(self, /) -> int:
+        """
+        How many tokens each window shares with the previous one, in `Tokenizer.encode_windows`.
         """

@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
-use std::iter::Enumerate;
 use std::sync::Arc;
-use std::vec::IntoIter;
 
 #[cfg(feature = "unigram")]
 use crate::models::unigram::{Unigram, UnigramScratch};
@@ -11,27 +9,27 @@ use crate::models::wordlevel::WordLevel;
 use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
 pub use crate::pipeline::encode_options::EncodeOptions;
 pub use crate::pipeline::encode_options::Override;
-use crate::utils::truncation::truncate_pair;
+use crate::utils::truncation::{truncate_pair, truncate_windows};
 use crate::{
     DecoderRuntime, PaddingParams, TruncationParams,
     models::bpe::{BpeScratch, PipelineBPE},
-    pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     tokenizer::Decoder as _,
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
 };
 #[cfg(feature = "parallelism")]
 pub use parallel::PARALLEL_MIN_BYTES;
-#[cfg(feature = "parallelism")]
-use parallel::StreamingIter;
 
 use super::Result;
 
 pub mod encode_options;
+mod output;
 #[cfg(feature = "parallelism")]
 mod parallel;
 mod scratch_pool;
 
+pub(crate) use output::EncodeOutput;
+pub use output::{EncodeHandle, Encoding, HandleIter};
 pub use scratch_pool::ModelScratch;
 
 pub use bitcannon::Span;
@@ -420,141 +418,6 @@ impl From<&[(&str, &str)]> for Inputs {
     }
 }
 
-enum HandleState {
-    Blocking(Enumerate<IntoIter<Result<Encoding>>>),
-    #[cfg(feature = "parallelism")]
-    Streaming(StreamingIter),
-}
-
-pub struct EncodeHandle {
-    state: HandleState,
-    padding: Option<PaddingParams>,
-}
-
-impl EncodeHandle {
-    /// Fully computed results, for the serial case
-    fn blocking(results: Vec<Result<Encoding>>, padding: Option<PaddingParams>) -> Self {
-        Self {
-            state: HandleState::Blocking(results.into_iter().enumerate()),
-            padding,
-        }
-    }
-
-    #[cfg(feature = "parallelism")]
-    fn streaming(it: StreamingIter, padding: Option<PaddingParams>) -> Self {
-        Self {
-            state: HandleState::Streaming(it),
-            padding,
-        }
-    }
-
-    fn len(&self) -> usize {
-        match &self.state {
-            HandleState::Blocking(it) => it.len(),
-            #[cfg(feature = "parallelism")]
-            HandleState::Streaming(it) => it.len(),
-        }
-    }
-}
-
-impl EncodeHandle {
-    /// Wait for all scheduled encoding to finish
-    ///
-    /// Returns in input order
-    pub fn wait(mut self) -> Result<Vec<Encoding>> {
-        let padding = self.padding.take();
-        // XXX: `Vec::new` does not allocate anything when capacity == 0, so creating empty
-        // Encodings should not allocate anything either
-        let mut out = vec![Encoding::empty(); self.len()];
-        for (seq, res) in self {
-            out[seq] = res?;
-        }
-        if let Some(params) = padding {
-            pad_encodings(&mut out, &params)?;
-        }
-        Ok(out)
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Encoding {
-    pub(crate) ids: Vec<PipelineToken>,
-    /// `None` if every token has type id 0
-    pub(crate) type_ids: Option<Vec<u8>>,
-    /// `None` if the encoding is not padded (mask is all ones)
-    pub(crate) attention_mask: Option<Vec<u8>>,
-}
-
-impl Encoding {
-    fn empty() -> Self {
-        Self {
-            ids: Vec::new(),
-            type_ids: None,
-            attention_mask: None,
-        }
-    }
-
-    pub fn new(
-        ids: Vec<PipelineToken>,
-        type_ids: Option<Vec<u8>>,
-        attention_mask: Option<Vec<u8>>,
-    ) -> Self {
-        debug_assert!(type_ids.as_ref().is_none_or(|t| t.len() == ids.len()));
-        Self {
-            ids,
-            type_ids,
-            attention_mask,
-        }
-    }
-}
-
-impl Encoding {
-    pub fn is_empty(&self) -> bool {
-        self.ids.len() == 0
-    }
-
-    pub fn len(&self) -> usize {
-        self.ids.len()
-    }
-
-    pub fn ids(&self) -> &[PipelineToken] {
-        &self.ids
-    }
-
-    pub fn type_ids(&self) -> Option<&[u8]> {
-        self.type_ids.as_deref()
-    }
-
-    pub fn attention_mask(&self) -> Option<&[u8]> {
-        self.attention_mask.as_deref()
-    }
-}
-/// Iterator yields results in completion order
-pub struct HandleIter {
-    handle: EncodeHandle,
-}
-
-impl Iterator for HandleIter {
-    type Item = (usize, Result<Encoding>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match &mut self.handle.state {
-            HandleState::Blocking(it) => it.next(),
-            #[cfg(feature = "parallelism")]
-            HandleState::Streaming(it) => it.next(),
-        }
-    }
-}
-
-impl IntoIterator for EncodeHandle {
-    type Item = (usize, Result<Encoding>);
-    type IntoIter = HandleIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        Self::IntoIter { handle: self }
-    }
-}
-
 impl PipelineTokenizer {
     pub fn get_model(&self) -> &PipelineModel {
         &self.inner.model
@@ -613,7 +476,30 @@ impl PipelineTokenizer {
     /// This way, special / added tokens declared on raw or normalized text are both caught.
     /// The remaining text is pre-tokenized and run through the model span by span.
     pub fn encode(&self, inputs: impl Into<Inputs>, options: &EncodeOptions) -> EncodeHandle {
-        let inputs = inputs.into();
+        self.encode_as(inputs.into(), options)
+    }
+
+    /// Encode `input` into every window the truncation cuts it into.
+    ///
+    /// The first window of each input is what [`Self::encode`] returns. The next ones overlap the
+    /// previous one by [`TruncationParams::stride`] tokens, and each gets the post-processor's
+    /// special tokens. Padding pads every window of every input to one length.
+    ///
+    /// A pair that overflows needs the `OnlyFirst` or `OnlySecond` strategy, which names the sequence
+    /// to cut.
+    pub fn encode_windows(
+        &self,
+        inputs: impl Into<Inputs>,
+        options: &EncodeOptions,
+    ) -> EncodeHandle<Vec<Encoding>> {
+        self.encode_as(inputs.into(), options)
+    }
+
+    fn encode_as<T: EncodeOutput>(
+        &self,
+        inputs: Inputs,
+        options: &EncodeOptions,
+    ) -> EncodeHandle<T> {
         assert!(
             inputs.len() < usize::MAX,
             "we use usize::MAX as a sentinel value for the completion queue, we don't support batches larger than that"
@@ -628,7 +514,11 @@ impl PipelineTokenizer {
         parallel::encode(self, inputs, options)
     }
 
-    fn encode_serial(&self, inputs: Inputs, options: &EncodeOptions) -> Vec<Result<Encoding>> {
+    fn encode_serial<T: EncodeOutput>(
+        &self,
+        inputs: Inputs,
+        options: &EncodeOptions,
+    ) -> Vec<Result<T>> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         match inputs {
             Inputs::Single(input) => {
@@ -644,22 +534,22 @@ impl PipelineTokenizer {
         }
     }
 
-    fn encode_one(
+    fn encode_one<T: EncodeOutput>(
         &self,
         input: Input,
         options: &EncodeOptions,
         scratch: &mut EncodeScratch,
-    ) -> Result<Encoding> {
+    ) -> Result<T> {
         match input {
             Input::Single(seq) => {
                 let toks = self.encode_sequence_with(&seq, 0, options, scratch)?;
-                Ok(self.post_process(toks, None, options)?)
+                T::post_process(self, toks, None, options)
             }
             // Each side of a pair is a sequence of its own, so both start at offset 0.
             Input::Pair(s1, s2) => {
                 let a = self.encode_sequence_with(&s1, 0, options, scratch)?;
                 let b = self.encode_sequence_with(&s2, 0, options, scratch)?;
-                Ok(self.post_process(a, Some(b), options)?)
+                T::post_process(self, a, Some(b), options)
             }
         }
     }
@@ -693,13 +583,7 @@ impl PipelineTokenizer {
         s2: Option<Vec<PipelineToken>>,
         options: &EncodeOptions,
     ) -> Result<Encoding> {
-        let pp = &self.inner.post_processor;
-        let template = if s2.is_some() { &pp.pair } else { &pp.single };
-        let num_added_specials = if options.add_special_tokens {
-            template.n_special()
-        } else {
-            0
-        };
+        let (template, num_added_specials) = self.template(s2.is_some(), options);
         let truncation = self.resolve_truncation(&options.truncation);
         let (s1, s2) = truncate_pair(s1, s2, truncation, num_added_specials)?;
         Ok(if options.add_special_tokens {
@@ -707,6 +591,42 @@ impl PipelineTokenizer {
         } else {
             template.post_process::<false>(s1, s2)
         })
+    }
+
+    /// [`Self::post_process`] for every window the truncation cuts.
+    fn post_process_windows(
+        &self,
+        s1: Vec<PipelineToken>,
+        s2: Option<Vec<PipelineToken>>,
+        options: &EncodeOptions,
+    ) -> Result<Vec<Encoding>> {
+        let (template, num_added_specials) = self.template(s2.is_some(), options);
+        let truncation = self.resolve_truncation(&options.truncation);
+        let Some(windows) = truncate_windows(&s1, s2.as_deref(), truncation, num_added_specials)?
+        else {
+            return Ok(vec![self.post_process(s1, s2, options)?]);
+        };
+        let post_process = if options.add_special_tokens {
+            Template::post_process_slices::<true>
+        } else {
+            Template::post_process_slices::<false>
+        };
+        Ok(windows
+            .into_iter()
+            .map(|(a, b)| post_process(template, a, b))
+            .collect())
+    }
+
+    /// The template for the input's shape, and how many special tokens it adds.
+    fn template(&self, is_pair: bool, options: &EncodeOptions) -> (&Template, usize) {
+        let pp = &self.inner.post_processor;
+        let template = if is_pair { &pp.pair } else { &pp.single };
+        let num_added_specials = if options.add_special_tokens {
+            template.n_special()
+        } else {
+            0
+        };
+        (template, num_added_specials)
     }
 
     /// Encode one sequence, appending its ids to `output`.
@@ -846,7 +766,8 @@ impl PipelineTokenizer {
         if reproduces_sequence {
             return self.encode_sequence_into(input, 0, options, &mut scratch, out);
         }
-        let encoding = self.encode_one(Input::Single(input.to_owned()), options, &mut scratch)?;
+        let encoding: Encoding =
+            self.encode_one(Input::Single(input.to_owned()), options, &mut scratch)?;
         out.extend_from_slice(encoding.ids());
         Ok(())
     }
@@ -1575,6 +1496,144 @@ mod tests {
             err.downcast_ref::<TruncationError>(),
             Some(TruncationError::SecondSequenceNotProvided)
         ));
+    }
+
+    // Released 0.23 set the template's type ids on the first window only (tokenizers#1908).
+    #[test]
+    fn every_window_gets_the_specials_and_type_ids() {
+        let pipeline = pipeline_with(
+            bert_post_processor(),
+            Some(TruncationParams {
+                max_length: 8,
+                stride: 1,
+                strategy: TruncationStrategy::OnlySecond,
+                ..TruncationParams::default()
+            }),
+        );
+
+        let windows = pipeline
+            .post_process_windows(
+                tokens(1..=2),
+                Some(tokens(11..=16)),
+                &EncodeOptions::default(),
+            )
+            .unwrap();
+
+        let all_ids: Vec<Vec<u32>> = windows.iter().map(ids).collect();
+        assert_eq!(
+            all_ids,
+            [
+                vec![CLS, 1, 2, SEP, 11, 12, 13, SEP],
+                vec![CLS, 1, 2, SEP, 13, 14, 15, SEP],
+                vec![CLS, 1, 2, SEP, 15, 16, SEP],
+            ]
+        );
+        let all_type_ids: Vec<&[u8]> = windows.iter().map(|w| w.type_ids().unwrap()).collect();
+        assert_eq!(
+            all_type_ids,
+            [
+                &[0, 0, 0, 0, 1, 1, 1, 1][..],
+                &[0, 0, 0, 0, 1, 1, 1, 1],
+                &[0, 0, 0, 0, 1, 1, 1],
+            ]
+        );
+    }
+
+    #[test]
+    fn padding_covers_every_window_of_every_input() {
+        let pipeline = hello_pipeline();
+        let options = EncodeOptions {
+            truncation: Override::With(truncate_to(4)),
+            padding: Override::With(PaddingParams {
+                pad_id: PAD,
+                ..PaddingParams::default()
+            }),
+            ..EncodeOptions::default()
+        };
+
+        let windows = pipeline
+            .encode_windows(vec![SIX_TOKENS, "hello"], &options)
+            .wait()
+            .unwrap();
+
+        let all_ids: Vec<Vec<Vec<u32>>> = windows
+            .iter()
+            .map(|input| input.iter().map(ids).collect())
+            .collect();
+        assert_eq!(
+            all_ids,
+            [
+                vec![vec![0, 0, 0, 0], vec![0, 7, PAD, PAD]],
+                vec![vec![7, PAD, PAD, PAD]],
+            ]
+        );
+    }
+
+    #[cfg(feature = "parallelism")]
+    #[test]
+    fn parallel_windows_match_serial_ones() {
+        let pipeline = hello_pipeline_with_truncation(TruncationParams {
+            max_length: 3,
+            stride: 1,
+            ..TruncationParams::default()
+        });
+        let options = EncodeOptions::default();
+        let inputs: Vec<String> = (0..4 * PARALLEL_MIN_BYTES)
+            .map(|i| "h".repeat(i % 7) + "hello")
+            .collect();
+        let batch: Vec<&str> = inputs.iter().map(String::as_str).collect();
+
+        let parallel = pipeline.encode_windows(batch, &options).wait().unwrap();
+
+        let serial: Vec<Vec<Encoding>> = inputs
+            .iter()
+            .map(|input| {
+                pipeline
+                    .encode_windows(input.as_str(), &options)
+                    .wait()
+                    .unwrap()
+                    .remove(0)
+            })
+            .collect();
+        assert_eq!(parallel, serial);
+    }
+
+    // `max_length` 1 leaves no room next to `[CLS] [SEP]`, and `OnlySecond` has no second sequence
+    // to cut in a lone sequence that fits.
+    #[test]
+    fn nothing_to_cut_gives_what_encode_returns() {
+        for truncation in [
+            truncation(1, TruncationStrategy::LongestFirst),
+            truncation(8, TruncationStrategy::OnlySecond),
+        ] {
+            let pipeline = pipeline_with(bert_post_processor(), truncation);
+            let options = EncodeOptions::default();
+
+            let windows = pipeline
+                .encode_windows(SIX_TOKENS, &options)
+                .wait()
+                .unwrap();
+
+            assert_eq!(windows, [vec![encode_six_tokens(&pipeline, &options)]]);
+        }
+    }
+
+    #[test]
+    fn encode_returns_the_first_window() {
+        let pipeline = hello_pipeline_with_truncation(TruncationParams {
+            max_length: 4,
+            stride: 2,
+            ..TruncationParams::default()
+        });
+        let options = EncodeOptions::default();
+
+        let windows = pipeline
+            .encode_windows(SIX_TOKENS, &options)
+            .wait()
+            .unwrap();
+
+        assert_eq!(windows[0].len(), 2);
+        assert_eq!(windows[0][0], encode_six_tokens(&pipeline, &options));
     }
 
     // `max_length` 1 cannot hold `[CLS] [SEP]`. The sequence goes and the specials stay, so the
