@@ -64,28 +64,9 @@ impl Template {
         s1: Vec<PipelineToken>,
         s2: Option<Vec<PipelineToken>>,
     ) -> Encoding {
-        let (a_len, b_len) = (s1.len(), s2.as_ref().map_or(0, Vec::len));
-
-        let type_ids = self.has_type_ids().then(|| {
-            let mut out = Vec::with_capacity(self.n_special() + a_len + b_len);
-            if SPECIALS {
-                push_type_ids(&self.prefix, &mut out);
-            }
-            out.resize(out.len() + a_len, self.a_type_id);
-            if SPECIALS {
-                push_type_ids(&self.infix, &mut out);
-            }
-            if let Some(id) = self.b_type_id {
-                out.resize(out.len() + b_len, id);
-            }
-            if SPECIALS {
-                push_type_ids(&self.suffix, &mut out);
-            }
-            out
-        });
-
+        let type_ids = self.type_ids::<SPECIALS>(s1.len(), s2.as_ref().map_or(0, Vec::len));
         let ids = match s2 {
-            Some(b) => self.wrap_pair::<SPECIALS>(s1, b),
+            Some(b) => self.wrap::<SPECIALS>(&s1, &b),
             None => {
                 // A's buffer already holds the front of the answer, so keep it.
                 debug_assert!(self.infix.is_empty(), "[BUG] single template with an infix");
@@ -103,21 +84,54 @@ impl Template {
         Encoding::new(ids, type_ids, None)
     }
 
-    #[inline(never)]
-    fn wrap_pair<const SPECIALS: bool>(
+    /// [`Self::post_process`] for sequences borrowed from a longer input, such as the windows
+    /// [`PipelineTokenizer::encode_windows`](super::PipelineTokenizer::encode_windows) cuts.
+    pub fn post_process_slices<const SPECIALS: bool>(
         &self,
-        a: Vec<PipelineToken>,
-        b: Vec<PipelineToken>,
+        a: &[PipelineToken],
+        b: Option<&[PipelineToken]>,
+    ) -> Encoding {
+        let b = b.unwrap_or_default();
+        let type_ids = self.type_ids::<SPECIALS>(a.len(), b.len());
+        Encoding::new(self.wrap::<SPECIALS>(a, b), type_ids, None)
+    }
+
+    fn type_ids<const SPECIALS: bool>(&self, a_len: usize, b_len: usize) -> Option<Vec<u8>> {
+        self.has_type_ids().then(|| {
+            let mut out = Vec::with_capacity(self.n_special() + a_len + b_len);
+            if SPECIALS {
+                push_type_ids(&self.prefix, &mut out);
+            }
+            out.resize(out.len() + a_len, self.a_type_id);
+            if SPECIALS {
+                push_type_ids(&self.infix, &mut out);
+            }
+            if let Some(id) = self.b_type_id {
+                out.resize(out.len() + b_len, id);
+            }
+            if SPECIALS {
+                push_type_ids(&self.suffix, &mut out);
+            }
+            out
+        })
+    }
+
+    /// Copies `a` and `b` into one new buffer, between the template's special tokens.
+    #[inline(never)]
+    fn wrap<const SPECIALS: bool>(
+        &self,
+        a: &[PipelineToken],
+        b: &[PipelineToken],
     ) -> Vec<PipelineToken> {
         let mut ids = Vec::with_capacity(self.n_special() + a.len() + b.len());
         if SPECIALS {
             push_ids(&self.prefix, &mut ids);
         }
-        ids.extend(a);
+        ids.extend_from_slice(a);
         if SPECIALS {
             push_ids(&self.infix, &mut ids);
         }
-        ids.extend(b);
+        ids.extend_from_slice(b);
         if SPECIALS {
             push_ids(&self.suffix, &mut ids);
         }

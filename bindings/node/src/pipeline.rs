@@ -151,7 +151,7 @@ impl TruncationOptions {
         Some(name) => truncation_direction(&name)?,
         None => TruncationDirection::Right,
       },
-      // The pipeline keeps only the first window, so a stride changes nothing and is not exposed.
+      // Only `encode_windows` reads a stride, and this binding does not expose it.
       stride: 0,
     })
   }

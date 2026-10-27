@@ -9,12 +9,8 @@ pub(super) fn read_truncation(cfg: Option<&Json<'_>>) -> Result<Option<Truncatio
     let Some(cfg) = cfg else {
         return Ok(None);
     };
-    // A `stride` asks for what the released crate returns as `overflowing` encodings: windows of
-    // `max_length` tokens that consecutive windows share `stride` of. The pipeline keeps the first
-    // window and drops the rest, so the value is read and carried rather than refused. 395 of the
-    // 5,053 popular Hub configs surveyed carry one, all question-answering fine-tunes, and
-    // transformers rebuilds truncation from the per-call `stride` anyway, so the file's value never
-    // reaches encode there either.
+    // `stride` is how many tokens consecutive windows of `encode_windows` share. 395 of the 5,053
+    // popular Hub configs surveyed carry one, all question-answering fine-tunes.
     Ok(Some(TruncationParams {
         max_length: cfg.need("the `truncation` config", "max_length", Json::as_usize)?,
         strategy: read_strategy(cfg)?,

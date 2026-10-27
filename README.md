@@ -93,13 +93,11 @@ As we work toward v1, we are gonna bring back the entire python API that allows 
 - `role_to_token` override.
 - Accept pair input for `encode` / `encode_batch`.
 - Bring back offset output: this should be useful for people training.
-- Windowing / stride in encode.
 - `decode_stream`.
 
 ### Rust core
 
 - `bitnorm`: more performance from optimized normalization, as this will bring breaking changes we want to make sure it gets to v1.
-- Windowing (truncation with stride).
 - Improve training performance
 - Improve decode performance
 - Offset tracking

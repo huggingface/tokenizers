@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::parallelism::pool;
 use crate::pipeline::scratch_pool::{EncodeScratch, ScratchGuard};
 use crate::pipeline::{
-    EncodeHandle, EncodeOptions, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer,
+    EncodeHandle, EncodeOptions, EncodeOutput, Input, Inputs, PipelineToken, PipelineTokenizer,
     Segment, SpecialSegmentIterator,
 };
 
@@ -75,9 +75,9 @@ type ChunkResult = Slot<Result<Vec<PipelineToken>>>;
 /// [`EncodeBatch::next_task`]
 unsafe impl Sync for ChunkResult {}
 
-type EncodingResult = Slot<Result<Encoding>>;
+type EncodingResult<T> = Slot<Result<T>>;
 /// SAFETY: we make sure each result is set only by one thread thanks to [`EncodeBatch::remaining`]
-unsafe impl Sync for EncodingResult {}
+unsafe impl<T: EncodeOutput> Sync for EncodingResult<T> {}
 
 struct SequenceChunk {
     /// Sequence index in the [`Inputs`] batch
@@ -105,13 +105,13 @@ struct Plan {
     chunk_count: Vec<usize>,
 }
 
-struct EncodeBatch {
+struct EncodeBatch<T> {
     inputs: Box<Inputs>,
     chunks: Vec<SequenceChunk>,
     /// All the tasks to be picked up by workers: each tasks represents one or many [`SequenceChunk`]s to process
     tasks: Vec<Range<usize>>,
     outputs: Vec<Vec<ChunkResult>>,
-    encodings: Vec<EncodingResult>,
+    encodings: Vec<EncodingResult<T>>,
     /// Chunks left to encode per sequence (remaining[seq] == chunks_left)
     remaining: Vec<AtomicUsize>,
     cancelled: AtomicBool,
@@ -127,7 +127,7 @@ struct EncodeBatch {
     side_a_len: Vec<usize>,
 }
 
-impl EncodeBatch {
+impl<T: EncodeOutput> EncodeBatch<T> {
     const NOT_DONE: usize = usize::MAX;
 
     fn len(&self) -> usize {
@@ -202,35 +202,37 @@ impl EncodeBatch {
         true
     }
 
-    fn reconstruct(&self, seq: usize) -> Result<Encoding> {
+    fn reconstruct(&self, seq: usize) -> Result<T> {
         let chunk_results = &self.outputs[seq];
         let a_len = self.side_a_len[seq];
         let a = drain(&chunk_results[..a_len])?;
         let b = (a_len < chunk_results.len())
             .then(|| drain(&chunk_results[a_len..]))
             .transpose()?;
-        self.tokenizer.post_process(a, b, &self.options)
+        T::post_process(&self.tokenizer, a, b, &self.options)
     }
 
-    fn take_encoding(&self, seq: usize) -> Result<Encoding> {
+    fn take_encoding(&self, seq: usize) -> Result<T> {
         self.encodings[seq]
             .take()
             .expect("[BUG] completion signalled before the encoding was published")
     }
+}
 
+impl<T> EncodeBatch<T> {
     fn cancel(&self) {
         self.cancelled.store(true, Ordering::Relaxed);
     }
 }
 
-pub(crate) struct StreamingIter {
-    batch: Arc<EncodeBatch>,
+pub(crate) struct StreamingIter<T> {
+    batch: Arc<EncodeBatch<T>>,
     next: usize,
     completed: usize,
 }
 
-impl StreamingIter {
-    fn new(batch: Arc<EncodeBatch>) -> Self {
+impl<T: EncodeOutput> StreamingIter<T> {
+    fn new(batch: Arc<EncodeBatch<T>>) -> Self {
         Self {
             batch,
             next: 0,
@@ -243,8 +245,8 @@ impl StreamingIter {
     }
 }
 
-impl Iterator for StreamingIter {
-    type Item = (usize, Result<Encoding>);
+impl<T: EncodeOutput> Iterator for StreamingIter<T> {
+    type Item = (usize, Result<T>);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.completed == self.batch.len() {
@@ -267,7 +269,7 @@ impl Iterator for StreamingIter {
     }
 }
 
-impl Drop for StreamingIter {
+impl<T> Drop for StreamingIter<T> {
     fn drop(&mut self) {
         self.batch.cancel();
     }
@@ -439,11 +441,11 @@ impl PipelineTokenizer {
     }
 }
 
-pub(crate) fn encode(
+pub(crate) fn encode<T: EncodeOutput>(
     tok: &PipelineTokenizer,
     inputs: Inputs,
     options: &EncodeOptions,
-) -> EncodeHandle {
+) -> EncodeHandle<T> {
     if inputs.size_bytes() < PARALLEL_MIN_BYTES {
         return EncodeHandle::blocking(
             tok.encode_serial(inputs, options),
@@ -487,7 +489,7 @@ pub(crate) fn encode(
         options: options.clone(),
         tokenizer: tok.clone(),
         completion_queue: (0..n_seq)
-            .map(|_| AtomicUsize::new(EncodeBatch::NOT_DONE))
+            .map(|_| AtomicUsize::new(EncodeBatch::<T>::NOT_DONE))
             .collect(),
         next_completed: CachePadded(AtomicUsize::new(0)),
         remaining: chunk_count.iter().map(|&uc| AtomicUsize::new(uc)).collect(),

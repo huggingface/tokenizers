@@ -46,6 +46,15 @@ pub enum TruncationError {
     /// We cannot truncate the target sequence enough to respect the provided max length.
     #[error("Truncation error: Sequence to truncate too short to respect the provided max_length")]
     SequenceTooShort,
+    /// Both sequences of a pair can overflow, so there is no single sequence to cut into windows.
+    #[error(
+        "Truncation error: a pair that overflows needs the `only_first` or `only_second` strategy to be cut into windows, `longest_first` can cut both sequences"
+    )]
+    LongestFirstPair,
+    #[error(
+        "Truncation error: stride {stride} must be smaller than the window of {window} tokens (`max_length` minus the special tokens, and minus the other sequence of a pair)"
+    )]
+    StrideTooLarge { stride: usize, window: usize },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -164,6 +173,76 @@ pub fn truncate_pair(
     } else {
         // None config = no truncation
         Ok((s1, maybe_s2))
+    }
+}
+
+/// The sequences of one window, borrowed from the input, before the post-processor adds its
+/// special tokens.
+pub(crate) type Window<'a> = (&'a [PipelineToken], Option<&'a [PipelineToken]>);
+
+/// Cuts the input into windows of at most `max_length` tokens, specials included.
+///
+/// Consecutive windows share `stride` tokens. In a pair, the sequence the strategy names is cut and
+/// the other one is repeated whole in every window. Returns `None` when there is nothing to cut,
+/// so the one window is what [`truncate_pair`] keeps.
+pub(crate) fn truncate_windows<'a>(
+    s1: &'a [PipelineToken],
+    s2: Option<&'a [PipelineToken]>,
+    truncation: Option<&TruncationParams>,
+    num_added_special_tokens: usize,
+) -> Result<Option<Vec<Window<'a>>>> {
+    let seq_len = s1.len() + s2.map_or(0, <[_]>::len);
+    let Some(truncation) = truncation.filter(|t| {
+        num_added_special_tokens < t.max_length && t.max_length < seq_len + num_added_special_tokens
+    }) else {
+        return Ok(None);
+    };
+    let (target, other, target_is_first) = match (truncation.strategy, s2) {
+        (TruncationStrategy::LongestFirst, Some(_)) => {
+            return Err(Box::new(TruncationError::LongestFirstPair));
+        }
+        (TruncationStrategy::OnlySecond, None) => {
+            return Err(Box::new(TruncationError::SecondSequenceNotProvided));
+        }
+        (TruncationStrategy::OnlySecond, Some(s2)) => (s2, Some(s1), false),
+        (_, s2) => (s1, s2, true),
+    };
+    let window = truncation
+        .max_length
+        .saturating_sub(num_added_special_tokens + other.map_or(0, <[_]>::len));
+    if window == 0 {
+        return Err(Box::new(TruncationError::SequenceTooShort));
+    }
+    if truncation.stride >= window {
+        return Err(Box::new(TruncationError::StrideTooLarge {
+            stride: truncation.stride,
+            window,
+        }));
+    }
+
+    let len = target.len();
+    let step = window - truncation.stride;
+    let mut windows = Vec::with_capacity(1 + (len - window).div_ceil(step));
+    let mut start = 0;
+    loop {
+        let end = cmp::min(start + window, len);
+        let piece = match truncation.direction {
+            TruncationDirection::Right => &target[start..end],
+            // Left windows are the right ones mirrored: they start from the end and walk back.
+            TruncationDirection::Left => &target[len - end..len - start],
+        };
+        windows.push(if target_is_first {
+            (piece, other)
+        } else {
+            (
+                other.expect("OnlySecond cuts the second sequence of a pair"),
+                Some(piece),
+            )
+        });
+        if end == len {
+            return Ok(Some(windows));
+        }
+        start += step;
     }
 }
 
@@ -483,6 +562,262 @@ mod tests {
             &[1, 2],
             Some(&[10, 11, 12, 13, 14]),
         );
+    }
+
+    type OwnedWindow = (Vec<PipelineToken>, Option<Vec<PipelineToken>>);
+
+    fn windows(
+        s1: Vec<PipelineToken>,
+        s2: Option<Vec<PipelineToken>>,
+        truncation: TruncationParams,
+        num_special_tokens: usize,
+    ) -> Vec<OwnedWindow> {
+        truncate_windows(&s1, s2.as_deref(), Some(&truncation), num_special_tokens)
+            .unwrap()
+            .expect("the input overflows")
+            .into_iter()
+            .map(|(a, b)| (a.to_vec(), b.map(<[_]>::to_vec)))
+            .collect()
+    }
+
+    fn nothing_to_cut(
+        s1: Vec<PipelineToken>,
+        s2: Option<Vec<PipelineToken>>,
+        truncation: Option<TruncationParams>,
+        num_special_tokens: usize,
+    ) -> bool {
+        truncate_windows(&s1, s2.as_deref(), truncation.as_ref(), num_special_tokens)
+            .unwrap()
+            .is_none()
+    }
+
+    fn strided(max_length: usize, stride: usize, strategy: TruncationStrategy) -> TruncationParams {
+        TruncationParams {
+            max_length,
+            strategy,
+            stride,
+            ..TruncationParams::default()
+        }
+    }
+
+    fn windows_error(
+        s1: Vec<PipelineToken>,
+        s2: Option<Vec<PipelineToken>>,
+        truncation: TruncationParams,
+    ) -> TruncationError {
+        let err = truncate_windows(&s1, s2.as_deref(), Some(&truncation), 0).unwrap_err();
+        *err.downcast::<TruncationError>().unwrap()
+    }
+
+    #[test]
+    fn right_windows_overlap_by_the_stride() {
+        assert_eq!(
+            windows(
+                long(),
+                None,
+                strided(4, 2, TruncationStrategy::LongestFirst),
+                0
+            ),
+            [
+                (make_tokens(7..11), None),
+                (make_tokens(9..13), None),
+                (make_tokens(11..15), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn last_window_holds_what_is_left() {
+        assert_eq!(
+            windows(
+                long(),
+                None,
+                strided(3, 0, TruncationStrategy::LongestFirst),
+                0
+            ),
+            [
+                (make_tokens(7..10), None),
+                (make_tokens(10..13), None),
+                (make_tokens(13..15), None),
+            ]
+        );
+    }
+
+    // Released tokenizers 0.23 keeps the tail as the first window and walks back to the start.
+    #[test]
+    fn left_windows_start_from_the_end() {
+        let truncation = TruncationParams {
+            direction: TruncationDirection::Left,
+            ..strided(3, 1, TruncationStrategy::LongestFirst)
+        };
+        assert_eq!(
+            windows(long(), None, truncation, 0),
+            [
+                (make_tokens(12..15), None),
+                (make_tokens(10..13), None),
+                (make_tokens(8..11), None),
+                (make_tokens(7..9), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn left_windows_of_a_pair_cut_the_named_sequence() {
+        let left = |strategy| TruncationParams {
+            direction: TruncationDirection::Left,
+            ..strided(6, 1, strategy)
+        };
+        assert_eq!(
+            windows(
+                short(),
+                Some(long()),
+                left(TruncationStrategy::OnlySecond),
+                0
+            ),
+            [
+                (short(), Some(make_tokens(11..15))),
+                (short(), Some(make_tokens(8..12))),
+                (short(), Some(make_tokens(7..9))),
+            ]
+        );
+        assert_eq!(
+            windows(
+                long(),
+                Some(short()),
+                left(TruncationStrategy::OnlyFirst),
+                0
+            ),
+            [
+                (make_tokens(11..15), Some(short())),
+                (make_tokens(8..12), Some(short())),
+                (make_tokens(7..9), Some(short())),
+            ]
+        );
+    }
+
+    #[test]
+    fn specials_shrink_the_window() {
+        assert_eq!(
+            windows(
+                long(),
+                None,
+                strided(6, 0, TruncationStrategy::LongestFirst),
+                2
+            ),
+            [(make_tokens(7..11), None), (make_tokens(11..15), None)]
+        );
+    }
+
+    #[test]
+    fn only_second_repeats_the_first_sequence_in_every_window() {
+        assert_eq!(
+            windows(
+                short(),
+                Some(long()),
+                strided(6, 1, TruncationStrategy::OnlySecond),
+                0
+            ),
+            [
+                (short(), Some(make_tokens(7..11))),
+                (short(), Some(make_tokens(10..14))),
+                (short(), Some(make_tokens(13..15))),
+            ]
+        );
+    }
+
+    #[test]
+    fn only_first_repeats_the_second_sequence_in_every_window() {
+        assert_eq!(
+            windows(
+                long(),
+                Some(short()),
+                strided(7, 0, TruncationStrategy::OnlyFirst),
+                0
+            ),
+            [
+                (make_tokens(7..12), Some(short())),
+                (make_tokens(12..15), Some(short())),
+            ]
+        );
+    }
+
+    // `truncate_pair` checks the strategy against the input only when it has to cut, and keeps only
+    // room for the specials when they fill `max_length`.
+    #[test]
+    fn nothing_to_cut_whatever_the_strategy() {
+        let longest_first = strided(8, 2, TruncationStrategy::LongestFirst);
+        assert!(nothing_to_cut(long(), Some(short()), None, 0));
+        assert!(nothing_to_cut(long(), None, Some(longest_first.clone()), 0));
+        assert!(nothing_to_cut(
+            short(),
+            Some(medium()),
+            Some(longest_first),
+            0
+        ));
+        assert!(nothing_to_cut(
+            short(),
+            None,
+            Some(strided(8, 0, TruncationStrategy::OnlySecond)),
+            0
+        ));
+        assert!(nothing_to_cut(
+            long(),
+            Some(short()),
+            Some(strided(2, 0, TruncationStrategy::OnlyFirst)),
+            2
+        ));
+    }
+
+    // Both sequences of a pair can overflow under `LongestFirst`, which leaves no single sequence to
+    // cut into windows. Released tokenizers 0.23 returned every combination of both sides' windows.
+    #[test]
+    fn longest_first_pair_that_overflows_is_refused() {
+        assert!(matches!(
+            windows_error(
+                medium(),
+                Some(medium()),
+                strided(7, 0, TruncationStrategy::LongestFirst)
+            ),
+            TruncationError::LongestFirstPair
+        ));
+    }
+
+    // `OnlyFirst` repeats the second sequence whole, so a second sequence that fills `max_length`
+    // leaves no room for the first one.
+    #[test]
+    fn other_sequence_filling_max_length_is_refused() {
+        assert!(matches!(
+            windows_error(
+                long(),
+                Some(long()),
+                strided(8, 0, TruncationStrategy::OnlyFirst)
+            ),
+            TruncationError::SequenceTooShort
+        ));
+    }
+
+    // A stride as long as the window would never move past the first window.
+    #[test]
+    fn stride_must_be_shorter_than_the_window() {
+        assert!(matches!(
+            windows_error(
+                short(),
+                Some(long()),
+                strided(6, 4, TruncationStrategy::OnlySecond)
+            ),
+            TruncationError::StrideTooLarge {
+                stride: 4,
+                window: 4
+            }
+        ));
+    }
+
+    #[test]
+    fn only_second_windows_need_a_pair() {
+        assert!(matches!(
+            windows_error(long(), None, strided(4, 0, TruncationStrategy::OnlySecond)),
+            TruncationError::SecondSequenceNotProvided
+        ));
     }
 
     // Released tokenizers 0.23.1 subtracts the specials from `max_length` before balancing a pair,

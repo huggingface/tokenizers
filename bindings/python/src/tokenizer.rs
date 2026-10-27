@@ -330,6 +330,103 @@ impl Tokenizer {
         Ok(encodings.into_iter().map(Encoding::from).collect())
     }
 
+    /// Encodes the given text, or pair of texts, into every window the truncation cuts it into.
+    ///
+    /// The first window is what `encode` returns. Each next window overlaps the previous one by
+    /// the truncation's `stride` tokens, and gets the special tokens of the post-processor.
+    /// A pair that overflows needs the `"only_first"` or `"only_second"` strategy, which names the
+    /// text to cut.
+    ///
+    /// Args:
+    ///     input: str or tuple[str, str]
+    ///         A text, or a pair of texts given as a two-item tuple or list.
+    ///     add_special_tokens: bool
+    ///          Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+    ///     encode_special_tokens: bool
+    ///         Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
+    ///         or be replaced by their id in the added vocabulary.
+    ///     padding: `Padding` or `None`
+    ///         Padding options, applied to every window. Pass `None` to disable padding.
+    ///         When omitted, defaults to the padding options configured on the tokenizer.
+    ///     truncation: `Truncation` or `None`
+    ///         Truncation options. Pass `None` to disable truncation, which gives one window.
+    ///         When omitted, defaults to the truncation options configured on the tokenizer.
+    ///
+    /// Returns:
+    ///     list[Encoding]
+    #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
+    fn encode_windows(
+        &self,
+        py: Python<'_>,
+        input: PyInput,
+        add_special_tokens: bool,
+        encode_special_tokens: bool,
+        padding: OverrideSentinel<PaddingParams>,
+        truncation: OverrideSentinel<TruncationParams>,
+    ) -> PyResult<Vec<Encoding>> {
+        let options = self.make_options(
+            add_special_tokens,
+            encode_special_tokens,
+            padding,
+            truncation,
+        )?;
+        let windows = py
+            .detach(|| self.pipeline.encode_windows(input, &options).wait())
+            .map_err(err)?
+            .pop()
+            .expect("one input gives exactly one list of windows");
+        Ok(windows.into_iter().map(Encoding::from).collect())
+    }
+
+    /// Encodes a batch of texts, or pairs of texts, into every window the truncation cuts each
+    /// of them into. See `encode_windows`.
+    /// The lists of windows come back in input order. Padding pads every window of every input
+    /// to one length.
+    ///
+    /// Args:
+    ///     inputs: list[str | tuple[str, str]]
+    ///         The batch to encode. Each item is a text, or a pair of texts given as a two-item
+    ///         tuple or list. A batch can mix both.
+    ///     add_special_tokens: bool
+    ///         Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+    ///     encode_special_tokens: bool
+    ///         Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
+    ///         or be replaced by their id in the added vocabulary.
+    ///     padding: `Padding` or `None`
+    ///         Padding options. Pass `None` to disable padding.
+    ///         When omitted, defaults to the padding options configured on the tokenizer.
+    ///     truncation: `Truncation` or `None`
+    ///         Truncation options. Pass `None` to disable truncation, which gives one window.
+    ///         When omitted, defaults to the truncation options configured on the tokenizer.
+    ///
+    /// Returns:
+    ///     list[list[Encoding]]
+    #[pyo3(signature = (inputs, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
+    fn encode_batch_windows(
+        &self,
+        py: Python<'_>,
+        inputs: Vec<PyInput>,
+        add_special_tokens: bool,
+        encode_special_tokens: bool,
+        padding: OverrideSentinel<PaddingParams>,
+        truncation: OverrideSentinel<TruncationParams>,
+    ) -> PyResult<Vec<Vec<Encoding>>> {
+        let options = self.make_options(
+            add_special_tokens,
+            encode_special_tokens,
+            padding,
+            truncation,
+        )?;
+        let inputs = Inputs::Batch(inputs.into_iter().map(Input::from).collect());
+        let rows = py
+            .detach(|| self.pipeline.encode_windows(inputs, &options).wait())
+            .map_err(err)?;
+        Ok(rows
+            .into_iter()
+            .map(|windows| windows.into_iter().map(Encoding::from).collect())
+            .collect())
+    }
+
     /// Decodes token ids back into text
     ///
     /// Args:

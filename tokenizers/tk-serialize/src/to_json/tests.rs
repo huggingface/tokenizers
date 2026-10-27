@@ -336,9 +336,9 @@ fn the_canonical_shape_is_tagged_versioned_and_null_where_absent() {
 }
 
 /// The four fields a `truncation` block carries, in the spellings the file uses rather than
-/// `TruncationDirection`'s lowercase `AsRef<str>`. `stride` is here because the pipeline keeps only
-/// the first window and so never acts on it, which is exactly how a hardcoded `0` would go
-/// unnoticed: `{OnlySecond, max_length 384, stride 128}` is the SQuAD recipe 318 Hub configs ship.
+/// `TruncationDirection`'s lowercase `AsRef<str>`. `encode` never reads `stride`, so a hardcoded `0`
+/// would go unnoticed there: `{OnlySecond, max_length 384, stride 128}` is the SQuAD recipe 318 Hub
+/// configs ship.
 #[test]
 fn a_truncation_block_reads_and_writes_back_unchanged() {
     let declared = r#"{"direction": "Left", "max_length": 384,

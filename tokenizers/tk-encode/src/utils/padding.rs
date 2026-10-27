@@ -1,4 +1,3 @@
-use crate::tokenizer::Result;
 use crate::tokenizer::pipeline::{Encoding, PipelineToken};
 
 /// The various possible padding directions.
@@ -46,14 +45,27 @@ pub enum PaddingStrategy {
     Fixed(usize),
 }
 
-pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Result<()> {
-    if encodings.is_empty() {
-        return Ok(());
-    }
+pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) {
+    let pad_length = pad_length(params, || encodings.iter().map(Encoding::len).max());
+    encodings
+        .iter_mut()
+        .for_each(|encoding| pad_one(encoding, pad_length, params));
+}
 
+/// Pads every window of every input to one length, as if they were one batch.
+pub(crate) fn pad_windows(windows: &mut [Vec<Encoding>], params: &PaddingParams) {
+    let pad_length = pad_length(params, || windows.iter().flatten().map(Encoding::len).max());
+    windows
+        .iter_mut()
+        .flatten()
+        .for_each(|encoding| pad_one(encoding, pad_length, params));
+}
+
+/// `longest` is `None` for an empty batch, which has nothing to pad.
+fn pad_length(params: &PaddingParams, longest: impl FnOnce() -> Option<usize>) -> usize {
     let mut pad_length = match params.strategy {
         PaddingStrategy::Fixed(size) => size,
-        PaddingStrategy::BatchLongest => encodings.iter().map(Encoding::len).max().unwrap(),
+        PaddingStrategy::BatchLongest => longest().unwrap_or(0),
     };
 
     if let Some(multiple) = params.pad_to_multiple_of
@@ -62,12 +74,7 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
     {
         pad_length += multiple - pad_length % multiple;
     }
-
-    encodings
-        .iter_mut()
-        .for_each(|encoding| pad_one(encoding, pad_length, params));
-
-    Ok(())
+    pad_length
 }
 
 fn pad_one(encoding: &mut Encoding, target_length: usize, params: &PaddingParams) {
@@ -140,19 +147,19 @@ mod tests {
             pad_type_id: 0,
             pad_token: String::from("[PAD]"),
         };
-        pad_encodings(&mut encodings, &params).unwrap();
+        pad_encodings(&mut encodings, &params);
         assert!(encodings.iter().all(|e| e.len() == 8));
 
         // Test batch
         let mut encodings = get_encodings();
         params.strategy = PaddingStrategy::BatchLongest;
         params.pad_to_multiple_of = Some(6);
-        pad_encodings(&mut encodings, &params).unwrap();
+        pad_encodings(&mut encodings, &params);
         assert!(encodings.iter().all(|e| e.len() == 6));
 
         // Do not crash with 0
         params.pad_to_multiple_of = Some(0);
-        pad_encodings(&mut encodings, &params).unwrap();
+        pad_encodings(&mut encodings, &params);
     }
 
     #[test]
@@ -163,7 +170,7 @@ mod tests {
             ..PaddingParams::default()
         };
 
-        pad_encodings(&mut encodings, &params).unwrap();
+        pad_encodings(&mut encodings, &params);
 
         assert_eq!(encodings[0].ids(), make_tokens(0..5));
         assert!(encodings[0].attention_mask().is_none());
@@ -179,7 +186,7 @@ mod tests {
             ..PaddingParams::default()
         };
 
-        pad_encodings(&mut encodings, &params).unwrap();
+        pad_encodings(&mut encodings, &params);
 
         assert_eq!(encodings[0].ids(), make_tokens([0, 1, 2, 99, 99]));
         assert_eq!(encodings[0].attention_mask().unwrap(), [1, 1, 1, 0, 0]);
@@ -195,7 +202,7 @@ mod tests {
             ..PaddingParams::default()
         };
 
-        pad_encodings(&mut encodings, &params).unwrap();
+        pad_encodings(&mut encodings, &params);
 
         assert_eq!(encodings[0].ids(), make_tokens([99, 99, 0, 1, 2]));
         assert_eq!(encodings[0].attention_mask().unwrap(), [0, 0, 1, 1, 1]);
@@ -215,7 +222,7 @@ mod tests {
             ..PaddingParams::default()
         };
 
-        pad_encodings(&mut encodings, &params).unwrap();
+        pad_encodings(&mut encodings, &params);
 
         assert_eq!(encodings[0].type_ids().unwrap(), [1, 1, 1, 7, 7]);
     }
@@ -234,7 +241,7 @@ mod tests {
             ..PaddingParams::default()
         };
 
-        pad_encodings(&mut encodings, &params).unwrap();
+        pad_encodings(&mut encodings, &params);
 
         assert_eq!(encodings[0].type_ids().unwrap(), [7, 7, 1, 1, 1]);
     }
@@ -249,7 +256,7 @@ mod tests {
             ..PaddingParams::default()
         };
 
-        pad_encodings(&mut encodings, &params).unwrap();
+        pad_encodings(&mut encodings, &params);
 
         assert_eq!(encodings[0].type_ids().unwrap(), [0, 0, 0, 7, 7]);
     }
