@@ -313,6 +313,18 @@ class Tokenizer:
         tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", local_files_only=True)
         ```
         """
+    def get_vocab(self, /, with_added_tokens: bool = True) -> dict[str, int]:
+        """
+        Returns the model vocabulary, optionally including added tokens.
+        """
+    def get_vocab_size(self, /, with_added_tokens: bool = True) -> int:
+        """
+        Counts model entries, or distinct token strings when including added tokens.
+        """
+    def id_to_token(self, /, id: int) -> str | None:
+        """
+        Returns the token's vocabulary spelling without decoding, or `None` for an unknown id.
+        """
     @property
     def padding(self, /) -> Padding | None:
         """
@@ -321,6 +333,10 @@ class Tokenizer:
         """
     @padding.setter
     def padding(self, /, padding: Padding | None) -> None: ...
+    def token_to_id(self, /, token: str) -> int | None:
+        """
+        Returns the token's id, or `None` if it is absent from the vocabulary.
+        """
     def tokenize(
         self,
         /,

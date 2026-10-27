@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::iter::Enumerate;
 use std::sync::Arc;
 use std::vec::IntoIter;
@@ -604,6 +604,47 @@ impl PipelineTokenizer {
         self.inner.truncation.as_ref()
     }
 
+    /// The model vocabulary, optionally including added tokens.
+    pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
+        let mut vocab = self.inner.model.get_vocab();
+        if with_added_tokens {
+            vocab.extend(self.inner.added_vocabulary.get_vocab());
+        }
+        vocab
+    }
+
+    /// Count model entries, or distinct token strings when including added tokens.
+    pub fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
+        if with_added_tokens {
+            self.get_vocab(true).len()
+        } else {
+            self.inner.model.get_vocab_size()
+        }
+    }
+
+    /// Look up a token's id, checking added tokens before the model vocabulary.
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.inner
+            .added_vocabulary
+            .token_to_id(token)
+            .filter(|&id| {
+                self.inner
+                    .added_vocabulary
+                    .simple_id_to_token(id)
+                    .as_deref()
+                    == Some(token)
+            })
+            .or_else(|| self.inner.model.token_to_id(token))
+    }
+
+    /// Look up a token's vocabulary spelling without applying the decoder.
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
+        self.inner
+            .added_vocabulary
+            .simple_id_to_token(id)
+            .or_else(|| self.inner.model.id_to_token(id))
+    }
+
     /// Encode `input` into token ids.
     ///
     /// Special tokens are matched in two passes:
@@ -1030,6 +1071,46 @@ pub enum PipelineModel {
 }
 
 impl PipelineModel {
+    fn get_vocab(&self) -> HashMap<String, u32> {
+        match self {
+            Self::BPE(model) => model.get_vocab(),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.get_vocab(),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.get_vocab(),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.vocab().into_iter().collect(),
+        }
+    }
+
+    fn get_vocab_size(&self) -> usize {
+        match self {
+            Self::BPE(model) => model.get_vocab_size(),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.get_vocab_size(),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.get_vocab_size(),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.get_vocab_size(),
+        }
+    }
+
+    fn token_to_id(&self, token: &str) -> Option<u32> {
+        match self {
+            Self::BPE(model) => model
+                .token_to_id(token)
+                .filter(|&id| model.id_to_token(id).as_deref() == Some(token)),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model
+                .token_to_id(token)
+                .filter(|&id| model.id_to_token(id).as_deref() == Some(token)),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.token_to_id(token),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.token_to_id(token),
+        }
+    }
+
     /// `id -> token` used by [`PipelineTokenizer::decode`]
     pub fn id_to_token(&self, id: u32) -> Option<String> {
         match self {

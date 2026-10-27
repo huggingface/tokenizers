@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -191,6 +192,28 @@ impl Tokenizer {
         *self.truncation.lock().map_err(poison_err)? =
             truncation.map(|truncation| truncation.params().clone());
         Ok(())
+    }
+
+    /// Returns the model vocabulary, optionally including added tokens.
+    #[pyo3(signature = (with_added_tokens=true))]
+    fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
+        self.pipeline.get_vocab(with_added_tokens)
+    }
+
+    /// Counts model entries, or distinct token strings when including added tokens.
+    #[pyo3(signature = (with_added_tokens=true))]
+    fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
+        self.pipeline.get_vocab_size(with_added_tokens)
+    }
+
+    /// Returns the token's id, or `None` if it is absent from the vocabulary.
+    fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.pipeline.token_to_id(token)
+    }
+
+    /// Returns the token's vocabulary spelling without decoding, or `None` for an unknown id.
+    fn id_to_token(&self, id: u32) -> Option<String> {
+        self.pipeline.id_to_token(id)
     }
 
     /// Encodes the given text, or pair of texts, to token ids.
