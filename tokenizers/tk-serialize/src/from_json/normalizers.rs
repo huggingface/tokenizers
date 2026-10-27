@@ -66,9 +66,14 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
                 .field("prepend")
                 .and_then(Json::as_str)
                 .ok_or_else(|| -> tk_encode::Error { "Prepend has no `prepend` field".into() })?;
-            out.push(PipelineNormalizer::Prepend(Prepend::new(
-                prepend.to_string(),
-            )));
+            // Absent means false: configs written before `only_if_absent` existed.
+            let only_if_absent = cfg
+                .field("only_if_absent")
+                .and_then(Json::as_bool)
+                .unwrap_or(false);
+            out.push(PipelineNormalizer::Prepend(
+                Prepend::new(prepend.to_string()).only_if_absent(only_if_absent),
+            ));
         }
         "Strip" => out.push(PipelineNormalizer::Strip(Strip::new(
             cfg.need(&owner, "strip_left", Json::as_bool)?,
