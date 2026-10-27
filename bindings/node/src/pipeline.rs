@@ -151,7 +151,7 @@ impl TruncationOptions {
         Some(name) => truncation_direction(&name)?,
         None => TruncationDirection::Right,
       },
-      // The pipeline keeps only the first window, so a stride changes nothing and is not exposed.
+      // This binding returns only the main row's ids, so it does not expose stride or overflow.
       stride: 0,
     })
   }
