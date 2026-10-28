@@ -104,7 +104,7 @@ pub use tk_serialize::{
 // The legacy-config upgrade pass — all that is left of the config layer.
 // ---------------------------------------------------------------------------
 pub use tk_convert::{
-    ConvertError, TokenizerJson, canonicalize_file, canonicalize_post_processor, canonicalize_str,
+    ConvertError, canonicalize_file, canonicalize_post_processor, canonicalize_str,
     canonicalize_value, convert,
 };
 

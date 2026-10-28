@@ -7,8 +7,8 @@ use serde_json::{Map, Value};
 
 use tk::pipeline::PipelineTokenizer;
 use tk::{
-    PaddingParams, Result, TokenizerJson, TruncationParams, canonicalize_value, from_json,
-    padding_from_json, padding_to_json, truncation_from_json, truncation_to_json,
+    PaddingParams, Result, TruncationParams, canonicalize_value, from_json, padding_from_json,
+    padding_to_json, truncation_from_json, truncation_to_json,
 };
 
 use crate::compiled::CompiledTokenizer;
@@ -211,16 +211,13 @@ impl Tokenizer {
 
 type JsonObject = Map<String, Value>;
 
-/// Holds the specification (json) of a [`PipelineTokenizer`].
+/// Holds the specification (canonical JSON) of a [`PipelineTokenizer`].
 pub(crate) struct TokenizerSpec {
-    /// The tokenizers.json version field
-    version: String,
     /// The truncation an encode applies when it doesn't override it.
     truncation: Option<TruncationParams>,
     /// The padding an encode applies when it doesn't override it.
     padding: Option<PaddingParams>,
-    /// Only in "2.0" files
-    role_to_token: Option<Arc<Value>>,
+    role_to_token: Arc<Value>,
     added_tokens: Arc<Value>,
     normalizer: Option<Arc<ComponentSpec>>,
     pre_tokenizer: Option<Arc<ComponentSpec>>,
@@ -230,29 +227,35 @@ pub(crate) struct TokenizerSpec {
 }
 
 impl TokenizerSpec {
-    /// Reads a tokenizers.json
+    /// Reads a `tokenizer.json` of any version and canonicalizes it.
     pub(crate) fn from_json(text: &str) -> Result<Self> {
-        let file = TokenizerJson::from_value(serde_json::from_str(text)?)?;
+        let mut file = serde_json::from_str(text)?;
+        canonicalize_value(&mut file)?;
+        let Value::Object(mut file) = file else {
+            unreachable!("canonicalize_value refuses anything but an object");
+        };
+        let mut take = |key| file.remove(key).unwrap_or(Value::Null);
+        let component = |value| match value {
+            Value::Object(json) => Some(ComponentSpec::new(json)),
+            _ => None,
+        };
         Ok(Self {
-            version: file.version,
-            truncation: truncation_from_json(&file.truncation.to_string())?,
-            padding: padding_from_json(&file.padding.to_string())?,
-            role_to_token: file.role_to_token.map(Arc::new),
-            added_tokens: Arc::new(file.added_tokens),
-            normalizer: file.normalizer.map(ComponentSpec::new),
-            pre_tokenizer: file.pre_tokenizer.map(ComponentSpec::new),
-            post_processor: file.post_processor.map(ComponentSpec::new),
-            decoder: file.decoder.map(ComponentSpec::new),
-            model: ComponentSpec::new(file.model),
+            truncation: truncation_from_json(&take("truncation").to_string())?,
+            padding: padding_from_json(&take("padding").to_string())?,
+            role_to_token: Arc::new(take("role_to_token")),
+            added_tokens: Arc::new(take("added_tokens")),
+            normalizer: component(take("normalizer")),
+            pre_tokenizer: component(take("pre_tokenizer")),
+            post_processor: component(take("post_processor")),
+            decoder: component(take("decoder")),
+            model: component(take("model"))
+                .expect("canonicalize_value refuses a model that is not an object"),
         })
     }
 
     /// Builds a new [`PipelineTokenizer`] from the current spec, padding and truncation included.
     pub(crate) fn compile(&self) -> Result<PipelineTokenizer> {
-        let mut tokenizer_json = Value::Object(self.to_object());
-        canonicalize_value(&mut tokenizer_json)?;
-        // XXX: the .to_string() copies JSON data a second time, could be improved
-        from_json(&tokenizer_json.to_string())
+        from_json(&self.to_json())
     }
 
     /// An independent copy: editing components of the new object do not affect `self`'s components
@@ -260,7 +263,6 @@ impl TokenizerSpec {
         let detached =
             |spec: &Option<Arc<ComponentSpec>>| spec.as_ref().map(|spec| spec.detached());
         Self {
-            version: self.version.clone(),
             truncation: self.truncation.clone(),
             padding: self.padding.clone(),
             role_to_token: self.role_to_token.clone(),
@@ -273,24 +275,37 @@ impl TokenizerSpec {
         }
     }
 
-    /// Returns a copy of the spec as a `JsonObject`
+    /// Returns a copy of the spec as a `JsonObject`, in the key order `to_json` writes
     fn to_object(&self) -> JsonObject {
         let json = |spec: &Option<Arc<ComponentSpec>>| {
-            spec.as_ref().map(|spec| JsonObject::clone(&spec.json()))
+            spec.as_ref().map_or(Value::Null, |spec| {
+                Value::Object(JsonObject::clone(&spec.json()))
+            })
         };
-        TokenizerJson {
-            version: self.version.clone(),
-            truncation: parse_json(truncation_to_json(self.truncation.as_ref())),
-            padding: parse_json(padding_to_json(self.padding.as_ref())),
-            role_to_token: self.role_to_token.as_deref().cloned(),
-            added_tokens: Value::clone(&self.added_tokens),
-            normalizer: json(&self.normalizer),
-            pre_tokenizer: json(&self.pre_tokenizer),
-            post_processor: json(&self.post_processor),
-            decoder: json(&self.decoder),
-            model: JsonObject::clone(&self.model.json()),
-        }
-        .into_object()
+        [
+            ("version", Value::from("2.0")),
+            (
+                "truncation",
+                parse_json(truncation_to_json(self.truncation.as_ref())),
+            ),
+            (
+                "padding",
+                parse_json(padding_to_json(self.padding.as_ref())),
+            ),
+            ("role_to_token", Value::clone(&self.role_to_token)),
+            ("added_tokens", Value::clone(&self.added_tokens)),
+            ("normalizer", json(&self.normalizer)),
+            ("pre_tokenizer", json(&self.pre_tokenizer)),
+            ("post_processor", json(&self.post_processor)),
+            ("decoder", json(&self.decoder)),
+            (
+                "model",
+                Value::Object(JsonObject::clone(&self.model.json())),
+            ),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value))
+        .collect()
     }
 
     fn to_json(&self) -> String {

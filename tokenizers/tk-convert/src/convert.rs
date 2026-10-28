@@ -131,6 +131,7 @@ pub fn canonicalize_value(value: &mut Value) -> Result<(), ConvertError> {
         .as_object_mut()
         .ok_or(ConvertError::NotAnObject { found })?;
 
+    check_top_level(root)?;
     root.insert("version".to_string(), Value::String(VERSION.to_string()));
 
     {
@@ -152,7 +153,7 @@ pub fn canonicalize_value(value: &mut Value) -> Result<(), ConvertError> {
     fill_model_defaults(root)?;
 
     // `Metaspace` survives as a *decoder*, so all four slots are still walked.
-    for slot in ["normalizer", "pre_tokenizer", "post_processor", "decoder"] {
+    for slot in COMPONENTS {
         if let Some(node) = root.get_mut(slot) {
             canonicalize_component(node)?;
         }
@@ -162,6 +163,58 @@ pub fn canonicalize_value(value: &mut Value) -> Result<(), ConvertError> {
 
 /// The canonical format this pass emits.
 const VERSION: &str = "2.0";
+
+const VERSIONS: [&str; 2] = ["1.0", VERSION];
+
+const COMPONENTS: [&str; 4] = ["normalizer", "pre_tokenizer", "post_processor", "decoder"];
+
+const KEYS: [&str; 9] = [
+    "version",
+    "truncation",
+    "padding",
+    "added_tokens",
+    "normalizer",
+    "pre_tokenizer",
+    "post_processor",
+    "decoder",
+    "model",
+];
+
+/// Refuses an unknown `version`, an unknown key, and a component that is neither an object nor
+/// null. A file without `"version"` is a `"1.0"` one, and only `"2.0"` has `role_to_token`.
+fn check_top_level(root: &Map<String, Value>) -> Result<(), ConvertError> {
+    let version = match root.get("version") {
+        None => "1.0",
+        Some(Value::String(v)) if VERSIONS.contains(&v.as_str()) => v.as_str(),
+        Some(v) => {
+            return Err(ConvertError::UnknownVersion {
+                version: v.to_string(),
+            });
+        }
+    };
+    let keys: Vec<String> = root
+        .keys()
+        .filter(|key| {
+            !KEYS.contains(&key.as_str()) && !(key.as_str() == "role_to_token" && version == "2.0")
+        })
+        .cloned()
+        .collect();
+    if !keys.is_empty() {
+        return Err(ConvertError::UnknownKeys { keys });
+    }
+    for key in COMPONENTS {
+        match root.get(key) {
+            None | Some(Value::Null | Value::Object(_)) => {}
+            Some(other) => {
+                return Err(ConvertError::ComponentNotObject {
+                    key,
+                    found: kind_of(other),
+                });
+            }
+        }
+    }
+    Ok(())
+}
 
 /// `{"type": tag, ...fields}`.
 fn tagged(tag: &str, fields: &[(&str, Value)]) -> Value {
@@ -203,7 +256,7 @@ fn append_normalizer(root: &mut Map<String, Value>, normalizer: Value) {
 /// `merges` **must** be tested before `continuing_subword_prefix`: a serialized BPE writes
 /// `"continuing_subword_prefix": null`, so gpt2 would otherwise read as a WordPiece with no merges.
 /// Key presence, not non-null, for the same reason.
-pub(crate) fn fill_model_type(model: &mut Map<String, Value>) {
+fn fill_model_type(model: &mut Map<String, Value>) {
     // An unknown tag is not this pass's business to refuse; a newer reader may know it.
     if model.get("type").and_then(Value::as_str).is_some() {
         return;
@@ -349,7 +402,7 @@ fn canonicalize_metaspace(obj: &mut Map<String, Value>) -> Result<String, Conver
 }
 
 /// `serde_json` has no public name for a `Value`'s variant.
-pub(crate) fn kind_of(value: &Value) -> &'static str {
+fn kind_of(value: &Value) -> &'static str {
     match value {
         Value::Null => "null",
         Value::Bool(_) => "a boolean",

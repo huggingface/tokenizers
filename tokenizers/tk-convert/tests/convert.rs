@@ -560,3 +560,30 @@ fn every_fixture_canonicalises_into_something_the_canonical_reader_accepts() {
     );
     assert!(read > 0, "no fixture was actually read");
 }
+
+#[test]
+fn refuse_unknown_keys() {
+    for (text, error) in [
+        (r#"{"model": {}, "extra": 1}"#, "`extra`"),
+        (r#"{"version": "2.0", "model": {}, "extra": 1}"#, "`extra`"),
+        // role_to_token only exists from 2.0 on.
+        (
+            r#"{"version": "1.0", "role_to_token": {}, "model": {}}"#,
+            "`role_to_token`",
+        ),
+        (r#"{"version": "3.0", "model": {}}"#, "version \"3.0\""),
+        (r#"{"normalizer": [], "model": {}}"#, "`normalizer` must be"),
+    ] {
+        let message = canonicalize_str(text).unwrap_err().to_string();
+        assert!(message.contains(error), "{text}: {message}");
+    }
+}
+
+#[test]
+fn keeps_role_to_token() {
+    let text = r#"{"version": "2.0", "role_to_token": {"bos_token": "<s>"},
+        "model": {"type": "WordLevel", "vocab": {"<s>": 0}, "unk_token": "<s>"}}"#;
+    let mut v: Value = serde_json::from_str(text).unwrap();
+    canonicalize_value(&mut v).unwrap();
+    assert_eq!(v["role_to_token"], serde_json::json!({"bos_token": "<s>"}));
+}

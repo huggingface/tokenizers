@@ -23,12 +23,19 @@ def test_spec_dict_copy(gpt2_spec):
         assert gpt2_spec.padding is None
 
 
-def test_pickle_keeps_v1_json(gpt2_spec):
+def test_v1_file_loads_canonical(gpt2_spec):
+    spec = repr(gpt2_spec)
+
+    assert 'version="2.0"' in spec
+    assert "pre_tokenizer=Split(" in spec
+    assert "byte_level=True" in spec
+
+
+def test_pickle_keeps_the_spec(gpt2_spec):
     restored = pickle.loads(pickle.dumps(gpt2_spec))
 
     assert restored.compile().encode(TEXT).ids == gpt2_spec.compile().encode(TEXT).ids
-    assert "pre_tokenizer=ByteLevel(" in repr(restored)
-    assert "model=BPE(" in repr(restored)
+    assert repr(restored) == repr(gpt2_spec)
 
 
 def test_weakref(gpt2_spec):
