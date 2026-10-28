@@ -13,10 +13,21 @@ When calling `Tokenizer.encode` or
 `Tokenizer.encode_batch`, the input
 text(s) go through the following pipeline:
 
--   `normalization`
--   `pre-tokenization`
+-   **added-token extraction (raw)** — literal matches from `added_tokens` /
+    specials are carved out of the raw string first
+-   `normalization` — applied to each remaining text segment
+-   **added-token extraction (normalized)** — a second pass matches
+    `normalized=True` added tokens against the normalized segments
+-   `pre-tokenization` — only the leftover text after both extractions
 -   `model`
 -   `post-processing`
+
+This order is intentional. An `AddedToken` is always matched as a literal
+before the pre-tokenizer runs, so a `Split` / digit / RTL pre-tokenizer never
+sees those spans. If you need pieces (for example RTL 3-digit groups) to go
+through the pre-tokenizer, put them in the **model vocabulary** (train them
+in, or seed the vocab) rather than registering them with `add_tokens()`. See
+[#1957](https://github.com/huggingface/tokenizers/issues/1957).
 
 We'll see in details what happens during each of those steps in detail,
 as well as when you want to `decode <decoding>` some token ids, and how the 🤗 Tokenizers library allows you
