@@ -97,7 +97,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           source .venv/bin/activate
-          make test HF="uvx --from huggingface_hub hf"
+          make test HF="uvx --from huggingface_hub hf" MATURIN_ARGS=--release
 
   quality:
     permissions:

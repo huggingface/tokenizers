@@ -7,7 +7,7 @@ TESTS_RESOURCES = $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/gpt2.json $(DATA_D
 
 # Debug build of the extension, installed editable into the active Python environment.
 develop: stubs
-	maturin develop
+	maturin develop $(MATURIN_ARGS)
 
 stubs:
 	cargo run --manifest-path ./tools/stub-gen/Cargo.toml
