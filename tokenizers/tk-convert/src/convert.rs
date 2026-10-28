@@ -346,9 +346,10 @@ fn kind_of(value: &Value) -> &'static str {
 /// A `Metaspace` pre-tokenizer is two components, so it does not survive as itself.
 ///
 /// It becomes a `MetaspaceNormalizer` in the `normalizer` slot (which rewrites the text) plus a
-/// `Split` on the delimiter here (which cuts it). `Sequence[WhitespaceSplit, Metaspace]` -- the
-/// shape t5 and albert ship -- is the same thing with `drop_whitespace`, and the whole `Sequence`
-/// collapses to the lone `Split`.
+/// `Split` on the delimiter here (which cuts it). `Sequence[Metaspace]` (a Hub wrapping of the
+/// lone form) lowers the same way. `Sequence[WhitespaceSplit, Metaspace]` -- the shape t5 and
+/// albert ship -- is the same thing with `drop_whitespace`, and the whole `Sequence` collapses
+/// to the lone `Split`.
 ///
 /// `split: false` leaves this slot empty. The reader reads a null `pre_tokenizer` as one span
 /// covering the whole text, which is what not cutting means.
@@ -366,6 +367,12 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
                 .and_then(Value::as_array)
                 .map(|m| &m[..])
             {
+                // Hub configs often wrap a lone Metaspace in Sequence; same lowering as the
+                // unwrapped form (issue #2589).
+                Some([only]) if only.get("type").and_then(Value::as_str) == Some("Metaspace") => (
+                    only.as_object().expect("matched as an object").clone(),
+                    false,
+                ),
                 Some([first, second])
                     if first.get("type").and_then(Value::as_str) == Some("WhitespaceSplit")
                         && second.get("type").and_then(Value::as_str) == Some("Metaspace") =>
