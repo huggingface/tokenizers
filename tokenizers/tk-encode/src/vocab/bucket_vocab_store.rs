@@ -418,8 +418,12 @@ impl BucketVocabStore {
     ///
     /// A BPE model built with `ignore_merges` gets the bit on all of them unconditionally, where
     /// otherwise only the entries that proved they reduce to themselves earn it. That makes this
-    /// the question a writer asks to decide whether to spell the flag: if every entry folds, either
+    /// the question the writer asks to decide whether to spell the flag: if every entry folds, either
     /// answer rebuilds the same table, and if any does not, the flag was off.
+    ///
+    /// Training must not use this to preserve the policy: a fully-foldable vocabulary folds either
+    /// way, so derivation cannot tell `false` from `true`. `PipelineBPE` keeps the configured
+    /// policy itself; see [`crate::models::bpe::PipelineBPE::ignore_merges`].
     pub fn all_foldable(&self) -> bool {
         self.entries
             .iter()
