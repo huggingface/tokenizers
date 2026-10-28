@@ -28,6 +28,17 @@ pub struct Tokenizer {
 }
 
 impl Tokenizer {
+    fn from_canonical(json: &str) -> PyResult<Self> {
+        let pipeline: Pipeline = tk::from_json(json).map_err(err)?;
+        let padding = pipeline.get_padding().cloned();
+        let truncation = pipeline.get_truncation().cloned();
+        Ok(Self {
+            pipeline,
+            padding: Mutex::new(padding),
+            truncation: Mutex::new(truncation),
+        })
+    }
+
     fn make_options(
         &self,
         add_special_tokens: bool,
@@ -80,14 +91,29 @@ impl Tokenizer {
     #[pyo3(signature = (path))]
     fn from_file(path: PathBuf) -> PyResult<Self> {
         let canonical = tk::canonicalize_file(path).map_err(convert_err)?;
-        let pipeline: Pipeline = tk::from_json(&canonical).map_err(err)?;
-        let padding = pipeline.get_padding().cloned();
-        let truncation = pipeline.get_truncation().cloned();
-        Ok(Self {
-            pipeline,
-            padding: Mutex::new(padding),
-            truncation: Mutex::new(truncation),
-        })
+        Self::from_canonical(&canonical)
+    }
+
+    /// Loads a tokenizer from a JSON string, accepting the same formats as `from_file`.
+    #[staticmethod]
+    fn from_str(json: &str) -> PyResult<Self> {
+        let canonical = tk::canonicalize_str(json).map_err(convert_err)?;
+        Self::from_canonical(&canonical)
+    }
+
+    /// Returns canonical tokenizer JSON, including the current padding and truncation settings.
+    fn to_str(&self) -> PyResult<String> {
+        let padding = self.clone_padding()?;
+        let truncation = self.clone_truncation()?;
+        tk::to_json_with_config(&self.pipeline, padding.as_ref(), truncation.as_ref()).map_err(err)
+    }
+
+    /// Saves canonical tokenizer JSON to a file, including current padding and truncation settings.
+    ///
+    /// Accepts a string or a `pathlib.Path`. The parent directory must already exist.
+    fn save(&self, path: PathBuf) -> PyResult<()> {
+        std::fs::write(path, self.to_str()?)?;
+        Ok(())
     }
 
     /// Instantiate a new `Tokenizer` from an existing file on the Hugging Face Hub.

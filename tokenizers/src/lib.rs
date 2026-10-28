@@ -93,7 +93,7 @@ pub use tk_encode::FromPretrainedParameters;
 // ---------------------------------------------------------------------------
 pub use tk_serialize::{from_json, from_json_file, json, post_processor_from_json};
 #[cfg(feature = "serialize")]
-pub use tk_serialize::{post_processor_to_json, str_to_json, to_json};
+pub use tk_serialize::{post_processor_to_json, str_to_json, to_json, to_json_with_config};
 
 // ---------------------------------------------------------------------------
 // The legacy-config upgrade pass — all that is left of the config layer.

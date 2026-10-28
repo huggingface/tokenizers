@@ -50,6 +50,10 @@ tokenizer.padding = None
 # Or for one call only, leaving the attribute as it is. `None` switches it off for that call.
 tokenizer.encode_batch(["Hello", "Hello there"], padding=Padding(length=16))
 tokenizer.encode("Hello", padding=None)
+
+# Save the current configuration, or pass it between APIs as JSON text.
+tokenizer.save("saved-tokenizer.json")
+restored = Tokenizer.from_str(tokenizer.to_str())
 ```
 
 `examples/` holds a runnable script for each of these; `make examples` runs them all.
