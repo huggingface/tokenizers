@@ -192,13 +192,12 @@ impl Unigram {
 
             let mut has_single_node = false;
 
-            for bytes in self
+            for n in self
                 .trie
                 .common_prefix_search(lattice.sentence.bytes().skip(begin_pos))
             {
-                let n = bytes.len();
-                let tok = String::from_utf8(bytes).unwrap();
-                let id = self.token_to_ids.token_to_id(&tok).unwrap();
+                let tok = &lattice.sentence[begin_pos..begin_pos + n];
+                let id = self.token_to_ids.token_to_id(tok).unwrap();
 
                 let item = &self.vocab[id as usize];
                 assert_eq!(item.0, tok);
@@ -300,15 +299,14 @@ impl Unigram {
             let best_path_score_till_here = best_path_ends_at[starts_at].best_path_score;
             let mut has_single_node = false;
             let mblen = sentence[starts_at..].chars().next().unwrap().len_utf8();
-            for tok_bytes in self
+            for length in self
                 .trie
                 .common_prefix_search(sentence.bytes().skip(starts_at))
             {
-                let key_pos = starts_at + tok_bytes.len();
-                let token: String = String::from_utf8(tok_bytes).unwrap();
+                let key_pos = starts_at + length;
+                let token = &sentence[starts_at..key_pos];
                 let target_node = &mut best_path_ends_at[key_pos];
-                let length = key_pos - starts_at;
-                let id = self.token_to_ids.token_to_id(&token).unwrap();
+                let id = self.token_to_ids.token_to_id(token).unwrap();
                 let score = self.vocab.get(id as usize).unwrap().1;
                 let candidate_best_path_score = score + best_path_score_till_here;
                 if target_node.starts_at.is_none()
