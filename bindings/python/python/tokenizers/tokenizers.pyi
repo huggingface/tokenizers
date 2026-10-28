@@ -192,7 +192,7 @@ class Tokenizer:
         truncation: Truncation | None = ...,
     ) -> Encoding:
         """
-        Encodes the given text, or pair of texts, to token ids.
+        Encodes the given text, or pair of texts, to token ids (special tokens included by default).
 
         Args:
             input: str or tuple[str, str]
