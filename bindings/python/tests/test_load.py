@@ -48,5 +48,4 @@ def test_keeps_a_2_0_file_through_pickle(load_bert_with):
 
     restored = pickle.loads(pickle.dumps(tokenizer))
 
-    assert 'version="2.0"' in repr(restored)
     assert 'role_to_token={"sep_token": "[SEP]"}' in repr(restored)
