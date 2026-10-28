@@ -17,6 +17,13 @@ type SentencePiece = (String, f64);
 // A full sentence or word + it's count within the dataset
 type Sentence = (String, u32);
 
+/// Log of the corpus token total after removing one piece and handing its frequency to its
+/// alternatives. `n_alternatives` is `alternatives[id].len()` — not the size of the whole
+/// alternatives table (that was a porting bug vs SentencePiece; see #2069).
+fn prune_logsum_alt(sum: f64, freq: f64, n_alternatives: usize) -> f64 {
+    (sum + freq * (n_alternatives - 1) as f64).ln()
+}
+
 fn digamma(mut x: f64) -> f64 {
     let mut result = 0.0;
     while x < 7.0 {
@@ -471,10 +478,9 @@ impl UnigramTrainer {
 
                 // After removing the sentencepiece[i], its frequency freq[i] is
                 // re-assigned to alternatives.
-                // new_sum = current_sum - freq[i] + freq[i] * alternatives.size()
-                //         = current_sum + freq[i] (alternatives - 1)
-
-                let logsum_alt = (sum + freq[id] * (alternatives.len() - 1) as f64).ln();
+                // new_sum = current_sum - freq[i] + freq[i] * alternatives[i].size()
+                //         = current_sum + freq[i] * (alternatives[i].size() - 1)
+                let logsum_alt = prune_logsum_alt(sum, freq[id], alternatives[id].len());
 
                 // The frequencies of alternatives are increased by freq[i].
                 let mut logprob_alt = 0.0;
@@ -898,5 +904,21 @@ mod tests {
         assert_approx_eq!(scores[0], -1.098, 0.01);
         // ln(2) - ln(3)
         assert_approx_eq!(scores[1], -0.405, 0.01);
+    }
+
+    /// SentencePiece's `PruneSentencePieces` grows the corpus total by
+    /// `freq[i] * (alternatives[i].size() - 1)`. Using the outer table length instead flips the
+    /// sign of the loss for common pieces (#2069 / the numbers in that issue).
+    #[test]
+    fn prune_logsum_alt_matches_sentencepiece() {
+        let sum = 1000.0;
+        let freq = 10.0;
+        // One alternative: total unchanged → ln(1000).
+        assert_approx_eq!(prune_logsum_alt(sum, freq, 1), sum.ln(), 1e-12);
+        // Two alternatives: total grows by freq → ln(1010).
+        assert_approx_eq!(prune_logsum_alt(sum, freq, 2), (sum + freq).ln(), 1e-12);
+        // The bug used alternatives.len() (== piece count), e.g. 500.
+        let buggy = (sum + freq * (500 - 1) as f64).ln();
+        assert!(buggy > prune_logsum_alt(sum, freq, 1));
     }
 }
