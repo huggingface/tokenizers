@@ -40,3 +40,9 @@ def test_pickle_keeps_the_spec(gpt2_spec):
 
 def test_weakref(gpt2_spec):
     assert weakref.ref(gpt2_spec)() is gpt2_spec
+
+
+def test_pickles_carry_bytes(gpt2_spec):
+    for obj in (gpt2_spec, gpt2_spec.compile()):
+        _, (payload,) = obj.__reduce__()
+        assert isinstance(payload, bytes)

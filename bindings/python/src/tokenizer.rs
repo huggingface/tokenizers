@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyBytes, PyDict};
 use serde_json::{Map, Value};
 
 use tk::pipeline::PipelineTokenizer;
@@ -187,14 +187,20 @@ impl Tokenizer {
     }
 
     /// Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
-    fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
-        let json = self.spec().to_json();
+    fn __reduce__<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<(Bound<'py, PyAny>, (Bound<'py, PyBytes>,))> {
+        // Bytes, not str: a non-ASCII str isn't stored as UTF-8, so each pickle step re-encodes it.
+        // https://docs.python.org/3.14/c-api/unicode.html#unicode-objects
+        let json = PyBytes::new(py, self.spec().to_json().as_bytes());
         Ok((py.get_type::<Self>().getattr("_unpickle")?, (json,)))
     }
 
     /// Unpickles a `Tokenizer`
     #[staticmethod]
-    fn _unpickle(json: &str) -> PyResult<Self> {
+    fn _unpickle(json: &[u8]) -> PyResult<Self> {
+        let json = std::str::from_utf8(json).map_err(err)?;
         Ok(Self::new(TokenizerSpec::from_json(json).map_err(err)?))
     }
 

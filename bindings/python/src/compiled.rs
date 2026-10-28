@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyBytes, PyDict};
 use tk::PaddingParams;
 use tk::TruncationParams;
 use tk::pipeline::EncodeOptions;
@@ -247,14 +247,20 @@ impl CompiledTokenizer {
     ///
     /// The pickle holds the whole `tokenizer.json`, written from the built tokenizer, and unpickling
     /// compiles it again.
-    fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+    fn __reduce__<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<(Bound<'py, PyAny>, (Bound<'py, PyBytes>,))> {
         let json = py.detach(|| to_json(&self.pipeline)).map_err(err)?;
+        // Bytes, not str, for the same reason as `Tokenizer.__reduce__`.
+        let json = PyBytes::new(py, json.as_bytes());
         Ok((py.get_type::<Self>().getattr("_unpickle")?, (json,)))
     }
 
     /// Unpickles a `CompiledTokenizer`
     #[staticmethod]
-    fn _unpickle(py: Python<'_>, json: &str) -> PyResult<Self> {
+    fn _unpickle(py: Python<'_>, json: &[u8]) -> PyResult<Self> {
+        let json = std::str::from_utf8(json).map_err(err)?;
         Self::new(py, &TokenizerSpec::from_json(json).map_err(err)?)
     }
 
