@@ -60,7 +60,7 @@ def test_repr():
         '    truncation=Truncation(max_length=10, strategy="longest_first", direction="right"),\n'
         "    padding=Padding(\n"
     )
-    assert '        vocab={"[UNK]": 0, "[CLS]": 1, "[SEP]": 2, "[PAD]": 3, "[MASK]": 4, ...},\n' in rendered
+    assert """        vocab={"!": 5, "\\"": 6, "#": 7, "##'": 5611, "##,": 6150, ...},\n""" in rendered
 
 
 def test_repr_nested(llama3):

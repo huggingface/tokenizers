@@ -30,7 +30,7 @@ def test_missing_file():
 @pytest.mark.parametrize(
     ("keys", "error"),
     [
-        ({"foo": 1, "bar": 2}, "`foo`, `bar`"),
+        ({"foo": 1, "bar": 2}, "`bar`, `foo`"),
         # 0.23 refuses a version it does not know.
         ({"version": "3.0"}, "3.0"),
         # 0.23 refuses `role_to_token`, so a "1.0" file can't carry it.

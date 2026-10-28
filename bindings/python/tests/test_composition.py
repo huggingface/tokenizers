@@ -1,7 +1,5 @@
 import copy
-import json
 import pickle
-import re
 import weakref
 
 from tokenizers import Padding
@@ -42,31 +40,6 @@ def test_pickle_keeps_the_spec(gpt2_spec):
 
 def test_weakref(gpt2_spec):
     assert weakref.ref(gpt2_spec)() is gpt2_spec
-
-
-def test_pickle_writes_the_canonical_key_order(gpt2_spec):
-    _, (text,) = gpt2_spec.__reduce__()
-
-    assert list(json.loads(text)) == [
-        "version",
-        "truncation",
-        "padding",
-        "role_to_token",
-        "added_tokens",
-        "normalizer",
-        "pre_tokenizer",
-        "post_processor",
-        "decoder",
-        "model",
-    ]
-
-
-def test_repr_lists_the_keys_in_pickle_order(gpt2_spec):
-    _, (text,) = gpt2_spec.__reduce__()
-
-    keys = re.findall(r"^    (\w+)=", repr(gpt2_spec), re.MULTILINE)
-
-    assert keys == list(json.loads(text))
 
 
 def test_pickles_carry_bytes(gpt2_spec):

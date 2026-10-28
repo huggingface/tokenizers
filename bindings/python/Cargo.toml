@@ -21,10 +21,7 @@ pyo3 = { version = "=0.29", default-features = false, features = [
 ] }
 #TODO: this will be a soft dependency later on IMO.
 numpy = "=0.29"
-# `preserve_order` is required for `repr` and the pickle to keep the key order of the `tokenizer.json`
-# unsloth relies on key order to fix tokenizers:
-# https://github.com/unslothai/unsloth/blob/61b2ffe04a1041e507135328ee0e25019dfb629e/unsloth/tokenizer_utils.py#L554-L557
-serde_json = { version = "1.0", features = ["preserve_order"] }
+serde_json = "1.0"
 # Renamed: this crate's own lib is `tokenizers` too.
 tk = { package = "tokenizers", path = "../../tokenizers", default-features = false, features = [
   # `to_json`, for `__repr__` and pickling.

@@ -52,9 +52,9 @@ impl Tokenizer {
 
 #[pymethods]
 impl Tokenizer {
-    /// Loads a `tokenizer.json`.
+    /// Loads a `tokenizer.json` and upgrades it to the 2.0 format.
     ///
-    /// The file is only read here. Errors in its components show up at `compile()`.
+    /// Errors in the file's components, such as the model or the normalizer, show up at `compile()`.
     ///
     /// Args:
     ///     path:
@@ -198,7 +198,6 @@ impl Tokenizer {
         Ok((py.get_type::<Self>().getattr("_unpickle")?, (json,)))
     }
 
-    /// Unpickles a `Tokenizer`
     #[staticmethod]
     fn _unpickle(json: &[u8]) -> PyResult<Self> {
         let json = std::str::from_utf8(json).map_err(err)?;
@@ -206,38 +205,11 @@ impl Tokenizer {
     }
 
     fn __repr__(&self) -> String {
-        let spec = self.spec();
-        let [normalizer, pre_tokenizer, post_processor, decoder] = [
-            &spec.normalizer,
-            &spec.pre_tokenizer,
-            &spec.post_processor,
-            &spec.decoder,
-        ]
-        .map(|component| component.as_deref().map(ComponentSpec::json));
-        let model = spec.model.json();
-        let version = Value::from("2.0");
-        repr::tokenizer(
-            "Tokenizer",
-            [
-                ("version", Field::Json(&version)),
-                ("truncation", Field::Truncation(spec.truncation.as_ref())),
-                ("padding", Field::Padding(spec.padding.as_ref())),
-                ("role_to_token", Field::Json(&spec.role_to_token)),
-                ("added_tokens", Field::Json(&spec.added_tokens)),
-                ("normalizer", Field::Component(normalizer.as_deref())),
-                ("pre_tokenizer", Field::Component(pre_tokenizer.as_deref())),
-                (
-                    "post_processor",
-                    Field::Component(post_processor.as_deref()),
-                ),
-                ("decoder", Field::Component(decoder.as_deref())),
-                ("model", Field::Component(Some(&model))),
-            ],
-        )
+        self.spec().repr("Tokenizer")
     }
 }
 
-/// Holds the specification (canonical JSON) of a [`PipelineTokenizer`].
+/// A `tokenizer.json` in the 2.0 format, one field per top-level key.
 pub(crate) struct TokenizerSpec {
     /// The truncation an encode applies when it doesn't override it.
     truncation: Option<TruncationParams>,
@@ -253,7 +225,7 @@ pub(crate) struct TokenizerSpec {
 }
 
 impl TokenizerSpec {
-    /// Reads a `tokenizer.json` of any version and canonicalizes it.
+    /// Reads a `tokenizer.json` of any version and upgrades it to the 2.0 format.
     pub(crate) fn from_json(text: &str) -> Result<Self> {
         let mut file = serde_json::from_str(text)?;
         canonicalize_value(&mut file)?;
@@ -284,7 +256,7 @@ impl TokenizerSpec {
         from_json(&self.to_json())
     }
 
-    /// An independent copy: editing components of the new object do not affect `self`'s components
+    /// A deep copy: the resulting object is independent.
     fn copy(&self) -> Self {
         let copy = |spec: &Option<Arc<ComponentSpec>>| spec.as_ref().map(|spec| spec.copy());
         Self {
@@ -300,7 +272,38 @@ impl TokenizerSpec {
         }
     }
 
-    /// Writes the spec as a canonical `tokenizer.json`.
+    /// Renders the spec as `name(...)`, one line per top-level key.
+    pub(crate) fn repr(&self, name: &str) -> String {
+        let [normalizer, pre_tokenizer, post_processor, decoder] = [
+            &self.normalizer,
+            &self.pre_tokenizer,
+            &self.post_processor,
+            &self.decoder,
+        ]
+        .map(|component| component.as_deref().map(ComponentSpec::json));
+        let model = self.model.json();
+        let version = Value::from("2.0");
+        repr::tokenizer(
+            name,
+            [
+                ("version", Field::Json(&version)),
+                ("truncation", Field::Truncation(self.truncation.as_ref())),
+                ("padding", Field::Padding(self.padding.as_ref())),
+                ("role_to_token", Field::Json(&self.role_to_token)),
+                ("added_tokens", Field::Json(&self.added_tokens)),
+                ("normalizer", Field::Component(normalizer.as_deref())),
+                ("pre_tokenizer", Field::Component(pre_tokenizer.as_deref())),
+                (
+                    "post_processor",
+                    Field::Component(post_processor.as_deref()),
+                ),
+                ("decoder", Field::Component(decoder.as_deref())),
+                ("model", Field::Component(Some(&model))),
+            ],
+        )
+    }
+
+    /// Writes the spec as a `tokenizer.json` in the 2.0 format.
     fn to_json(&self) -> String {
         let truncation = truncation_to_json(self.truncation.as_ref());
         let padding = padding_to_json(self.padding.as_ref());
@@ -317,7 +320,6 @@ impl TokenizerSpec {
     }
 }
 
-/// Writes a component's JSON straight from the shared object, `null` when there is none.
 fn component_json(spec: Option<&ComponentSpec>) -> String {
     let json = spec.map(ComponentSpec::json);
     serde_json::to_string(&json.as_deref()).expect("a JSON object with string keys always writes")

@@ -9,21 +9,18 @@ use tk::pipeline::PipelineToken;
 use tk::pipeline::PipelineTokenizer;
 use tk::to_json;
 
-use crate::JsonObject;
 use crate::encoding::Encoding;
 use crate::error::err;
 use crate::input::PyInput;
 use crate::options::OverrideSentinel;
-use crate::repr::{self, Field};
 use crate::tokenizer::TokenizerSpec;
 use crate::type_hints::TokenIds;
 
 /// A tokenizer built by `Tokenizer.compile()`. Encodes text into token ids, and decodes token
 /// ids back into text.
 ///
-/// A compiled tokenizer is immutable and can be shared across threads.
-/// Pickling serializes the compiled tokenizer as its `tokenizer.json` JSON representation.
-/// Unpickling builds the compiled tokenizer from that JSON spec.
+/// A compiled tokenizer is immutable and can be shared across threads. Unpickling one
+/// compiles it again.
 #[pyclass(frozen, module = "tokenizers")]
 pub struct CompiledTokenizer {
     pipeline: PipelineTokenizer,
@@ -31,6 +28,7 @@ pub struct CompiledTokenizer {
 
 impl CompiledTokenizer {
     pub(crate) fn new(py: Python<'_>, spec: &TokenizerSpec) -> PyResult<Self> {
+        // py.detach releases the GIL while the Rust code runs.
         let pipeline = py.detach(|| spec.compile()).map_err(err)?;
         Ok(Self { pipeline })
     }
@@ -74,7 +72,7 @@ impl CompiledTokenizer {
             padding: padding.into(),
             truncation: truncation.into(),
         };
-        // py.detach releases the GIL while encode runs on Rust side
+        // py.detach releases the GIL while the Rust code runs.
         let encoding = py
             .detach(|| self.pipeline.encode(input, &options).wait())
             .map_err(err)?
@@ -122,6 +120,7 @@ impl CompiledTokenizer {
             padding: padding.into(),
             truncation: truncation.into(),
         };
+        // py.detach releases the GIL while the Rust code runs.
         py.detach(|| -> tk::Result<Vec<String>> {
             let encodings = self.pipeline.encode(input, &options).wait()?;
             Ok(self
@@ -169,7 +168,7 @@ impl CompiledTokenizer {
             truncation: truncation.into(),
         };
         let inputs = Inputs::Batch(inputs.into_iter().map(Input::from).collect());
-        // py.detach releases the GIL while encode runs on Rust side
+        // py.detach releases the GIL while the Rust code runs.
         let encodings = py
             .detach(|| self.pipeline.encode(inputs, &options).wait())
             .map_err(err)?;
@@ -194,7 +193,7 @@ impl CompiledTokenizer {
         skip_special_tokens: bool,
     ) -> PyResult<String> {
         let ids = ids.as_slice();
-        // py.detach releases the GIL
+        // py.detach releases the GIL while the Rust code runs.
         py.detach(|| self.pipeline.decode(ids, skip_special_tokens))
             .map_err(err)
     }
@@ -217,6 +216,7 @@ impl CompiledTokenizer {
         skip_special_tokens: bool,
     ) -> PyResult<Vec<String>> {
         let ids = ids.as_slice();
+        // py.detach releases the GIL while the Rust code runs.
         Ok(py.detach(|| self.pipeline.decode_tokens(ids, skip_special_tokens)))
     }
 
@@ -238,32 +238,23 @@ impl CompiledTokenizer {
         &self,
         py: Python<'py>,
     ) -> PyResult<(Bound<'py, PyAny>, (Bound<'py, PyBytes>,))> {
+        // py.detach releases the GIL while the Rust code runs.
         let json = py.detach(|| to_json(&self.pipeline)).map_err(err)?;
         // Bytes, not str, for the same reason as `Tokenizer.__reduce__`.
         let json = PyBytes::new(py, json.as_bytes());
         Ok((py.get_type::<Self>().getattr("_unpickle")?, (json,)))
     }
 
-    /// Unpickles a `CompiledTokenizer`
     #[staticmethod]
     fn _unpickle(py: Python<'_>, json: &[u8]) -> PyResult<Self> {
         let json = std::str::from_utf8(json).map_err(err)?;
         Self::new(py, &TokenizerSpec::from_json(json).map_err(err)?)
     }
 
-    // If that gets too slow, we can customize the render to avoid transitioning through
-    // the json representation (which has to write the whole vocab)
     fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        // py.detach releases the GIL while the Rust code runs.
         let json = py.detach(|| to_json(&self.pipeline)).map_err(err)?;
-        let file: JsonObject = serde_json::from_str(&json).expect("to_json writes a JSON object");
-        let fields = file.iter().map(|(key, value)| {
-            let field = match key.as_str() {
-                "padding" => Field::Padding(self.pipeline.get_padding()),
-                "truncation" => Field::Truncation(self.pipeline.get_truncation()),
-                _ => Field::Json(value),
-            };
-            (key.as_str(), field)
-        });
-        Ok(repr::tokenizer("CompiledTokenizer", fields))
+        let spec = TokenizerSpec::from_json(&json).map_err(err)?;
+        Ok(spec.repr("CompiledTokenizer"))
     }
 }
