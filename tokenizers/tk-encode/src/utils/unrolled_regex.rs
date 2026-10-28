@@ -45,7 +45,12 @@ impl Grammar {
             Grammar::Cl100k { digit_cap: 1 } => {
                 bitcannon::bitcannon_qwen(text, tags, starts, flag, out)
             }
-            Grammar::Cl100k { .. } => bitcannon::bitcannon_cl100k(text, tags, starts, flag, out),
+            Grammar::Cl100k { digit_cap: 3 } => {
+                bitcannon::bitcannon_cl100k(text, tags, starts, flag, out)
+            }
+            Grammar::Cl100k { digit_cap } => {
+                bitcannon::bitcannon_cl100k_with_digit_cap(text, tags, starts, flag, out, digit_cap)
+            }
             Grammar::O200k => bitcannon::bitcannon_o200k(text, tags, starts, flag, later, out),
             Grammar::Tekken => bitcannon::bitcannon_tekken(text, tags, starts, flag, later, out),
             Grammar::Kimi => bitcannon::bitcannon_kimi(text, tags, starts, flag, later, out),
