@@ -1,5 +1,5 @@
 use super::super::Result;
-use super::buckets::{AddedTokenFlags, Buckets};
+use super::added_token_matcher::{AddedTokenFlags, AddedTokenMatcher};
 use crate::pipeline::Normalizer;
 use crate::pipeline::PipelinePatternMatcher;
 use crate::pre_tokenizers::whitespace::is_word_char;
@@ -161,15 +161,9 @@ impl std::hash::Hash for AddedToken {
 ///
 #[derive(Clone)]
 pub struct AddedVocabulary {
-    /// New fast path for normalize and extra needs:
-    ///  - multi-bucket first bytes. If its len is 1, we use memchr; otherwise we just check each
-    ///    byte on that table lookup. Its a 256-byte table.
-    ///  - the actual buckets. We could use small vec here. Chose to impl it. Buckets give pointers
-    ///    to the inner vocab store.
-    ///  - the metadata of each token.
     token_metadata: Box<[AddedTokenFlags]>, // indexed by token id
-    normalized_vocab: Buckets,
-    vocab: Buckets,
+    normalized_vocab: AddedTokenMatcher,
+    vocab: AddedTokenMatcher,
 }
 impl fmt::Debug for AddedVocabulary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -187,8 +181,8 @@ impl AddedVocabulary {
     pub fn new() -> Self {
         Self {
             token_metadata: Box::new([]),
-            normalized_vocab: Buckets::new(),
-            vocab: Buckets::new(),
+            normalized_vocab: AddedTokenMatcher::default(),
+            vocab: AddedTokenMatcher::default(),
         }
     }
     /// Size of the additional vocabulary
@@ -358,8 +352,8 @@ impl AddedVocabulary {
                 raw_tokens.push((form, id));
             }
         }
-        let vocab = Buckets::from_tokens(raw_tokens)?;
-        let normalized_vocab = Buckets::from_tokens(norm_tokens)?;
+        let vocab = AddedTokenMatcher::new(raw_tokens)?;
+        let normalized_vocab = AddedTokenMatcher::new(norm_tokens)?;
         self.token_metadata = metadata.into();
         self.vocab = vocab;
         self.normalized_vocab = normalized_vocab;
@@ -382,13 +376,9 @@ impl PipelinePatternMatcher for AddedVocabulary {
         };
         let mut search = search_offset;
         while search < bytes.len() {
-            // since match_bytes goes to the end, no match means we reached the end.
-            let (id, start, len) = match vocab.match_bytes(&bytes[search..]) {
-                Some((id, start, len)) if len > 0 => (id, start, len),
-                _ => return None,
-            };
-            let mut match_start = search + start as usize;
-            let mut match_end = match_start + len as usize;
+            let (id, found) = vocab.find(&bytes[search..])?;
+            let mut match_start = search + found.start;
+            let mut match_end = search + found.end;
             let metadata = &self.token_metadata[id as usize];
             if encode_special_tokens && metadata.special {
                 search = match_end;
@@ -421,7 +411,7 @@ impl Default for AddedVocabulary {
 
 // `AddedTokenWithId` and `impl Serialize for AddedVocabulary` are in `super::serialization`, next to
 // this file -- an added vocabulary writes its *logical* token list and never the derived
-// `Buckets`/`VocabStore`, so that impl is hand-written rather than a derive.
+// `AddedTokenMatcher`, so that impl is hand-written rather than a derive.
 
 #[cfg(test)]
 mod tests {
@@ -612,7 +602,7 @@ mod tests {
 
     #[test]
     fn normalized_tokens_are_stored_by_normalized_form() {
-        // The Buckets rewrite doesn't retain the original content of normalized tokens:
+        // The matcher doesn't retain the original content of normalized tokens:
         // they are stored (and decoded) by their normalized form.
         let model = ModelMock::new(&[]);
         let mut vocab = AddedVocabulary::new();

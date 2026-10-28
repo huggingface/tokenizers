@@ -1,0 +1,18 @@
+[package]
+name = "matcher-bench"
+version = "0.0.0"
+edition = "2024"
+
+[features]
+# The bucket matcher's API, for the build against main.
+buckets = []
+
+[dependencies]
+# The tokenizers checkout to measure. start_job.sh points both paths at /w/main or /w/branch; TOKENIZERS_DIR locally.
+tokenizers = { path = "/w/branch/tokenizers", features = ["regex"] }
+tk-encode = { path = "/w/branch/tokenizers/tk-encode" }
+serde_json = "1"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1

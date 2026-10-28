@@ -1,0 +1,940 @@
+== 15:00:41 start rounds=5 secs=1 flavor=cpu-performance
+== machine AMD EPYC 7R13 Processor, nproc 32, kernel 6.12.113-138.209.amzn2023.x86_64, pinned to taskset -c 0
+== 15:00:41 corpora
+[15:00:45] english: 20974989 bytes from HuggingFaceFW/fineweb@9bb295dd
+[15:00:59] code: 35297384 bytes, 13899 distinct patches from SWE-bench/SWE-smith-trajectories@08e109b4
+[15:01:05] traces: 6000 conversations
+
+
+tokenizer.json:   0%|          | 0.00/1.36M [00:00<?, ?B/s][A
+tokenizer.json: 100%|██████████| 1.36M/1.36M [00:00<00:00, 41.6MB/s]
+None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+
+
+tokenizer_config.json:   0%|          | 0.00/26.0 [00:00<?, ?B/s][A
+tokenizer_config.json: 100%|██████████| 26.0/26.0 [00:00<00:00, 285kB/s]
+
+
+config.json:   0%|          | 0.00/665 [00:00<?, ?B/s][A
+config.json: 100%|██████████| 665/665 [00:00<00:00, 4.27MB/s]
+
+
+vocab.json:   0%|          | 0.00/1.04M [00:00<?, ?B/s][A
+vocab.json: 100%|██████████| 1.04M/1.04M [00:00<00:00, 34.2MB/s]
+
+
+merges.txt:   0%|          | 0.00/456k [00:00<?, ?B/s][A
+merges.txt: 100%|██████████| 456k/456k [00:00<00:00, 43.2MB/s]
+
+
+tokenizer.json:   0%|          | 0.00/1.36M [00:00<?, ?B/s][A
+tokenizer.json: 100%|██████████| 1.36M/1.36M [00:00<00:00, 42.8MB/s]
+[15:01:07] openai-community/gpt2@607a30d7: 1 added tokens, agentic 21114589 bytes, template no, 0 conversations rendered as alternating turns, 0 rejected (written as plain lines)
+
+
+tokenizer.json:   0%|          | 0.00/27.9M [00:00<?, ?B/s][A
+tokenizer.json: 100%|██████████| 27.9M/27.9M [00:00<00:00, 134MB/s]
+
+
+tokenizer_config.json:   0%|          | 0.00/4.20k [00:00<?, ?B/s][A
+tokenizer_config.json: 100%|██████████| 4.20k/4.20k [00:00<00:00, 18.9MB/s]
+
+
+tokenizer.json:   0%|          | 0.00/27.9M [00:00<?, ?B/s][A
+tokenizer.json: 100%|██████████| 27.9M/27.9M [00:00<00:00, 194MB/s]
+
+
+special_tokens_map.json:   0%|          | 0.00/98.0 [00:00<?, ?B/s][A
+special_tokens_map.json: 100%|██████████| 98.0/98.0 [00:00<00:00, 1.58MB/s]
+
+
+chat_template.jinja:   0%|          | 0.00/16.7k [00:00<?, ?B/s][A
+chat_template.jinja: 100%|██████████| 16.7k/16.7k [00:00<00:00, 73.1MB/s]
+[15:01:17] openai/gpt-oss-20b@6cee5e81: 21 added tokens, agentic 21002136 bytes, template yes, 0 conversations rendered as alternating turns, 0 rejected (written as plain lines)
+
+
+tokenizer.json:   0%|          | 0.00/11.4M [00:00<?, ?B/s][A
+tokenizer.json: 100%|██████████| 11.4M/11.4M [00:00<00:00, 124MB/s]
+
+
+tokenizer_config.json:   0%|          | 0.00/9.73k [00:00<?, ?B/s][A
+tokenizer_config.json: 100%|██████████| 9.73k/9.73k [00:00<00:00, 32.3MB/s]
+
+
+vocab.json:   0%|          | 0.00/2.78M [00:00<?, ?B/s][A
+vocab.json: 100%|██████████| 2.78M/2.78M [00:00<00:00, 51.7MB/s]
+
+
+merges.txt:   0%|          | 0.00/1.67M [00:00<?, ?B/s][A
+merges.txt: 100%|██████████| 1.67M/1.67M [00:00<00:00, 60.8MB/s]
+
+
+tokenizer.json:   0%|          | 0.00/11.4M [00:00<?, ?B/s][A
+tokenizer.json: 100%|██████████| 11.4M/11.4M [00:00<00:00, 69.8MB/s]
+[15:01:26] Qwen/Qwen3-8B@b968826d: 26 added tokens, agentic 20998122 bytes, template yes, 0 conversations rendered as alternating turns, 0 rejected (written as plain lines)
+
+
+tokenizer.json:   0%|          | 0.00/7.85M [00:00<?, ?B/s][A
+tokenizer.json: 100%|██████████| 7.85M/7.85M [00:00<00:00, 47.8MB/s]
+
+
+tokenizer_config.json:   0%|          | 0.00/3.13k [00:00<?, ?B/s][A
+tokenizer_config.json: 100%|██████████| 3.13k/3.13k [00:00<00:00, 41.4MB/s]
+
+
+tokenizer.json:   0%|          | 0.00/7.85M [00:00<?, ?B/s][A
+tokenizer.json: 100%|██████████| 7.85M/7.85M [00:00<00:00, 34.9MB/s]
+[15:01:30] deepseek-ai/DeepSeek-V3@e815299b: 818 added tokens, agentic 21006958 bytes, template yes, 0 conversations rendered as alternating turns, 0 rejected (written as plain lines)
+
+
+tokenizer.json:   0%|          | 0.00/17.1M [00:00<?, ?B/s][A
+tokenizer.json: 100%|██████████| 17.1M/17.1M [00:00<00:00, 93.5MB/s]
+
+
+tokenizer_config.json:   0%|          | 0.00/188k [00:00<?, ?B/s][A
+tokenizer_config.json: 100%|██████████| 188k/188k [00:00<00:00, 56.1MB/s]
+
+
+tokenizer.json:   0%|          | 0.00/17.1M [00:00<?, ?B/s][A
+tokenizer.json: 100%|██████████| 17.1M/17.1M [00:00<00:00, 117MB/s]
+
+
+special_tokens_map.json:   0%|          | 0.00/420 [00:00<?, ?B/s][A
+special_tokens_map.json: 100%|██████████| 420/420 [00:00<00:00, 2.90MB/s]
+
+
+chat_template.jinja:   0%|          | 0.00/10.5k [00:00<?, ?B/s][A
+chat_template.jinja: 100%|██████████| 10.5k/10.5k [00:00<00:00, 39.3MB/s]
+[15:01:37] nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16@bf77c317: 1000 added tokens, agentic 21013308 bytes, template yes, 0 conversations rendered as alternating turns, 0 rejected (written as plain lines)
+
+
+tokenizer.json:   0%|          | 0.00/1.66M [00:00<?, ?B/s][A
+tokenizer.json: 100%|██████████| 1.66M/1.66M [00:00<00:00, 26.9MB/s]
+
+
+tokenizer_config.json:   0%|          | 0.00/571 [00:00<?, ?B/s][A
+tokenizer_config.json: 100%|██████████| 571/571 [00:00<00:00, 4.28MB/s]
+[15:01:37] datalab-to/surya-ocr-2: Tokenizer class TokenizersBackend does not exist or is not currently imported.; using tokenizer.json and the repo's template
+
+
+chat_template.jinja:   0%|          | 0.00/2.87k [00:00<?, ?B/s][A
+chat_template.jinja: 100%|██████████| 2.87k/2.87k [00:00<00:00, 15.1MB/s]
+[15:01:41] datalab-to/surya-ocr-2@3b3d4cdf: 1948 added tokens, agentic 20993681 bytes, template yes, 3094 conversations rendered as alternating turns, 0 rejected (written as plain lines)
+
+
+tokenizer.json:   0%|          | 0.00/33.4M [00:00<?, ?B/s][A
+tokenizer.json: 100%|██████████| 33.4M/33.4M [00:00<00:00, 199MB/s]
+
+
+tokenizer_config.json:   0%|          | 0.00/1.16M [00:00<?, ?B/s][A
+tokenizer_config.json: 100%|██████████| 1.16M/1.16M [00:00<00:00, 72.3MB/s]
+
+
+tokenizer.model:   0%|          | 0.00/4.69M [00:00<?, ?B/s][A
+tokenizer.model: 100%|██████████| 4.69M/4.69M [00:00<00:00, 36.3MB/s]
+
+
+tokenizer.json:   0%|          | 0.00/33.4M [00:00<?, ?B/s][A
+tokenizer.json: 100%|██████████| 33.4M/33.4M [00:00<00:00, 244MB/s]
+
+
+added_tokens.json:   0%|          | 0.00/35.0 [00:00<?, ?B/s][A
+added_tokens.json: 100%|██████████| 35.0/35.0 [00:00<00:00, 182kB/s]
+
+
+special_tokens_map.json:   0%|          | 0.00/662 [00:00<?, ?B/s][A
+special_tokens_map.json: 100%|██████████| 662/662 [00:00<00:00, 7.65MB/s]
+[15:01:49] gaunernst/gemma-3-27b-it-int4-awq@7cf8bdc8: 6415 added tokens, agentic 20997913 bytes, template yes, 3094 conversations rendered as alternating turns, 0 rejected (written as plain lines)
+== revisions {"HuggingFaceFW/fineweb": "9bb295ddab0e05d785b879661af7260fed5140fc", "SWE-bench/SWE-smith-trajectories": "08e109b4a59eaeebf80e4675cd125d42e7ac99a4", "openai-community/gpt2": "607a30d783dfa663caf39e06633721c8d4cfcd7e", "openai/gpt-oss-20b": "6cee5e81ee83917806bbde320786a8fb61efebee", "Qwen/Qwen3-8B": "b968826d9c46dd6066d109eabc6255188de91218", "deepseek-ai/DeepSeek-V3": "e815299b0bcbac849fa540c768ef21845365c9eb", "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": "bf77c3174f68ad409e1c2aa60daeb46e32d1c606", "datalab-to/surya-ocr-2": "3b3d4cdf88d6928b0acdc75181b13206ea67c4a3", "gaunernst/gemma-3-27b-it-int4-awq": "7cf8bdc81343c635390dd1e1bf590ab22dd6f366"}
+ 21006958 /corpora/agentic_DeepSeek-V3.txt
+ 21013308 /corpora/agentic_NVIDIA-Nemotron-3-Nano-30B-A3B-BF16.txt
+ 20998122 /corpora/agentic_Qwen3-8B.txt
+ 20997913 /corpora/agentic_gemma-3-27b-it-int4-awq.txt
+ 21002136 /corpora/agentic_gpt-oss-20b.txt
+ 21114589 /corpora/agentic_gpt2.txt
+ 20993681 /corpora/agentic_surya-ocr-2.txt
+ 35297384 /corpora/code.txt
+ 20974989 /corpora/english.txt
+203399080 total
+== 15:01:50 checkouts @ d9a5e8af4b5898aff65981ab472d5466a43698bc
+== branch: main + branch.diff (142 added lines): perf/aho-corasick @ d9a5e8af+dirty
+== 15:01:51 build
+== main Cargo.lock: version = "1.1.5" version = "2.8.3" 
+== branch Cargo.lock: version = "1.1.5" version = "2.8.3" 
+== 15:03:03 rounds
+BUILD	1	buckets	DeepSeek-V3	818	11469.9	568104	637755
+MATCHER	1	buckets	DeepSeek-V3	english	whole	69588.4	0	cbf29ce484222325
+MATCHER	1	buckets	DeepSeek-V3	english	4k	47742.0	0	e739cd99ef1d3d32
+MATCHER	1	buckets	DeepSeek-V3	code	whole	32029.3	0	cbf29ce484222325
+MATCHER	1	buckets	DeepSeek-V3	code	4k	24977.6	0	7974cb587e6b19d9
+MATCHER	1	buckets	DeepSeek-V3	agentic	whole	6164.0	32929	de0748a98683edc0
+MATCHER	1	buckets	DeepSeek-V3	agentic	4k	5858.4	32929	75da54b57c343705
+BUILD	1	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	1000	255.7	34695	107302
+MATCHER	1	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	whole	1770.8	0	cbf29ce484222325
+MATCHER	1	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	4k	1735.2	0	e739cd99ef1d3d32
+MATCHER	1	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	whole	1645.1	1	e31b7644490c391b
+MATCHER	1	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	4k	1646.7	1	44be80b7baa5c227
+MATCHER	1	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	whole	1413.2	65998	24ea8526175601c3
+MATCHER	1	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	4k	1403.2	65998	05a71d703071b977
+BUILD	1	buckets	Qwen3-8B	26	99.7	608081	615733
+MATCHER	1	buckets	Qwen3-8B	english	whole	70000.5	0	cbf29ce484222325
+MATCHER	1	buckets	Qwen3-8B	english	4k	47868.4	0	e739cd99ef1d3d32
+MATCHER	1	buckets	Qwen3-8B	code	whole	30634.3	0	cbf29ce484222325
+MATCHER	1	buckets	Qwen3-8B	code	4k	23868.9	0	7974cb587e6b19d9
+MATCHER	1	buckets	Qwen3-8B	agentic	whole	5092.4	53562	b1b7e948b02cc46b
+MATCHER	1	buckets	Qwen3-8B	agentic	4k	4900.7	53562	4f783ffaa3bbfafe
+BUILD	1	buckets	gemma-3-27b-it-int4-awq	6415	4885.9	1234575	1607279
+MATCHER	1	buckets	gemma-3-27b-it-int4-awq	english	whole	567.7	114363	53faac5390cdf9ed
+MATCHER	1	buckets	gemma-3-27b-it-int4-awq	english	4k	583.1	114363	5ad8fe23c9f56500
+MATCHER	1	buckets	gemma-3-27b-it-int4-awq	code	whole	139.3	1127490	f68e29dbd5b93f5e
+MATCHER	1	buckets	gemma-3-27b-it-int4-awq	code	4k	138.1	1127490	7d52e126edfb0f80
+MATCHER	1	buckets	gemma-3-27b-it-int4-awq	agentic	whole	173.6	543243	2a2bc3b87cc5e8e5
+MATCHER	1	buckets	gemma-3-27b-it-int4-awq	agentic	4k	174.9	543243	d40e91ea06526978
+BUILD	1	buckets	gpt-oss-20b	21	110.8	801407	808840
+MATCHER	1	buckets	gpt-oss-20b	english	whole	47147.2	0	cbf29ce484222325
+MATCHER	1	buckets	gpt-oss-20b	english	4k	31025.9	0	e739cd99ef1d3d32
+MATCHER	1	buckets	gpt-oss-20b	code	whole	27590.0	0	cbf29ce484222325
+MATCHER	1	buckets	gpt-oss-20b	code	4k	22023.9	0	7974cb587e6b19d9
+MATCHER	1	buckets	gpt-oss-20b	agentic	whole	4441.9	72255	7fdbdff31a9d1653
+MATCHER	1	buckets	gpt-oss-20b	agentic	4k	4251.5	72163	99e37c0b1dadf4ce
+BUILD	1	buckets	gpt2	1	65.6	201671	207884
+MATCHER	1	buckets	gpt2	english	whole	50593.4	0	cbf29ce484222325
+MATCHER	1	buckets	gpt2	english	4k	27351.6	0	e739cd99ef1d3d32
+MATCHER	1	buckets	gpt2	code	whole	27949.2	0	cbf29ce484222325
+MATCHER	1	buckets	gpt2	code	4k	19865.5	0	7974cb587e6b19d9
+MATCHER	1	buckets	gpt2	agentic	whole	46909.4	0	cbf29ce484222325
+MATCHER	1	buckets	gpt2	agentic	4k	27557.3	0	417053d80e680a9d
+BUILD	1	buckets	surya-ocr-2	1948	485.3	330708	437189
+MATCHER	1	buckets	surya-ocr-2	english	whole	125.3	155943	4f6cde0216f6bd4c
+MATCHER	1	buckets	surya-ocr-2	english	4k	125.1	155943	49afe926d4eb8d1f
+MATCHER	1	buckets	surya-ocr-2	code	whole	173.4	1023450	4c3a2175e7475e91
+MATCHER	1	buckets	surya-ocr-2	code	4k	172.5	1023452	8e5055a31b9648f8
+MATCHER	1	buckets	surya-ocr-2	agentic	whole	155.8	824819	8a40f5eef0375e72
+MATCHER	1	buckets	surya-ocr-2	agentic	4k	155.4	824820	982e2ecbd66feaf1
+BUILD	1	aho-corasick	DeepSeek-V3	818	10604.8	631119	965654
+MATCHER	1	aho-corasick	DeepSeek-V3	english	whole	68747.5	0	cbf29ce484222325
+MATCHER	1	aho-corasick	DeepSeek-V3	english	4k	53713.7	0	e739cd99ef1d3d32
+MATCHER	1	aho-corasick	DeepSeek-V3	code	whole	30329.8	0	cbf29ce484222325
+MATCHER	1	aho-corasick	DeepSeek-V3	code	4k	25911.2	0	7974cb587e6b19d9
+MATCHER	1	aho-corasick	DeepSeek-V3	agentic	whole	5347.5	32929	de0748a98683edc0
+MATCHER	1	aho-corasick	DeepSeek-V3	agentic	4k	5113.8	32929	75da54b57c343705
+BUILD	1	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	1000	670.2	76565	256805
+MATCHER	1	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	whole	54415.3	0	cbf29ce484222325
+MATCHER	1	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	4k	43476.7	0	e739cd99ef1d3d32
+MATCHER	1	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	whole	8844.7	1	e31b7644490c391b
+MATCHER	1	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	4k	8515.9	1	44be80b7baa5c227
+MATCHER	1	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	whole	3496.6	65998	24ea8526175601c3
+MATCHER	1	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	4k	3378.3	65998	05a71d703071b977
+BUILD	1	aho-corasick	Qwen3-8B	26	247.5	668036	685614
+MATCHER	1	aho-corasick	Qwen3-8B	english	whole	70104.7	0	cbf29ce484222325
+MATCHER	1	aho-corasick	Qwen3-8B	english	4k	54609.1	0	e739cd99ef1d3d32
+MATCHER	1	aho-corasick	Qwen3-8B	code	whole	31551.4	0	cbf29ce484222325
+MATCHER	1	aho-corasick	Qwen3-8B	code	4k	26409.6	0	7974cb587e6b19d9
+MATCHER	1	aho-corasick	Qwen3-8B	agentic	whole	6729.3	53562	b1b7e948b02cc46b
+MATCHER	1	aho-corasick	Qwen3-8B	agentic	4k	6491.0	53562	4f783ffaa3bbfafe
+BUILD	1	aho-corasick	gemma-3-27b-it-int4-awq	6415	12349.3	1478154	2567522
+MATCHER	1	aho-corasick	gemma-3-27b-it-int4-awq	english	whole	527.4	114363	53faac5390cdf9ed
+MATCHER	1	aho-corasick	gemma-3-27b-it-int4-awq	english	4k	503.2	114363	5ad8fe23c9f56500
+MATCHER	1	aho-corasick	gemma-3-27b-it-int4-awq	code	whole	391.6	1127490	f68e29dbd5b93f5e
+MATCHER	1	aho-corasick	gemma-3-27b-it-int4-awq	code	4k	392.2	1127490	7d52e126edfb0f80
+MATCHER	1	aho-corasick	gemma-3-27b-it-int4-awq	agentic	whole	411.1	543243	2a2bc3b87cc5e8e5
+MATCHER	1	aho-corasick	gemma-3-27b-it-int4-awq	agentic	4k	415.4	543243	d40e91ea06526978
+BUILD	1	aho-corasick	gpt-oss-20b	21	218.8	835239	848965
+MATCHER	1	aho-corasick	gpt-oss-20b	english	whole	70807.6	0	cbf29ce484222325
+MATCHER	1	aho-corasick	gpt-oss-20b	english	4k	54812.3	0	e739cd99ef1d3d32
+MATCHER	1	aho-corasick	gpt-oss-20b	code	whole	32457.0	0	cbf29ce484222325
+MATCHER	1	aho-corasick	gpt-oss-20b	code	4k	27437.3	0	7974cb587e6b19d9
+MATCHER	1	aho-corasick	gpt-oss-20b	agentic	whole	5844.0	72255	7fdbdff31a9d1653
+MATCHER	1	aho-corasick	gpt-oss-20b	agentic	4k	5689.3	72163	99e37c0b1dadf4ce
+BUILD	1	aho-corasick	gpt2	1	233.2	204078	219190
+MATCHER	1	aho-corasick	gpt2	english	whole	47839.6	0	cbf29ce484222325
+MATCHER	1	aho-corasick	gpt2	english	4k	37272.0	0	e739cd99ef1d3d32
+MATCHER	1	aho-corasick	gpt2	code	whole	28594.9	0	cbf29ce484222325
+MATCHER	1	aho-corasick	gpt2	code	4k	24885.2	0	7974cb587e6b19d9
+MATCHER	1	aho-corasick	gpt2	agentic	whole	46862.8	0	cbf29ce484222325
+MATCHER	1	aho-corasick	gpt2	agentic	4k	36713.4	0	417053d80e680a9d
+BUILD	1	aho-corasick	surya-ocr-2	1948	1927.4	482366	1832350
+MATCHER	1	aho-corasick	surya-ocr-2	english	whole	138.7	155943	4f6cde0216f6bd4c
+MATCHER	1	aho-corasick	surya-ocr-2	english	4k	136.8	155943	49afe926d4eb8d1f
+MATCHER	1	aho-corasick	surya-ocr-2	code	whole	167.5	1023450	4c3a2175e7475e91
+MATCHER	1	aho-corasick	surya-ocr-2	code	4k	167.5	1023452	8e5055a31b9648f8
+MATCHER	1	aho-corasick	surya-ocr-2	agentic	whole	173.6	824819	8a40f5eef0375e72
+MATCHER	1	aho-corasick	surya-ocr-2	agentic	4k	172.7	824820	982e2ecbd66feaf1
+LOAD	1	buckets	DeepSeek-V3	311.87	8489289
+E2E	1	buckets	DeepSeek-V3	english	163.0	ad32dc0b836a1522
+E2E	1	buckets	DeepSeek-V3	code	189.4	243854c111d16fc0
+E2E	1	buckets	DeepSeek-V3	agentic	216.2	3a667072307be811
+LOAD	1	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	364.89	9637826
+E2E	1	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	112.5	216fbc34c13778e9
+E2E	1	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	150.7	f874a2b73e1404d3
+E2E	1	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	155.8	f3e4a25b715a58e0
+LOAD	1	buckets	Qwen3-8B	327.42	9197924
+E2E	1	buckets	Qwen3-8B	english	143.0	672a537b767f1b7c
+E2E	1	buckets	Qwen3-8B	code	178.7	3e5e5eba1472d0a1
+E2E	1	buckets	Qwen3-8B	agentic	195.9	712d84388316a33f
+LOAD	1	buckets	gemma-3-27b-it-int4-awq	733.27	20411893
+E2E	1	buckets	gemma-3-27b-it-int4-awq	english	12.3	3a353c61f4d9babc
+E2E	1	buckets	gemma-3-27b-it-int4-awq	code	17.3	7801a928c744ed70
+E2E	1	buckets	gemma-3-27b-it-int4-awq	agentic	18.2	a435cf270e819941
+LOAD	1	buckets	gpt-oss-20b	553.17	16398241
+E2E	1	buckets	gpt-oss-20b	english	133.0	66006b7678d45c4b
+E2E	1	buckets	gpt-oss-20b	code	172.6	8f82c3b8fa91d0bc
+E2E	1	buckets	gpt-oss-20b	agentic	171.5	38098e72a1e2f3ab
+LOAD	1	buckets	gpt2	90.96	3451068
+E2E	1	buckets	gpt2	english	180.6	de7e53eb8dab612c
+E2E	1	buckets	gpt2	code	203.4	4af0b577b1083d9b
+E2E	1	buckets	gpt2	agentic	243.0	cfeda8137c630efe
+LOAD	1	buckets	surya-ocr-2	17.58	9727861
+E2E	1	buckets	surya-ocr-2	english	11.9	a2a66e67a64823f8
+E2E	1	buckets	surya-ocr-2	code	12.4	ee3d9b52a7affa12
+E2E	1	buckets	surya-ocr-2	agentic	12.3	f8922b3cc420f7f1
+LOAD	1	aho-corasick	DeepSeek-V3	311.25	8592482
+E2E	1	aho-corasick	DeepSeek-V3	english	163.4	ad32dc0b836a1522
+E2E	1	aho-corasick	DeepSeek-V3	code	189.2	243854c111d16fc0
+E2E	1	aho-corasick	DeepSeek-V3	agentic	208.5	3a667072307be811
+LOAD	1	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	369.05	9679168
+E2E	1	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	121.3	216fbc34c13778e9
+E2E	1	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	163.5	f874a2b73e1404d3
+E2E	1	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	164.7	f3e4a25b715a58e0
+LOAD	1	aho-corasick	Qwen3-8B	334.52	9257351
+E2E	1	aho-corasick	Qwen3-8B	english	147.2	672a537b767f1b7c
+E2E	1	aho-corasick	Qwen3-8B	code	182.1	3e5e5eba1472d0a1
+E2E	1	aho-corasick	Qwen3-8B	agentic	197.6	712d84388316a33f
+LOAD	1	aho-corasick	gemma-3-27b-it-int4-awq	723.40	20654944
+E2E	1	aho-corasick	gemma-3-27b-it-int4-awq	english	12.0	3a353c61f4d9babc
+E2E	1	aho-corasick	gemma-3-27b-it-int4-awq	code	19.3	7801a928c744ed70
+E2E	1	aho-corasick	gemma-3-27b-it-int4-awq	agentic	20.1	a435cf270e819941
+LOAD	1	aho-corasick	gpt-oss-20b	559.75	16431545
+E2E	1	aho-corasick	gpt-oss-20b	english	132.4	66006b7678d45c4b
+E2E	1	aho-corasick	gpt-oss-20b	code	171.5	8f82c3b8fa91d0bc
+E2E	1	aho-corasick	gpt-oss-20b	agentic	172.5	38098e72a1e2f3ab
+LOAD	1	aho-corasick	gpt2	92.59	3452947
+E2E	1	aho-corasick	gpt2	english	178.5	de7e53eb8dab612c
+E2E	1	aho-corasick	gpt2	code	201.5	4af0b577b1083d9b
+E2E	1	aho-corasick	gpt2	agentic	241.4	cfeda8137c630efe
+LOAD	1	aho-corasick	surya-ocr-2	20.81	9878991
+E2E	1	aho-corasick	surya-ocr-2	english	10.7	a2a66e67a64823f8
+E2E	1	aho-corasick	surya-ocr-2	code	11.1	ee3d9b52a7affa12
+E2E	1	aho-corasick	surya-ocr-2	agentic	11.1	f8922b3cc420f7f1
+== 15:06:05 round 1 done
+BUILD	2	aho-corasick	DeepSeek-V3	818	5947.6	631119	965654
+MATCHER	2	aho-corasick	DeepSeek-V3	english	whole	69935.1	0	cbf29ce484222325
+MATCHER	2	aho-corasick	DeepSeek-V3	english	4k	53941.6	0	e739cd99ef1d3d32
+MATCHER	2	aho-corasick	DeepSeek-V3	code	whole	30617.4	0	cbf29ce484222325
+MATCHER	2	aho-corasick	DeepSeek-V3	code	4k	25396.1	0	7974cb587e6b19d9
+MATCHER	2	aho-corasick	DeepSeek-V3	agentic	whole	5418.4	32929	de0748a98683edc0
+MATCHER	2	aho-corasick	DeepSeek-V3	agentic	4k	5120.1	32929	75da54b57c343705
+BUILD	2	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	1000	664.3	76565	256805
+MATCHER	2	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	whole	51240.5	0	cbf29ce484222325
+MATCHER	2	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	4k	41445.9	0	e739cd99ef1d3d32
+MATCHER	2	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	whole	8761.3	1	e31b7644490c391b
+MATCHER	2	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	4k	8451.7	1	44be80b7baa5c227
+MATCHER	2	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	whole	3529.6	65998	24ea8526175601c3
+MATCHER	2	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	4k	3390.6	65998	05a71d703071b977
+BUILD	2	aho-corasick	Qwen3-8B	26	208.7	668036	685614
+MATCHER	2	aho-corasick	Qwen3-8B	english	whole	69897.4	0	cbf29ce484222325
+MATCHER	2	aho-corasick	Qwen3-8B	english	4k	54435.4	0	e739cd99ef1d3d32
+MATCHER	2	aho-corasick	Qwen3-8B	code	whole	31179.5	0	cbf29ce484222325
+MATCHER	2	aho-corasick	Qwen3-8B	code	4k	26324.3	0	7974cb587e6b19d9
+MATCHER	2	aho-corasick	Qwen3-8B	agentic	whole	6674.6	53562	b1b7e948b02cc46b
+MATCHER	2	aho-corasick	Qwen3-8B	agentic	4k	6390.9	53562	4f783ffaa3bbfafe
+BUILD	2	aho-corasick	gemma-3-27b-it-int4-awq	6415	12298.1	1478154	2567522
+MATCHER	2	aho-corasick	gemma-3-27b-it-int4-awq	english	whole	402.8	114363	53faac5390cdf9ed
+MATCHER	2	aho-corasick	gemma-3-27b-it-int4-awq	english	4k	396.4	114363	5ad8fe23c9f56500
+MATCHER	2	aho-corasick	gemma-3-27b-it-int4-awq	code	whole	306.9	1127490	f68e29dbd5b93f5e
+MATCHER	2	aho-corasick	gemma-3-27b-it-int4-awq	code	4k	300.7	1127490	7d52e126edfb0f80
+MATCHER	2	aho-corasick	gemma-3-27b-it-int4-awq	agentic	whole	340.6	543243	2a2bc3b87cc5e8e5
+MATCHER	2	aho-corasick	gemma-3-27b-it-int4-awq	agentic	4k	330.4	543243	d40e91ea06526978
+BUILD	2	aho-corasick	gpt-oss-20b	21	217.8	835239	848965
+MATCHER	2	aho-corasick	gpt-oss-20b	english	whole	71010.6	0	cbf29ce484222325
+MATCHER	2	aho-corasick	gpt-oss-20b	english	4k	53974.1	0	e739cd99ef1d3d32
+MATCHER	2	aho-corasick	gpt-oss-20b	code	whole	32099.2	0	cbf29ce484222325
+MATCHER	2	aho-corasick	gpt-oss-20b	code	4k	27153.1	0	7974cb587e6b19d9
+MATCHER	2	aho-corasick	gpt-oss-20b	agentic	whole	5904.4	72255	7fdbdff31a9d1653
+MATCHER	2	aho-corasick	gpt-oss-20b	agentic	4k	5678.1	72163	99e37c0b1dadf4ce
+BUILD	2	aho-corasick	gpt2	1	236.9	204078	219190
+MATCHER	2	aho-corasick	gpt2	english	whole	48467.6	0	cbf29ce484222325
+MATCHER	2	aho-corasick	gpt2	english	4k	37147.9	0	e739cd99ef1d3d32
+MATCHER	2	aho-corasick	gpt2	code	whole	27529.8	0	cbf29ce484222325
+MATCHER	2	aho-corasick	gpt2	code	4k	24726.9	0	7974cb587e6b19d9
+MATCHER	2	aho-corasick	gpt2	agentic	whole	47964.4	0	cbf29ce484222325
+MATCHER	2	aho-corasick	gpt2	agentic	4k	37382.7	0	417053d80e680a9d
+BUILD	2	aho-corasick	surya-ocr-2	1948	1953.7	482366	1832350
+MATCHER	2	aho-corasick	surya-ocr-2	english	whole	138.8	155943	4f6cde0216f6bd4c
+MATCHER	2	aho-corasick	surya-ocr-2	english	4k	137.5	155943	49afe926d4eb8d1f
+MATCHER	2	aho-corasick	surya-ocr-2	code	whole	174.6	1023450	4c3a2175e7475e91
+MATCHER	2	aho-corasick	surya-ocr-2	code	4k	168.0	1023452	8e5055a31b9648f8
+MATCHER	2	aho-corasick	surya-ocr-2	agentic	whole	174.0	824819	8a40f5eef0375e72
+MATCHER	2	aho-corasick	surya-ocr-2	agentic	4k	176.6	824820	982e2ecbd66feaf1
+BUILD	2	buckets	DeepSeek-V3	818	5468.1	568104	637755
+MATCHER	2	buckets	DeepSeek-V3	english	whole	67668.4	0	cbf29ce484222325
+MATCHER	2	buckets	DeepSeek-V3	english	4k	46140.9	0	e739cd99ef1d3d32
+MATCHER	2	buckets	DeepSeek-V3	code	whole	31983.6	0	cbf29ce484222325
+MATCHER	2	buckets	DeepSeek-V3	code	4k	24685.6	0	7974cb587e6b19d9
+MATCHER	2	buckets	DeepSeek-V3	agentic	whole	6203.4	32929	de0748a98683edc0
+MATCHER	2	buckets	DeepSeek-V3	agentic	4k	5868.5	32929	75da54b57c343705
+BUILD	2	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	1000	252.7	34695	107302
+MATCHER	2	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	whole	1770.0	0	cbf29ce484222325
+MATCHER	2	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	4k	1727.9	0	e739cd99ef1d3d32
+MATCHER	2	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	whole	1639.7	1	e31b7644490c391b
+MATCHER	2	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	4k	1649.4	1	44be80b7baa5c227
+MATCHER	2	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	whole	1412.9	65998	24ea8526175601c3
+MATCHER	2	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	4k	1399.7	65998	05a71d703071b977
+BUILD	2	buckets	Qwen3-8B	26	105.7	608081	615733
+MATCHER	2	buckets	Qwen3-8B	english	whole	70317.1	0	cbf29ce484222325
+MATCHER	2	buckets	Qwen3-8B	english	4k	46749.4	0	e739cd99ef1d3d32
+MATCHER	2	buckets	Qwen3-8B	code	whole	30479.1	0	cbf29ce484222325
+MATCHER	2	buckets	Qwen3-8B	code	4k	24046.9	0	7974cb587e6b19d9
+MATCHER	2	buckets	Qwen3-8B	agentic	whole	5115.0	53562	b1b7e948b02cc46b
+MATCHER	2	buckets	Qwen3-8B	agentic	4k	4855.2	53562	4f783ffaa3bbfafe
+BUILD	2	buckets	gemma-3-27b-it-int4-awq	6415	4768.4	1234575	1607279
+MATCHER	2	buckets	gemma-3-27b-it-int4-awq	english	whole	569.5	114363	53faac5390cdf9ed
+MATCHER	2	buckets	gemma-3-27b-it-int4-awq	english	4k	584.3	114363	5ad8fe23c9f56500
+MATCHER	2	buckets	gemma-3-27b-it-int4-awq	code	whole	138.6	1127490	f68e29dbd5b93f5e
+MATCHER	2	buckets	gemma-3-27b-it-int4-awq	code	4k	137.5	1127490	7d52e126edfb0f80
+MATCHER	2	buckets	gemma-3-27b-it-int4-awq	agentic	whole	173.9	543243	2a2bc3b87cc5e8e5
+MATCHER	2	buckets	gemma-3-27b-it-int4-awq	agentic	4k	175.4	543243	d40e91ea06526978
+BUILD	2	buckets	gpt-oss-20b	21	106.6	801407	808840
+MATCHER	2	buckets	gpt-oss-20b	english	whole	45835.9	0	cbf29ce484222325
+MATCHER	2	buckets	gpt-oss-20b	english	4k	30426.6	0	e739cd99ef1d3d32
+MATCHER	2	buckets	gpt-oss-20b	code	whole	26950.0	0	cbf29ce484222325
+MATCHER	2	buckets	gpt-oss-20b	code	4k	22114.2	0	7974cb587e6b19d9
+MATCHER	2	buckets	gpt-oss-20b	agentic	whole	4446.5	72255	7fdbdff31a9d1653
+MATCHER	2	buckets	gpt-oss-20b	agentic	4k	4232.9	72163	99e37c0b1dadf4ce
+BUILD	2	buckets	gpt2	1	67.8	201671	207884
+MATCHER	2	buckets	gpt2	english	whole	50305.9	0	cbf29ce484222325
+MATCHER	2	buckets	gpt2	english	4k	27359.3	0	e739cd99ef1d3d32
+MATCHER	2	buckets	gpt2	code	whole	27842.9	0	cbf29ce484222325
+MATCHER	2	buckets	gpt2	code	4k	20206.9	0	7974cb587e6b19d9
+MATCHER	2	buckets	gpt2	agentic	whole	47183.8	0	cbf29ce484222325
+MATCHER	2	buckets	gpt2	agentic	4k	27087.2	0	417053d80e680a9d
+BUILD	2	buckets	surya-ocr-2	1948	460.7	330708	437189
+MATCHER	2	buckets	surya-ocr-2	english	whole	124.8	155943	4f6cde0216f6bd4c
+MATCHER	2	buckets	surya-ocr-2	english	4k	124.7	155943	49afe926d4eb8d1f
+MATCHER	2	buckets	surya-ocr-2	code	whole	173.2	1023450	4c3a2175e7475e91
+MATCHER	2	buckets	surya-ocr-2	code	4k	172.9	1023452	8e5055a31b9648f8
+MATCHER	2	buckets	surya-ocr-2	agentic	whole	156.2	824819	8a40f5eef0375e72
+MATCHER	2	buckets	surya-ocr-2	agentic	4k	155.6	824820	982e2ecbd66feaf1
+LOAD	2	aho-corasick	DeepSeek-V3	300.19	8592482
+E2E	2	aho-corasick	DeepSeek-V3	english	163.7	ad32dc0b836a1522
+E2E	2	aho-corasick	DeepSeek-V3	code	188.6	243854c111d16fc0
+E2E	2	aho-corasick	DeepSeek-V3	agentic	209.0	3a667072307be811
+LOAD	2	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	368.70	9679168
+E2E	2	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	119.5	216fbc34c13778e9
+E2E	2	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	162.1	f874a2b73e1404d3
+E2E	2	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	165.8	f3e4a25b715a58e0
+LOAD	2	aho-corasick	Qwen3-8B	336.49	9257351
+E2E	2	aho-corasick	Qwen3-8B	english	149.5	672a537b767f1b7c
+E2E	2	aho-corasick	Qwen3-8B	code	181.7	3e5e5eba1472d0a1
+E2E	2	aho-corasick	Qwen3-8B	agentic	195.4	712d84388316a33f
+LOAD	2	aho-corasick	gemma-3-27b-it-int4-awq	719.43	20654944
+E2E	2	aho-corasick	gemma-3-27b-it-int4-awq	english	12.1	3a353c61f4d9babc
+E2E	2	aho-corasick	gemma-3-27b-it-int4-awq	code	19.2	7801a928c744ed70
+E2E	2	aho-corasick	gemma-3-27b-it-int4-awq	agentic	19.5	a435cf270e819941
+LOAD	2	aho-corasick	gpt-oss-20b	549.17	16431545
+E2E	2	aho-corasick	gpt-oss-20b	english	130.3	66006b7678d45c4b
+E2E	2	aho-corasick	gpt-oss-20b	code	169.7	8f82c3b8fa91d0bc
+E2E	2	aho-corasick	gpt-oss-20b	agentic	172.4	38098e72a1e2f3ab
+LOAD	2	aho-corasick	gpt2	92.15	3452947
+E2E	2	aho-corasick	gpt2	english	180.4	de7e53eb8dab612c
+E2E	2	aho-corasick	gpt2	code	202.3	4af0b577b1083d9b
+E2E	2	aho-corasick	gpt2	agentic	242.7	cfeda8137c630efe
+LOAD	2	aho-corasick	surya-ocr-2	21.20	9878991
+E2E	2	aho-corasick	surya-ocr-2	english	10.8	a2a66e67a64823f8
+E2E	2	aho-corasick	surya-ocr-2	code	11.2	ee3d9b52a7affa12
+E2E	2	aho-corasick	surya-ocr-2	agentic	11.3	f8922b3cc420f7f1
+LOAD	2	buckets	DeepSeek-V3	292.09	8489289
+E2E	2	buckets	DeepSeek-V3	english	163.2	ad32dc0b836a1522
+E2E	2	buckets	DeepSeek-V3	code	189.2	243854c111d16fc0
+E2E	2	buckets	DeepSeek-V3	agentic	213.5	3a667072307be811
+LOAD	2	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	360.12	9637826
+E2E	2	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	112.9	216fbc34c13778e9
+E2E	2	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	148.8	f874a2b73e1404d3
+E2E	2	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	156.1	f3e4a25b715a58e0
+LOAD	2	buckets	Qwen3-8B	326.08	9197924
+E2E	2	buckets	Qwen3-8B	english	148.8	672a537b767f1b7c
+E2E	2	buckets	Qwen3-8B	code	182.8	3e5e5eba1472d0a1
+E2E	2	buckets	Qwen3-8B	agentic	200.3	712d84388316a33f
+LOAD	2	buckets	gemma-3-27b-it-int4-awq	725.80	20411893
+E2E	2	buckets	gemma-3-27b-it-int4-awq	english	12.2	3a353c61f4d9babc
+E2E	2	buckets	gemma-3-27b-it-int4-awq	code	17.4	7801a928c744ed70
+E2E	2	buckets	gemma-3-27b-it-int4-awq	agentic	18.5	a435cf270e819941
+LOAD	2	buckets	gpt-oss-20b	549.89	16398241
+E2E	2	buckets	gpt-oss-20b	english	133.5	66006b7678d45c4b
+E2E	2	buckets	gpt-oss-20b	code	171.1	8f82c3b8fa91d0bc
+E2E	2	buckets	gpt-oss-20b	agentic	172.2	38098e72a1e2f3ab
+LOAD	2	buckets	gpt2	90.40	3451068
+E2E	2	buckets	gpt2	english	176.6	de7e53eb8dab612c
+E2E	2	buckets	gpt2	code	197.9	4af0b577b1083d9b
+E2E	2	buckets	gpt2	agentic	234.5	cfeda8137c630efe
+LOAD	2	buckets	surya-ocr-2	17.59	9727861
+E2E	2	buckets	surya-ocr-2	english	12.1	a2a66e67a64823f8
+E2E	2	buckets	surya-ocr-2	code	12.5	ee3d9b52a7affa12
+E2E	2	buckets	surya-ocr-2	agentic	12.5	f8922b3cc420f7f1
+== 15:09:07 round 2 done
+BUILD	3	buckets	DeepSeek-V3	818	5372.4	568104	637755
+MATCHER	3	buckets	DeepSeek-V3	english	whole	69171.9	0	cbf29ce484222325
+MATCHER	3	buckets	DeepSeek-V3	english	4k	46312.7	0	e739cd99ef1d3d32
+MATCHER	3	buckets	DeepSeek-V3	code	whole	31872.5	0	cbf29ce484222325
+MATCHER	3	buckets	DeepSeek-V3	code	4k	25158.0	0	7974cb587e6b19d9
+MATCHER	3	buckets	DeepSeek-V3	agentic	whole	6195.8	32929	de0748a98683edc0
+MATCHER	3	buckets	DeepSeek-V3	agentic	4k	5892.0	32929	75da54b57c343705
+BUILD	3	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	1000	257.7	34695	107302
+MATCHER	3	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	whole	1769.7	0	cbf29ce484222325
+MATCHER	3	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	4k	1733.6	0	e739cd99ef1d3d32
+MATCHER	3	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	whole	1646.4	1	e31b7644490c391b
+MATCHER	3	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	4k	1648.7	1	44be80b7baa5c227
+MATCHER	3	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	whole	1403.3	65998	24ea8526175601c3
+MATCHER	3	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	4k	1392.0	65998	05a71d703071b977
+BUILD	3	buckets	Qwen3-8B	26	101.2	608081	615733
+MATCHER	3	buckets	Qwen3-8B	english	whole	69844.4	0	cbf29ce484222325
+MATCHER	3	buckets	Qwen3-8B	english	4k	48377.7	0	e739cd99ef1d3d32
+MATCHER	3	buckets	Qwen3-8B	code	whole	31188.9	0	cbf29ce484222325
+MATCHER	3	buckets	Qwen3-8B	code	4k	24868.2	0	7974cb587e6b19d9
+MATCHER	3	buckets	Qwen3-8B	agentic	whole	5156.5	53562	b1b7e948b02cc46b
+MATCHER	3	buckets	Qwen3-8B	agentic	4k	4944.7	53562	4f783ffaa3bbfafe
+BUILD	3	buckets	gemma-3-27b-it-int4-awq	6415	4727.4	1234575	1607279
+MATCHER	3	buckets	gemma-3-27b-it-int4-awq	english	whole	574.8	114363	53faac5390cdf9ed
+MATCHER	3	buckets	gemma-3-27b-it-int4-awq	english	4k	589.0	114363	5ad8fe23c9f56500
+MATCHER	3	buckets	gemma-3-27b-it-int4-awq	code	whole	140.6	1127490	f68e29dbd5b93f5e
+MATCHER	3	buckets	gemma-3-27b-it-int4-awq	code	4k	139.9	1127490	7d52e126edfb0f80
+MATCHER	3	buckets	gemma-3-27b-it-int4-awq	agentic	whole	175.9	543243	2a2bc3b87cc5e8e5
+MATCHER	3	buckets	gemma-3-27b-it-int4-awq	agentic	4k	178.1	543243	d40e91ea06526978
+BUILD	3	buckets	gpt-oss-20b	21	117.8	801407	808840
+MATCHER	3	buckets	gpt-oss-20b	english	whole	46969.6	0	cbf29ce484222325
+MATCHER	3	buckets	gpt-oss-20b	english	4k	30988.2	0	e739cd99ef1d3d32
+MATCHER	3	buckets	gpt-oss-20b	code	whole	27807.0	0	cbf29ce484222325
+MATCHER	3	buckets	gpt-oss-20b	code	4k	22094.4	0	7974cb587e6b19d9
+MATCHER	3	buckets	gpt-oss-20b	agentic	whole	4434.8	72255	7fdbdff31a9d1653
+MATCHER	3	buckets	gpt-oss-20b	agentic	4k	4217.5	72163	99e37c0b1dadf4ce
+BUILD	3	buckets	gpt2	1	67.7	201671	207884
+MATCHER	3	buckets	gpt2	english	whole	49097.6	0	cbf29ce484222325
+MATCHER	3	buckets	gpt2	english	4k	27279.9	0	e739cd99ef1d3d32
+MATCHER	3	buckets	gpt2	code	whole	27820.8	0	cbf29ce484222325
+MATCHER	3	buckets	gpt2	code	4k	20488.2	0	7974cb587e6b19d9
+MATCHER	3	buckets	gpt2	agentic	whole	47467.7	0	cbf29ce484222325
+MATCHER	3	buckets	gpt2	agentic	4k	27475.4	0	417053d80e680a9d
+BUILD	3	buckets	surya-ocr-2	1948	472.0	330708	437189
+MATCHER	3	buckets	surya-ocr-2	english	whole	124.6	155943	4f6cde0216f6bd4c
+MATCHER	3	buckets	surya-ocr-2	english	4k	124.8	155943	49afe926d4eb8d1f
+MATCHER	3	buckets	surya-ocr-2	code	whole	173.6	1023450	4c3a2175e7475e91
+MATCHER	3	buckets	surya-ocr-2	code	4k	172.6	1023452	8e5055a31b9648f8
+MATCHER	3	buckets	surya-ocr-2	agentic	whole	156.5	824819	8a40f5eef0375e72
+MATCHER	3	buckets	surya-ocr-2	agentic	4k	155.8	824820	982e2ecbd66feaf1
+BUILD	3	aho-corasick	DeepSeek-V3	818	5869.2	631119	965654
+MATCHER	3	aho-corasick	DeepSeek-V3	english	whole	67087.6	0	cbf29ce484222325
+MATCHER	3	aho-corasick	DeepSeek-V3	english	4k	51571.1	0	e739cd99ef1d3d32
+MATCHER	3	aho-corasick	DeepSeek-V3	code	whole	30860.4	0	cbf29ce484222325
+MATCHER	3	aho-corasick	DeepSeek-V3	code	4k	25975.9	0	7974cb587e6b19d9
+MATCHER	3	aho-corasick	DeepSeek-V3	agentic	whole	5522.6	32929	de0748a98683edc0
+MATCHER	3	aho-corasick	DeepSeek-V3	agentic	4k	5191.6	32929	75da54b57c343705
+BUILD	3	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	1000	659.2	76565	256805
+MATCHER	3	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	whole	51640.7	0	cbf29ce484222325
+MATCHER	3	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	4k	41630.0	0	e739cd99ef1d3d32
+MATCHER	3	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	whole	8897.7	1	e31b7644490c391b
+MATCHER	3	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	4k	8576.4	1	44be80b7baa5c227
+MATCHER	3	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	whole	3582.9	65998	24ea8526175601c3
+MATCHER	3	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	4k	3438.9	65998	05a71d703071b977
+BUILD	3	aho-corasick	Qwen3-8B	26	212.3	668036	685614
+MATCHER	3	aho-corasick	Qwen3-8B	english	whole	70836.4	0	cbf29ce484222325
+MATCHER	3	aho-corasick	Qwen3-8B	english	4k	53074.0	0	e739cd99ef1d3d32
+MATCHER	3	aho-corasick	Qwen3-8B	code	whole	31238.2	0	cbf29ce484222325
+MATCHER	3	aho-corasick	Qwen3-8B	code	4k	26150.5	0	7974cb587e6b19d9
+MATCHER	3	aho-corasick	Qwen3-8B	agentic	whole	6764.8	53562	b1b7e948b02cc46b
+MATCHER	3	aho-corasick	Qwen3-8B	agentic	4k	6522.9	53562	4f783ffaa3bbfafe
+BUILD	3	aho-corasick	gemma-3-27b-it-int4-awq	6415	12265.9	1478154	2567522
+MATCHER	3	aho-corasick	gemma-3-27b-it-int4-awq	english	whole	529.3	114363	53faac5390cdf9ed
+MATCHER	3	aho-corasick	gemma-3-27b-it-int4-awq	english	4k	507.8	114363	5ad8fe23c9f56500
+MATCHER	3	aho-corasick	gemma-3-27b-it-int4-awq	code	whole	392.9	1127490	f68e29dbd5b93f5e
+MATCHER	3	aho-corasick	gemma-3-27b-it-int4-awq	code	4k	393.0	1127490	7d52e126edfb0f80
+MATCHER	3	aho-corasick	gemma-3-27b-it-int4-awq	agentic	whole	433.1	543243	2a2bc3b87cc5e8e5
+MATCHER	3	aho-corasick	gemma-3-27b-it-int4-awq	agentic	4k	417.6	543243	d40e91ea06526978
+BUILD	3	aho-corasick	gpt-oss-20b	21	215.9	835239	848965
+MATCHER	3	aho-corasick	gpt-oss-20b	english	whole	69966.2	0	cbf29ce484222325
+MATCHER	3	aho-corasick	gpt-oss-20b	english	4k	54165.5	0	e739cd99ef1d3d32
+MATCHER	3	aho-corasick	gpt-oss-20b	code	whole	32743.3	0	cbf29ce484222325
+MATCHER	3	aho-corasick	gpt-oss-20b	code	4k	27558.2	0	7974cb587e6b19d9
+MATCHER	3	aho-corasick	gpt-oss-20b	agentic	whole	5888.3	72255	7fdbdff31a9d1653
+MATCHER	3	aho-corasick	gpt-oss-20b	agentic	4k	5669.4	72163	99e37c0b1dadf4ce
+BUILD	3	aho-corasick	gpt2	1	204.8	204078	219190
+MATCHER	3	aho-corasick	gpt2	english	whole	48386.0	0	cbf29ce484222325
+MATCHER	3	aho-corasick	gpt2	english	4k	37921.0	0	e739cd99ef1d3d32
+MATCHER	3	aho-corasick	gpt2	code	whole	28273.2	0	cbf29ce484222325
+MATCHER	3	aho-corasick	gpt2	code	4k	24852.1	0	7974cb587e6b19d9
+MATCHER	3	aho-corasick	gpt2	agentic	whole	46703.4	0	cbf29ce484222325
+MATCHER	3	aho-corasick	gpt2	agentic	4k	37332.2	0	417053d80e680a9d
+BUILD	3	aho-corasick	surya-ocr-2	1948	1984.0	482366	1832350
+MATCHER	3	aho-corasick	surya-ocr-2	english	whole	138.7	155943	4f6cde0216f6bd4c
+MATCHER	3	aho-corasick	surya-ocr-2	english	4k	137.3	155943	49afe926d4eb8d1f
+MATCHER	3	aho-corasick	surya-ocr-2	code	whole	175.3	1023450	4c3a2175e7475e91
+MATCHER	3	aho-corasick	surya-ocr-2	code	4k	174.4	1023452	8e5055a31b9648f8
+MATCHER	3	aho-corasick	surya-ocr-2	agentic	whole	174.8	824819	8a40f5eef0375e72
+MATCHER	3	aho-corasick	surya-ocr-2	agentic	4k	174.3	824820	982e2ecbd66feaf1
+LOAD	3	buckets	DeepSeek-V3	306.44	8489289
+E2E	3	buckets	DeepSeek-V3	english	162.8	ad32dc0b836a1522
+E2E	3	buckets	DeepSeek-V3	code	188.9	243854c111d16fc0
+E2E	3	buckets	DeepSeek-V3	agentic	212.7	3a667072307be811
+LOAD	3	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	361.14	9637826
+E2E	3	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	112.4	216fbc34c13778e9
+E2E	3	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	150.1	f874a2b73e1404d3
+E2E	3	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	156.4	f3e4a25b715a58e0
+LOAD	3	buckets	Qwen3-8B	330.19	9197924
+E2E	3	buckets	Qwen3-8B	english	147.2	672a537b767f1b7c
+E2E	3	buckets	Qwen3-8B	code	181.5	3e5e5eba1472d0a1
+E2E	3	buckets	Qwen3-8B	agentic	198.3	712d84388316a33f
+LOAD	3	buckets	gemma-3-27b-it-int4-awq	743.47	20411893
+E2E	3	buckets	gemma-3-27b-it-int4-awq	english	12.4	3a353c61f4d9babc
+E2E	3	buckets	gemma-3-27b-it-int4-awq	code	17.2	7801a928c744ed70
+E2E	3	buckets	gemma-3-27b-it-int4-awq	agentic	18.5	a435cf270e819941
+LOAD	3	buckets	gpt-oss-20b	550.04	16398241
+E2E	3	buckets	gpt-oss-20b	english	133.5	66006b7678d45c4b
+E2E	3	buckets	gpt-oss-20b	code	172.8	8f82c3b8fa91d0bc
+E2E	3	buckets	gpt-oss-20b	agentic	173.1	38098e72a1e2f3ab
+LOAD	3	buckets	gpt2	93.19	3451068
+E2E	3	buckets	gpt2	english	180.4	de7e53eb8dab612c
+E2E	3	buckets	gpt2	code	202.4	4af0b577b1083d9b
+E2E	3	buckets	gpt2	agentic	242.8	cfeda8137c630efe
+LOAD	3	buckets	surya-ocr-2	17.94	9727861
+E2E	3	buckets	surya-ocr-2	english	11.9	a2a66e67a64823f8
+E2E	3	buckets	surya-ocr-2	code	12.3	ee3d9b52a7affa12
+E2E	3	buckets	surya-ocr-2	agentic	12.3	f8922b3cc420f7f1
+LOAD	3	aho-corasick	DeepSeek-V3	296.31	8592482
+E2E	3	aho-corasick	DeepSeek-V3	english	161.0	ad32dc0b836a1522
+E2E	3	aho-corasick	DeepSeek-V3	code	186.9	243854c111d16fc0
+E2E	3	aho-corasick	DeepSeek-V3	agentic	205.7	3a667072307be811
+LOAD	3	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	366.83	9679168
+E2E	3	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	120.4	216fbc34c13778e9
+E2E	3	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	162.9	f874a2b73e1404d3
+E2E	3	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	166.0	f3e4a25b715a58e0
+LOAD	3	aho-corasick	Qwen3-8B	329.43	9257351
+E2E	3	aho-corasick	Qwen3-8B	english	147.9	672a537b767f1b7c
+E2E	3	aho-corasick	Qwen3-8B	code	180.6	3e5e5eba1472d0a1
+E2E	3	aho-corasick	Qwen3-8B	agentic	197.5	712d84388316a33f
+LOAD	3	aho-corasick	gemma-3-27b-it-int4-awq	722.80	20654944
+E2E	3	aho-corasick	gemma-3-27b-it-int4-awq	english	12.1	3a353c61f4d9babc
+E2E	3	aho-corasick	gemma-3-27b-it-int4-awq	code	19.5	7801a928c744ed70
+E2E	3	aho-corasick	gemma-3-27b-it-int4-awq	agentic	20.1	a435cf270e819941
+LOAD	3	aho-corasick	gpt-oss-20b	551.41	16431545
+E2E	3	aho-corasick	gpt-oss-20b	english	131.3	66006b7678d45c4b
+E2E	3	aho-corasick	gpt-oss-20b	code	171.6	8f82c3b8fa91d0bc
+E2E	3	aho-corasick	gpt-oss-20b	agentic	173.7	38098e72a1e2f3ab
+LOAD	3	aho-corasick	gpt2	89.57	3452947
+E2E	3	aho-corasick	gpt2	english	180.5	de7e53eb8dab612c
+E2E	3	aho-corasick	gpt2	code	201.8	4af0b577b1083d9b
+E2E	3	aho-corasick	gpt2	agentic	241.2	cfeda8137c630efe
+LOAD	3	aho-corasick	surya-ocr-2	19.45	9878991
+E2E	3	aho-corasick	surya-ocr-2	english	10.7	a2a66e67a64823f8
+E2E	3	aho-corasick	surya-ocr-2	code	11.1	ee3d9b52a7affa12
+E2E	3	aho-corasick	surya-ocr-2	agentic	11.2	f8922b3cc420f7f1
+== 15:12:09 round 3 done
+BUILD	4	aho-corasick	DeepSeek-V3	818	5948.2	631119	965654
+MATCHER	4	aho-corasick	DeepSeek-V3	english	whole	70545.4	0	cbf29ce484222325
+MATCHER	4	aho-corasick	DeepSeek-V3	english	4k	53282.8	0	e739cd99ef1d3d32
+MATCHER	4	aho-corasick	DeepSeek-V3	code	whole	30596.3	0	cbf29ce484222325
+MATCHER	4	aho-corasick	DeepSeek-V3	code	4k	26147.1	0	7974cb587e6b19d9
+MATCHER	4	aho-corasick	DeepSeek-V3	agentic	whole	5557.7	32929	de0748a98683edc0
+MATCHER	4	aho-corasick	DeepSeek-V3	agentic	4k	5303.7	32929	75da54b57c343705
+BUILD	4	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	1000	660.4	76565	256805
+MATCHER	4	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	whole	54094.8	0	cbf29ce484222325
+MATCHER	4	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	4k	42816.5	0	e739cd99ef1d3d32
+MATCHER	4	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	whole	8850.3	1	e31b7644490c391b
+MATCHER	4	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	4k	8515.9	1	44be80b7baa5c227
+MATCHER	4	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	whole	3543.9	65998	24ea8526175601c3
+MATCHER	4	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	4k	3417.3	65998	05a71d703071b977
+BUILD	4	aho-corasick	Qwen3-8B	26	204.1	668036	685614
+MATCHER	4	aho-corasick	Qwen3-8B	english	whole	69777.5	0	cbf29ce484222325
+MATCHER	4	aho-corasick	Qwen3-8B	english	4k	54790.9	0	e739cd99ef1d3d32
+MATCHER	4	aho-corasick	Qwen3-8B	code	whole	32024.9	0	cbf29ce484222325
+MATCHER	4	aho-corasick	Qwen3-8B	code	4k	26867.4	0	7974cb587e6b19d9
+MATCHER	4	aho-corasick	Qwen3-8B	agentic	whole	6735.3	53562	b1b7e948b02cc46b
+MATCHER	4	aho-corasick	Qwen3-8B	agentic	4k	6426.0	53562	4f783ffaa3bbfafe
+BUILD	4	aho-corasick	gemma-3-27b-it-int4-awq	6415	12232.4	1478154	2567522
+MATCHER	4	aho-corasick	gemma-3-27b-it-int4-awq	english	whole	529.7	114363	53faac5390cdf9ed
+MATCHER	4	aho-corasick	gemma-3-27b-it-int4-awq	english	4k	509.7	114363	5ad8fe23c9f56500
+MATCHER	4	aho-corasick	gemma-3-27b-it-int4-awq	code	whole	406.4	1127490	f68e29dbd5b93f5e
+MATCHER	4	aho-corasick	gemma-3-27b-it-int4-awq	code	4k	393.3	1127490	7d52e126edfb0f80
+MATCHER	4	aho-corasick	gemma-3-27b-it-int4-awq	agentic	whole	434.6	543243	2a2bc3b87cc5e8e5
+MATCHER	4	aho-corasick	gemma-3-27b-it-int4-awq	agentic	4k	415.6	543243	d40e91ea06526978
+BUILD	4	aho-corasick	gpt-oss-20b	21	218.2	835239	848965
+MATCHER	4	aho-corasick	gpt-oss-20b	english	whole	69558.9	0	cbf29ce484222325
+MATCHER	4	aho-corasick	gpt-oss-20b	english	4k	54464.0	0	e739cd99ef1d3d32
+MATCHER	4	aho-corasick	gpt-oss-20b	code	whole	32263.8	0	cbf29ce484222325
+MATCHER	4	aho-corasick	gpt-oss-20b	code	4k	26356.2	0	7974cb587e6b19d9
+MATCHER	4	aho-corasick	gpt-oss-20b	agentic	whole	5885.4	72255	7fdbdff31a9d1653
+MATCHER	4	aho-corasick	gpt-oss-20b	agentic	4k	5604.5	72163	99e37c0b1dadf4ce
+BUILD	4	aho-corasick	gpt2	1	232.2	204078	219190
+MATCHER	4	aho-corasick	gpt2	english	whole	48265.9	0	cbf29ce484222325
+MATCHER	4	aho-corasick	gpt2	english	4k	36854.5	0	e739cd99ef1d3d32
+MATCHER	4	aho-corasick	gpt2	code	whole	28064.3	0	cbf29ce484222325
+MATCHER	4	aho-corasick	gpt2	code	4k	24731.8	0	7974cb587e6b19d9
+MATCHER	4	aho-corasick	gpt2	agentic	whole	47121.0	0	cbf29ce484222325
+MATCHER	4	aho-corasick	gpt2	agentic	4k	36582.6	0	417053d80e680a9d
+BUILD	4	aho-corasick	surya-ocr-2	1948	1971.1	482366	1832350
+MATCHER	4	aho-corasick	surya-ocr-2	english	whole	140.5	155943	4f6cde0216f6bd4c
+MATCHER	4	aho-corasick	surya-ocr-2	english	4k	137.8	155943	49afe926d4eb8d1f
+MATCHER	4	aho-corasick	surya-ocr-2	code	whole	169.9	1023450	4c3a2175e7475e91
+MATCHER	4	aho-corasick	surya-ocr-2	code	4k	167.8	1023452	8e5055a31b9648f8
+MATCHER	4	aho-corasick	surya-ocr-2	agentic	whole	175.9	824819	8a40f5eef0375e72
+MATCHER	4	aho-corasick	surya-ocr-2	agentic	4k	173.6	824820	982e2ecbd66feaf1
+BUILD	4	buckets	DeepSeek-V3	818	5385.1	568104	637755
+MATCHER	4	buckets	DeepSeek-V3	english	whole	71452.3	0	cbf29ce484222325
+MATCHER	4	buckets	DeepSeek-V3	english	4k	48469.1	0	e739cd99ef1d3d32
+MATCHER	4	buckets	DeepSeek-V3	code	whole	31827.3	0	cbf29ce484222325
+MATCHER	4	buckets	DeepSeek-V3	code	4k	24788.5	0	7974cb587e6b19d9
+MATCHER	4	buckets	DeepSeek-V3	agentic	whole	6160.9	32929	de0748a98683edc0
+MATCHER	4	buckets	DeepSeek-V3	agentic	4k	5869.1	32929	75da54b57c343705
+BUILD	4	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	1000	248.8	34695	107302
+MATCHER	4	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	whole	1770.3	0	cbf29ce484222325
+MATCHER	4	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	4k	1735.3	0	e739cd99ef1d3d32
+MATCHER	4	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	whole	1647.7	1	e31b7644490c391b
+MATCHER	4	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	4k	1647.6	1	44be80b7baa5c227
+MATCHER	4	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	whole	1412.8	65998	24ea8526175601c3
+MATCHER	4	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	4k	1405.5	65998	05a71d703071b977
+BUILD	4	buckets	Qwen3-8B	26	100.7	608081	615733
+MATCHER	4	buckets	Qwen3-8B	english	whole	68372.2	0	cbf29ce484222325
+MATCHER	4	buckets	Qwen3-8B	english	4k	46466.6	0	e739cd99ef1d3d32
+MATCHER	4	buckets	Qwen3-8B	code	whole	31071.3	0	cbf29ce484222325
+MATCHER	4	buckets	Qwen3-8B	code	4k	24441.2	0	7974cb587e6b19d9
+MATCHER	4	buckets	Qwen3-8B	agentic	whole	5152.2	53562	b1b7e948b02cc46b
+MATCHER	4	buckets	Qwen3-8B	agentic	4k	4927.1	53562	4f783ffaa3bbfafe
+BUILD	4	buckets	gemma-3-27b-it-int4-awq	6415	4770.0	1234575	1607279
+MATCHER	4	buckets	gemma-3-27b-it-int4-awq	english	whole	574.4	114363	53faac5390cdf9ed
+MATCHER	4	buckets	gemma-3-27b-it-int4-awq	english	4k	589.2	114363	5ad8fe23c9f56500
+MATCHER	4	buckets	gemma-3-27b-it-int4-awq	code	whole	140.2	1127490	f68e29dbd5b93f5e
+MATCHER	4	buckets	gemma-3-27b-it-int4-awq	code	4k	139.4	1127490	7d52e126edfb0f80
+MATCHER	4	buckets	gemma-3-27b-it-int4-awq	agentic	whole	175.2	543243	2a2bc3b87cc5e8e5
+MATCHER	4	buckets	gemma-3-27b-it-int4-awq	agentic	4k	177.7	543243	d40e91ea06526978
+BUILD	4	buckets	gpt-oss-20b	21	112.5	801407	808840
+MATCHER	4	buckets	gpt-oss-20b	english	whole	46527.3	0	cbf29ce484222325
+MATCHER	4	buckets	gpt-oss-20b	english	4k	30657.8	0	e739cd99ef1d3d32
+MATCHER	4	buckets	gpt-oss-20b	code	whole	28438.7	0	cbf29ce484222325
+MATCHER	4	buckets	gpt-oss-20b	code	4k	22677.4	0	7974cb587e6b19d9
+MATCHER	4	buckets	gpt-oss-20b	agentic	whole	4452.8	72255	7fdbdff31a9d1653
+MATCHER	4	buckets	gpt-oss-20b	agentic	4k	4255.8	72163	99e37c0b1dadf4ce
+BUILD	4	buckets	gpt2	1	67.0	201671	207884
+MATCHER	4	buckets	gpt2	english	whole	49404.1	0	cbf29ce484222325
+MATCHER	4	buckets	gpt2	english	4k	27054.4	0	e739cd99ef1d3d32
+MATCHER	4	buckets	gpt2	code	whole	27797.4	0	cbf29ce484222325
+MATCHER	4	buckets	gpt2	code	4k	20259.3	0	7974cb587e6b19d9
+MATCHER	4	buckets	gpt2	agentic	whole	47327.5	0	cbf29ce484222325
+MATCHER	4	buckets	gpt2	agentic	4k	27176.2	0	417053d80e680a9d
+BUILD	4	buckets	surya-ocr-2	1948	462.4	330708	437189
+MATCHER	4	buckets	surya-ocr-2	english	whole	124.5	155943	4f6cde0216f6bd4c
+MATCHER	4	buckets	surya-ocr-2	english	4k	124.8	155943	49afe926d4eb8d1f
+MATCHER	4	buckets	surya-ocr-2	code	whole	173.2	1023450	4c3a2175e7475e91
+MATCHER	4	buckets	surya-ocr-2	code	4k	172.4	1023452	8e5055a31b9648f8
+MATCHER	4	buckets	surya-ocr-2	agentic	whole	155.5	824819	8a40f5eef0375e72
+MATCHER	4	buckets	surya-ocr-2	agentic	4k	155.0	824820	982e2ecbd66feaf1
+LOAD	4	aho-corasick	DeepSeek-V3	298.76	8592482
+E2E	4	aho-corasick	DeepSeek-V3	english	160.1	ad32dc0b836a1522
+E2E	4	aho-corasick	DeepSeek-V3	code	185.8	243854c111d16fc0
+E2E	4	aho-corasick	DeepSeek-V3	agentic	205.0	3a667072307be811
+LOAD	4	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	366.40	9679168
+E2E	4	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	118.4	216fbc34c13778e9
+E2E	4	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	160.7	f874a2b73e1404d3
+E2E	4	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	162.6	f3e4a25b715a58e0
+LOAD	4	aho-corasick	Qwen3-8B	328.22	9257351
+E2E	4	aho-corasick	Qwen3-8B	english	149.6	672a537b767f1b7c
+E2E	4	aho-corasick	Qwen3-8B	code	182.3	3e5e5eba1472d0a1
+E2E	4	aho-corasick	Qwen3-8B	agentic	198.3	712d84388316a33f
+LOAD	4	aho-corasick	gemma-3-27b-it-int4-awq	735.08	20654944
+E2E	4	aho-corasick	gemma-3-27b-it-int4-awq	english	12.1	3a353c61f4d9babc
+E2E	4	aho-corasick	gemma-3-27b-it-int4-awq	code	19.6	7801a928c744ed70
+E2E	4	aho-corasick	gemma-3-27b-it-int4-awq	agentic	20.2	a435cf270e819941
+LOAD	4	aho-corasick	gpt-oss-20b	550.64	16431545
+E2E	4	aho-corasick	gpt-oss-20b	english	133.8	66006b7678d45c4b
+E2E	4	aho-corasick	gpt-oss-20b	code	172.7	8f82c3b8fa91d0bc
+E2E	4	aho-corasick	gpt-oss-20b	agentic	172.8	38098e72a1e2f3ab
+LOAD	4	aho-corasick	gpt2	89.20	3452947
+E2E	4	aho-corasick	gpt2	english	182.6	de7e53eb8dab612c
+E2E	4	aho-corasick	gpt2	code	203.1	4af0b577b1083d9b
+E2E	4	aho-corasick	gpt2	agentic	244.0	cfeda8137c630efe
+LOAD	4	aho-corasick	surya-ocr-2	19.10	9878991
+E2E	4	aho-corasick	surya-ocr-2	english	10.7	a2a66e67a64823f8
+E2E	4	aho-corasick	surya-ocr-2	code	11.1	ee3d9b52a7affa12
+E2E	4	aho-corasick	surya-ocr-2	agentic	11.1	f8922b3cc420f7f1
+LOAD	4	buckets	DeepSeek-V3	295.36	8489289
+E2E	4	buckets	DeepSeek-V3	english	161.6	ad32dc0b836a1522
+E2E	4	buckets	DeepSeek-V3	code	188.0	243854c111d16fc0
+E2E	4	buckets	DeepSeek-V3	agentic	215.0	3a667072307be811
+LOAD	4	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	357.93	9637826
+E2E	4	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	112.9	216fbc34c13778e9
+E2E	4	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	151.0	f874a2b73e1404d3
+E2E	4	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	156.5	f3e4a25b715a58e0
+LOAD	4	buckets	Qwen3-8B	325.39	9197924
+E2E	4	buckets	Qwen3-8B	english	150.6	672a537b767f1b7c
+E2E	4	buckets	Qwen3-8B	code	182.6	3e5e5eba1472d0a1
+E2E	4	buckets	Qwen3-8B	agentic	199.1	712d84388316a33f
+LOAD	4	buckets	gemma-3-27b-it-int4-awq	736.71	20411893
+E2E	4	buckets	gemma-3-27b-it-int4-awq	english	12.2	3a353c61f4d9babc
+E2E	4	buckets	gemma-3-27b-it-int4-awq	code	17.2	7801a928c744ed70
+E2E	4	buckets	gemma-3-27b-it-int4-awq	agentic	18.2	a435cf270e819941
+LOAD	4	buckets	gpt-oss-20b	545.78	16398241
+E2E	4	buckets	gpt-oss-20b	english	131.1	66006b7678d45c4b
+E2E	4	buckets	gpt-oss-20b	code	170.9	8f82c3b8fa91d0bc
+E2E	4	buckets	gpt-oss-20b	agentic	172.2	38098e72a1e2f3ab
+LOAD	4	buckets	gpt2	91.44	3451068
+E2E	4	buckets	gpt2	english	180.1	de7e53eb8dab612c
+E2E	4	buckets	gpt2	code	202.8	4af0b577b1083d9b
+E2E	4	buckets	gpt2	agentic	241.3	cfeda8137c630efe
+LOAD	4	buckets	surya-ocr-2	20.04	9727861
+E2E	4	buckets	surya-ocr-2	english	11.9	a2a66e67a64823f8
+E2E	4	buckets	surya-ocr-2	code	12.3	ee3d9b52a7affa12
+E2E	4	buckets	surya-ocr-2	agentic	12.3	f8922b3cc420f7f1
+== 15:15:12 round 4 done
+BUILD	5	buckets	DeepSeek-V3	818	5377.8	568104	637755
+MATCHER	5	buckets	DeepSeek-V3	english	whole	71565.2	0	cbf29ce484222325
+MATCHER	5	buckets	DeepSeek-V3	english	4k	48422.2	0	e739cd99ef1d3d32
+MATCHER	5	buckets	DeepSeek-V3	code	whole	32507.0	0	cbf29ce484222325
+MATCHER	5	buckets	DeepSeek-V3	code	4k	25563.1	0	7974cb587e6b19d9
+MATCHER	5	buckets	DeepSeek-V3	agentic	whole	6162.7	32929	de0748a98683edc0
+MATCHER	5	buckets	DeepSeek-V3	agentic	4k	5880.9	32929	75da54b57c343705
+BUILD	5	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	1000	249.4	34695	107302
+MATCHER	5	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	whole	1769.4	0	cbf29ce484222325
+MATCHER	5	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	4k	1737.1	0	e739cd99ef1d3d32
+MATCHER	5	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	whole	1649.4	1	e31b7644490c391b
+MATCHER	5	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	4k	1651.7	1	44be80b7baa5c227
+MATCHER	5	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	whole	1414.6	65998	24ea8526175601c3
+MATCHER	5	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	4k	1407.7	65998	05a71d703071b977
+BUILD	5	buckets	Qwen3-8B	26	98.3	608081	615733
+MATCHER	5	buckets	Qwen3-8B	english	whole	66161.4	0	cbf29ce484222325
+MATCHER	5	buckets	Qwen3-8B	english	4k	46314.5	0	e739cd99ef1d3d32
+MATCHER	5	buckets	Qwen3-8B	code	whole	30748.9	0	cbf29ce484222325
+MATCHER	5	buckets	Qwen3-8B	code	4k	24256.1	0	7974cb587e6b19d9
+MATCHER	5	buckets	Qwen3-8B	agentic	whole	5029.6	53562	b1b7e948b02cc46b
+MATCHER	5	buckets	Qwen3-8B	agentic	4k	4857.8	53562	4f783ffaa3bbfafe
+BUILD	5	buckets	gemma-3-27b-it-int4-awq	6415	4747.2	1234575	1607279
+MATCHER	5	buckets	gemma-3-27b-it-int4-awq	english	whole	573.9	114363	53faac5390cdf9ed
+MATCHER	5	buckets	gemma-3-27b-it-int4-awq	english	4k	588.0	114363	5ad8fe23c9f56500
+MATCHER	5	buckets	gemma-3-27b-it-int4-awq	code	whole	140.6	1127490	f68e29dbd5b93f5e
+MATCHER	5	buckets	gemma-3-27b-it-int4-awq	code	4k	139.5	1127490	7d52e126edfb0f80
+MATCHER	5	buckets	gemma-3-27b-it-int4-awq	agentic	whole	175.6	543243	2a2bc3b87cc5e8e5
+MATCHER	5	buckets	gemma-3-27b-it-int4-awq	agentic	4k	177.6	543243	d40e91ea06526978
+BUILD	5	buckets	gpt-oss-20b	21	110.6	801407	808840
+MATCHER	5	buckets	gpt-oss-20b	english	whole	44184.9	0	cbf29ce484222325
+MATCHER	5	buckets	gpt-oss-20b	english	4k	30092.1	0	e739cd99ef1d3d32
+MATCHER	5	buckets	gpt-oss-20b	code	whole	27715.1	0	cbf29ce484222325
+MATCHER	5	buckets	gpt-oss-20b	code	4k	22290.3	0	7974cb587e6b19d9
+MATCHER	5	buckets	gpt-oss-20b	agentic	whole	4431.4	72255	7fdbdff31a9d1653
+MATCHER	5	buckets	gpt-oss-20b	agentic	4k	4242.0	72163	99e37c0b1dadf4ce
+BUILD	5	buckets	gpt2	1	67.9	201671	207884
+MATCHER	5	buckets	gpt2	english	whole	48445.6	0	cbf29ce484222325
+MATCHER	5	buckets	gpt2	english	4k	26909.2	0	e739cd99ef1d3d32
+MATCHER	5	buckets	gpt2	code	whole	27509.3	0	cbf29ce484222325
+MATCHER	5	buckets	gpt2	code	4k	20293.8	0	7974cb587e6b19d9
+MATCHER	5	buckets	gpt2	agentic	whole	45156.0	0	cbf29ce484222325
+MATCHER	5	buckets	gpt2	agentic	4k	26933.4	0	417053d80e680a9d
+BUILD	5	buckets	surya-ocr-2	1948	459.7	330708	437189
+MATCHER	5	buckets	surya-ocr-2	english	whole	125.0	155943	4f6cde0216f6bd4c
+MATCHER	5	buckets	surya-ocr-2	english	4k	124.2	155943	49afe926d4eb8d1f
+MATCHER	5	buckets	surya-ocr-2	code	whole	172.6	1023450	4c3a2175e7475e91
+MATCHER	5	buckets	surya-ocr-2	code	4k	172.1	1023452	8e5055a31b9648f8
+MATCHER	5	buckets	surya-ocr-2	agentic	whole	155.7	824819	8a40f5eef0375e72
+MATCHER	5	buckets	surya-ocr-2	agentic	4k	155.2	824820	982e2ecbd66feaf1
+BUILD	5	aho-corasick	DeepSeek-V3	818	5858.9	631119	965654
+MATCHER	5	aho-corasick	DeepSeek-V3	english	whole	70560.8	0	cbf29ce484222325
+MATCHER	5	aho-corasick	DeepSeek-V3	english	4k	53144.9	0	e739cd99ef1d3d32
+MATCHER	5	aho-corasick	DeepSeek-V3	code	whole	30898.3	0	cbf29ce484222325
+MATCHER	5	aho-corasick	DeepSeek-V3	code	4k	26263.0	0	7974cb587e6b19d9
+MATCHER	5	aho-corasick	DeepSeek-V3	agentic	whole	5568.3	32929	de0748a98683edc0
+MATCHER	5	aho-corasick	DeepSeek-V3	agentic	4k	5232.2	32929	75da54b57c343705
+BUILD	5	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	1000	657.2	76565	256805
+MATCHER	5	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	whole	52031.9	0	cbf29ce484222325
+MATCHER	5	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	4k	41663.5	0	e739cd99ef1d3d32
+MATCHER	5	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	whole	8849.3	1	e31b7644490c391b
+MATCHER	5	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	4k	8530.4	1	44be80b7baa5c227
+MATCHER	5	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	whole	3555.5	65998	24ea8526175601c3
+MATCHER	5	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	4k	3421.3	65998	05a71d703071b977
+BUILD	5	aho-corasick	Qwen3-8B	26	214.0	668036	685614
+MATCHER	5	aho-corasick	Qwen3-8B	english	whole	71432.7	0	cbf29ce484222325
+MATCHER	5	aho-corasick	Qwen3-8B	english	4k	55429.5	0	e739cd99ef1d3d32
+MATCHER	5	aho-corasick	Qwen3-8B	code	whole	31676.1	0	cbf29ce484222325
+MATCHER	5	aho-corasick	Qwen3-8B	code	4k	26972.3	0	7974cb587e6b19d9
+MATCHER	5	aho-corasick	Qwen3-8B	agentic	whole	6719.8	53562	b1b7e948b02cc46b
+MATCHER	5	aho-corasick	Qwen3-8B	agentic	4k	6486.1	53562	4f783ffaa3bbfafe
+BUILD	5	aho-corasick	gemma-3-27b-it-int4-awq	6415	12177.6	1478154	2567522
+MATCHER	5	aho-corasick	gemma-3-27b-it-int4-awq	english	whole	529.2	114363	53faac5390cdf9ed
+MATCHER	5	aho-corasick	gemma-3-27b-it-int4-awq	english	4k	502.4	114363	5ad8fe23c9f56500
+MATCHER	5	aho-corasick	gemma-3-27b-it-int4-awq	code	whole	392.9	1127490	f68e29dbd5b93f5e
+MATCHER	5	aho-corasick	gemma-3-27b-it-int4-awq	code	4k	388.1	1127490	7d52e126edfb0f80
+MATCHER	5	aho-corasick	gemma-3-27b-it-int4-awq	agentic	whole	436.2	543243	2a2bc3b87cc5e8e5
+MATCHER	5	aho-corasick	gemma-3-27b-it-int4-awq	agentic	4k	420.4	543243	d40e91ea06526978
+BUILD	5	aho-corasick	gpt-oss-20b	21	219.9	835239	848965
+MATCHER	5	aho-corasick	gpt-oss-20b	english	whole	71475.3	0	cbf29ce484222325
+MATCHER	5	aho-corasick	gpt-oss-20b	english	4k	55351.4	0	e739cd99ef1d3d32
+MATCHER	5	aho-corasick	gpt-oss-20b	code	whole	32486.7	0	cbf29ce484222325
+MATCHER	5	aho-corasick	gpt-oss-20b	code	4k	26943.4	0	7974cb587e6b19d9
+MATCHER	5	aho-corasick	gpt-oss-20b	agentic	whole	6003.4	72255	7fdbdff31a9d1653
+MATCHER	5	aho-corasick	gpt-oss-20b	agentic	4k	5657.8	72163	99e37c0b1dadf4ce
+BUILD	5	aho-corasick	gpt2	1	235.4	204078	219190
+MATCHER	5	aho-corasick	gpt2	english	whole	48319.9	0	cbf29ce484222325
+MATCHER	5	aho-corasick	gpt2	english	4k	38092.1	0	e739cd99ef1d3d32
+MATCHER	5	aho-corasick	gpt2	code	whole	28240.9	0	cbf29ce484222325
+MATCHER	5	aho-corasick	gpt2	code	4k	24772.4	0	7974cb587e6b19d9
+MATCHER	5	aho-corasick	gpt2	agentic	whole	48003.6	0	cbf29ce484222325
+MATCHER	5	aho-corasick	gpt2	agentic	4k	37736.4	0	417053d80e680a9d
+BUILD	5	aho-corasick	surya-ocr-2	1948	1968.0	482366	1832350
+MATCHER	5	aho-corasick	surya-ocr-2	english	whole	138.6	155943	4f6cde0216f6bd4c
+MATCHER	5	aho-corasick	surya-ocr-2	english	4k	137.1	155943	49afe926d4eb8d1f
+MATCHER	5	aho-corasick	surya-ocr-2	code	whole	168.0	1023450	4c3a2175e7475e91
+MATCHER	5	aho-corasick	surya-ocr-2	code	4k	167.7	1023452	8e5055a31b9648f8
+MATCHER	5	aho-corasick	surya-ocr-2	agentic	whole	173.6	824819	8a40f5eef0375e72
+MATCHER	5	aho-corasick	surya-ocr-2	agentic	4k	173.4	824820	982e2ecbd66feaf1
+LOAD	5	buckets	DeepSeek-V3	298.39	8489289
+E2E	5	buckets	DeepSeek-V3	english	164.0	ad32dc0b836a1522
+E2E	5	buckets	DeepSeek-V3	code	189.2	243854c111d16fc0
+E2E	5	buckets	DeepSeek-V3	agentic	214.3	3a667072307be811
+LOAD	5	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	360.48	9637826
+E2E	5	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	111.5	216fbc34c13778e9
+E2E	5	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	150.0	f874a2b73e1404d3
+E2E	5	buckets	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	156.8	f3e4a25b715a58e0
+LOAD	5	buckets	Qwen3-8B	316.97	9197924
+E2E	5	buckets	Qwen3-8B	english	148.5	672a537b767f1b7c
+E2E	5	buckets	Qwen3-8B	code	181.5	3e5e5eba1472d0a1
+E2E	5	buckets	Qwen3-8B	agentic	201.8	712d84388316a33f
+LOAD	5	buckets	gemma-3-27b-it-int4-awq	719.60	20411893
+E2E	5	buckets	gemma-3-27b-it-int4-awq	english	12.1	3a353c61f4d9babc
+E2E	5	buckets	gemma-3-27b-it-int4-awq	code	17.3	7801a928c744ed70
+E2E	5	buckets	gemma-3-27b-it-int4-awq	agentic	18.4	a435cf270e819941
+LOAD	5	buckets	gpt-oss-20b	560.00	16398241
+E2E	5	buckets	gpt-oss-20b	english	132.4	66006b7678d45c4b
+E2E	5	buckets	gpt-oss-20b	code	171.8	8f82c3b8fa91d0bc
+E2E	5	buckets	gpt-oss-20b	agentic	173.9	38098e72a1e2f3ab
+LOAD	5	buckets	gpt2	90.04	3451068
+E2E	5	buckets	gpt2	english	181.2	de7e53eb8dab612c
+E2E	5	buckets	gpt2	code	201.6	4af0b577b1083d9b
+E2E	5	buckets	gpt2	agentic	243.4	cfeda8137c630efe
+LOAD	5	buckets	surya-ocr-2	19.86	9727861
+E2E	5	buckets	surya-ocr-2	english	11.7	a2a66e67a64823f8
+E2E	5	buckets	surya-ocr-2	code	12.2	ee3d9b52a7affa12
+E2E	5	buckets	surya-ocr-2	agentic	12.1	f8922b3cc420f7f1
+LOAD	5	aho-corasick	DeepSeek-V3	303.59	8592482
+E2E	5	aho-corasick	DeepSeek-V3	english	160.5	ad32dc0b836a1522
+E2E	5	aho-corasick	DeepSeek-V3	code	186.6	243854c111d16fc0
+E2E	5	aho-corasick	DeepSeek-V3	agentic	205.8	3a667072307be811
+LOAD	5	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	364.91	9679168
+E2E	5	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	english	120.5	216fbc34c13778e9
+E2E	5	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	code	162.1	f874a2b73e1404d3
+E2E	5	aho-corasick	NVIDIA-Nemotron-3-Nano-30B-A3B-BF16	agentic	164.0	f3e4a25b715a58e0
+LOAD	5	aho-corasick	Qwen3-8B	335.07	9257351
+E2E	5	aho-corasick	Qwen3-8B	english	148.6	672a537b767f1b7c
+E2E	5	aho-corasick	Qwen3-8B	code	181.6	3e5e5eba1472d0a1
+E2E	5	aho-corasick	Qwen3-8B	agentic	196.4	712d84388316a33f
+LOAD	5	aho-corasick	gemma-3-27b-it-int4-awq	720.84	20654944
+E2E	5	aho-corasick	gemma-3-27b-it-int4-awq	english	12.0	3a353c61f4d9babc
+E2E	5	aho-corasick	gemma-3-27b-it-int4-awq	code	19.2	7801a928c744ed70
+E2E	5	aho-corasick	gemma-3-27b-it-int4-awq	agentic	20.1	a435cf270e819941
+LOAD	5	aho-corasick	gpt-oss-20b	552.29	16431545
+E2E	5	aho-corasick	gpt-oss-20b	english	133.1	66006b7678d45c4b
+E2E	5	aho-corasick	gpt-oss-20b	code	172.7	8f82c3b8fa91d0bc
+E2E	5	aho-corasick	gpt-oss-20b	agentic	172.7	38098e72a1e2f3ab
+LOAD	5	aho-corasick	gpt2	92.87	3452947
+E2E	5	aho-corasick	gpt2	english	179.4	de7e53eb8dab612c
+E2E	5	aho-corasick	gpt2	code	200.7	4af0b577b1083d9b
+E2E	5	aho-corasick	gpt2	agentic	242.0	cfeda8137c630efe
+LOAD	5	aho-corasick	surya-ocr-2	21.06	9878991
+E2E	5	aho-corasick	surya-ocr-2	english	10.7	a2a66e67a64823f8
+E2E	5	aho-corasick	surya-ocr-2	code	11.1	ee3d9b52a7affa12
+E2E	5	aho-corasick	surya-ocr-2	agentic	11.1	f8922b3cc420f7f1
+== 15:18:14 round 5 done
+== 15:18:14 end, steal ticks 47

@@ -38,6 +38,7 @@ thiserror = "2"
 ahash = "0.8.12"
 dary_heap = "0.3.9"
 memchr = "2.8.3"
+aho-corasick = "1.1.5"
 wide = "1.6.1"
 ########### Optional dependencies ############################
 rayon = { version = "1.12", optional = true }
@@ -71,8 +72,6 @@ http = ["hf-hub"]
 parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
 
 [dev-dependencies]
-# Test-only: one `#[cfg(test)]` cross-check in `vocab/buckets.rs`.
-daachorse = "5.0.0"
 # The unit tests build `regex::Regex` values directly, in every feature rung, so the tests need
 # it even when the library itself does not link it.
 regex = "1.13"

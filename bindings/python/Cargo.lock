@@ -1248,6 +1248,7 @@ name = "tk-encode"
 version = "0.1.0-dev.2"
 dependencies = [
  "ahash",
+ "aho-corasick",
  "bitcannon",
  "dary_heap",
  "fancy-regex",

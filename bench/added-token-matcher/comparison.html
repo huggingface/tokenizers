@@ -1,0 +1,150 @@
+<title>Added-token matcher comparison</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one reading column of tables, each table scrolls on its own at phone width */
+:root{--bg:#f6f7f8;--surface:#ffffff;--fg:#1b2127;--muted:#5d6873;--line:#dde2e6;--accent:#1f6f78;--win:#1d7a46;--win-bg:#e3f3e9;--loss:#a33a2b;--loss-bg:#f8e6e2;--warn-bg:#fbf1d9;--warn:#7a5a12;
+--sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14181c;--surface:#1b2026;--fg:#e4e8ec;--muted:#98a3ad;--line:#2c333a;--accent:#5fb3bc;--win:#6fd39a;--win-bg:#173326;--loss:#f08b7a;--loss-bg:#3a1f1a;--warn-bg:#352b14;--warn:#e8c56a;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14181c;--surface:#1b2026;--fg:#e4e8ec;--muted:#98a3ad;--line:#2c333a;--accent:#5fb3bc;--win:#6fd39a;--win-bg:#173326;--loss:#f08b7a;--loss-bg:#3a1f1a;--warn-bg:#352b14;--warn:#e8c56a;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 var(--sans)}
+main{max-width:1040px;margin:0 auto;padding-block:40px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:36px}
+h1{font-size:28px;font-weight:600;margin:0;text-wrap:balance;letter-spacing:-.01em}
+h2{font-size:19px;font-weight:600;margin:0 0 6px;text-wrap:balance}
+p{margin:0;max-width:72ch}
+.lede{display:flex;flex-direction:column;gap:12px}
+.meta{color:var(--muted);font-size:13px}
+code{font-family:var(--mono);font-size:.88em}
+section{display:flex;flex-direction:column;gap:10px;min-width:0}
+.note{background:var(--warn-bg);color:var(--fg);border-left:3px solid var(--warn);padding:12px 14px;border-radius:4px;max-width:none}
+.note b{color:var(--warn)}
+.scroll{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{padding:7px 10px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--line)}
+th{font-weight:500;color:var(--muted);font-size:12px;letter-spacing:.03em;text-transform:uppercase;vertical-align:bottom}
+thead tr.grp th{text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--fg);border-bottom:none;padding-bottom:0}
+tr.g td{border-top:1px solid var(--line)}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+th.n{text-align:right}
+td.m{font-weight:500;vertical-align:top}
+td.m span{display:block;font-weight:400;color:var(--muted);font-size:12px}
+td.p{vertical-align:top;font-size:12.5px}
+td.p.fair{color:var(--muted)}
+td.p.unfair{color:var(--warn);font-weight:500}
+td.r{font-weight:500}
+td.n small{font-size:.82em;color:var(--muted);font-weight:400}
+td.win small,td.loss small{color:inherit;opacity:.8}
+td.win{color:var(--win);background:var(--win-bg)}
+td.loss{color:var(--loss);background:var(--loss-bg)}
+td.tie{color:var(--muted)}
+ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px;max-width:76ch}
+</style>
+<main>
+<div class="lede">
+<h1>Added-token matcher comparison</h1>
+<p>Main's bucket matcher (<code>tk-encode/src/vocab/buckets.rs</code> at <code>d9a5e8af</code>) against branch <code>perf/aho-corasick</code>, which replaces it with the <code>aho-corasick</code> 1.1.5 crate (<code>MatchKind::LeftmostLongest</code>). The same harness is built twice, once per arm. Matches and encoded ids are identical between the arms on every cell, on both hosts.</p>
+<p class="meta">HF Jobs <code>cpu-performance</code>, AMD EPYC 7R13 (x86_64), pinned to one core. 5 rounds, arms alternating, best of 5 kept. Host 1 job <code>6ae20e173fb22a235dd41771</code>, host 2 job <code>6ae20e183fb22a235dd41773</code>. Ratio is aho-corasick ÷ buckets: above 1 means aho-corasick is faster.</p>
+</div>
+
+<p class="note"><b>Fairness caveat.</b> These are x86 numbers. When a token set starts with 2 or more distinct bytes, the bucket matcher on x86 falls back to a scalar byte loop. The NEON nibble scan only builds on aarch64. Rows marked <i>scalar byte loop</i> therefore compare aho-corasick with that fallback, not with the bucket algorithm. Rows with one first byte use <code>memchr::memmem</code>, which is SIMD on x86, so those comparisons are fair. No ARM numbers yet.</p>
+
+<section>
+<h2>End to end</h2>
+<p class="meta"><code>from_json</code> then <code>encode</code> with <code>EncodeOptions::no_specials()</code> on 4 KB pieces, one thread. Throughput is input bytes per second, host 1. Spread is (max − min) ÷ max over the 5 rounds, for the worse arm.</p>
+<div class="scroll"><table>
+<thead><tr><th>Model</th><th>x86 bucket path</th><th>Corpus</th><th class="n">Buckets</th><th class="n">A-C</th><th class="n">Ratio host 1</th><th class="n">Ratio host 2</th><th class="n">Spread</th></tr></thead>
+<tbody>
+<tr class="g"><td rowspan="3" class="m">gpt2<span>1 token · 1 first byte</span></td><td rowspan="3" class="p fair">memmem (SIMD)</td><td>english</td><td class="n">181<small> MB/s</small></td><td class="n">183<small> MB/s</small></td><td class="n r tie">1.01<small>×</small></td><td class="n r tie">1.01<small>×</small></td><td class="n">3%</td></tr>
+<tr class=""><td>code</td><td class="n">203<small> MB/s</small></td><td class="n">203<small> MB/s</small></td><td class="n r tie">1.00<small>×</small></td><td class="n r tie">1.00<small>×</small></td><td class="n">3%</td></tr>
+<tr class=""><td>agentic</td><td class="n">243<small> MB/s</small></td><td class="n">244<small> MB/s</small></td><td class="n r tie">1.00<small>×</small></td><td class="n r tie">1.00<small>×</small></td><td class="n">4%</td></tr>
+<tr class="g"><td rowspan="3" class="m">gpt-oss-20b<span>21 tokens · 1 first byte</span></td><td rowspan="3" class="p fair">memmem (SIMD)</td><td>english</td><td class="n">134<small> MB/s</small></td><td class="n">134<small> MB/s</small></td><td class="n r tie">1.00<small>×</small></td><td class="n r tie">1.00<small>×</small></td><td class="n">3%</td></tr>
+<tr class=""><td>code</td><td class="n">173<small> MB/s</small></td><td class="n">173<small> MB/s</small></td><td class="n r tie">1.00<small>×</small></td><td class="n r tie">0.99<small>×</small></td><td class="n">2%</td></tr>
+<tr class=""><td>agentic</td><td class="n">174<small> MB/s</small></td><td class="n">174<small> MB/s</small></td><td class="n r tie">1.00<small>×</small></td><td class="n r tie">0.99<small>×</small></td><td class="n">1%</td></tr>
+<tr class="g"><td rowspan="3" class="m">Qwen3-8B<span>26 tokens · 1 first byte</span></td><td rowspan="3" class="p fair">memmem (SIMD)</td><td>english</td><td class="n">151<small> MB/s</small></td><td class="n">150<small> MB/s</small></td><td class="n r tie">0.99<small>×</small></td><td class="n r tie">1.01<small>×</small></td><td class="n">5%</td></tr>
+<tr class=""><td>code</td><td class="n">183<small> MB/s</small></td><td class="n">182<small> MB/s</small></td><td class="n r tie">1.00<small>×</small></td><td class="n r tie">1.01<small>×</small></td><td class="n">2%</td></tr>
+<tr class=""><td>agentic</td><td class="n">202<small> MB/s</small></td><td class="n">198<small> MB/s</small></td><td class="n r tie">0.98<small>×</small></td><td class="n r tie">1.00<small>×</small></td><td class="n">3%</td></tr>
+<tr class="g"><td rowspan="3" class="m">DeepSeek-V3<span>818 tokens · 1 first byte</span></td><td rowspan="3" class="p fair">memmem (SIMD)</td><td>english</td><td class="n">164<small> MB/s</small></td><td class="n">164<small> MB/s</small></td><td class="n r tie">1.00<small>×</small></td><td class="n r tie">1.00<small>×</small></td><td class="n">2%</td></tr>
+<tr class=""><td>code</td><td class="n">189<small> MB/s</small></td><td class="n">189<small> MB/s</small></td><td class="n r tie">1.00<small>×</small></td><td class="n r tie">1.00<small>×</small></td><td class="n">2%</td></tr>
+<tr class=""><td>agentic</td><td class="n">216<small> MB/s</small></td><td class="n">209<small> MB/s</small></td><td class="n r tie">0.97<small>×</small></td><td class="n r tie">0.97<small>×</small></td><td class="n">2%</td></tr>
+<tr class="g"><td rowspan="3" class="m">Nemotron-3-Nano<span>1000 tokens · 2 first bytes</span></td><td rowspan="3" class="p unfair">scalar byte loop</td><td>english</td><td class="n">113<small> MB/s</small></td><td class="n">121<small> MB/s</small></td><td class="n r win">1.07<small>×</small></td><td class="n r win">1.07<small>×</small></td><td class="n">2%</td></tr>
+<tr class=""><td>code</td><td class="n">151<small> MB/s</small></td><td class="n">164<small> MB/s</small></td><td class="n r win">1.08<small>×</small></td><td class="n r win">1.08<small>×</small></td><td class="n">2%</td></tr>
+<tr class=""><td>agentic</td><td class="n">157<small> MB/s</small></td><td class="n">166<small> MB/s</small></td><td class="n r win">1.06<small>×</small></td><td class="n r win">1.07<small>×</small></td><td class="n">2%</td></tr>
+<tr class="g"><td rowspan="3" class="m">surya-ocr-2<span>1948 tokens · 40 first bytes</span></td><td rowspan="3" class="p unfair">scalar byte loop</td><td>english</td><td class="n">12<small> MB/s</small></td><td class="n">11<small> MB/s</small></td><td class="n r loss">0.89<small>×</small></td><td class="n r tie">1.02<small>×</small></td><td class="n">3%</td></tr>
+<tr class=""><td>code</td><td class="n">12<small> MB/s</small></td><td class="n">11<small> MB/s</small></td><td class="n r loss">0.90<small>×</small></td><td class="n r tie">1.02<small>×</small></td><td class="n">2%</td></tr>
+<tr class=""><td>agentic</td><td class="n">12<small> MB/s</small></td><td class="n">11<small> MB/s</small></td><td class="n r loss">0.90<small>×</small></td><td class="n r tie">1.03<small>×</small></td><td class="n">3%</td></tr>
+<tr class="g"><td rowspan="3" class="m">Gemma 3<span>6415 tokens · 5 first bytes</span></td><td rowspan="3" class="p unfair">scalar byte loop</td><td>english</td><td class="n">12<small> MB/s</small></td><td class="n">12<small> MB/s</small></td><td class="n r tie">0.98<small>×</small></td><td class="n r tie">0.98<small>×</small></td><td class="n">2%</td></tr>
+<tr class=""><td>code</td><td class="n">17<small> MB/s</small></td><td class="n">20<small> MB/s</small></td><td class="n r win">1.13<small>×</small></td><td class="n r win">1.11<small>×</small></td><td class="n">2%</td></tr>
+<tr class=""><td>agentic</td><td class="n">18<small> MB/s</small></td><td class="n">20<small> MB/s</small></td><td class="n r win">1.09<small>×</small></td><td class="n r win">1.09<small>×</small></td><td class="n">3%</td></tr>
+</tbody></table></div>
+</section>
+
+<section>
+<h2>Matcher alone</h2>
+<p class="meta">One matcher built from all of the model's added tokens. Every match is found, restarting after each one like <code>extract_next</code>. Whole is one call over the 20 MB text; 4 KB is the same text in 4 KB pieces. Throughput is input bytes per second, host 1.</p>
+<div class="scroll"><table>
+<thead><tr class="grp"><th></th><th></th><th></th><th colspan="4">Whole text</th><th colspan="4">4 KB pieces</th></tr>
+<tr><th>Model</th><th>Corpus</th><th class="n">Matches</th><th class="n">Buckets</th><th class="n">A-C</th><th class="n">Host 1</th><th class="n">Host 2</th><th class="n">Buckets</th><th class="n">A-C</th><th class="n">Host 1</th><th class="n">Host 2</th></tr></thead>
+<tbody>
+<tr class="g"><td rowspan="3" class="m">gpt2<span>1 first byte</span></td><td>english</td><td class="n">0</td><td class="n">50,593<small> MB/s</small></td><td class="n">48,468<small> MB/s</small></td><td class="n r tie">0.96<small>×</small></td><td class="n r loss">0.94<small>×</small></td><td class="n">27,359<small> MB/s</small></td><td class="n">38,092<small> MB/s</small></td><td class="n r win">1.39<small>×</small></td><td class="n r win">1.34<small>×</small></td></tr>
+<tr class=""><td>code</td><td class="n">0</td><td class="n">27,949<small> MB/s</small></td><td class="n">28,595<small> MB/s</small></td><td class="n r tie">1.02<small>×</small></td><td class="n r tie">0.97<small>×</small></td><td class="n">20,488<small> MB/s</small></td><td class="n">24,885<small> MB/s</small></td><td class="n r win">1.21<small>×</small></td><td class="n r win">1.23<small>×</small></td></tr>
+<tr class=""><td>agentic</td><td class="n">0</td><td class="n">47,468<small> MB/s</small></td><td class="n">48,004<small> MB/s</small></td><td class="n r tie">1.01<small>×</small></td><td class="n r tie">0.96<small>×</small></td><td class="n">27,557<small> MB/s</small></td><td class="n">37,736<small> MB/s</small></td><td class="n r win">1.37<small>×</small></td><td class="n r win">1.33<small>×</small></td></tr>
+<tr class="g"><td rowspan="3" class="m">gpt-oss-20b<span>1 first byte</span></td><td>english</td><td class="n">0</td><td class="n">47,147<small> MB/s</small></td><td class="n">71,475<small> MB/s</small></td><td class="n r win">1.52<small>×</small></td><td class="n r win">1.47<small>×</small></td><td class="n">31,026<small> MB/s</small></td><td class="n">55,351<small> MB/s</small></td><td class="n r win">1.78<small>×</small></td><td class="n r win">1.73<small>×</small></td></tr>
+<tr class=""><td>code</td><td class="n">0</td><td class="n">28,439<small> MB/s</small></td><td class="n">32,743<small> MB/s</small></td><td class="n r win">1.15<small>×</small></td><td class="n r win">1.15<small>×</small></td><td class="n">22,677<small> MB/s</small></td><td class="n">27,558<small> MB/s</small></td><td class="n r win">1.22<small>×</small></td><td class="n r win">1.18<small>×</small></td></tr>
+<tr class=""><td>agentic</td><td class="n">72,163</td><td class="n">4,453<small> MB/s</small></td><td class="n">6,003<small> MB/s</small></td><td class="n r win">1.35<small>×</small></td><td class="n r win">1.34<small>×</small></td><td class="n">4,256<small> MB/s</small></td><td class="n">5,689<small> MB/s</small></td><td class="n r win">1.34<small>×</small></td><td class="n r win">1.33<small>×</small></td></tr>
+<tr class="g"><td rowspan="3" class="m">Qwen3-8B<span>1 first byte</span></td><td>english</td><td class="n">0</td><td class="n">70,317<small> MB/s</small></td><td class="n">71,433<small> MB/s</small></td><td class="n r tie">1.02<small>×</small></td><td class="n r tie">0.99<small>×</small></td><td class="n">48,378<small> MB/s</small></td><td class="n">55,430<small> MB/s</small></td><td class="n r win">1.15<small>×</small></td><td class="n r win">1.13<small>×</small></td></tr>
+<tr class=""><td>code</td><td class="n">0</td><td class="n">31,189<small> MB/s</small></td><td class="n">32,025<small> MB/s</small></td><td class="n r tie">1.03<small>×</small></td><td class="n r tie">1.01<small>×</small></td><td class="n">24,868<small> MB/s</small></td><td class="n">26,972<small> MB/s</small></td><td class="n r win">1.08<small>×</small></td><td class="n r win">1.08<small>×</small></td></tr>
+<tr class=""><td>agentic</td><td class="n">53,562</td><td class="n">5,156<small> MB/s</small></td><td class="n">6,765<small> MB/s</small></td><td class="n r win">1.31<small>×</small></td><td class="n r win">1.31<small>×</small></td><td class="n">4,945<small> MB/s</small></td><td class="n">6,523<small> MB/s</small></td><td class="n r win">1.32<small>×</small></td><td class="n r win">1.31<small>×</small></td></tr>
+<tr class="g"><td rowspan="3" class="m">DeepSeek-V3<span>1 first byte</span></td><td>english</td><td class="n">0</td><td class="n">71,565<small> MB/s</small></td><td class="n">70,561<small> MB/s</small></td><td class="n r tie">0.99<small>×</small></td><td class="n r tie">1.02<small>×</small></td><td class="n">48,469<small> MB/s</small></td><td class="n">53,942<small> MB/s</small></td><td class="n r win">1.11<small>×</small></td><td class="n r win">1.14<small>×</small></td></tr>
+<tr class=""><td>code</td><td class="n">0</td><td class="n">32,507<small> MB/s</small></td><td class="n">30,898<small> MB/s</small></td><td class="n r loss">0.95<small>×</small></td><td class="n r tie">0.97<small>×</small></td><td class="n">25,563<small> MB/s</small></td><td class="n">26,263<small> MB/s</small></td><td class="n r tie">1.03<small>×</small></td><td class="n r win">1.05<small>×</small></td></tr>
+<tr class=""><td>agentic</td><td class="n">32,929</td><td class="n">6,203<small> MB/s</small></td><td class="n">5,568<small> MB/s</small></td><td class="n r loss">0.90<small>×</small></td><td class="n r loss">0.89<small>×</small></td><td class="n">5,892<small> MB/s</small></td><td class="n">5,304<small> MB/s</small></td><td class="n r loss">0.90<small>×</small></td><td class="n r loss">0.89<small>×</small></td></tr>
+<tr class="g"><td rowspan="3" class="m">Nemotron-3-Nano<span>2 first bytes</span></td><td>english</td><td class="n">0</td><td class="n">1,771<small> MB/s</small></td><td class="n">54,415<small> MB/s</small></td><td class="n r win">30.73<small>×</small></td><td class="n r win">29.63<small>×</small></td><td class="n">1,737<small> MB/s</small></td><td class="n">43,477<small> MB/s</small></td><td class="n r win">25.03<small>×</small></td><td class="n r win">24.39<small>×</small></td></tr>
+<tr class=""><td>code</td><td class="n">1</td><td class="n">1,649<small> MB/s</small></td><td class="n">8,898<small> MB/s</small></td><td class="n r win">5.39<small>×</small></td><td class="n r win">5.35<small>×</small></td><td class="n">1,652<small> MB/s</small></td><td class="n">8,576<small> MB/s</small></td><td class="n r win">5.19<small>×</small></td><td class="n r win">5.18<small>×</small></td></tr>
+<tr class=""><td>agentic</td><td class="n">65,998</td><td class="n">1,415<small> MB/s</small></td><td class="n">3,583<small> MB/s</small></td><td class="n r win">2.53<small>×</small></td><td class="n r win">2.52<small>×</small></td><td class="n">1,408<small> MB/s</small></td><td class="n">3,439<small> MB/s</small></td><td class="n r win">2.44<small>×</small></td><td class="n r win">2.43<small>×</small></td></tr>
+<tr class="g"><td rowspan="3" class="m">surya-ocr-2<span>40 first bytes</span></td><td>english</td><td class="n">155,943</td><td class="n">125<small> MB/s</small></td><td class="n">140<small> MB/s</small></td><td class="n r win">1.12<small>×</small></td><td class="n r win">1.12<small>×</small></td><td class="n">125<small> MB/s</small></td><td class="n">138<small> MB/s</small></td><td class="n r win">1.10<small>×</small></td><td class="n r win">1.11<small>×</small></td></tr>
+<tr class=""><td>code</td><td class="n">1,023,452</td><td class="n">174<small> MB/s</small></td><td class="n">175<small> MB/s</small></td><td class="n r tie">1.01<small>×</small></td><td class="n r tie">1.01<small>×</small></td><td class="n">173<small> MB/s</small></td><td class="n">174<small> MB/s</small></td><td class="n r tie">1.01<small>×</small></td><td class="n r tie">0.97<small>×</small></td></tr>
+<tr class=""><td>agentic</td><td class="n">824,820</td><td class="n">156<small> MB/s</small></td><td class="n">176<small> MB/s</small></td><td class="n r win">1.12<small>×</small></td><td class="n r win">1.17<small>×</small></td><td class="n">156<small> MB/s</small></td><td class="n">177<small> MB/s</small></td><td class="n r win">1.13<small>×</small></td><td class="n r win">1.15<small>×</small></td></tr>
+<tr class="g"><td rowspan="3" class="m">Gemma 3<span>5 first bytes</span></td><td>english</td><td class="n">114,363</td><td class="n">575<small> MB/s</small></td><td class="n">530<small> MB/s</small></td><td class="n r loss">0.92<small>×</small></td><td class="n r loss">0.93<small>×</small></td><td class="n">589<small> MB/s</small></td><td class="n">510<small> MB/s</small></td><td class="n r loss">0.87<small>×</small></td><td class="n r loss">0.90<small>×</small></td></tr>
+<tr class=""><td>code</td><td class="n">1,127,490</td><td class="n">141<small> MB/s</small></td><td class="n">406<small> MB/s</small></td><td class="n r win">2.89<small>×</small></td><td class="n r win">2.91<small>×</small></td><td class="n">140<small> MB/s</small></td><td class="n">393<small> MB/s</small></td><td class="n r win">2.81<small>×</small></td><td class="n r win">2.80<small>×</small></td></tr>
+<tr class=""><td>agentic</td><td class="n">543,243</td><td class="n">176<small> MB/s</small></td><td class="n">436<small> MB/s</small></td><td class="n r win">2.48<small>×</small></td><td class="n r win">2.46<small>×</small></td><td class="n">178<small> MB/s</small></td><td class="n">420<small> MB/s</small></td><td class="n r win">2.36<small>×</small></td><td class="n r win">2.36<small>×</small></td></tr>
+</tbody></table></div>
+</section>
+
+<section>
+<h2>Memory and build time</h2>
+<p class="meta">Counting global allocator. Matcher: bytes still allocated after it is built from every added token, and the peak during the build. Both arms include the <code>BucketVocabStore</code> that serves <code>token_to_id</code>. Build time is the median of 5 rounds. Tokenizer: bytes still allocated after the whole <code>from_json</code>.</p>
+<div class="scroll"><table>
+<thead><tr class="grp"><th></th><th></th><th colspan="2">Matcher</th><th colspan="2">Build peak</th><th colspan="2">Build time</th><th colspan="2">Tokenizer</th></tr>
+<tr><th>Model</th><th class="n">Added tokens</th><th class="n">Buckets</th><th class="n">A-C</th><th class="n">Buckets</th><th class="n">A-C</th><th class="n">Buckets</th><th class="n">A-C</th><th class="n">Buckets</th><th class="n">A-C</th></tr></thead>
+<tbody>
+<tr><td class="m">gpt2</td><td class="n">1</td><td class="n">197<small> KiB</small></td><td class="n">199<small> KiB</small></td><td class="n">203<small> KiB</small></td><td class="n">214<small> KiB</small></td><td class="n">68<small> µs</small></td><td class="n">233<small> µs</small></td><td class="n">3.3<small> MiB</small></td><td class="n">3.3<small> MiB</small></td></tr>
+<tr><td class="m">gpt-oss-20b</td><td class="n">21</td><td class="n">783<small> KiB</small></td><td class="n">816<small> KiB</small></td><td class="n">790<small> KiB</small></td><td class="n">829<small> KiB</small></td><td class="n">111<small> µs</small></td><td class="n">218<small> µs</small></td><td class="n">15.6<small> MiB</small></td><td class="n">15.7<small> MiB</small></td></tr>
+<tr><td class="m">Qwen3-8B</td><td class="n">26</td><td class="n">594<small> KiB</small></td><td class="n">652<small> KiB</small></td><td class="n">601<small> KiB</small></td><td class="n">670<small> KiB</small></td><td class="n">101<small> µs</small></td><td class="n">212<small> µs</small></td><td class="n">8.8<small> MiB</small></td><td class="n">8.8<small> MiB</small></td></tr>
+<tr><td class="m">DeepSeek-V3</td><td class="n">818</td><td class="n">555<small> KiB</small></td><td class="n">616<small> KiB</small></td><td class="n">623<small> KiB</small></td><td class="n">943<small> KiB</small></td><td class="n">5,385<small> µs</small></td><td class="n">5,948<small> µs</small></td><td class="n">8.1<small> MiB</small></td><td class="n">8.2<small> MiB</small></td></tr>
+<tr><td class="m">Nemotron-3-Nano</td><td class="n">1000</td><td class="n">34<small> KiB</small></td><td class="n">75<small> KiB</small></td><td class="n">105<small> KiB</small></td><td class="n">251<small> KiB</small></td><td class="n">253<small> µs</small></td><td class="n">660<small> µs</small></td><td class="n">9.2<small> MiB</small></td><td class="n">9.2<small> MiB</small></td></tr>
+<tr><td class="m">surya-ocr-2</td><td class="n">1948</td><td class="n">323<small> KiB</small></td><td class="n">471<small> KiB</small></td><td class="n">427<small> KiB</small></td><td class="n">1,789<small> KiB</small></td><td class="n">462<small> µs</small></td><td class="n">1,968<small> µs</small></td><td class="n">9.3<small> MiB</small></td><td class="n">9.4<small> MiB</small></td></tr>
+<tr><td class="m">Gemma 3</td><td class="n">6415</td><td class="n">1,206<small> KiB</small></td><td class="n">1,444<small> KiB</small></td><td class="n">1,570<small> KiB</small></td><td class="n">2,507<small> KiB</small></td><td class="n">4,768<small> µs</small></td><td class="n">12,266<small> µs</small></td><td class="n">19.5<small> MiB</small></td><td class="n">19.7<small> MiB</small></td></tr>
+</tbody></table></div>
+</section>
+
+<section>
+<h2>Binary size</h2>
+<p class="meta">A minimal binary that loads a tokenizer and encodes one string: <code>tokenizers</code> default features, release, fat LTO, <code>codegen-units = 1</code>, stripped. Built on macOS for each target.</p>
+<div class="scroll"><table>
+<thead><tr><th>Target</th><th class="n">Buckets</th><th class="n">A-C</th><th class="n">Delta</th><th class="n">Gzipped delta</th></tr></thead>
+<tbody>
+<tr><td>aarch64-apple-darwin</td><td class="n">1,460<small> KiB</small></td><td class="n">1,622<small> KiB</small></td><td class="n">+162 KiB (+11%)</td><td class="n">n/a</td></tr>
+<tr><td>x86_64-apple-darwin</td><td class="n">1,578<small> KiB</small></td><td class="n">1,786<small> KiB</small></td><td class="n">+209 KiB (+13%)</td><td class="n">+89 KiB (+12%)</td></tr>
+<tr><td>wasm32-wasip1</td><td class="n">1,205<small> KiB</small></td><td class="n">1,324<small> KiB</small></td><td class="n">+119 KiB (+10%)</td><td class="n">+38 KiB (+10%)</td></tr>
+</tbody></table></div>
+</section>
+
+<section>
+<h2>Setup</h2>
+<ul>
+<li><b>Corpora</b>, 20 MB each. English: FineWeb <code>sample/10BT/000_00000.parquet</code>. Code: the <code>patch</code> column of <code>SWE-bench/SWE-smith-trajectories</code>, deduplicated. Agentic: SWE-smith <code>tool</code> trajectories rendered through each model's own chat template, so the text holds that model's real markers. gpt2 has no template and gets <code>role: content</code> lines. Gemma 3 and surya-ocr-2 reject about half the conversations, which are then rendered as alternating user and assistant turns.</li>
+<li><b>Models</b>, from few added tokens to many: <code>openai-community/gpt2</code>, <code>openai/gpt-oss-20b</code>, <code>Qwen/Qwen3-8B</code>, <code>deepseek-ai/DeepSeek-V3</code>, <code>nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16</code>, <code>datalab-to/surya-ocr-2</code>, and Gemma 3's tokenizer via <code>gaunernst/gemma-3-27b-it-int4-awq</code> (ungated). Revisions are pinned in the job logs.</li>
+<li><b>Empty sets.</b> An <code>AhoCorasick</code> built from zero patterns has no prefilter and walks every byte. The branch therefore stores <code>Option&lt;AhoCorasick&gt;</code>. Before that fix, gpt2 and Qwen3 encoded 25–35% slower, because one of their two token sets is empty.</li>
+<li><b>Rerun.</b> <code>bench/added-token-matcher/</code> on the branch: <code>make jobs</code>, then <code>make fetch ID=&lt;job&gt;</code>. The job embeds the branch diff, so nothing needs to be pushed.</li>
+</ul>
+</section>
+</main>

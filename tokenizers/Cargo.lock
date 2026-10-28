@@ -731,12 +731,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5614204febbc33cc07a2806aa6440b904ac012b68eecc37f4493ea4a76455a3d"
 
 [[package]]
-name = "daachorse"
-version = "5.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd10668980c9e7ba8aa2e616207d9ec52f7db66ebb47db857ed1f3c342530dad"
-
-[[package]]
 name = "darling"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3161,9 +3155,9 @@ name = "tk-encode"
 version = "0.1.0-dev.2"
 dependencies = [
  "ahash",
+ "aho-corasick",
  "assert_approx_eq",
  "bitcannon",
- "daachorse 5.0.0",
  "dary_heap",
  "fancy-regex",
  "hf-hub",
@@ -3228,7 +3222,7 @@ checksum = "7afbf6e88718afcc138bad01d6ccc3051dbbc3b2ce9793d8b8a3aeb610969cfc"
 dependencies = [
  "ahash",
  "compact_str",
- "daachorse 3.0.3",
+ "daachorse",
  "dary_heap",
  "derive_builder",
  "esaxx-rs",
