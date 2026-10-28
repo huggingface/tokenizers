@@ -491,6 +491,62 @@ fn is_idempotent() {
     assert_no_legacy_residue(&serde_json::from_str(&once).unwrap(), "the legacy literal");
 }
 
+// ---- encode after convert --------------------------------------------------------------------
+
+/// Normalized added tokens must be carved out *before* the Metaspace rewrite runs. In 0.23
+/// Metaspace was a pre-tokenizer (after extraction); v1 lowers it to a normalizer, and applying
+/// it too early prepends a stray `▁` (#2512).
+#[test]
+fn normalized_added_token_does_not_get_a_stray_metaspace_delimiter() {
+    use tk_encode::pipeline::EncodeOptions;
+
+    let ids = |config: &str, text: &str| {
+        let canonical = canonicalize_str(config).expect("canonicalise");
+        tk_serialize::from_json(&canonical)
+            .expect("read")
+            .encode(text, &EncodeOptions::no_specials())
+            .wait()
+            .unwrap()
+            .remove(0)
+            .ids()
+            .iter()
+            .map(|t| t.id())
+            .collect::<Vec<_>>()
+    };
+
+    // Issue #2512 minimal repro: normalized `<s>` at the start with Metaspace prepend.
+    let start = r#"{
+        "version": "1.0", "truncation": null, "padding": null,
+        "added_tokens": [{"id": 1, "content": "<s>", "single_word": false, "lstrip": false,
+                          "rstrip": false, "normalized": true, "special": true}],
+        "normalizer": null,
+        "pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first", "split": false},
+        "post_processor": null, "decoder": null,
+        "model": {"type": "BPE", "dropout": null, "unk_token": "<unk>", "continuing_subword_prefix": null,
+                  "end_of_word_suffix": null, "fuse_unk": true, "byte_fallback": false, "ignore_merges": false,
+                  "vocab": {"<unk>": 0, "<s>": 1, "▁": 2, "▁a": 3, "a": 4}, "merges": [["▁", "a"]]}
+    }"#;
+    assert_eq!(ids(start, "<s> a"), vec![1, 3]);
+    assert_eq!(ids(start, "a <s> a"), vec![3, 2, 1, 3]);
+
+    // Mid-input `lstrip` case from the issue follow-up (BGE reranker shape).
+    let mid = r#"{
+        "version": "1.0", "truncation": null, "padding": null,
+        "added_tokens": [{"id": 4, "content": "<mask>", "single_word": false, "lstrip": true,
+                          "rstrip": false, "normalized": true, "special": true}],
+        "normalizer": null,
+        "pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "add_prefix_space": true,
+                          "prepend_scheme": "always", "split": true},
+        "post_processor": null,
+        "decoder": {"type": "Metaspace", "replacement": "▁", "add_prefix_space": true, "prepend_scheme": "always"},
+        "model": {"type": "Unigram", "unk_id": 0,
+                  "vocab": [["<unk>", 0.0], ["▁", -1.0], ["a", -1.0], ["▁a", 0.0], ["<mask>", 0.0]],
+                  "byte_fallback": false}
+    }"#;
+    assert_eq!(ids(mid, "a <mask> a"), vec![3, 4, 3]);
+    assert_eq!(ids(mid, "<mask> a"), vec![4, 3]);
+}
+
 // ---- end to end ------------------------------------------------------------------------------
 
 /// The test that proves the point of the module: after this pass the *canonical* reader can read

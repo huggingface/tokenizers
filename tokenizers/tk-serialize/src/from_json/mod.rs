@@ -198,7 +198,9 @@ fn build<M>(
     let added = read_added_tokens(doc.field("added_tokens"))?;
 
     let mut added_vocabulary = BucketAddedVocabulary::new();
-    // TODO: this has nothing to do here.
+    // Drop a trailing MetaspaceNormalizer when building match forms: it came from a legacy
+    // Metaspace *pre-tokenizer*, which ran after added-token extraction. The encode path
+    // defers the same trailing Metaspace for the same reason (see `encode_sequence_into`).
     let declared = match normalizers.last() {
         Some(PipelineNormalizer::Metaspace(_)) => &normalizers[..normalizers.len() - 1],
         _ => &normalizers[..],
