@@ -1,5 +1,9 @@
+import json
+
 import numpy as np
 import pytest
+
+from tokenizers import Tokenizer
 
 
 @pytest.mark.parametrize(
@@ -63,3 +67,55 @@ def test_decode_tokens_takes_an_encoding(llama3):
     encoding = llama3.encode("Hello there")
 
     assert llama3.decode_tokens(encoding) == llama3.decode_tokens(encoding.ids)
+
+
+@pytest.mark.parametrize(
+    ("tokens", "expected"),
+    [
+        (["Hello", "Ġthere"], "Hello there"),
+        (["Hello", "Ġnever_registered_piece_2524"], "Hello never_registered_piece_2524"),
+        (["Ã", "©"], "é"),
+        (["Ã"], "�"),
+        (["<|endoftext|>"], "<|endoftext|>"),
+        (["[PA D]"], "[PA D]"),
+        ([], ""),
+    ],
+)
+def test_decode_token_strings_byte_level(gpt2, tokens, expected):
+    assert gpt2.decode_token_strings(tokens) == expected
+
+
+@pytest.mark.parametrize(
+    ("decoder", "tokens", "expected"),
+    [
+        ({"type": "WordPiece", "prefix": "@@", "cleanup": True}, ["novel", "@@piece", "."], "novelpiece."),
+        (
+            {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "always"},
+            ["▁hello", "▁world"],
+            "hello world",
+        ),
+        (
+            {"type": "Sequence", "decoders": [{"type": "ByteFallback"}, {"type": "Fuse"}]},
+            ["<0xC3>", "<0xA9>"],
+            "é",
+        ),
+        (None, ["novel", "piece"], "novel piece"),
+    ],
+)
+def test_decode_token_strings_uses_configured_decoder(tmp_path, decoder, tokens, expected):
+    config = {
+        "version": "2.0",
+        "added_tokens": [],
+        "normalizer": None,
+        "pre_tokenizer": None,
+        "post_processor": None,
+        "decoder": decoder,
+        "model": {"type": "BPE", "byte_level": False, "vocab": {"a": 0}, "merges": []},
+    }
+    path = tmp_path / "tokenizer.json"
+    path.write_text(json.dumps(config), encoding="utf-8")
+    tokenizer = Tokenizer.from_file(path)
+
+    # None of these pieces has an id in this vocabulary.
+    assert tokenizer.decode_token_strings(tokens) == expected
+    assert tokenizer.decode_token_strings([]) == ""
