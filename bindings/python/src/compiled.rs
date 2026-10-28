@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
+use serde_json::{Map, Value};
 use tk::PaddingParams;
 use tk::TruncationParams;
 use tk::pipeline::EncodeOptions;
@@ -13,7 +14,7 @@ use crate::encoding::Encoding;
 use crate::error::err;
 use crate::input::PyInput;
 use crate::options::OverrideSentinel;
-use crate::repr;
+use crate::repr::{self, Field};
 use crate::tokenizer::TokenizerSpec;
 use crate::type_hints::TokenIds;
 
@@ -268,12 +269,16 @@ impl CompiledTokenizer {
     // the json representation (which has to write the whole vocab)
     fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
         let json = py.detach(|| to_json(&self.pipeline)).map_err(err)?;
-        let file = serde_json::from_str(&json).expect("to_json writes a JSON object");
-        Ok(repr::tokenizer(
-            "CompiledTokenizer",
-            &file,
-            self.pipeline.get_padding(),
-            self.pipeline.get_truncation(),
-        ))
+        let file: Map<String, Value> =
+            serde_json::from_str(&json).expect("to_json writes a JSON object");
+        let fields = file.iter().map(|(key, value)| {
+            let field = match key.as_str() {
+                "padding" => Field::Padding(self.pipeline.get_padding()),
+                "truncation" => Field::Truncation(self.pipeline.get_truncation()),
+                _ => Field::Json(value),
+            };
+            (key.as_str(), field)
+        });
+        Ok(repr::tokenizer("CompiledTokenizer", fields))
     }
 }

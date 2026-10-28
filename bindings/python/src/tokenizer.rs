@@ -14,7 +14,7 @@ use tk::{
 use crate::compiled::CompiledTokenizer;
 use crate::error::err;
 use crate::options::{Padding, Truncation};
-use crate::repr;
+use crate::repr::{self, Field};
 use crate::type_hints::Token;
 
 /// The contents of a `tokenizer.json`, which can be edited.
@@ -206,11 +206,32 @@ impl Tokenizer {
 
     fn __repr__(&self) -> String {
         let spec = self.spec();
+        let [normalizer, pre_tokenizer, post_processor, decoder] = [
+            &spec.normalizer,
+            &spec.pre_tokenizer,
+            &spec.post_processor,
+            &spec.decoder,
+        ]
+        .map(|component| component.as_deref().map(ComponentSpec::json));
+        let model = spec.model.json();
+        let version = Value::from("2.0");
         repr::tokenizer(
             "Tokenizer",
-            &spec.to_object(),
-            spec.padding.as_ref(),
-            spec.truncation.as_ref(),
+            [
+                ("version", Field::Json(&version)),
+                ("truncation", Field::Truncation(spec.truncation.as_ref())),
+                ("padding", Field::Padding(spec.padding.as_ref())),
+                ("role_to_token", Field::Json(&spec.role_to_token)),
+                ("added_tokens", Field::Json(&spec.added_tokens)),
+                ("normalizer", Field::Component(normalizer.as_deref())),
+                ("pre_tokenizer", Field::Component(pre_tokenizer.as_deref())),
+                (
+                    "post_processor",
+                    Field::Component(post_processor.as_deref()),
+                ),
+                ("decoder", Field::Component(decoder.as_deref())),
+                ("model", Field::Component(Some(&model))),
+            ],
         )
     }
 }
@@ -281,42 +302,27 @@ impl TokenizerSpec {
         }
     }
 
-    /// Returns a copy of the spec as a `JsonObject`, in the key order `to_json` writes
-    fn to_object(&self) -> JsonObject {
-        let json = |spec: &Option<Arc<ComponentSpec>>| {
-            spec.as_ref().map_or(Value::Null, |spec| {
-                Value::Object(JsonObject::clone(&spec.json()))
-            })
-        };
-        [
-            ("version", Value::from("2.0")),
-            (
-                "truncation",
-                parse_json(truncation_to_json(self.truncation.as_ref())),
-            ),
-            (
-                "padding",
-                parse_json(padding_to_json(self.padding.as_ref())),
-            ),
-            ("role_to_token", Value::clone(&self.role_to_token)),
-            ("added_tokens", Value::clone(&self.added_tokens)),
-            ("normalizer", json(&self.normalizer)),
-            ("pre_tokenizer", json(&self.pre_tokenizer)),
-            ("post_processor", json(&self.post_processor)),
-            ("decoder", json(&self.decoder)),
-            (
-                "model",
-                Value::Object(JsonObject::clone(&self.model.json())),
-            ),
-        ]
-        .into_iter()
-        .map(|(key, value)| (key.to_owned(), value))
-        .collect()
-    }
-
+    /// Writes the spec as a canonical `tokenizer.json`.
     fn to_json(&self) -> String {
-        Value::Object(self.to_object()).to_string()
+        let truncation = truncation_to_json(self.truncation.as_ref());
+        let padding = padding_to_json(self.padding.as_ref());
+        let role_to_token = &self.role_to_token;
+        let added_tokens = &self.added_tokens;
+        let normalizer = component_json(self.normalizer.as_deref());
+        let pre_tokenizer = component_json(self.pre_tokenizer.as_deref());
+        let post_processor = component_json(self.post_processor.as_deref());
+        let decoder = component_json(self.decoder.as_deref());
+        let model = component_json(Some(&self.model));
+        format!(
+            r#"{{"version":"2.0","truncation":{truncation},"padding":{padding},"role_to_token":{role_to_token},"added_tokens":{added_tokens},"normalizer":{normalizer},"pre_tokenizer":{pre_tokenizer},"post_processor":{post_processor},"decoder":{decoder},"model":{model}}}"#
+        )
     }
+}
+
+/// Writes a component's JSON straight from the shared object, `null` when there is none.
+fn component_json(spec: Option<&ComponentSpec>) -> String {
+    let json = spec.map(ComponentSpec::json);
+    serde_json::to_string(&json.as_deref()).expect("a JSON object with string keys always writes")
 }
 
 /// A component's JSON spec, as a shared reference.
@@ -339,8 +345,4 @@ impl ComponentSpec {
     fn lock(&self) -> MutexGuard<'_, Arc<JsonObject>> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
-}
-
-fn parse_json(json: String) -> Value {
-    serde_json::from_str(&json).expect("tk-serialize writes valid JSON")
 }

@@ -12,42 +12,42 @@ const MAX_LINE_WIDTH: usize = 100;
 
 const INDENT: &str = "    ";
 
-/// Renders `file` as `name(...)`, one line per `tokenizer.json` key.
-pub(crate) fn tokenizer(
+/// The value under one top-level key of a `tokenizer.json`.
+pub(crate) enum Field<'a> {
+    Json(&'a Value),
+    Component(Option<&'a Map<String, Value>>),
+    Padding(Option<&'a PaddingParams>),
+    Truncation(Option<&'a TruncationParams>),
+}
+
+/// Renders a `tokenizer.json` as `name(...)`, one line per key.
+pub(crate) fn tokenizer<'a>(
     name: &str,
-    file: &Map<String, Value>,
-    padding: Option<&PaddingParams>,
-    truncation: Option<&TruncationParams>,
+    fields: impl IntoIterator<Item = (&'a str, Field<'a>)>,
 ) -> String {
     let mut out = format!("{name}(");
-    for (key, value) in file {
+    for (key, field) in fields {
         newline(1, &mut out);
         out.push_str(key);
         out.push('=');
-        match key.as_str() {
-            "padding" => push_indented(&padding_repr(padding), &mut out),
-            "truncation" => push_indented(&truncation_repr(truncation), &mut out),
-            _ => write_value(key, value, Some(1), &mut out),
+        match field {
+            Field::Json(value) => write_value(key, value, Some(1), &mut out),
+            Field::Component(Some(fields)) => write_object(key, fields, Some(1), &mut out),
+            Field::Component(None) | Field::Padding(None) | Field::Truncation(None) => {
+                out.push_str("None")
+            }
+            Field::Padding(Some(padding)) => {
+                push_indented(&Padding::from(padding.clone()).__repr__(), &mut out)
+            }
+            Field::Truncation(Some(truncation)) => {
+                push_indented(&Truncation::from(truncation.clone()).__repr__(), &mut out)
+            }
         }
         out.push(',');
     }
     newline(0, &mut out);
     out.push(')');
     out
-}
-
-fn padding_repr(padding: Option<&PaddingParams>) -> String {
-    padding.cloned().map_or_else(
-        || "None".to_owned(),
-        |padding| Padding::from(padding).__repr__(),
-    )
-}
-
-fn truncation_repr(truncation: Option<&TruncationParams>) -> String {
-    truncation.cloned().map_or_else(
-        || "None".to_owned(),
-        |truncation| Truncation::from(truncation).__repr__(),
-    )
 }
 
 /// `key` is the one `value` sits under, `""` for a list item. `indent` is `None` while a
