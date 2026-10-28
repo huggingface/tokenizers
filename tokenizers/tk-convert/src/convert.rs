@@ -152,9 +152,9 @@ pub fn canonicalize_value(value: &mut Value) -> Result<(), ConvertError> {
 
     fill_model_defaults(root)?;
 
-    // `Metaspace` survives as a *decoder*, so all four slots are still walked.
-    for slot in COMPONENTS {
-        if let Some(node) = root.get_mut(slot) {
+    // `Metaspace` survives as a *decoder*, so all four components are still walked.
+    for key in COMPONENT_KEYS {
+        if let Some(node) = root.get_mut(key) {
             canonicalize_component(node)?;
         }
     }
@@ -164,11 +164,11 @@ pub fn canonicalize_value(value: &mut Value) -> Result<(), ConvertError> {
 /// The canonical format this pass emits.
 const VERSION: &str = "2.0";
 
-const VERSIONS: [&str; 2] = ["1.0", VERSION];
+const KNOWN_VERSIONS: [&str; 2] = ["1.0", VERSION];
 
-const COMPONENTS: [&str; 4] = ["normalizer", "pre_tokenizer", "post_processor", "decoder"];
+const COMPONENT_KEYS: [&str; 4] = ["normalizer", "pre_tokenizer", "post_processor", "decoder"];
 
-const KEYS: [&str; 9] = [
+const TOP_LEVEL_KEYS: [&str; 9] = [
     "version",
     "truncation",
     "padding",
@@ -185,7 +185,7 @@ const KEYS: [&str; 9] = [
 fn check_top_level(root: &Map<String, Value>) -> Result<(), ConvertError> {
     let version = match root.get("version") {
         None => "1.0",
-        Some(Value::String(v)) if VERSIONS.contains(&v.as_str()) => v.as_str(),
+        Some(Value::String(v)) if KNOWN_VERSIONS.contains(&v.as_str()) => v.as_str(),
         Some(v) => {
             return Err(ConvertError::UnknownVersion {
                 version: v.to_string(),
@@ -195,14 +195,15 @@ fn check_top_level(root: &Map<String, Value>) -> Result<(), ConvertError> {
     let keys: Vec<String> = root
         .keys()
         .filter(|key| {
-            !KEYS.contains(&key.as_str()) && !(key.as_str() == "role_to_token" && version == "2.0")
+            !TOP_LEVEL_KEYS.contains(&key.as_str())
+                && !(key.as_str() == "role_to_token" && version == "2.0")
         })
         .cloned()
         .collect();
     if !keys.is_empty() {
         return Err(ConvertError::UnknownKeys { keys });
     }
-    for key in COMPONENTS {
+    for key in COMPONENT_KEYS {
         match root.get(key) {
             None | Some(Value::Null | Value::Object(_)) => {}
             Some(other) => {

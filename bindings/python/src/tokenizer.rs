@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use tk::pipeline::PipelineTokenizer;
 use tk::{
@@ -11,6 +11,7 @@ use tk::{
     padding_to_json, truncation_from_json, truncation_to_json,
 };
 
+use crate::JsonObject;
 use crate::compiled::CompiledTokenizer;
 use crate::error::err;
 use crate::options::{Padding, Truncation};
@@ -236,8 +237,6 @@ impl Tokenizer {
     }
 }
 
-type JsonObject = Map<String, Value>;
-
 /// Holds the specification (canonical JSON) of a [`PipelineTokenizer`].
 pub(crate) struct TokenizerSpec {
     /// The truncation an encode applies when it doesn't override it.
@@ -287,18 +286,17 @@ impl TokenizerSpec {
 
     /// An independent copy: editing components of the new object do not affect `self`'s components
     fn copy(&self) -> Self {
-        let detached =
-            |spec: &Option<Arc<ComponentSpec>>| spec.as_ref().map(|spec| spec.detached());
+        let copy = |spec: &Option<Arc<ComponentSpec>>| spec.as_ref().map(|spec| spec.copy());
         Self {
             truncation: self.truncation.clone(),
             padding: self.padding.clone(),
             role_to_token: self.role_to_token.clone(),
             added_tokens: self.added_tokens.clone(),
-            normalizer: detached(&self.normalizer),
-            pre_tokenizer: detached(&self.pre_tokenizer),
-            post_processor: detached(&self.post_processor),
-            decoder: detached(&self.decoder),
-            model: self.model.detached(),
+            normalizer: copy(&self.normalizer),
+            pre_tokenizer: copy(&self.pre_tokenizer),
+            post_processor: copy(&self.post_processor),
+            decoder: copy(&self.decoder),
+            model: self.model.copy(),
         }
     }
 
@@ -334,7 +332,7 @@ impl ComponentSpec {
     }
 
     /// A new [`ComponentSpec`] over the same JSON. An edit of either one copies the JSON first.
-    fn detached(&self) -> Arc<Self> {
+    fn copy(&self) -> Arc<Self> {
         Arc::new(Self(Mutex::new(self.json())))
     }
 

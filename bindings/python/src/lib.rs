@@ -10,6 +10,8 @@ mod repr;
 mod tokenizer;
 mod type_hints;
 
+type JsonObject = serde_json::Map<String, serde_json::Value>;
+
 #[pyo3::pymodule]
 mod tokenizers {
     #[allow(non_upper_case_globals)]

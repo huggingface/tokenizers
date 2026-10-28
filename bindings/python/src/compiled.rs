@@ -1,6 +1,5 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
-use serde_json::{Map, Value};
 use tk::PaddingParams;
 use tk::TruncationParams;
 use tk::pipeline::EncodeOptions;
@@ -10,6 +9,7 @@ use tk::pipeline::PipelineToken;
 use tk::pipeline::PipelineTokenizer;
 use tk::to_json;
 
+use crate::JsonObject;
 use crate::encoding::Encoding;
 use crate::error::err;
 use crate::input::PyInput;
@@ -33,20 +33,6 @@ impl CompiledTokenizer {
     pub(crate) fn new(py: Python<'_>, spec: &TokenizerSpec) -> PyResult<Self> {
         let pipeline = py.detach(|| spec.compile()).map_err(err)?;
         Ok(Self { pipeline })
-    }
-}
-
-fn make_options(
-    add_special_tokens: bool,
-    encode_special_tokens: bool,
-    padding: OverrideSentinel<PaddingParams>,
-    truncation: OverrideSentinel<TruncationParams>,
-) -> EncodeOptions {
-    EncodeOptions {
-        add_special_tokens,
-        encode_special_tokens,
-        padding: padding.into(),
-        truncation: truncation.into(),
     }
 }
 
@@ -82,12 +68,12 @@ impl CompiledTokenizer {
         padding: OverrideSentinel<PaddingParams>,
         truncation: OverrideSentinel<TruncationParams>,
     ) -> PyResult<Encoding> {
-        let options = make_options(
+        let options = EncodeOptions {
             add_special_tokens,
             encode_special_tokens,
-            padding,
-            truncation,
-        );
+            padding: padding.into(),
+            truncation: truncation.into(),
+        };
         // py.detach releases the GIL while encode runs on Rust side
         let encoding = py
             .detach(|| self.pipeline.encode(input, &options).wait())
@@ -130,12 +116,12 @@ impl CompiledTokenizer {
         padding: OverrideSentinel<PaddingParams>,
         truncation: OverrideSentinel<TruncationParams>,
     ) -> PyResult<Vec<String>> {
-        let options = make_options(
+        let options = EncodeOptions {
             add_special_tokens,
             encode_special_tokens,
-            padding,
-            truncation,
-        );
+            padding: padding.into(),
+            truncation: truncation.into(),
+        };
         py.detach(|| -> tk::Result<Vec<String>> {
             let encodings = self.pipeline.encode(input, &options).wait()?;
             Ok(self
@@ -176,12 +162,12 @@ impl CompiledTokenizer {
         padding: OverrideSentinel<PaddingParams>,
         truncation: OverrideSentinel<TruncationParams>,
     ) -> PyResult<Vec<Encoding>> {
-        let options = make_options(
+        let options = EncodeOptions {
             add_special_tokens,
             encode_special_tokens,
-            padding,
-            truncation,
-        );
+            padding: padding.into(),
+            truncation: truncation.into(),
+        };
         let inputs = Inputs::Batch(inputs.into_iter().map(Input::from).collect());
         // py.detach releases the GIL while encode runs on Rust side
         let encodings = py
@@ -269,8 +255,7 @@ impl CompiledTokenizer {
     // the json representation (which has to write the whole vocab)
     fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
         let json = py.detach(|| to_json(&self.pipeline)).map_err(err)?;
-        let file: Map<String, Value> =
-            serde_json::from_str(&json).expect("to_json writes a JSON object");
+        let file: JsonObject = serde_json::from_str(&json).expect("to_json writes a JSON object");
         let fields = file.iter().map(|(key, value)| {
             let field = match key.as_str() {
                 "padding" => Field::Padding(self.pipeline.get_padding()),

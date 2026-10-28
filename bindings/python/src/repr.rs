@@ -1,8 +1,9 @@
 //! Utils to render Tokenizers.__repr__
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 use tk::{PaddingParams, TruncationParams};
 
+use crate::JsonObject;
 use crate::options::{Padding, Truncation};
 
 /// How many items of a list are shown before `...`. A dict shows every field.
@@ -13,17 +14,17 @@ const MAX_LINE_WIDTH: usize = 100;
 const INDENT: &str = "    ";
 
 /// The value under one top-level key of a `tokenizer.json`.
-pub(crate) enum Field<'a> {
-    Json(&'a Value),
-    Component(Option<&'a Map<String, Value>>),
-    Padding(Option<&'a PaddingParams>),
-    Truncation(Option<&'a TruncationParams>),
+pub(crate) enum Field<'json> {
+    Json(&'json Value),
+    Component(Option<&'json JsonObject>),
+    Padding(Option<&'json PaddingParams>),
+    Truncation(Option<&'json TruncationParams>),
 }
 
 /// Renders a `tokenizer.json` as `name(...)`, one line per key.
-pub(crate) fn tokenizer<'a>(
+pub(crate) fn tokenizer<'json>(
     name: &str,
-    fields: impl IntoIterator<Item = (&'a str, Field<'a>)>,
+    fields: impl IntoIterator<Item = (&'json str, Field<'json>)>,
 ) -> String {
     let mut out = format!("{name}(");
     for (key, field) in fields {
@@ -75,7 +76,7 @@ fn write_value(key: &str, value: &Value, indent: Option<usize>, out: &mut String
     }
 }
 
-fn write_object(key: &str, fields: &Map<String, Value>, indent: Option<usize>, out: &mut String) {
+fn write_object(key: &str, fields: &JsonObject, indent: Option<usize>, out: &mut String) {
     if let Some(Value::String(tag)) = fields.get("type") {
         out.push_str(tag);
         out.push('(');
