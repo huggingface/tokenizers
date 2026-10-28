@@ -9,8 +9,9 @@ A `1.0` file is a *legacy* file. tk-convert turns one into a `2.0` file; this cr
 ```text
 {                                        ← key order is exact, as written
   "version"        : "2.0"
-  "truncation"     : null                  encode-time settings, never read
-  "padding"        : null
+  "truncation"     : Truncation | null     applied on encode when InheritConfig
+  "padding"        : Padding | null        applied on EncodeHandle::wait when InheritConfig
+  "role_to_token"  : { role: token, … } | null
   "added_tokens"   : [ AddedToken, … ]
   "normalizer"     : Component | null
   "pre_tokenizer"  : Component | null
