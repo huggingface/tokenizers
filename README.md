@@ -48,15 +48,21 @@ build a smaller binary.
 ```python
 >>> from tokenizers import Tokenizer
 >>> tokenizer = Tokenizer.from_pretrained("meta-llama/Llama-3.1-8B")   # or .from_file(path)
->>> tokenizer.encode("Hello, y'all! How are you 😁 ?")
+>>> compiled = tokenizer.compile()
+>>> compiled.encode("Hello, y'all! How are you 😁 ?")
 Encoding(ids=[128000, 9906, 11, 379, 65948, 0, 2650, 527, 499, 27623, 223, 949], type_ids=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], attention_mask=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
->>> tokenizer.tokenize("Hello")
+>>> compiled.encode(("What is this?", "A pair.")).type_ids
+[0, 0, 0, 0, 0, 1, 1, 1, 1]
+>>> compiled.tokenize("Hello")
 ['<|begin_of_text|>', 'Hello']
->>> tokenizer.decode([15339, 1917])
+>>> compiled.decode([15339, 1917])
 'hello world'
->>> tokenizer.decode_tokens(tokenizer.encode("Hello"))
+>>> compiled.decode_tokens(compiled.encode("Hello"))
 ['<|begin_of_text|>', 'Hello']
 ```
+
+`Tokenizer` holds the `tokenizer.json` config and can be edited (e.g. `tokenizer.truncation = ...`);
+`compile()` builds the `CompiledTokenizer` that encodes and decodes.
 
 # Performances
 
@@ -71,6 +77,7 @@ For more details, checkout https://huggingface-tokenizers-v1.static.hf.space/ind
 | [Rust](tokenizers) | ✅ reference implementation |
 | [Python](bindings/python) | ✅ |
 | [Node.js](bindings/node) | ✅ |
+| [WebAssembly](bindings/wasm) | ✅ `tokenizers-wasm` on npm |
 | C / C++ / Java / Go/ etc | 🚧 planned |
 | [Ruby](https://github.com/ankane/tokenizers-ruby) | community, external repo |
 
@@ -88,10 +95,10 @@ As we work toward v1, we are gonna bring back the entire python API that allows 
 - Bring training back: this should be easy, but we want the perfs gains to come as well.
 - Batch encoding API with zero-copy views on encoded ids
 - dlpack API for torch / JAX / numpy interop.
-- Composition: edit components of the pipeline (`tokenizer.normalizer = [...]`).
+- Composition: edit components of the pipeline (`tokenizer.normalizer = [...]`). The editable
+  `Tokenizer` spec and `compile()` have landed; per-component handles are next.
 - `tokenizer.save` to persist a modified or trained tokenizer on disk.
 - `role_to_token` override.
-- Accept pair input for `encode` / `encode_batch`.
 - Bring back offset output: this should be useful for people training.
 - Windowing / stride in encode.
 - `decode_stream`.
