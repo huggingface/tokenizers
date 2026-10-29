@@ -199,8 +199,7 @@ impl Buckets {
     /// walk, no loop, `prefix[0]` folded in for free. Only the rare survivor reaches the disc table
     /// and the hash. This is the work that dominates dense input, so it has to be tiny.
     #[inline(always)]
-    fn match_fast(&self, bytes: &[u8], pos: usize, bucket_id: u32) -> Option<(u32, u32)> {
-        let bucket = &self.buckets[bucket_id as usize];
+    fn match_fast(&self, bytes: &[u8], pos: usize, bucket: &Bucket) -> Option<(u32, u32)> {
         let n = bytes.len();
         // 1. prefix: single masked u64 compare over prefix[0..min(len,8)].
         if pos + 8 <= n {
@@ -261,7 +260,7 @@ impl Buckets {
                 // restart penalty. Same positions in the same order, so the leftmost match is
                 // unchanged and `match_fast` still confirms the length sub-list.
                 for pos in memchr::memmem::find_iter(bytes, &bucket.prefix) {
-                    if let Some((id, len)) = self.match_fast(bytes, pos, 0) {
+                    if let Some((id, len)) = self.match_fast(bytes, pos, bucket) {
                         return Some((id, pos as u32, len));
                     }
                 }
@@ -382,7 +381,8 @@ impl Buckets {
             let mut mask = candidates(window);
             while mask != 0 {
                 let pos = base + (mask.trailing_zeros() >> lane_shift) as usize;
-                let bucket = self.first_byte_to_bucket_id[bytes[pos] as usize] as u32;
+                let bucket =
+                    &self.buckets[self.first_byte_to_bucket_id[bytes[pos] as usize] as usize];
                 if let Some((id, len)) = self.match_fast(bytes, pos, bucket) {
                     return Some((id, pos as u32, len));
                 }
@@ -399,7 +399,7 @@ impl Buckets {
             let pos = start + i;
             let bucket = self.first_byte_to_bucket_id[byte as usize];
             if bucket != 0xFF
-                && let Some((id, len)) = self.match_fast(bytes, pos, bucket as u32)
+                && let Some((id, len)) = self.match_fast(bytes, pos, &self.buckets[bucket as usize])
             {
                 return Some((id, pos as u32, len));
             }
