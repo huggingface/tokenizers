@@ -1,8 +1,8 @@
 use pyo3::prelude::*;
 use tk::pipeline::PipelineDecodeStream;
 
-use crate::error::err;
 use crate::compiled::CompiledTokenizer;
+use crate::error::err;
 use crate::type_hints::TokenIds;
 
 /// Decodes a stream of token ids, for example a model generation.

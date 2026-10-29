@@ -355,7 +355,7 @@ class DecodeStream:
 
         >>> from tokenizers import Tokenizer
         >>> from tokenizers.decoders import DecodeStream
-        >>> tokenizer = Tokenizer.from_pretrained("gpt2")
+        >>> tokenizer = Tokenizer.from_pretrained("gpt2").compile()
         >>> stream = DecodeStream()
         >>> for id in tokenizer.encode("Hello, streaming world!").ids:
         ...     print(stream.step(tokenizer, id) or "", end="")
@@ -363,13 +363,13 @@ class DecodeStream:
     def __new__(
         cls, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]] | None = None, skip_special_tokens: bool = False
     ) -> DecodeStream: ...
-    def step(self, /, tokenizer: Tokenizer, id: int | Sequence[int]) -> str | None:
+    def step(self, /, tokenizer: CompiledTokenizer, id: int | Sequence[int]) -> str | None:
         """
         Process the next id(s) and returns the decoded text, or None if more tokens are required
         to decode to valid text.
 
         Args:
-            tokenizer: Tokenizer
+            tokenizer: CompiledTokenizer
                 The tokenizer that decodes the ids.
             id: int | list[int]
                 The next id, or several ids.
