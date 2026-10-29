@@ -4,7 +4,7 @@ Encode in a `multiprocessing.Pool`, compiling the tokenizer once per worker
     python examples/multiprocessing_workers.py [path/to/tokenizer.json]
 
 The pool's `initializer` compiles the tokenizer in each worker, so only texts and encodings travel
-with the tasks. 
+with the tasks.
 
 Prefer `encode_batch` in a single process: it uses multithreading in Rust space.
 """
