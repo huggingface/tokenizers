@@ -1,12 +1,11 @@
 import copy
-import importlib
 import json
 import pickle
 import weakref
 
 import pytest
 
-from tokenizers import Padding, decoders, models, normalizers, pre_tokenizers
+from tokenizers import Padding, decoders, models, normalizers, pre_tokenizers, processors
 
 TEXT = "Hello world, how are you?"
 
@@ -16,9 +15,18 @@ TEXT = "Hello world, how are you?"
 # --------------------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("submodule", ["models", "normalizers", "pre_tokenizers", "processors", "decoders"])
-def test_submodules_import_by_name(submodule):
-    importlib.import_module(f"tokenizers.{submodule}")
+def test_submodules_import_by_name():
+    from tokenizers.decoders import Decoder
+    from tokenizers.models import Model
+    from tokenizers.normalizers import Normalizer
+    from tokenizers.pre_tokenizers import PreTokenizer
+    from tokenizers.processors import PostProcessor
+
+    assert Decoder is decoders.Decoder
+    assert Model is models.Model
+    assert Normalizer is normalizers.Normalizer
+    assert PreTokenizer is pre_tokenizers.PreTokenizer
+    assert PostProcessor is processors.PostProcessor
 
 
 def test_spec_dict_copy(gpt2_spec):
