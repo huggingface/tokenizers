@@ -23,9 +23,14 @@ const BATCH_SIZE: usize = 1_000;
 /// `deepseek-v4` because it is the one config in `../data` that exercises every stage this bench
 /// can reach: a real pre-tokenizer that actually splits English, a BPE model, and 1283 added
 /// tokens, which is what makes its added-token scan worth timing. Its normalizer is an empty
-/// `Sequence`, so that row is skipped -- see the guard below. Add fixtures here to widen the
-/// sweep; the rows are emitted per fixture.
-const FIXTURES: [(&str, &str); 1] = [("encode-deepseek", "../data/deepseek-v4.json")];
+/// `Sequence`, so that row is skipped -- see the guard below. `mistral-small-4` and `glm-5.2`
+/// because their added tokens start with 2 and 3 distinct bytes, so their scan is the nibble scan
+/// rather than a single-prefix search. The rows are emitted per fixture.
+const FIXTURES: [(&str, &str); 3] = [
+    ("encode-deepseek", "../data/deepseek-v4.json"),
+    ("encode-mistral-small-4", "../data/mistral-small-4.json"),
+    ("encode-glm-5.2", "../data/glm-5.2.json"),
+];
 
 /// Read a real config from `../data`. They are all still version `1.0`, so run the upgrade pass
 /// first -- the reader only accepts canonical `2.0`.
