@@ -50,7 +50,7 @@ def test_all_components_pickle(gpt2_spec, bert_spec):
         bert_spec.normalizer,
         gpt2_spec.pre_tokenizer,
         gpt2_spec.model,
-        gpt2_spec.post_processor,
+        bert_spec.post_processor,
         gpt2_spec.decoder,
     )
     for component in kinds:

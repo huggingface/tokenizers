@@ -322,12 +322,9 @@ class Padding:
 
 @final
 class Regex:
-    """
-    A regular expression, for a component's pattern. A plain `str` pattern is a literal.
-    """
     def __new__(cls, /, pattern: str) -> Regex:
         """
-        Fails on a pattern the regex engine cannot compile.
+        Fails on a pattern the rust regex engine cannot compile.
         """
 
 @final
