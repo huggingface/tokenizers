@@ -63,15 +63,15 @@ pub(crate) trait ComponentKind:
     /// For example, `ComponentKey::PreTokenizer` for the `PreTokenizer` component.
     const JSON_KEY: ComponentKey;
 
-    /// Builds the Python object for `spec`, as the class its `"type"` names.
+    /// Builds the Python object for `spec`.
     fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>>;
 
-    /// A plain instance of this kind, for a `"type"` with no Python class of its own.
+    /// A plain instance of this kind.
     fn default_component(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
         Py::new(py, Self::default_initializer(spec))
     }
 
-    /// The initializer of this kind over `spec`, with no concrete class on top.
+    /// The initializer of this kind over `spec`, with no concrete class.
     fn default_initializer(spec: Arc<ComponentSpec>) -> PyClassInitializer<Self> {
         PyClassInitializer::from(Component { spec }).add_subclass(Self::default())
     }

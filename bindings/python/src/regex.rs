@@ -9,7 +9,6 @@ use tk::utils::SysRegex;
 
 use crate::error::err;
 
-/// A regular expression, for a component's pattern. A plain `str` pattern is a literal.
 #[pyclass(frozen, module = "tokenizers")]
 pub struct Regex {
     pattern: String,
@@ -17,7 +16,7 @@ pub struct Regex {
 
 #[pymethods]
 impl Regex {
-    /// Fails on a pattern the regex engine cannot compile.
+    /// Fails on a pattern the rust regex engine cannot compile.
     #[new]
     fn new(pattern: String) -> PyResult<Self> {
         SysRegex::new(&pattern).map_err(err)?;
@@ -25,7 +24,7 @@ impl Regex {
     }
 }
 
-/// A pattern as `tokenizer.json` writes it: `{"String": ...}` or `{"Regex": ...}`.
+/// A pattern from `tokenizer.json`: `{"String": ...}` or `{"Regex": ...}`.
 #[derive(FromPyObject)]
 pub(crate) enum Pattern {
     Str(String),
