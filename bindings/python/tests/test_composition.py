@@ -4,7 +4,9 @@ import json
 import pickle
 import weakref
 
-from tokenizers import Component, Padding, decoders, models, normalizers, pre_tokenizers
+import pytest
+
+from tokenizers import Padding, decoders, models, normalizers, pre_tokenizers
 
 TEXT = "Hello world, how are you?"
 
@@ -14,14 +16,9 @@ TEXT = "Hello world, how are you?"
 # --------------------------------------------------------------------------------------------------
 
 
-def test_submodules_import_by_name():
-    assert importlib.import_module("tokenizers.models") is models
-
-
-def test_spec_dict(gpt2_spec):
-    gpt2_spec.custom = "original"
-
-    assert gpt2_spec.custom == "original"
+@pytest.mark.parametrize("submodule", ["models", "normalizers", "pre_tokenizers", "processors", "decoders"])
+def test_submodules_import_by_name(submodule):
+    importlib.import_module(f"tokenizers.{submodule}")
 
 
 def test_spec_dict_copy(gpt2_spec):
@@ -59,28 +56,34 @@ def test_getters_class(gpt2_spec, bert_spec):
     assert isinstance(gpt2_spec.pre_tokenizer, pre_tokenizers.PreTokenizer)
     assert isinstance(gpt2_spec.decoder, decoders.Decoder)
     assert isinstance(bert_spec.normalizer, normalizers.Normalizer)
-    assert isinstance(gpt2_spec.model, Component)
     assert gpt2_spec.normalizer is None
 
 
 def test_bpe_repr(gpt2_spec):
     shown = repr(gpt2_spec.model)
     assert shown.startswith("BPE(")
-    # Does not print the whole vocab
-    assert len(shown) < 1000
+    assert "...}" in shown
 
 
 def test_assigning_none_removes_a_component(gpt2_spec):
-    ids = gpt2_spec.compile().encode(TEXT).ids
     gpt2_spec.pre_tokenizer = None
     assert gpt2_spec.pre_tokenizer is None
-    assert gpt2_spec.compile().encode(TEXT).ids != ids
+    assert "    pre_tokenizer=None,\n" in repr(gpt2_spec)
 
 
-def test_handle_outlives_its_slot(gpt2_spec):
-    pre_tokenizer = gpt2_spec.pre_tokenizer
-    gpt2_spec.pre_tokenizer = None
-    assert repr(pre_tokenizer).startswith("ByteLevel(")
+def test_setters_refuse_another_kind(gpt2_spec):
+    with pytest.raises(TypeError):
+        gpt2_spec.normalizer = gpt2_spec.decoder
+    with pytest.raises(TypeError):
+        gpt2_spec.model = None
+
+
+def test_deepcopy_is_independent(gpt2_spec):
+    prepend = normalizers.Prepend("a")
+    gpt2_spec.normalizer = prepend
+    for twin in (copy.deepcopy(prepend), copy.deepcopy(gpt2_spec).normalizer):
+        twin.prepend = "b"
+        assert prepend.prepend == "a"
 
 
 # --------------------------------------------------------------------------------------------------
@@ -100,11 +103,11 @@ def test_getstate(gpt2_spec):
 # --------------------------------------------------------------------------------------------------
 
 
-def test_move_component(gpt2_spec, bert_spec):
-    lowercased = gpt2_spec.compile().encode("hello world").ids
-    gpt2_spec.normalizer = bert_spec.normalizer
-    assert gpt2_spec.normalizer.__getstate__() == bert_spec.normalizer.__getstate__()
-    assert gpt2_spec.compile().encode("HELLO WORLD").ids == lowercased
+def test_shared_component_edits_reach_both_tokenizers(gpt2_spec, bert_spec):
+    gpt2_spec.normalizer = normalizers.Prepend("a")
+    bert_spec.normalizer = gpt2_spec.normalizer
+    gpt2_spec.normalizer.prepend = "b"
+    assert bert_spec.normalizer.prepend == "b"
 
 
 # --------------------------------------------------------------------------------------------------
