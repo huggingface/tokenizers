@@ -16,8 +16,9 @@ class CompiledTokenizer:
     A tokenizer built by `Tokenizer.compile()`. Encodes text into token ids, and decodes token
     ids back into text.
 
-    A compiled tokenizer is immutable and can be shared across threads. Unpickling one
-    compiles it again.
+    A compiled tokenizer is immutable and can be shared across threads.
+    Pickling serializes to the JSON config, and unpickling compiles the CompiledTokenizer
+    again from that JSON config.
     """
     def __copy__(self, /) -> CompiledTokenizer:
         """
