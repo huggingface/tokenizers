@@ -7,7 +7,7 @@ use crate::options::{Padding, Truncation};
 use crate::tokenizer::Field;
 
 /// How many items of a list are shown before `...`. A dict shows every field.
-const MAX_PROPERTIES_SHOWN: usize = 5;
+const MAX_LIST_ITEMS_SHOWN: usize = 5;
 
 const MAX_LINE_WIDTH: usize = 100;
 
@@ -56,7 +56,7 @@ fn write_value(key: &str, value: &Value, indent: Option<usize>, out: &mut String
             write_entries(
                 items.iter().map(|item| ("", item)),
                 |_, _| {},
-                MAX_PROPERTIES_SHOWN,
+                MAX_LIST_ITEMS_SHOWN,
                 indent,
                 out,
             );
@@ -87,7 +87,7 @@ fn write_object(key: &str, fields: &JsonObject, indent: Option<usize>, out: &mut
     } else {
         // Truncate vocab to 5 entries
         let limit = if key == "vocab" {
-            MAX_PROPERTIES_SHOWN
+            MAX_LIST_ITEMS_SHOWN
         } else {
             usize::MAX
         };
