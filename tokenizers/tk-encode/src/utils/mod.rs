@@ -26,6 +26,7 @@ pub mod iter;
 pub mod padding;
 #[cfg(feature = "parallelism")]
 pub mod parallelism;
+pub(crate) mod perfect_hash;
 pub mod search;
 pub mod truncation;
 

@@ -3,7 +3,9 @@ use super::buckets::{AddedTokenFlags, Buckets};
 use crate::pipeline::Normalizer;
 use crate::pipeline::PipelinePatternMatcher;
 use crate::pre_tokenizers::whitespace::is_word_char;
+use crate::utils::perfect_hash::{Mphf, mix};
 use ahash::AHashMap;
+use ptr_hash::PtrHashParams;
 use std::fmt;
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
