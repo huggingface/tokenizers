@@ -16,9 +16,8 @@ class CompiledTokenizer:
     A tokenizer built by `Tokenizer.compile()`. Encodes text into token ids, and decodes token
     ids back into text.
 
-    A compiled tokenizer is immutable and can be shared across threads.
-    Pickling serializes the compiled tokenizer as its `tokenizer.json` JSON representation.
-    Unpickling builds the compiled tokenizer from that JSON spec.
+    A compiled tokenizer is immutable and can be shared across threads. Unpickling one
+    compiles it again.
     """
     def __copy__(self, /) -> CompiledTokenizer:
         """
@@ -28,7 +27,7 @@ class CompiledTokenizer:
         """
         Returns `self`: a compiled tokenizer cannot be changed, so a copy would be identical.
         """
-    def __reduce__(self, /) -> tuple[Any, tuple[str]]:
+    def __reduce__(self, /) -> tuple[Any, tuple[bytes]]:
         """
         Pickle rebuilds a `CompiledTokenizer` by calling `_unpickle` with these arguments.
 
@@ -37,10 +36,7 @@ class CompiledTokenizer:
         """
     def __repr__(self, /) -> str: ...
     @staticmethod
-    def _unpickle(json: str) -> CompiledTokenizer:
-        """
-        Unpickles a `CompiledTokenizer`
-        """
+    def _unpickle(json: bytes) -> CompiledTokenizer: ...
     def decode(
         self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = True
     ) -> str:
@@ -325,16 +321,13 @@ class Tokenizer:
         """
         An independent copy: editing one spec leaves the other unchanged.
         """
-    def __reduce__(self, /) -> tuple[Any, tuple[str]]:
+    def __reduce__(self, /) -> tuple[Any, tuple[bytes]]:
         """
         Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
         """
     def __repr__(self, /) -> str: ...
     @staticmethod
-    def _unpickle(json: str) -> Tokenizer:
-        """
-        Unpickles a `Tokenizer`
-        """
+    def _unpickle(json: bytes) -> Tokenizer: ...
     def compile(self, /) -> CompiledTokenizer:
         """
         Builds a new `CompiledTokenizer` from the spec as it is now.
@@ -345,9 +338,9 @@ class Tokenizer:
     @staticmethod
     def from_file(path: str | PathLike[str]) -> Tokenizer:
         """
-        Loads a `tokenizer.json`.
+        Loads a `tokenizer.json` and upgrades it to the 2.0 format.
 
-        The file is only read here. Errors in its components show up at `compile()`.
+        Errors in the file's components, such as the model or the normalizer, show up at `compile()`.
 
         Args:
             path:

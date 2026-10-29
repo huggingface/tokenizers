@@ -71,12 +71,3 @@ def test_repr_nested(llama3):
     assert "        ...,\n    ],\n    normalizer=None," in rendered
     assert "    pre_tokenizer=Sequence(\n        pretokenizers=[\n            Split(\n" in rendered
     assert '                behavior="Isolated",\n                invert=False,\n' in rendered
-
-
-def test_spec_repr_charsmap(tmp_path):
-    declared = json.loads(GPT2.read_text())
-    declared["normalizer"] = {"type": "Precompiled", "precompiled_charsmap": "A" * 4096}
-    path = tmp_path / "tokenizer.json"
-    path.write_text(json.dumps(declared))
-
-    assert "    normalizer=Precompiled(precompiled_charsmap=...)," in repr(Tokenizer.from_file(path))

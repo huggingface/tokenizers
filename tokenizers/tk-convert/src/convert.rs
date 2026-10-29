@@ -168,17 +168,9 @@ const KNOWN_VERSIONS: [&str; 2] = ["1.0", VERSION];
 
 const COMPONENT_KEYS: [&str; 4] = ["normalizer", "pre_tokenizer", "post_processor", "decoder"];
 
-const TOP_LEVEL_KEYS: [&str; 9] = [
-    "version",
-    "truncation",
-    "padding",
-    "added_tokens",
-    "normalizer",
-    "pre_tokenizer",
-    "post_processor",
-    "decoder",
-    "model",
-];
+/// The top-level keys besides [`COMPONENT_KEYS`].
+const OTHER_TOP_LEVEL_KEYS: [&str; 5] =
+    ["version", "truncation", "padding", "added_tokens", "model"];
 
 /// Refuses an unknown `version`, an unknown key, and a component that is neither an object nor
 /// null. A file without `"version"` is a `"1.0"` one, and only `"2.0"` has `role_to_token`.
@@ -195,7 +187,8 @@ fn check_top_level(root: &Map<String, Value>) -> Result<(), ConvertError> {
     let keys: Vec<String> = root
         .keys()
         .filter(|key| {
-            !TOP_LEVEL_KEYS.contains(&key.as_str())
+            !COMPONENT_KEYS.contains(&key.as_str())
+                && !OTHER_TOP_LEVEL_KEYS.contains(&key.as_str())
                 && !(key.as_str() == "role_to_token" && version == "2.0")
         })
         .cloned()

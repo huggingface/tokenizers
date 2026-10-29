@@ -1,10 +1,10 @@
 //! Utils to render Tokenizers.__repr__
 
 use serde_json::Value;
-use tk::{PaddingParams, TruncationParams};
 
 use crate::JsonObject;
 use crate::options::{Padding, Truncation};
+use crate::tokenizer::Field;
 
 /// How many items of a list are shown before `...`. A dict shows every field.
 const MAX_PROPERTIES_SHOWN: usize = 5;
@@ -13,18 +13,10 @@ const MAX_LINE_WIDTH: usize = 100;
 
 const INDENT: &str = "    ";
 
-/// The value under one top-level key of a `tokenizer.json`.
-pub(crate) enum Field<'json> {
-    Json(&'json Value),
-    Component(Option<&'json JsonObject>),
-    Padding(Option<&'json PaddingParams>),
-    Truncation(Option<&'json TruncationParams>),
-}
-
 /// Renders a `tokenizer.json` as `name(...)`, one line per key.
-pub(crate) fn tokenizer<'json>(
+pub(crate) fn tokenizer<'spec>(
     name: &str,
-    fields: impl IntoIterator<Item = (&'json str, Field<'json>)>,
+    fields: impl IntoIterator<Item = (&'spec str, Field<'spec>)>,
 ) -> String {
     let mut out = format!("{name}(");
     for (key, field) in fields {
@@ -32,16 +24,14 @@ pub(crate) fn tokenizer<'json>(
         out.push_str(key);
         out.push('=');
         match field {
-            Field::Json(value) => write_value(key, value, Some(1), &mut out),
-            Field::Component(Some(fields)) => write_object(key, fields, Some(1), &mut out),
+            Field::Json(value) => write_value(key, &value, Some(1), &mut out),
+            Field::Component(Some(fields)) => write_object(key, &fields, Some(1), &mut out),
             Field::Component(None) | Field::Padding(None) | Field::Truncation(None) => {
                 out.push_str("None")
             }
-            Field::Padding(Some(padding)) => {
-                push_indented(&Padding::from(padding.clone()).__repr__(), &mut out)
-            }
+            Field::Padding(Some(padding)) => push_indented(&Padding::repr(padding), &mut out),
             Field::Truncation(Some(truncation)) => {
-                push_indented(&Truncation::from(truncation.clone()).__repr__(), &mut out)
+                push_indented(&Truncation::repr(truncation), &mut out)
             }
         }
         out.push(',');

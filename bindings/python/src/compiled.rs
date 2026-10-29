@@ -3,11 +3,12 @@ use pyo3::types::{PyBytes, PyDict};
 use tk::PaddingParams;
 use tk::TruncationParams;
 use tk::pipeline::EncodeOptions;
+use tk::pipeline::Encoding as PipelineEncoding;
 use tk::pipeline::Input;
 use tk::pipeline::Inputs;
 use tk::pipeline::PipelineToken;
 use tk::pipeline::PipelineTokenizer;
-use tk::to_json;
+use tk::{from_json, to_json};
 
 use crate::encoding::Encoding;
 use crate::error::err;
@@ -31,6 +32,27 @@ impl CompiledTokenizer {
         // py.detach releases the GIL while the Rust code runs.
         let pipeline = py.detach(|| spec.compile()).map_err(err)?;
         Ok(Self { pipeline })
+    }
+
+    fn encode_one(&self, input: PyInput, options: &EncodeOptions) -> tk::Result<PipelineEncoding> {
+        let mut encodings = self.pipeline.encode(input, options).wait()?;
+        Ok(encodings
+            .pop()
+            .expect("a single input encodes to one encoding"))
+    }
+}
+
+fn encode_options(
+    add_special_tokens: bool,
+    encode_special_tokens: bool,
+    padding: OverrideSentinel<PaddingParams>,
+    truncation: OverrideSentinel<TruncationParams>,
+) -> EncodeOptions {
+    EncodeOptions {
+        add_special_tokens,
+        encode_special_tokens,
+        padding: padding.into(),
+        truncation: truncation.into(),
     }
 }
 
@@ -66,18 +88,16 @@ impl CompiledTokenizer {
         padding: OverrideSentinel<PaddingParams>,
         truncation: OverrideSentinel<TruncationParams>,
     ) -> PyResult<Encoding> {
-        let options = EncodeOptions {
+        let options = encode_options(
             add_special_tokens,
             encode_special_tokens,
-            padding: padding.into(),
-            truncation: truncation.into(),
-        };
+            padding,
+            truncation,
+        );
         // py.detach releases the GIL while the Rust code runs.
         let encoding = py
-            .detach(|| self.pipeline.encode(input, &options).wait())
-            .map_err(err)?
-            .pop()
-            .expect("encoding has exactly one element");
+            .detach(|| self.encode_one(input, &options))
+            .map_err(err)?;
         Ok(Encoding::from(encoding))
     }
 
@@ -114,18 +134,18 @@ impl CompiledTokenizer {
         padding: OverrideSentinel<PaddingParams>,
         truncation: OverrideSentinel<TruncationParams>,
     ) -> PyResult<Vec<String>> {
-        let options = EncodeOptions {
+        let options = encode_options(
             add_special_tokens,
             encode_special_tokens,
-            padding: padding.into(),
-            truncation: truncation.into(),
-        };
+            padding,
+            truncation,
+        );
         // py.detach releases the GIL while the Rust code runs.
         py.detach(|| -> tk::Result<Vec<String>> {
-            let encodings = self.pipeline.encode(input, &options).wait()?;
+            let encoding = self.encode_one(input, &options)?;
             Ok(self
                 .pipeline
-                .decode_tokens(PipelineToken::cast_slice(encodings[0].ids()), false))
+                .decode_tokens(PipelineToken::cast_slice(encoding.ids()), false))
         })
         .map_err(err)
     }
@@ -161,12 +181,12 @@ impl CompiledTokenizer {
         padding: OverrideSentinel<PaddingParams>,
         truncation: OverrideSentinel<TruncationParams>,
     ) -> PyResult<Vec<Encoding>> {
-        let options = EncodeOptions {
+        let options = encode_options(
             add_special_tokens,
             encode_special_tokens,
-            padding: padding.into(),
-            truncation: truncation.into(),
-        };
+            padding,
+            truncation,
+        );
         let inputs = Inputs::Batch(inputs.into_iter().map(Input::from).collect());
         // py.detach releases the GIL while the Rust code runs.
         let encodings = py
@@ -248,7 +268,9 @@ impl CompiledTokenizer {
     #[staticmethod]
     fn _unpickle(py: Python<'_>, json: &[u8]) -> PyResult<Self> {
         let json = std::str::from_utf8(json).map_err(err)?;
-        Self::new(py, &TokenizerSpec::from_json(json).map_err(err)?)
+        // py.detach releases the GIL while the Rust code runs.
+        let pipeline = py.detach(|| from_json(json)).map_err(err)?;
+        Ok(Self { pipeline })
     }
 
     fn __repr__(&self, py: Python<'_>) -> PyResult<String> {

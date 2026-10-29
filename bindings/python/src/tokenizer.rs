@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -15,7 +16,7 @@ use crate::JsonObject;
 use crate::compiled::CompiledTokenizer;
 use crate::error::err;
 use crate::options::{Padding, Truncation};
-use crate::repr::{self, Field};
+use crate::repr;
 use crate::type_hints::Token;
 
 /// The contents of a `tokenizer.json`, which can be edited.
@@ -272,57 +273,70 @@ impl TokenizerSpec {
         }
     }
 
+    /// The top-level keys and their values, in the order `to_json` writes them.
+    fn fields(&self) -> [(&'static str, Field<'_>); 10] {
+        let component = |spec: &Option<Arc<ComponentSpec>>| {
+            Field::Component(spec.as_deref().map(ComponentSpec::json))
+        };
+        [
+            ("version", Field::Json(Cow::Owned(Value::from("2.0")))),
+            ("truncation", Field::Truncation(self.truncation.as_ref())),
+            ("padding", Field::Padding(self.padding.as_ref())),
+            (
+                "role_to_token",
+                Field::Json(Cow::Borrowed(&self.role_to_token)),
+            ),
+            (
+                "added_tokens",
+                Field::Json(Cow::Borrowed(&self.added_tokens)),
+            ),
+            ("normalizer", component(&self.normalizer)),
+            ("pre_tokenizer", component(&self.pre_tokenizer)),
+            ("post_processor", component(&self.post_processor)),
+            ("decoder", component(&self.decoder)),
+            ("model", Field::Component(Some(self.model.json()))),
+        ]
+    }
+
     /// Renders the spec as `name(...)`, one line per top-level key.
     pub(crate) fn repr(&self, name: &str) -> String {
-        let [normalizer, pre_tokenizer, post_processor, decoder] = [
-            &self.normalizer,
-            &self.pre_tokenizer,
-            &self.post_processor,
-            &self.decoder,
-        ]
-        .map(|component| component.as_deref().map(ComponentSpec::json));
-        let model = self.model.json();
-        let version = Value::from("2.0");
-        repr::tokenizer(
-            name,
-            [
-                ("version", Field::Json(&version)),
-                ("truncation", Field::Truncation(self.truncation.as_ref())),
-                ("padding", Field::Padding(self.padding.as_ref())),
-                ("role_to_token", Field::Json(&self.role_to_token)),
-                ("added_tokens", Field::Json(&self.added_tokens)),
-                ("normalizer", Field::Component(normalizer.as_deref())),
-                ("pre_tokenizer", Field::Component(pre_tokenizer.as_deref())),
-                (
-                    "post_processor",
-                    Field::Component(post_processor.as_deref()),
-                ),
-                ("decoder", Field::Component(decoder.as_deref())),
-                ("model", Field::Component(Some(&model))),
-            ],
-        )
+        repr::tokenizer(name, self.fields())
     }
 
     /// Writes the spec as a `tokenizer.json` in the 2.0 format.
     fn to_json(&self) -> String {
-        let truncation = truncation_to_json(self.truncation.as_ref());
-        let padding = padding_to_json(self.padding.as_ref());
-        let role_to_token = &self.role_to_token;
-        let added_tokens = &self.added_tokens;
-        let normalizer = component_json(self.normalizer.as_deref());
-        let pre_tokenizer = component_json(self.pre_tokenizer.as_deref());
-        let post_processor = component_json(self.post_processor.as_deref());
-        let decoder = component_json(self.decoder.as_deref());
-        let model = component_json(Some(&self.model));
-        format!(
-            r#"{{"version":"2.0","truncation":{truncation},"padding":{padding},"role_to_token":{role_to_token},"added_tokens":{added_tokens},"normalizer":{normalizer},"pre_tokenizer":{pre_tokenizer},"post_processor":{post_processor},"decoder":{decoder},"model":{model}}}"#
-        )
+        let mut out = String::from("{");
+        for (key, field) in self.fields() {
+            out.push('"');
+            out.push_str(key);
+            out.push_str("\":");
+            out.push_str(&field.to_json());
+            out.push(',');
+        }
+        out.pop();
+        out.push('}');
+        out
     }
 }
 
-fn component_json(spec: Option<&ComponentSpec>) -> String {
-    let json = spec.map(ComponentSpec::json);
-    serde_json::to_string(&json.as_deref()).expect("a JSON object with string keys always writes")
+/// The value under one top-level key of a `tokenizer.json`.
+pub(crate) enum Field<'spec> {
+    Json(Cow<'spec, Value>),
+    Component(Option<Arc<JsonObject>>),
+    Padding(Option<&'spec PaddingParams>),
+    Truncation(Option<&'spec TruncationParams>),
+}
+
+impl Field<'_> {
+    fn to_json(&self) -> String {
+        match self {
+            Field::Json(value) => value.to_string(),
+            Field::Component(json) => serde_json::to_string(&json.as_deref())
+                .expect("a JSON object with string keys always writes"),
+            Field::Padding(padding) => padding_to_json(*padding),
+            Field::Truncation(truncation) => truncation_to_json(*truncation),
+        }
+    }
 }
 
 /// A component's JSON spec, as a shared reference.
