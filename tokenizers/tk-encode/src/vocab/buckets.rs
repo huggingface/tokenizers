@@ -79,7 +79,10 @@ pub struct Buckets {
     // The algo is taken from http://0x80.pl/notesen/2018-10-18-simd-byte-lookup.html, specifically the "Special case 1 - small sets"
     // `None` past 8 high nibbles; see [`NibbleTable::build`].
     #[cfg_attr(
-        not(any(target_arch = "aarch64", target_arch = "x86_64")),
+        not(any(
+            all(target_arch = "aarch64", target_endian = "little"),
+            target_arch = "x86_64"
+        )),
         allow(dead_code)
     )]
     nibble_table: Option<NibbleTable>,
@@ -283,7 +286,8 @@ impl Buckets {
     ///
     /// lo & hi                   →   0     0   0b01    0     0   ...  lane 2 is a candidate
     /// ```
-    #[cfg(target_arch = "aarch64")]
+    // The `shrn` movemask below assumes little-endian lane order; big-endian falls back to scalar.
+    #[cfg(all(target_arch = "aarch64", target_endian = "little"))]
     fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
         use core::arch::aarch64::*;
         use wide::u8x16;
@@ -346,7 +350,10 @@ impl Buckets {
     }
 
     /// Two or more buckets on targets without a SIMD lookup.
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    #[cfg(not(any(
+        all(target_arch = "aarch64", target_endian = "little"),
+        target_arch = "x86_64"
+    )))]
     fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
         self.scalar_match(bytes, 0)
     }
@@ -357,7 +364,10 @@ impl Buckets {
     /// `lane << lane_shift` for each candidate lane. Bytes past the last full window go through
     /// [`Self::scalar_match`].
     // Inlined so that the SSSE3 caller compiles it, and its `candidates`, with SSSE3 enabled.
-    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    #[cfg(any(
+        all(target_arch = "aarch64", target_endian = "little"),
+        target_arch = "x86_64"
+    ))]
     #[inline(always)]
     fn scan_windows(
         &self,
@@ -431,7 +441,10 @@ impl Buckets {
 /// token. A byte is a candidate when `lo16[byte & 0xf] & hi16[byte >> 4]` is nonzero.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(
-    not(any(target_arch = "aarch64", target_arch = "x86_64")),
+    not(any(
+        all(target_arch = "aarch64", target_endian = "little"),
+        target_arch = "x86_64"
+    )),
     allow(dead_code)
 )]
 struct NibbleTable {
