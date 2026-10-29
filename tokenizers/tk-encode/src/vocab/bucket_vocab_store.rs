@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use ahash::RandomState;
-use ptr_hash::{FastPtrHash, PtrHashParams, hash::NoHash};
+use ptr_hash::PtrHashParams;
 use std::fmt;
 
 use crate::Result;
+use crate::utils::perfect_hash::{Mphf, mix};
 
 static KEY_HASHER: RandomState = RandomState::with_seeds(
     0x243F_6A88_85A3_08D3,
@@ -12,8 +13,6 @@ static KEY_HASHER: RandomState = RandomState::with_seeds(
     0xA409_3822_299F_31D0,
     0x082E_FA98_EC4E_6C89,
 );
-
-type Mphf = FastPtrHash<NoHash, u64>;
 
 /// Bit 31 of a stored id: the token provably encodes to itself, so a pretoken equal to it can be
 /// emitted without running the merge loop. See `PipelineBPE::prove_fold`.
@@ -27,12 +26,6 @@ const FOLD_BIT: u32 = 1 << 31;
 const VOCAB_ID_MASK: u32 = FOLD_BIT - 1;
 
 pub(crate) const INLINE_KEY_BYTES: usize = 7;
-
-#[inline(always)]
-pub(crate) fn mix(z: u64) -> u64 {
-    let z = z.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-    z ^ (z >> 29)
-}
 
 ///
 ///
@@ -304,7 +297,7 @@ impl BucketVocabStore {
         // convenient to build empty edit later.
         let empty: [u64; 0] = [];
         Self {
-            mphf: FastPtrHash::<NoHash, u64>::new(&empty, PtrHashParams::default_fast()),
+            mphf: Mphf::new(&empty, PtrHashParams::default_fast()),
             bytes: Box::new([]),
             entries: Box::new([]),
             spans: Box::new([]),
