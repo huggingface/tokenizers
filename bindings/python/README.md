@@ -6,7 +6,7 @@ If used in a production setting, please pin the version number.
 ## Install
 
 ```
-uv sync
+pip install --pre tokenizers
 ```
 
 
@@ -15,14 +15,16 @@ uv sync
 ```python
 from tokenizers import Padding, Tokenizer
 
-# A `Tokenizer` is the contents of a `tokenizer.json`, and can be edited.
+# A `Tokenizer` represents a tokenizer's spec (json) and can be edited.
+# You can load it from the JSON file
 tokenizer = Tokenizer.from_file("tokenizer.json")
-# Or the `tokenizer.json` of a model repo on the Hub. `huggingface_hub` downloads and caches it,
-# with the same cache, login token and offline switch as transformers.
+# Or load the `tokenizer.json` of a model repo on the Hub.
+# Downloads go through the `huggingface_hub` package
 tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", revision="main")
 
-# `compile()` builds a `CompiledTokenizer`, which encodes and decodes. It cannot be changed, so
-# threads can share it. Every call builds a new one, and later edits of the `Tokenizer` don't reach it.
+# `compile()` compiles the specification to an optimized tokenizer in rust.
+# The resulting `CompiledTokenizer` object can encode text to token ids and decode ids back to text.
+# It's immutable and can be shared among threads.
 compiled = tokenizer.compile()
 
 encoding = compiled.encode("Hello there, how are you?")
@@ -30,7 +32,7 @@ encoding.ids             # [101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102]
 encoding.type_ids        # [0, 0, 0, 0, 0, 0, 0, 0, 0]
 encoding.attention_mask  # [1, 1, 1, 1, 1, 1, 1, 1, 1]
 
-# The same fields as numpy arrays. Each read returns a new copy that the caller owns.
+# The same fields as numpy arrays. Each read returns a *new copy* that the caller owns.
 encoding.ids_array             # array([101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102], dtype=uint32)
 encoding.type_ids_array        # array([0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=uint32)
 encoding.attention_mask_array  # array([1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=uint32)
@@ -50,7 +52,7 @@ len(short) == len(long)  # True
 short.attention_mask     # [0, 0, 0, 0, 0, 0, 1, 1, 1]
 compiled.encode("Hello", padding=Padding(length=16))  # exactly 16 ids
 
-# Or set a default on the `Tokenizer`: every encode of a tokenizer compiled from it pads.
+# Padding and truncation can also be set on the spec.
 # `padding=None` switches the default off for one call.
 tokenizer.padding = Padding(pad_to_multiple_of=8)
 padded = tokenizer.compile()
@@ -59,14 +61,13 @@ padded.encode("Hello", padding=None)
 
 `examples/` holds a runnable script for each of these; `make examples` runs them all.
 
-## Worker processes
+## multiprocessing and Worker processes
 
 Every class here can be pickled, so a tokenizer can be sent to a worker process and its encodings
 sent back: `multiprocessing`, a PyTorch `DataLoader`, `datasets.map(num_proc=...)`.
 
 A pickled `CompiledTokenizer` carries its whole `tokenizer.json`, and unpickling compiles it again.
-So send the `Tokenizer` once per worker, through the pool's `initializer`, and compile it
-there:
+With the `"spawn"` start method, we recommend compiling the tokenizer once per worker to avoid unpickle compilation overhead.
 
 ```python
 def compile_tokenizer(tokenizer):
@@ -82,10 +83,10 @@ with multiprocessing.get_context("spawn").Pool(4, initializer=compile_tokenizer,
     encoded = list(pool.imap(encode, texts, chunksize=32))
 ```
 
-With `fork`, compile before starting the pool instead: the workers inherit the compiled tokenizer
-and nothing is pickled. `examples/multiprocessing_workers.py` is the whole script.
+With the `"fork"` start method, compiling before starting the pool is recommended: the workers inherit the compiled tokenizer
+and nothing is pickled.
 
-## Day to day
+## Developers
 
 - `make develop` regenerates the `.pyi` stub, rebuilds the extension (debug) and reinstalls it
   in editable mode.
