@@ -241,9 +241,9 @@ impl Buckets {
     /// Find the leftmost added-token match in `bytes`. Returns (token_id, match_position, match_len).
     /// Dispatch: 1 bucket -> memchr on the shared first byte; >=2 -> NEON nibble, mask-iterated.
     pub fn match_bytes(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
-        match self.buckets.len() {
-            0 => None,
-            1 => {
+        match &*self.buckets {
+            [] => None,
+            [bucket] => {
                 // needle = the bucket's shared first byte. Assumes a non-empty prefix
                 // (false only if a lone 1-byte token is the sole holder of its first byte); store
                 // the first byte explicitly if that case ever appears.
@@ -260,7 +260,7 @@ impl Buckets {
                 // `nibble_mask_match` already avoids this for two or more buckets and calls it the
                 // restart penalty. Same positions in the same order, so the leftmost match is
                 // unchanged and `match_fast` still confirms the length sub-list.
-                for pos in memchr::memmem::find_iter(bytes, &self.buckets[0].prefix) {
+                for pos in memchr::memmem::find_iter(bytes, &bucket.prefix) {
                     if let Some((id, len)) = self.match_fast(bytes, pos, 0) {
                         return Some((id, pos as u32, len));
                     }
