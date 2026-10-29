@@ -106,23 +106,13 @@ impl Tokenizer {
     ///     pretty:
     ///         Whether to indent the JSON.
     #[pyo3(signature = (pretty=false))]
-    fn to_str(&self, py: Python<'_>, pretty: bool) -> PyResult<String> {
+    fn to_str(&self, pretty: bool) -> String {
         let json = self.spec().to_json();
         if !pretty {
-            return Ok(json);
+            return json;
         }
-        // Python's json keeps the key order; serde_json's Value would sort the keys.
-        let json_module = py.import("json")?;
-        let kwargs = PyDict::new(py);
-        kwargs.set_item("indent", 2)?;
-        kwargs.set_item("ensure_ascii", false)?;
-        json_module
-            .call_method(
-                "dumps",
-                (json_module.call_method1("loads", (json,))?,),
-                Some(&kwargs),
-            )?
-            .extract()
+        let value: Value = serde_json::from_str(&json).expect("the spec writes valid JSON");
+        serde_json::to_string_pretty(&value).expect("a serde_json::Value always serializes")
     }
 
     /// Writes the tokenizer to a `tokenizer.json` file.
@@ -133,8 +123,8 @@ impl Tokenizer {
     ///     pretty:
     ///         Whether to indent the JSON.
     #[pyo3(signature = (path, pretty=true))]
-    fn save(&self, py: Python<'_>, path: PathBuf, pretty: bool) -> PyResult<()> {
-        std::fs::write(&path, self.to_str(py, pretty)?).map_err(|e| {
+    fn save(&self, path: PathBuf, pretty: bool) -> PyResult<()> {
+        std::fs::write(&path, self.to_str(pretty)).map_err(|e| {
             std::io::Error::new(e.kind(), format!("cannot write {}: {e}", path.display()))
         })?;
         Ok(())

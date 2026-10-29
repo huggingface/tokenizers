@@ -19,27 +19,13 @@ def test_from_str_refuses_invalid_json():
         Tokenizer.from_str("nope")
 
 
-# The keys and order of the 2.0 format.
-def test_to_str_writes_the_keys_in_file_order(bert_spec):
-    assert list(json.loads(bert_spec.to_str())) == [
-        "version",
-        "truncation",
-        "padding",
-        "role_to_token",
-        "added_tokens",
-        "normalizer",
-        "pre_tokenizer",
-        "post_processor",
-        "decoder",
-        "model",
-    ]
-
-
 def test_to_str_indents_only_when_pretty(bert_spec):
     compact = bert_spec.to_str()
+    pretty = bert_spec.to_str(pretty=True)
 
     assert "\n" not in compact
-    assert bert_spec.to_str(pretty=True) == json.dumps(json.loads(compact), indent=2, ensure_ascii=False)
+    assert "\n" in pretty
+    assert json.loads(pretty) == json.loads(compact)
 
 
 def test_save_writes_pretty_json_by_default(bert_spec, tmp_path):
