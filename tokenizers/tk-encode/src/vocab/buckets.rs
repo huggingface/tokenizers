@@ -79,6 +79,9 @@ pub struct Buckets {
     // The algo is taken from http://0x80.pl/notesen/2018-10-18-simd-byte-lookup.html, specifically the "Special case 1 - small sets"
     lo16: [u8; 16],
     hi16: [u8; 16],
+    // `pshufb` is SSSE3, which the default x86_64 targets don't enable.
+    #[cfg(target_arch = "x86_64")]
+    has_ssse3: bool,
     buckets: Box<[Bucket]>,
     // efficient AHashMap equivalent build on the premise that we know in advance all the keys: we
     // are in a close addressing problem.
@@ -91,6 +94,8 @@ impl Buckets {
             first_byte_to_bucket_id: [0xFF; 256], // 0xFF = no bucket for this first byte
             lo16: [0; 16],
             hi16: [0; 16],
+            #[cfg(target_arch = "x86_64")]
+            has_ssse3: std::arch::is_x86_feature_detected!("ssse3"),
             buckets: Box::default(),
             vocab: BucketVocabStore::new(),
         }
@@ -106,6 +111,8 @@ impl Buckets {
             first_byte_to_bucket_id,
             lo16: [0; 16],
             hi16: [0; 16],
+            #[cfg(target_arch = "x86_64")]
+            has_ssse3: std::arch::is_x86_feature_detected!("ssse3"),
             buckets,
             vocab,
         };
@@ -225,19 +232,6 @@ impl Buckets {
         }
         (self.lo16, self.hi16) = (lo, hi);
     }
-    #[cfg(all(test, target_arch = "aarch64"))] // test-only helper for the NEON nibble matcher
-    fn nibble_match_bytes(&self, bytes: &[u8]) -> Option<usize> {
-        let tables = NibbleTables::new(&self.lo16, &self.hi16);
-        let mut base = 0;
-        while let Some(window) = bytes[base..].first_chunk::<16>() {
-            let mask = tables.candidates(window);
-            if mask != 0 {
-                return Some(base + (mask.trailing_zeros() >> NibbleTables::LANE_SHIFT) as usize);
-            }
-            base += 16;
-        }
-        (base..bytes.len()).find(|&i| self.first_byte_to_bucket_id[bytes[i] as usize] != 0xFF)
-    }
 
     /// Reduced per-candidate reject. The first byte already matched (that's why `pos` is a
     /// candidate), so verify the rest of the prefix as ONE masked `u64` compare — no boxed-slice
@@ -316,36 +310,112 @@ impl Buckets {
         }
     }
 
-    /// Two or more buckets: classify each 16-byte window once with [`NibbleTables`], then run
-    /// [`Self::match_fast`] on every candidate lane before moving to the next window. Returning on
-    /// the first candidate would reload the window after each false one (the restart penalty).
-    /// Bytes past the last full window, and all bytes on targets without [`NibbleTables`], go
-    /// through [`Self::scalar_match`].
+    /// Two or more buckets: [`Self::scan_windows`] with a NEON `lo16`/`hi16` lookup.
+    ///
+    /// ```text
+    /// lane index    0     1     2     3     4    ...  (16 lanes, one register)
+    /// input byte   'a'   'b'   '<'   'd'   'e'   ...
+    /// hex           61    62    3C    64    65   ...
+    ///
+    /// low nibbles   v & 0x0F    →   1     2     C     4     5   ...
+    /// high nibbles  v >> 4      →   6     6     3     6     6   ...
+    ///
+    /// lo hits       lo16[low]   →   0     0   0b01    0     0   ...
+    /// hi hits       hi16[high]  →   0     0   0b01    0     0   ...
+    ///
+    /// lo & hi                   →   0     0   0b01    0     0   ...  lane 2 is a candidate
+    /// ```
+    #[cfg(target_arch = "aarch64")]
     fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
-        #[cfg(not(target_arch = "aarch64"))]
-        let start = 0;
-        #[cfg(target_arch = "aarch64")]
-        let start = {
-            let tables = NibbleTables::new(&self.lo16, &self.hi16);
-            // Keep few values live around the inlined `match_fast`: a chunk iterator or a `window`
-            // index here made LLVM spill to the stack, up to 2.6x slower.
-            let mut base = 0;
-            while let Some(window) = bytes[base..].first_chunk::<16>() {
-                let mut mask = tables.candidates(window);
-                while mask != 0 {
-                    let lane = (mask.trailing_zeros() >> NibbleTables::LANE_SHIFT) as usize;
-                    let pos = base + lane;
-                    let bucket = self.first_byte_to_bucket_id[bytes[pos] as usize] as u32;
-                    if let Some((id, len)) = self.match_fast(bytes, pos, bucket) {
-                        return Some((id, pos as u32, len));
-                    }
-                    mask &= mask - 1;
-                }
-                base += 16;
+        use core::arch::aarch64::*;
+        use wide::u8x16;
+        let (lo16, hi16, low) = (
+            u8x16::new(self.lo16),
+            u8x16::new(self.hi16),
+            u8x16::splat(0x0f),
+        );
+        self.scan_windows(bytes, 2, |window| {
+            let v = u8x16::new(*window);
+            let hits: uint8x16_t = (lo16.shuffle(v & low) & hi16.shuffle(v >> 4)).into();
+            // NEON has no movemask. Shifting each u16 right by 4 and narrowing packs 4 bits per lane.
+            // SAFETY: NEON is baseline on aarch64, and these intrinsics only touch registers.
+            unsafe {
+                let t = vreinterpretq_u16_u8(vtstq_u8(hits, hits));
+                vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(t, 4)), 0) & 0x1111_1111_1111_1111
             }
-            base
-        };
-        self.scalar_match(bytes, start)
+        })
+    }
+
+    /// Two or more buckets: the SSSE3 scan when the CPU has it, else [`Self::scalar_match`].
+    #[cfg(target_arch = "x86_64")]
+    fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
+        if self.has_ssse3 {
+            // SAFETY: `has_ssse3` holds what `is_x86_feature_detected!` reported at build time.
+            unsafe { self.nibble_mask_match_ssse3(bytes) }
+        } else {
+            self.scalar_match(bytes, 0)
+        }
+    }
+
+    /// [`Self::scan_windows`] with a `pshufb` lookup of `lo16`/`hi16`, the same steps as on aarch64.
+    /// The whole scan is compiled with SSSE3 because a `pshufb` behind a call per window is slow.
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "ssse3")]
+    fn nibble_mask_match_ssse3(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
+        use core::arch::x86_64::*;
+        use wide::{u8x16, u16x8};
+        let (lo16, hi16, low) = (
+            __m128i::from(u8x16::new(self.lo16)),
+            __m128i::from(u8x16::new(self.hi16)),
+            u8x16::splat(0x0f),
+        );
+        self.scan_windows(bytes, 0, |window| {
+            let v = u8x16::new(*window);
+            // SSE2 has no 8-bit shift. Shift the u16 lanes, then drop the bits from the next byte.
+            let high = u8x16::from(__m128i::from(u16x8::from(__m128i::from(v)) >> 4)) & low;
+            let lo = u8x16::from(_mm_shuffle_epi8(lo16, (v & low).into()));
+            let hi = u8x16::from(_mm_shuffle_epi8(hi16, high.into()));
+            let misses = (lo & hi).simd_eq(u8x16::splat(0)).to_bitmask();
+            u64::from(!misses & 0xffff)
+        })
+    }
+
+    /// Two or more buckets on targets without a SIMD lookup.
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
+        self.scalar_match(bytes, 0)
+    }
+
+    /// Classifies each 16-byte window once with `candidates`, then runs [`Self::match_fast`] on
+    /// every candidate lane before moving to the next window. Returning on the first candidate
+    /// would reload the window after each false one (the restart penalty). `candidates` sets bit
+    /// `lane << lane_shift` for each candidate lane. Bytes past the last full window go through
+    /// [`Self::scalar_match`].
+    // Inlined so that the SSSE3 caller compiles it, and its `candidates`, with SSSE3 enabled.
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    #[inline(always)]
+    fn scan_windows(
+        &self,
+        bytes: &[u8],
+        lane_shift: u32,
+        candidates: impl Fn(&[u8; 16]) -> u64,
+    ) -> Option<(u32, u32, u32)> {
+        // Keep few values live around the inlined `match_fast`: a chunk iterator or a `window`
+        // index here made LLVM spill to the stack, up to 2.6x slower.
+        let mut base = 0;
+        while let Some(window) = bytes[base..].first_chunk::<16>() {
+            let mut mask = candidates(window);
+            while mask != 0 {
+                let pos = base + (mask.trailing_zeros() >> lane_shift) as usize;
+                let bucket = self.first_byte_to_bucket_id[bytes[pos] as usize] as u32;
+                if let Some((id, len)) = self.match_fast(bytes, pos, bucket) {
+                    return Some((id, pos as u32, len));
+                }
+                mask &= mask - 1;
+            }
+            base += 16;
+        }
+        self.scalar_match(bytes, base)
     }
 
     /// Looks up every byte of `bytes[start..]` in `first_byte_to_bucket_id`.
@@ -385,59 +455,6 @@ impl Buckets {
     }
     pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab.id_to_token(id)
-    }
-}
-
-/// [`Buckets::lo16`] and [`Buckets::hi16`] loaded into NEON registers once per scan.
-#[cfg(target_arch = "aarch64")]
-struct NibbleTables {
-    lo: core::arch::aarch64::uint8x16_t,
-    hi: core::arch::aarch64::uint8x16_t,
-}
-
-#[cfg(target_arch = "aarch64")]
-impl NibbleTables {
-    /// Lane `i` of a window is reported by bit `i << LANE_SHIFT` of [`Self::candidates`].
-    const LANE_SHIFT: u32 = 2;
-
-    fn new(lo16: &[u8; 16], hi16: &[u8; 16]) -> Self {
-        use core::arch::aarch64::*;
-        // SAFETY: NEON is baseline on aarch64, and each load reads exactly its 16-byte array.
-        unsafe {
-            Self {
-                lo: vld1q_u8(lo16.as_ptr()),
-                hi: vld1q_u8(hi16.as_ptr()),
-            }
-        }
-    }
-
-    /// One set bit per candidate byte of `window`, at [`Self::LANE_SHIFT`] spacing.
-    ///
-    /// ```text
-    /// lane index    0     1     2     3     4    ...  (16 lanes, one register)
-    /// input byte   'a'   'b'   '<'   'd'   'e'   ...
-    /// hex           61    62    3C    64    65   ...
-    ///
-    /// low nibbles   v & 0x0F    →   1     2     C     4     5   ...
-    /// high nibbles  v >> 4      →   6     6     3     6     6   ...
-    ///
-    /// lo hits       lo16[low]   →   0     0   0b01    0     0   ...
-    /// hi hits       hi16[high]  →   0     0   0b01    0     0   ...
-    ///
-    /// lo & hi                   →   0     0   0b01    0     0   ...  lane 2 is a candidate
-    /// ```
-    fn candidates(&self, window: &[u8; 16]) -> u64 {
-        use core::arch::aarch64::*;
-        // SAFETY: NEON is baseline on aarch64, and the load reads exactly the 16-byte `window`.
-        unsafe {
-            let v = vld1q_u8(window.as_ptr());
-            let lo = vqtbl1q_u8(self.lo, vandq_u8(v, vdupq_n_u8(0x0f)));
-            let hi = vqtbl1q_u8(self.hi, vshrq_n_u8(v, 4));
-            let m = vandq_u8(lo, hi);
-            // NEON has no movemask. Shifting each u16 right by 4 and narrowing packs 4 bits per lane.
-            let t = vreinterpretq_u16_u8(vtstq_u8(m, m));
-            vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(t, 4)), 0) & 0x1111_1111_1111_1111
-        }
     }
 }
 
@@ -623,7 +640,6 @@ mod bench {
 mod tests {
     use super::*;
 
-    #[cfg(target_arch = "aarch64")] // calls the NEON-only nibble_match_bytes
     #[test]
     fn test_build_nibble_table() {
         let mut first_byte_to_bucket = [0xFFu8; 256];
@@ -656,11 +672,6 @@ mod tests {
         fake_bucket.build_nibble_table();
         assert_eq!(fake_bucket.lo16, expected_lo16);
         assert_eq!(fake_bucket.hi16, expected_hi16);
-        assert!(fake_bucket.nibble_match_bytes("pardis".as_bytes()) == Some(1));
-        assert_eq!(
-            fake_bucket.nibble_match_bytes("where is toad".as_bytes()),
-            Some(9)
-        );
     }
 
     #[test]
@@ -734,5 +745,20 @@ mod tests {
         // if ]] then it will exit early to ask to move the pointer?
         assert_eq!(fake_vocab.match_bytes(b"]FLS]>"), Some((3, 0, 5)));
         assert_eq!(fake_vocab.match_bytes(b"]]FLS]>"), Some((3, 1, 5)));
+
+        // Every other filler byte is a false candidate, and offsets 0..48 put the match in every
+        // lane of the 16-byte windows and in the scalar tail. The `|` after `<` has a low nibble
+        // >= 8, which breaks an x86 high-nibble shift that leaks bits from the next byte.
+        let filler = b"a<b[c]d|e";
+        for (token, id) in [(&b"[CLS]"[..], 1), (b"<|eos|>", 0)] {
+            for pos in 0..48 {
+                let mut text: Vec<u8> = filler.iter().cycle().take(pos).copied().collect();
+                text.extend_from_slice(token);
+                text.extend_from_slice(&filler.repeat(3));
+                let expected = Some((id, pos as u32, token.len() as u32));
+                assert_eq!(fake_vocab.match_bytes(&text), expected, "{pos}");
+            }
+        }
+        assert_eq!(fake_vocab.match_bytes(&filler.repeat(8)), None);
     }
 }
