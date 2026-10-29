@@ -1,0 +1,7 @@
+[advisories]
+ignore = [
+    # fxhash is unmaintained. It comes in through ptr_hash, used in tk-encode for the vocab lookup.
+    "RUSTSEC-2025-0057",
+    # paste is unmaintained. It comes in through the released tokenizers 0.23 used in oracle tests.
+    "RUSTSEC-2024-0436",
+]
