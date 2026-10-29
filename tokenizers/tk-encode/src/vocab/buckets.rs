@@ -77,8 +77,12 @@ pub struct Buckets {
     first_byte_to_bucket_id: [u8; 256],
     // we use optimized SIMD instructions (main one being `pshufb`) to scan potential special tokens when there are multiple unique starting bytes, noting that we have one bucket per starting byte.
     // The algo is taken from http://0x80.pl/notesen/2018-10-18-simd-byte-lookup.html, specifically the "Special case 1 - small sets"
-    lo16: [u8; 16],
-    hi16: [u8; 16],
+    // `None` past 8 high nibbles; see [`NibbleTable::build`].
+    #[cfg_attr(
+        not(any(target_arch = "aarch64", target_arch = "x86_64")),
+        allow(dead_code)
+    )]
+    nibble_table: Option<NibbleTable>,
     // `pshufb` is SSSE3, which the default x86_64 targets don't enable.
     #[cfg(target_arch = "x86_64")]
     has_ssse3: bool,
@@ -92,8 +96,7 @@ impl Buckets {
     pub fn new() -> Self {
         Self {
             first_byte_to_bucket_id: [0xFF; 256], // 0xFF = no bucket for this first byte
-            lo16: [0; 16],
-            hi16: [0; 16],
+            nibble_table: None,
             #[cfg(target_arch = "x86_64")]
             has_ssse3: std::arch::is_x86_feature_detected!("ssse3"),
             buckets: Box::default(),
@@ -107,17 +110,14 @@ impl Buckets {
         buckets: Box<[Bucket]>,
     ) -> Result<Self> {
         let vocab = BucketVocabStore::build(tokens)?;
-        let mut new = Self {
+        Ok(Self {
+            nibble_table: NibbleTable::build(&first_byte_to_bucket_id),
             first_byte_to_bucket_id,
-            lo16: [0; 16],
-            hi16: [0; 16],
             #[cfg(target_arch = "x86_64")]
             has_ssse3: std::arch::is_x86_feature_detected!("ssse3"),
             buckets,
             vocab,
-        };
-        new.build_nibble_table();
-        Ok(new)
+        })
     }
 
     /// Used by the AddedVocabulary when a new token is added, we recreate the entire structure.
@@ -189,48 +189,6 @@ impl Buckets {
             ));
         }
         Self::build(tokens, first_byte_to_bucket_id, buckets.into_boxed_slice())
-    }
-    // If you have the following first bytes
-    // "<"  = 0x3c  -> col 3, row c
-    // "["  = 0x5b  -> col 5, row b
-    // "\t" = 0x09  -> col 0, row 9
-    // "\n" = 0x0a  -> col 0, row a
-    // `pshufb` maps bytes to bytes, so to have a 16bit row  bitmap, we need to split it into two 16x8bit bitmaps. We need two calls to `pshufb` to pull one row of the bitmap.
-    // So the lo[0xc] = 0b00010000 ->
-    //                  ...x....
-    // stores half the row in the u8 format. (0-255)
-    fn build_nibble_table(&mut self) {
-        // we build the nibble table from the candidate first_byte_to_bucket_id
-        let candidates: [bool; 256] = self.first_byte_to_bucket_id.map(|v| v != 0xFF);
-        let (mut lo, mut hi) = ([0u8; 16], [0u8; 16]);
-        let (mut next, mut bit, mut has) = (0u32, [0u8; 16], [false; 16]);
-        for h in 0..16 {
-            // h<<4 | l is just computing 0x{h}{l} indexed into the candidates
-            // here for each match, we update the count and fill the table with the
-            // unique id associated with that match.
-            if (0..16).any(|l| candidates[(h << 4) | l]) {
-                if next >= 8 {
-                    return;
-                } // >8 high nibbles -> fallback to the general implementation TODO:
-                let counter = 1u8 << next;
-                next += 1;
-                hi[h] = counter;
-                bit[h] = counter; // will be used to fill lo16 next
-                has[h] = true;
-            }
-        }
-        for h in 0..16 {
-            if has[h] {
-                // fast rejections
-                for l in 0..16 {
-                    // we use | because we don't want to erase the rest of the column
-                    if candidates[(h << 4) | l] {
-                        lo[l] |= bit[h];
-                    }
-                }
-            }
-        }
-        (self.lo16, self.hi16) = (lo, hi);
     }
 
     /// Reduced per-candidate reject. The first byte already matched (that's why `pos` is a
@@ -329,9 +287,12 @@ impl Buckets {
     fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
         use core::arch::aarch64::*;
         use wide::u8x16;
+        let Some(table) = &self.nibble_table else {
+            return self.scalar_match(bytes, 0);
+        };
         let (lo16, hi16, low) = (
-            u8x16::new(self.lo16),
-            u8x16::new(self.hi16),
+            u8x16::new(table.lo16),
+            u8x16::new(table.hi16),
             u8x16::splat(0x0f),
         );
         self.scan_windows(bytes, 2, |window| {
@@ -346,14 +307,14 @@ impl Buckets {
         })
     }
 
-    /// Two or more buckets: the SSSE3 scan when the CPU has it, else [`Self::scalar_match`].
+    /// Two or more buckets: the SSSE3 scan when the CPU has it and the table exists, else
+    /// [`Self::scalar_match`].
     #[cfg(target_arch = "x86_64")]
     fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
-        if self.has_ssse3 {
+        match &self.nibble_table {
             // SAFETY: `has_ssse3` holds what `is_x86_feature_detected!` reported at build time.
-            unsafe { self.nibble_mask_match_ssse3(bytes) }
-        } else {
-            self.scalar_match(bytes, 0)
+            Some(table) if self.has_ssse3 => unsafe { self.nibble_mask_match_ssse3(bytes, table) },
+            _ => self.scalar_match(bytes, 0),
         }
     }
 
@@ -361,12 +322,16 @@ impl Buckets {
     /// The whole scan is compiled with SSSE3 because a `pshufb` behind a call per window is slow.
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "ssse3")]
-    fn nibble_mask_match_ssse3(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
+    fn nibble_mask_match_ssse3(
+        &self,
+        bytes: &[u8],
+        table: &NibbleTable,
+    ) -> Option<(u32, u32, u32)> {
         use core::arch::x86_64::*;
         use wide::{u8x16, u16x8};
         let (lo16, hi16, low) = (
-            __m128i::from(u8x16::new(self.lo16)),
-            __m128i::from(u8x16::new(self.hi16)),
+            __m128i::from(u8x16::new(table.lo16)),
+            __m128i::from(u8x16::new(table.hi16)),
             u8x16::splat(0x0f),
         );
         self.scan_windows(bytes, 0, |window| {
@@ -455,6 +420,51 @@ impl Buckets {
     }
     pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab.id_to_token(id)
+    }
+}
+
+/// The two lookup tables of the nibble scan, after "Special case 1 - small sets" in
+/// <http://0x80.pl/notesen/2018-10-18-simd-byte-lookup.html>.
+///
+/// Each high nibble (the row) that starts an added token gets its own bit: `hi16[row]` holds
+/// that bit, and `lo16[low]` holds the bits of every row whose byte `row << 4 | low` starts a
+/// token. A byte is a candidate when `lo16[byte & 0xf] & hi16[byte >> 4]` is nonzero.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    not(any(target_arch = "aarch64", target_arch = "x86_64")),
+    allow(dead_code)
+)]
+struct NibbleTable {
+    lo16: [u8; 16],
+    hi16: [u8; 16],
+}
+
+impl NibbleTable {
+    /// `None` when the first bytes span more than 8 high nibbles, since a row bit is one of the
+    /// 8 bits of a table entry. The scan then falls back to [`Buckets::scalar_match`].
+    fn build(first_byte_to_bucket_id: &[u8; 256]) -> Option<Self> {
+        let starts_token = |byte: usize| first_byte_to_bucket_id[byte] != 0xFF;
+        let rows: Vec<usize> = (0..16)
+            .filter(|&row| (0..16).any(|low| starts_token(row << 4 | low)))
+            .collect();
+        if rows.len() > 8 {
+            log::warn!(
+                "added tokens start with bytes from {} high-nibble rows, more than the 8 the SIMD \
+                 scan supports: they are matched with a byte-by-byte scan instead",
+                rows.len()
+            );
+            return None;
+        }
+        let (mut lo16, mut hi16) = ([0u8; 16], [0u8; 16]);
+        for (bit, &row) in rows.iter().enumerate() {
+            hi16[row] = 1 << bit;
+            for (low, entry) in lo16.iter_mut().enumerate() {
+                if starts_token(row << 4 | low) {
+                    *entry |= 1 << bit;
+                }
+            }
+        }
+        Some(Self { lo16, hi16 })
     }
 }
 
@@ -663,15 +673,13 @@ mod tests {
         expected_lo16[(b'a' & 0x0f) as usize] |= 0b01; // a -> lo16[1]
         expected_lo16[(b'd' & 0x0f) as usize] |= 0b01; // d -> lo16[4]
         expected_lo16[(b't' & 0x0f) as usize] |= 0b10; // t -> lo16[4]  => lo16[4] = 0b11  (bottom collision!)
-        let mut fake_bucket = Buckets::build(
-            vec![("ha".as_bytes().to_vec(), 0)],
-            first_byte_to_bucket,
-            Box::new([]),
-        )
-        .unwrap();
-        fake_bucket.build_nibble_table();
-        assert_eq!(fake_bucket.lo16, expected_lo16);
-        assert_eq!(fake_bucket.hi16, expected_hi16);
+        assert_eq!(
+            NibbleTable::build(&first_byte_to_bucket),
+            Some(NibbleTable {
+                lo16: expected_lo16,
+                hi16: expected_hi16,
+            })
+        );
     }
 
     #[test]
@@ -760,5 +768,20 @@ mod tests {
             }
         }
         assert_eq!(fake_vocab.match_bytes(&filler.repeat(8)), None);
+    }
+
+    #[test]
+    fn added_tokens_whose_first_bytes_span_more_than_8_high_nibbles_are_found() {
+        // First bytes in 9 of the 16 high-nibble rows, one more than the nibble table holds.
+        let tokens: Vec<(Vec<u8>, u32)> =
+            ["\n\n", " x", "<s>", "[CLS]", "ab", "|x", "é", "中", "😀"]
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (s.as_bytes().to_vec(), i as u32))
+                .collect();
+        let buckets = Buckets::from_tokens(tokens).unwrap();
+        let mut text = b"<s>".to_vec();
+        text.extend_from_slice(&[b'z'; 40]);
+        assert_eq!(buckets.match_bytes(&text), Some((2, 0, 3)));
     }
 }
