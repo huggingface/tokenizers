@@ -4,7 +4,6 @@ import json
 import pickle
 import weakref
 
-from conftest import GPT2
 from tokenizers import Component, Padding, decoders, models, normalizers, pre_tokenizers
 
 TEXT = "Hello world, how are you?"
@@ -91,10 +90,9 @@ def test_handle_outlives_its_slot(gpt2_spec):
 
 # Stop strings parse a decoder's `__getstate__` as JSON bytes.
 def test_getstate(gpt2_spec):
-    state = gpt2_spec.pre_tokenizer.__getstate__()
+    state = gpt2_spec.decoder.__getstate__()
     assert isinstance(state, bytes)
-    declared = json.loads(GPT2.read_text())["pre_tokenizer"]
-    assert list(json.loads(state)) == list(declared)
+    assert json.loads(state)["type"] == "ByteLevel"
 
 
 # --------------------------------------------------------------------------------------------------
