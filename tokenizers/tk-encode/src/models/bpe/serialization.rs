@@ -131,6 +131,9 @@ impl PipelineBPE {
             end_of_word_suffix: self.affixes.as_ref().and_then(|a| affix(&a.suffix)),
             fuse_unk,
             byte_fallback,
+            // Derived, not stored: when every entry folds, either spelling rebuilds the same
+            // table, so the writer cannot tell `false` from `true`. Training preserves the
+            // configured policy through `PipelineBPE::ignore_merges` instead.
             ignore_merges: self.vocab.all_foldable(),
             dropout: None,
             cache_capacity: self.cache_capacity.unwrap_or(0),
@@ -304,6 +307,7 @@ impl PipelineBPE {
             cache_capacity,
             vocab,
             byte_to_gate: build_byte_to_gate(),
+            ignore_merges,
         };
         // Every entry carries a foldable bit, so the encode path is one probe and one bit test
         // with no policy left in it. The policy is decided here, once: a config that declares

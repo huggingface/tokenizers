@@ -74,14 +74,24 @@ build a `PipelineTokenizer`. Nothing about them waits on the builder.
 
 ## 2. Trainers
 
-**Done.** `tk-train` is a workspace member again, and its trainers build pipeline models directly
+**Done (models).** `tk-train` is a workspace member again, and its trainers build pipeline models directly
 (`PipelineBPE`, `Unigram`, `WordPiece`, `WordLevel`). The `tokenizers` crate re-exports it behind
 the `train` feature, which is off by default. The model features (`bpe`, `unigram`, `wordpiece`,
 `wordlevel`) pick which trainers compile, and the opt-in `esaxx_fast` switches Unigram training to
 the C++ suffix array.
 
-There is still no tokenizer-level `train` / `train_from_files`. Drive a trainer directly instead:
-`feed`, then `train`.
+**New (pipeline).** `tk_train::train_tokenizer(&template, &mut trainer, sequences)` (also re-exported
+behind `train`) trains a fresh model through the template's normalization and pre-tokenization and
+returns a new `PipelineTokenizer` retaining decoder, post-processor, token roles, padding and
+truncation, with post-processor/padding ids remapped by token content. The template and its clones
+are never modified. Only the trainer's special tokens are registered, so the trainer must supply
+every special a retained setting references. Trainer and template model families must match.
+Unigram byte fallback, empty trained vocabularies and over-`u32::MAX` normalized sequences are
+rejected. BPE `ignore_merges` is preserved.
+
+There is still no `train_from_files` file entry point or full composition API. Drive
+`train_tokenizer` with an in-memory iterator, or a trainer directly (`feed`, then `train`) for a
+bare model.
 
 ## 3. Writing a `tokenizer.json`
 

@@ -112,4 +112,6 @@ pub use tk_convert::{
 // Training — re-exported from `tk-train`, behind the `train` feature.
 // ---------------------------------------------------------------------------
 #[cfg(feature = "train")]
-pub use tk_train::{ModelWrapper, ProgressFormat, Trainable, Trainer, TrainerWrapper, trainers};
+pub use tk_train::{
+    ModelWrapper, ProgressFormat, Trainable, Trainer, TrainerWrapper, train_tokenizer, trainers,
+};

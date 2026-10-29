@@ -57,6 +57,11 @@ pub struct PipelineBPE {
     pub(super) byte_to_gate: [u16; 256],
     /// Slots for the per-scratch word cache, from the config. `None` disables it.
     pub(super) cache_capacity: Option<usize>,
+    /// The `ignore_merges` policy the model was built with. The fold bits in `vocab` already
+    /// encode its effect on this vocabulary; this preserves the configured policy for a *new*
+    /// vocabulary, where derivation from foldability would be ambiguous. `to_config` still
+    /// derives for the writer, so serialization output is unchanged.
+    pub(super) ignore_merges: bool,
 }
 
 // A `PipelineBPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
@@ -78,6 +83,15 @@ impl PipelineBPE {
     /// `ByteLevel` decoder over these entries would decode a second time.
     pub fn is_byte_level(&self) -> bool {
         matches!(self.atoms, Atoms::Bytes)
+    }
+
+    /// The `ignore_merges` policy this model was built with.
+    ///
+    /// Unlike `to_config`, which derives the flag from foldability for the writer, this returns
+    /// the configured policy exactly, so retraining onto a changed vocabulary does not silently
+    /// broaden a fully-foldable `false` template to whole-word folding.
+    pub fn ignore_merges(&self) -> bool {
+        self.ignore_merges
     }
 
     /// A token's bytes, borrowed from the vocab store's slab. For a byte-level model these are
