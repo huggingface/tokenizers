@@ -324,7 +324,7 @@ impl Buckets {
         None
     }
 
-    /// Find the leftmost added-token match in `bytes`. Returns (token_id, match_position, match_len).
+    /// Find the leftmost added-token match in `bytes`. Returns (internal_id, match_position, match_len).
     /// Dispatch: 1 bucket -> memchr on the shared first byte; >=2 -> NEON nibble, mask-iterated.
     pub fn match_bytes(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
         match self.buckets.len() {
@@ -434,19 +434,19 @@ impl Buckets {
     pub fn first_byte_to_bucket_id(&self) -> &[u8; 256] {
         &self.first_byte_to_bucket_id
     }
-    /// All added-token byte strings + ids (e.g. to rebuild the vocab when adding tokens).
-    pub fn get_vocab_bytes(&self) -> Vec<(Vec<u8>, u32)> {
+    /// Every token's bytes with its internal id.
+    pub fn token_bytes(&self) -> Vec<(Vec<u8>, u32)> {
         self.vocab.byte_content()
     }
-    /// All added-token strings + ids.
-    pub fn get_vocab(&self) -> Vec<(String, u32)> {
+    /// Every token with its internal id.
+    pub fn tokens(&self) -> Vec<(String, u32)> {
         self.vocab.content()
     }
-    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+    pub fn token_to_internal_id(&self, token: &str) -> Option<u32> {
         self.vocab.token_to_id(token)
     }
-    pub fn id_to_token(&self, id: u32) -> Option<String> {
-        self.vocab.id_to_token(id)
+    pub fn internal_id_to_token(&self, internal_id: u32) -> Option<String> {
+        self.vocab.id_to_token(internal_id)
     }
 }
 
@@ -545,7 +545,7 @@ mod bench {
     }
 
     fn run(name: &str, b: &Buckets, pma: &DoubleArrayAhoCorasick<usize>, bytes: &[u8]) {
-        let m = NaiveMatcher::new(&b.get_vocab_bytes()); // built once, outside the timed loop
+        let m = NaiveMatcher::new(&b.token_bytes()); // built once, outside the timed loop
         let (o, n) = (scan_opt(b, bytes), scan_naive(&m, bytes));
         let cand = bytes
             .iter()
