@@ -71,6 +71,8 @@ http = ["hf-hub"]
 parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
 
 [dev-dependencies]
+# The added-token search bench, `benches/added_tokens.rs`.
+criterion = "0.8"
 # Test-only: one `#[cfg(test)]` cross-check in `vocab/buckets.rs`.
 daachorse = "5.0.0"
 # The unit tests build `regex::Regex` values directly, in every feature rung, so the tests need
@@ -81,3 +83,7 @@ assert_approx_eq = "1.1"
 tracing = "0.1"
 tracing-subscriber = "0.3.23"
 serde_json = "1.0"
+
+[[bench]]
+name = "added_tokens"
+harness = false
