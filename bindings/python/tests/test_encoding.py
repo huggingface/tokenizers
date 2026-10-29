@@ -6,8 +6,7 @@ from tokenizers import Padding
 
 
 def test_array_list_equivalence(bert):
-    bert.padding = Padding(length=8, pad_id=3)
-    encoding = bert.encode("Hello there")
+    encoding = bert.encode("Hello there", padding=Padding(length=8, pad_id=3))
 
     assert encoding.ids_array.tolist() == encoding.ids == [1, 27462, 7495, 2, 3, 3, 3, 3]
     assert encoding.type_ids_array.tolist() == encoding.type_ids

@@ -15,7 +15,7 @@ from tokenizers import Tokenizer
 repo_id = sys.argv[1] if len(sys.argv) > 1 else "openai-community/gpt2"
 revision = sys.argv[2] if len(sys.argv) > 2 else "main"
 
-tokenizer = Tokenizer.from_pretrained(repo_id, revision=revision)
+tokenizer = Tokenizer.from_pretrained(repo_id, revision=revision).compile()
 print(tokenizer)
 
 

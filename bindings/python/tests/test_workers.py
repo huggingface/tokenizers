@@ -33,8 +33,7 @@ def test_pickle_tokenizer_truncation(truncated_wiki):
 
 
 def test_pickle_encoding(bert):
-    bert.padding = Padding(length=8, pad_id=3)
-    encoding = bert.encode("Hello there")
+    encoding = bert.encode("Hello there", padding=Padding(length=8, pad_id=3))
 
     restored = pickle.loads(pickle.dumps(encoding))
 
@@ -65,9 +64,10 @@ def _encode_batch(tokenizer, texts):
     return tokenizer.encode_batch(texts)
 
 
-def test_multiprocessing(gpt2):
+def test_multiprocessing(gpt2_spec):
     # spawn, not fork: the tokenizer travels to the worker as a pickle.
-    gpt2.padding = Padding(pad_id=50256)
+    gpt2_spec.padding = Padding(pad_id=50256)
+    gpt2 = gpt2_spec.compile()
 
     with multiprocessing.get_context("spawn").Pool(1) as pool:
         encoded = pool.apply(_encode_batch, (gpt2, TEXTS))

@@ -8,6 +8,7 @@ use pyo3::Borrowed;
 use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 
+use tk::pipeline::Override;
 use tk::{PaddingParams, TruncationParams};
 
 /// Sentinel type used to differentiate tok.encode(text, padding=None) from tok.encode(text)
@@ -17,6 +18,16 @@ pub enum OverrideSentinel<T> {
     InheritConfig,
     Off,
     With(T),
+}
+
+impl<T> From<OverrideSentinel<T>> for Override<T> {
+    fn from(sentinel: OverrideSentinel<T>) -> Self {
+        match sentinel {
+            OverrideSentinel::InheritConfig => Override::InheritConfig,
+            OverrideSentinel::Off => Override::Off,
+            OverrideSentinel::With(params) => Override::With(params),
+        }
+    }
 }
 
 impl FromPyObject<'_, '_> for OverrideSentinel<PaddingParams> {
