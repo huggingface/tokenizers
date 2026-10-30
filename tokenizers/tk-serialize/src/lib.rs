@@ -22,7 +22,8 @@ mod from_json;
 
 #[cfg(feature = "deserialize")]
 pub use from_json::{
-    from_json, from_json_file, padding_from_json, post_processor_from_json, truncation_from_json,
+    added_tokens_from_json, from_json, from_json_file, padding_from_json, post_processor_from_json,
+    truncation_from_json,
 };
 
 #[cfg(any(feature = "serialize", all(test, feature = "deserialize")))]
@@ -30,5 +31,6 @@ mod to_json;
 
 #[cfg(feature = "serialize")]
 pub use to_json::{
-    padding_to_json, post_processor_to_json, str_to_json, to_json, truncation_to_json,
+    added_tokens_to_json, padding_to_json, post_processor_to_json, str_to_json, to_json,
+    truncation_to_json,
 };

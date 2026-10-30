@@ -416,6 +416,33 @@ class Tokenizer:
     def __repr__(self, /) -> str: ...
     @staticmethod
     def _unpickle(json: bytes) -> Tokenizer: ...
+    def add_special_tokens(self, /, tokens: Sequence[str | AddedToken]) -> int:
+        """
+        Adds special tokens: `decode` skips them with `skip_special_tokens`.
+
+        Works as `add_tokens`, with every token marked special.
+
+        Args:
+            tokens:
+                The tokens to add. A `str` is added as `AddedToken(content, special=True)`.
+
+        Returns:
+            The number of tokens added or changed.
+        """
+    def add_tokens(self, /, tokens: Sequence[str | AddedToken]) -> int:
+        """
+        Adds tokens matched in the text before the model runs.
+
+        A token already added with the same content gets the new flags. A token in the model's
+        vocabulary keeps its id there; any other new token gets the next free id at `compile()`.
+
+        Args:
+            tokens:
+                The tokens to add. A `str` is added as `AddedToken(content)`.
+
+        Returns:
+            The number of tokens added or changed.
+        """
     def compile(self, /) -> CompiledTokenizer:
         """
         Builds a new `CompiledTokenizer` from the spec as it is now.

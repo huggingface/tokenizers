@@ -30,6 +30,7 @@ use self::truncation::write_truncation;
 use self::writer::{Out, escape_into};
 use tk_encode::pipeline::PipelineTokenizer;
 use tk_encode::tokenizer::Result;
+use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 
 /// Write a lone `post_processor` -- the value of that one key -- rather than a whole
 /// `tokenizer.json`. The default frame comes back as `null`, which is how a config spells it.
@@ -50,6 +51,16 @@ pub fn post_processor_to_json(
 pub fn padding_to_json(padding: Option<&tk_encode::tokenizer::PaddingParams>) -> String {
     let mut out = Out::new();
     write_padding(&mut out, padding);
+    out.finish()
+}
+
+/// Write a lone `added_tokens`, the value of that one key, each token's position as its id.
+///
+/// The counterpart of [`added_tokens_from_json`](crate::added_tokens_from_json), which keeps
+/// only the order of the ids.
+pub fn added_tokens_to_json(tokens: &[AddedToken]) -> String {
+    let mut out = Out::new();
+    write_added_tokens(&mut out, (0..).zip(tokens));
     out.finish()
 }
 
@@ -93,7 +104,16 @@ pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
         out.obj_close();
     }
     out.key("added_tokens");
-    write_added_tokens(&mut out, tokenizer.get_added_vocabulary());
+    let mut added_tokens: Vec<_> = tokenizer
+        .get_added_vocabulary()
+        .get_added_tokens_decoder()
+        .into_iter()
+        .collect();
+    added_tokens.sort_unstable_by_key(|&(id, _)| id);
+    write_added_tokens(
+        &mut out,
+        added_tokens.iter().map(|(id, token)| (*id, token)),
+    );
     out.key("normalizer");
     write_normalizer(&mut out, normalizers)?;
     out.key("pre_tokenizer");
