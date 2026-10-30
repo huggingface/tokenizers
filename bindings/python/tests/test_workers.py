@@ -85,7 +85,7 @@ fork_warning = pytest.mark.filterwarnings("ignore:.*fork.*:DeprecationWarning")
 
 
 def _load_and_encode(path):
-    return Tokenizer.from_file(path).encode("Hello there").ids
+    return Tokenizer.from_file(path).compile().encode("Hello there").ids
 
 
 # Regression test for issue 2559
