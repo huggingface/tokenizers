@@ -131,11 +131,7 @@ impl Unigram {
                 min_score = *score;
             }
         }
-        let token_to_ids = if pairs.is_empty() {
-            BucketVocabStore::new()
-        } else {
-            BucketVocabStore::build(pairs)?
-        };
+        let token_to_ids = BucketVocabStore::build(pairs)?;
         let trie = builder.build();
         let fuse_unk = true;
         let is_optimized = true;

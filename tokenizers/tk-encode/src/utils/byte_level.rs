@@ -1,4 +1,4 @@
-use crate::{Result, vocab::bucket_vocab_store::BucketVocabStore};
+use crate::{Result, models::bpe::Vocab, vocab::bucket_vocab_store::BucketVocabStore};
 use std::sync::LazyLock;
 
 // The GPT-2 pre-tokenize regex is the canonical spec in bitcannon (single source of truth); re-export
@@ -70,10 +70,9 @@ fn reverse_lookup(c: char) -> Vec<u8> {
     char_to_byte(c).map_or_else(|| c.to_string().into_bytes(), |b| vec![b])
 }
 
-pub(crate) fn transform_vocab(vocab: BucketVocabStore) -> Result<BucketVocabStore> {
+pub(crate) fn transform_vocab(vocab: Vocab) -> Result<BucketVocabStore> {
     BucketVocabStore::build(
         vocab
-            .content()
             .into_iter()
             .map(|(string, token_id)| (string.chars().flat_map(reverse_lookup).collect(), token_id))
             .collect(),
