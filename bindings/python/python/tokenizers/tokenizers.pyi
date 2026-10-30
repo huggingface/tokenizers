@@ -133,6 +133,52 @@ class CompiledTokenizer:
         Returns:
             List[Encoding]
         """
+    def get_vocab(self, /, with_added_tokens: bool = True) -> dict[str, int]:
+        """
+        Returns the vocabulary, as a dict from token to id.
+
+        Args:
+            with_added_tokens: bool
+                Whether to include the added tokens, such as special tokens.
+
+        Returns:
+            dict[str, int]
+        """
+    def get_vocab_size(self, /, with_added_tokens: bool = True) -> int:
+        """
+        Returns the size of the vocabulary.
+
+        Args:
+            with_added_tokens: bool
+                Whether to count the added tokens, such as special tokens.
+
+        Returns:
+            int
+        """
+    def id_to_token(self, /, id: int) -> str | None:
+        """
+        Converts an id to its token.
+
+        Args:
+            id: int
+                The id to convert.
+
+        Returns:
+            str or None: `None` when the id is not in the vocabulary.
+        """
+    def token_to_id(self, /, token: str) -> int | None:
+        """
+        Converts a token to its id.
+
+        Takes the token as `get_vocab()` returns it, e.g. `"Ġhe"` for GPT-2's `" he"`.
+
+        Args:
+            token: str
+                The token to convert.
+
+        Returns:
+            int or None: `None` when the token is not in the vocabulary.
+        """
     def tokenize(
         self,
         /,

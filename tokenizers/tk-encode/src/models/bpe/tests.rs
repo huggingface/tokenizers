@@ -391,6 +391,15 @@ fn byte_level_id_to_token_spells_the_projected_alphabet() {
     assert_eq!(pipeline.id_to_token(301), None);
 }
 
+// The same bytes spelled outside the projected alphabet are not a token of the vocabulary.
+#[test]
+fn byte_level_token_to_id_reads_the_projected_alphabet() {
+    let pipeline = byte_level_bpe(&[(" he", 300)], &[], true).unwrap();
+    assert_eq!(pipeline.token_to_id("Ġhe"), Some(300));
+    assert_eq!(pipeline.token_to_id("Ã"), Some(0xC3));
+    assert_eq!(pipeline.token_to_id(" he"), None);
+}
+
 #[test]
 fn byte_level_requires_full_byte_coverage() {
     // An ASCII-only vocab covers no control/high bytes: building the
