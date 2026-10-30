@@ -41,6 +41,7 @@ impl ComponentKind for Normalizer {
             Some("BertNormalizer") => BertNormalizer::from_spec(py, spec),
             Some("Strip") => Strip::from_spec(py, spec),
             Some("Prepend") => Prepend::from_spec(py, spec),
+            Some("MetaspaceNormalizer") => MetaspaceNormalizer::from_spec(py, spec),
             Some("Sequence") => Sequence::from_spec(py, spec),
             _ => Normalizer::default_component(py, spec),
         }
@@ -318,6 +319,32 @@ impl Prepend {
     }
 }
 
+/// SentencePiece's whitespace handling: replaces spaces with `replacement`. `prepend` says when
+/// `replacement` also goes in front of the text: `"always"`, `"first"` (only at the start of the
+/// input) or `"never"`. `drop_whitespace` drops runs of whitespace instead of replacing them.
+#[pyclass(frozen, extends = Normalizer, module = "tokenizers.normalizers")]
+#[derive(Default)]
+pub struct MetaspaceNormalizer;
+
+impl ComponentType for MetaspaceNormalizer {}
+
+#[pymethods]
+impl MetaspaceNormalizer {
+    #[new]
+    #[pyo3(signature = (replacement='▁', prepend="always", drop_whitespace=false))]
+    fn new(replacement: char, prepend: &str, drop_whitespace: bool) -> PyClassInitializer<Self> {
+        let Value::Object(json) = json!({
+            "type": "MetaspaceNormalizer",
+            "replacement": replacement,
+            "prepend": prepend,
+            "drop_whitespace": drop_whitespace,
+        }) else {
+            unreachable!("json! builds an object from an object literal")
+        };
+        Self::initializer(ComponentSpec::new(json))
+    }
+}
+
 /// Applies each normalizer in turn. Items read from it are copies: assign `seq[i] = item` to change one.
 #[pyclass(frozen, extends = Normalizer, module = "tokenizers.normalizers")]
 #[derive(Default)]
@@ -358,7 +385,7 @@ impl Sequence {
 pub mod normalizers {
     #[pymodule_export]
     use super::{
-        BertNormalizer, ByteLevel, Lowercase, Nfc, Nfd, Nfkc, Nfkd, Nmt, Normalizer, Precompiled,
-        Prepend, Replace, Sequence, Strip, StripAccents,
+        BertNormalizer, ByteLevel, Lowercase, MetaspaceNormalizer, Nfc, Nfd, Nfkc, Nfkd, Nmt,
+        Normalizer, Precompiled, Prepend, Replace, Sequence, Strip, StripAccents,
     };
 }

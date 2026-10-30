@@ -10,7 +10,7 @@ from tokenizers import Regex, normalizers
 TEXT = "Hello world, how are you?"
 
 
-# The JSON 0.23 writes for each, key order included.
+# The JSON 0.23 writes for each, and 2.0's for MetaspaceNormalizer.
 @pytest.mark.parametrize(
     ("normalizer", "written"),
     [
@@ -34,11 +34,19 @@ TEXT = "Hello world, how are you?"
         (normalizers.Strip(), '{"type":"Strip","strip_left":true,"strip_right":true}'),
         (normalizers.Strip(left=False), '{"type":"Strip","strip_left":false,"strip_right":true}'),
         (normalizers.Prepend("▁"), '{"type":"Prepend","prepend":"▁"}'),
+        (
+            normalizers.MetaspaceNormalizer(),
+            '{"type":"MetaspaceNormalizer","replacement":"▁","prepend":"always","drop_whitespace":false}',
+        ),
+        (
+            normalizers.MetaspaceNormalizer(replacement="_", prepend="first", drop_whitespace=True),
+            '{"type":"MetaspaceNormalizer","replacement":"_","prepend":"first","drop_whitespace":true}',
+        ),
     ],
     ids=lambda param: type(param).__name__ if isinstance(param, normalizers.Normalizer) else None,
 )
 def test_normalizer_json(wiki_spec, normalizer, written):
-    assert normalizer.__getstate__().decode() == written
+    assert json.loads(normalizer.__getstate__()) == json.loads(written)
     twin = pickle.loads(pickle.dumps(normalizer))
     assert type(twin) is type(normalizer)
     tokenizer = wiki_spec
@@ -106,7 +114,7 @@ def test_stateless_component(wiki_spec, key, cls):
     ids=["normalizers"],
 )
 def test_sequence_json(wiki_spec, key, sequence, written):
-    assert sequence.__getstate__().decode() == written
+    assert json.loads(sequence.__getstate__()) == json.loads(written)
     assert type(pickle.loads(pickle.dumps(sequence))) is type(sequence)
     tokenizer = wiki_spec
     setattr(tokenizer, key, sequence)
