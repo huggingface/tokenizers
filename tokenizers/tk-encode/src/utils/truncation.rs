@@ -68,7 +68,7 @@ impl std::convert::AsRef<str> for TruncationStrategy {
 
 pub fn truncate_pair(
     mut s1: Vec<PipelineToken>,
-    maybe_s2: Option<Vec<PipelineToken>>,
+    mut maybe_s2: Option<Vec<PipelineToken>>,
     truncation: Option<&TruncationParams>,
     num_added_special_tokens: usize,
 ) -> Result<(Vec<PipelineToken>, Option<Vec<PipelineToken>>)> {
@@ -87,6 +87,18 @@ pub fn truncate_pair(
             );
             Ok((Vec::new(), maybe_s2.and(Some(Vec::new()))))
         } else if seq_len > truncate_to_length {
+            // 0.23's `do_tokenize` early-exits each sequence to `truncation.max_length`
+            // (not max_length - specials) before joint truncation. OnlySecond skips the
+            // first sequence (type_id == 0). Without this, LongestFirst gives the odd
+            // leftover token to the originally longer sequence instead of the second.
+            if truncation.strategy != TruncationStrategy::OnlySecond {
+                truncate_tokens(&mut s1, truncation.max_length, truncation.direction);
+            }
+            if let Some(s2) = maybe_s2.as_mut() {
+                truncate_tokens(s2, truncation.max_length, truncation.direction);
+            }
+
+            let seq_len = s1.len() + maybe_s2.as_ref().map_or(0, Vec::len);
             let num_removed = seq_len - truncate_to_length;
 
             match truncation.strategy {
@@ -501,6 +513,25 @@ mod tests {
             3,
             &[3, 4],
             Some(&[3, 4, 5]),
+        );
+    }
+
+    // Issue #2590: both sequences longer than max_length with an odd retained budget.
+    // 0.23 early-caps each side to max_length first, so the odd token goes to the second
+    // sequence ([1,1] + [2,2,2]). Joint-only balancing would keep [1,1,1] + [2,2].
+    #[test]
+    fn test_longest_first_both_over_odd_budget() {
+        assert_truncated(
+            make_tokens(std::iter::repeat_n(1, 10)),
+            Some(make_tokens(std::iter::repeat_n(2, 8))),
+            TruncationParams {
+                max_length: 5,
+                strategy: TruncationStrategy::LongestFirst,
+                ..TruncationParams::default()
+            },
+            0,
+            &[1, 1],
+            Some(&[2, 2, 2]),
         );
     }
 }
