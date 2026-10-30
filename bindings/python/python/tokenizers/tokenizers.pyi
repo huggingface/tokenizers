@@ -11,6 +11,88 @@ from numpy.typing import NDArray
 __version__: Final[str]
 
 @final
+class AddedToken:
+    """
+    A token matched in the text before the model runs, such as `[CLS]` or `<|endoftext|>`.
+
+    Args:
+        content:
+            The text of the token.
+        single_word:
+            Only match the token when it is a whole word, not inside one.
+        lstrip:
+            Include the whitespace to the left of a match in the token.
+        rstrip:
+            Include the whitespace to the right of a match in the token.
+        normalized:
+            Match the token against the normalized text rather than the original text.
+            Defaults to `not special`.
+        special:
+            Skip the token when decoding with `skip_special_tokens`.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __getstate__(self, /) -> dict:
+        """
+        The token as an `added_tokens` entry without its `id`.
+
+        transformers writes this dict to `tokenizer_config.json`.
+        """
+    def __hash__(self, /) -> int: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __new__(
+        cls,
+        /,
+        content: str,
+        *,
+        single_word: bool = False,
+        lstrip: bool = False,
+        rstrip: bool = False,
+        normalized: bool | None = None,
+        special: bool = False,
+    ) -> AddedToken: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[dict]]:
+        """
+        Pickle rebuilds an `AddedToken` by calling `_unpickle` with `__getstate__()`.
+        """
+    def __repr__(self, /) -> str: ...
+    def __str__(self, /) -> str: ...
+    @staticmethod
+    def _unpickle(state: dict) -> AddedToken:
+        """
+        Calls the constructor with `state` as keyword arguments.
+        """
+    @property
+    def content(self, /) -> str:
+        """
+        The text of the token.
+        """
+    @property
+    def lstrip(self, /) -> bool:
+        """
+        Whether a match includes the whitespace to its left.
+        """
+    @property
+    def normalized(self, /) -> bool:
+        """
+        Whether the token text is normalized.
+        """
+    @property
+    def rstrip(self, /) -> bool:
+        """
+        Whether a match includes the whitespace to its right.
+        """
+    @property
+    def single_word(self, /) -> bool:
+        """
+        Whether the token only matches a whole word.
+        """
+    @property
+    def special(self, /) -> bool:
+        """
+        Whether decoding with `skip_special_tokens` skips the token.
+        """
+
+@final
 class CompiledTokenizer:
     """
     A tokenizer built by `Tokenizer.compile()`. Encodes text into token ids, and decodes token
@@ -38,6 +120,11 @@ class CompiledTokenizer:
     def __repr__(self, /) -> str: ...
     @staticmethod
     def _unpickle(json: bytes) -> CompiledTokenizer: ...
+    @property
+    def added_tokens(self, /) -> dict[int, AddedToken]:
+        """
+        The added tokens, indexed by their token id
+        """
     def decode(
         self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = True
     ) -> str:
