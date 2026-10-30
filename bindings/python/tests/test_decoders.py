@@ -45,7 +45,7 @@ TEXT = "Hello world, how are you?"
     ids=lambda param: type(param).__name__ if isinstance(param, decoders.Decoder) else None,
 )
 def test_decoder_json(wiki_spec, decoder, written):
-    assert decoder.__getstate__().decode() == written
+    assert json.loads(decoder.__getstate__()) == json.loads(written)
     twin = pickle.loads(pickle.dumps(decoder))
     assert type(twin) is type(decoder)
     tokenizer = wiki_spec
@@ -103,7 +103,7 @@ def test_stateless_component(wiki_spec, key, cls):
     ids=["decoders"],
 )
 def test_sequence_json(wiki_spec, key, sequence, written):
-    assert sequence.__getstate__().decode() == written
+    assert json.loads(sequence.__getstate__()) == json.loads(written)
     assert type(pickle.loads(pickle.dumps(sequence))) is type(sequence)
     tokenizer = wiki_spec
     setattr(tokenizer, key, sequence)
