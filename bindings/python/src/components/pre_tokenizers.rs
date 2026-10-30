@@ -7,7 +7,7 @@ use crate::error::err;
 use crate::regex::Pattern;
 use crate::tokenizer::{ComponentKey, ComponentSpec};
 
-use super::{Component, ComponentKind, ComponentSequence, ComponentType, JsonFields};
+use super::{Component, ComponentKind, ComponentSequence, ComponentType};
 
 /// Base class for all pre-tokenizers
 #[pyclass(frozen, subclass, extends = Component, module = "tokenizers.pre_tokenizers")]
@@ -32,8 +32,6 @@ impl ComponentKind for PreTokenizer {
             Some("WhitespaceSplit") => WhitespaceSplit::from_spec(py, spec),
             Some("BertPreTokenizer") => BertPreTokenizer::from_spec(py, spec),
             Some("UnicodeScripts") => UnicodeScripts::from_spec(py, spec),
-            Some("ByteLevel") => ByteLevel::from_spec(py, spec),
-            Some("Metaspace") => Metaspace::from_spec(py, spec),
             Some("Split") => Split::from_spec(py, spec),
             Some("Digits") => Digits::from_spec(py, spec),
             Some("Punctuation") => Punctuation::from_spec(py, spec),
@@ -114,94 +112,6 @@ impl UnicodeScripts {
             unreachable!("json! builds an object from an object literal")
         };
         Self::initializer(ComponentSpec::new(json))
-    }
-}
-
-/// GPT-2's byte-level pre-tokenization: splits the text with GPT-2's regex, then replaces each
-/// byte with its character in the GPT-2 byte-to-unicode mapping.
-#[pyclass(frozen, extends = PreTokenizer, module = "tokenizers.pre_tokenizers")]
-#[derive(Default)]
-pub struct ByteLevel;
-
-impl ComponentType for ByteLevel {}
-
-#[pymethods]
-impl ByteLevel {
-    /// `add_prefix_space` adds a space in front of the text, so the first word encodes like the
-    /// others. `use_regex=False` skips the split.
-    #[new]
-    #[pyo3(signature = (add_prefix_space=true, trim_offsets=true, use_regex=true))]
-    fn new(
-        add_prefix_space: bool,
-        trim_offsets: bool,
-        use_regex: bool,
-    ) -> PyClassInitializer<Self> {
-        let Value::Object(json) = json!({
-            "type": "ByteLevel",
-            "add_prefix_space": add_prefix_space,
-            "trim_offsets": trim_offsets,
-            "use_regex": use_regex,
-        }) else {
-            unreachable!("json! builds an object from an object literal")
-        };
-        Self::initializer(ComponentSpec::new(json))
-    }
-
-    /// The 256 characters of the byte-to-unicode mapping, one per byte.
-    #[staticmethod]
-    fn alphabet() -> Vec<char> {
-        tk::pre_tokenizers::byte_level::ByteLevel::alphabet().to_vec()
-    }
-
-    #[getter]
-    fn add_prefix_space(slf: &Bound<'_, Self>) -> PyResult<bool> {
-        slf.field("add_prefix_space")
-    }
-}
-
-/// SentencePiece's whitespace handling: replaces spaces with `replacement` and splits the text in
-/// front of each one when `split` is set.
-#[pyclass(frozen, extends = PreTokenizer, module = "tokenizers.pre_tokenizers")]
-#[derive(Default)]
-pub struct Metaspace;
-
-impl ComponentType for Metaspace {}
-
-#[pymethods]
-impl Metaspace {
-    /// `prepend_scheme` says when `replacement` goes in front of the text: `"always"`, `"first"`
-    /// (only at the start of the input) or `"never"`.
-    #[new]
-    #[pyo3(signature = (replacement='▁', prepend_scheme="always", split=true))]
-    fn new(
-        replacement: char,
-        prepend_scheme: &str,
-        split: bool,
-    ) -> PyResult<PyClassInitializer<Self>> {
-        if !["always", "first", "never"].contains(&prepend_scheme) {
-            return Err(err(format!(
-                "prepend_scheme must be \"always\", \"first\" or \"never\", not {prepend_scheme:?}"
-            )));
-        }
-        let Value::Object(json) = json!({
-            "type": "Metaspace",
-            "replacement": replacement,
-            "prepend_scheme": prepend_scheme,
-            "split": split,
-        }) else {
-            unreachable!("json! builds an object from an object literal")
-        };
-        Ok(Self::initializer(ComponentSpec::new(json)))
-    }
-
-    #[getter]
-    fn replacement(slf: &Bound<'_, Self>) -> PyResult<char> {
-        slf.field("replacement")
-    }
-
-    #[getter]
-    fn split(slf: &Bound<'_, Self>) -> PyResult<bool> {
-        slf.field("split")
     }
 }
 
@@ -324,7 +234,7 @@ impl Sequence {
 pub mod pre_tokenizers {
     #[pymodule_export]
     use super::{
-        BertPreTokenizer, ByteLevel, Digits, Metaspace, PreTokenizer, Punctuation, Sequence, Split,
-        UnicodeScripts, Whitespace, WhitespaceSplit,
+        BertPreTokenizer, Digits, PreTokenizer, Punctuation, Sequence, Split, UnicodeScripts,
+        Whitespace, WhitespaceSplit,
     };
 }

@@ -56,11 +56,6 @@ def wiki_spec():
 
 
 @pytest.fixture
-def llama3_spec():
-    return Tokenizer.from_file(LLAMA3)
-
-
-@pytest.fixture
 def padded_wiki(tmp_path):
     declared = json.loads(WIKI.read_text())
     declared["padding"] = {

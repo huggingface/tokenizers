@@ -14,46 +14,11 @@ class BertPreTokenizer(PreTokenizer):
     def __new__(cls, /) -> BertPreTokenizer: ...
 
 @final
-class ByteLevel(PreTokenizer):
-    """
-    GPT-2's byte-level pre-tokenization: splits the text with GPT-2's regex, then replaces each
-    byte with its character in the GPT-2 byte-to-unicode mapping.
-    """
-    def __new__(cls, /, add_prefix_space: bool = True, trim_offsets: bool = True, use_regex: bool = True) -> ByteLevel:
-        """
-        `add_prefix_space` adds a space in front of the text, so the first word encodes like the
-        others. `use_regex=False` skips the split.
-        """
-    @property
-    def add_prefix_space(self, /) -> bool: ...
-    @staticmethod
-    def alphabet() -> list[str]:
-        """
-        The 256 characters of the byte-to-unicode mapping, one per byte.
-        """
-
-@final
 class Digits(PreTokenizer):
     """
     Splits the text around runs of digits, or around each digit with `individual_digits`.
     """
     def __new__(cls, /, individual_digits: bool = False) -> Digits: ...
-
-@final
-class Metaspace(PreTokenizer):
-    """
-    SentencePiece's whitespace handling: replaces spaces with `replacement` and splits the text in
-    front of each one when `split` is set.
-    """
-    def __new__(cls, /, replacement: str = "▁", prepend_scheme: str = "always", split: bool = True) -> Metaspace:
-        """
-        `prepend_scheme` says when `replacement` goes in front of the text: `"always"`, `"first"`
-        (only at the start of the input) or `"never"`.
-        """
-    @property
-    def replacement(self, /) -> str: ...
-    @property
-    def split(self, /) -> bool: ...
 
 class PreTokenizer(Component):
     """
