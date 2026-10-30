@@ -25,6 +25,7 @@ class BPE(Model):
         fuse_unk: bool = False,
         byte_fallback: bool = False,
         ignore_merges: bool = False,
+        byte_level: bool = False,
     ) -> BPE: ...
     @property
     def continuing_subword_prefix(self, /) -> str | None: ...
