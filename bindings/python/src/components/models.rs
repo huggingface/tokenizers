@@ -57,7 +57,7 @@ impl Vocab {
                 serde_json::from_str(&std::fs::read_to_string(path)?).map_err(err)?
             }
         };
-        Ok(by_id(vocab))
+        Ok(to_json(vocab))
     }
 
     /// A path names a `vocab.txt`: one token per line, its id being the line number.
@@ -72,15 +72,12 @@ impl Vocab {
                     .collect()
             }
         };
-        Ok(by_id(vocab))
+        Ok(to_json(vocab))
     }
 }
 
-/// `{token: id}` in id order, the order 0.23 writes.
-fn by_id(vocab: HashMap<String, u32>) -> JsonObject {
-    let mut entries: Vec<_> = vocab.into_iter().collect();
-    entries.sort_unstable_by(|(a, a_id), (b, b_id)| (a_id, a).cmp(&(b_id, b)));
-    entries
+fn to_json(vocab: HashMap<String, u32>) -> JsonObject {
+    vocab
         .into_iter()
         .map(|(token, id)| (token, id.into()))
         .collect()
@@ -129,7 +126,7 @@ impl ComponentType for Bpe {}
 #[pymethods]
 impl Bpe {
     #[new]
-    #[pyo3(signature = (vocab=None, merges=None, *, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=false, byte_fallback=false, ignore_merges=false))]
+    #[pyo3(signature = (vocab=None, merges=None, *, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=false, byte_fallback=false, ignore_merges=false, byte_level=false))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         vocab: Option<Vocab>,
@@ -141,6 +138,7 @@ impl Bpe {
         fuse_unk: bool,
         byte_fallback: bool,
         ignore_merges: bool,
+        byte_level: bool,
     ) -> PyResult<PyClassInitializer<Self>> {
         let json = json!({
             "type": "BPE",
@@ -151,6 +149,7 @@ impl Bpe {
             "fuse_unk": fuse_unk,
             "byte_fallback": byte_fallback,
             "ignore_merges": ignore_merges,
+            "byte_level": byte_level,
             "vocab": vocab.map(Vocab::read_json).transpose()?.unwrap_or_default(),
             "merges": merges.map(Merges::read).transpose()?.unwrap_or_default(),
         });
