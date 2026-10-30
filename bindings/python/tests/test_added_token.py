@@ -1,3 +1,4 @@
+import copy
 import json
 import pickle
 
@@ -41,3 +42,48 @@ def test_compiled_flags(tmp_path):
     }
 
     assert compile_gpt2_with(added_tokens, tmp_path).added_tokens == added_tokens
+
+
+@pytest.fixture
+def spec():
+    return Tokenizer.from_file(GPT2)
+
+
+def test_add_tokens_ids(spec):
+    hello = json.loads(GPT2.read_text())["model"]["vocab"]["hello"]
+    endoftext = AddedToken("<|endoftext|>", normalized=True, special=True)
+
+    # "hello" is in the model vocab: it keeps its id but is still added, as in 0.23.
+    assert spec.add_tokens(["<new>", "hello"]) == 2
+    assert spec.compile().added_tokens == {
+        hello: AddedToken("hello"),
+        50256: endoftext,
+        50257: AddedToken("<new>"),
+    }
+
+
+def test_add_tokens_counts_changes(spec):
+    assert spec.add_tokens(["<new>", "<new>", ""]) == 1
+    assert spec.add_tokens(["<new>"]) == 0
+    assert spec.add_tokens([AddedToken("<new>", lstrip=True)]) == 1
+    assert spec.compile().added_tokens[50257] == AddedToken("<new>", lstrip=True)
+
+
+def test_add_special_tokens(spec):
+    assert spec.add_special_tokens(["<str>", AddedToken("<token>", normalized=True)]) == 2
+    assert spec.compile().added_tokens == {
+        50256: AddedToken("<|endoftext|>", normalized=True, special=True),
+        50257: AddedToken("<str>", special=True),
+        50258: AddedToken("<token>", normalized=True, special=True),
+    }
+
+
+def test_add_tokens_leaves_copies_unchanged(spec):
+    before = spec.compile().added_tokens
+    copied = copy.copy(spec)
+    compiled = spec.compile()
+
+    spec.add_tokens(["<new>"])
+
+    assert copied.compile().added_tokens == before
+    assert compiled.added_tokens == before

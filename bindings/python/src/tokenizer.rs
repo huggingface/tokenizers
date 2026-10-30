@@ -7,12 +7,15 @@ use pyo3::types::{PyBytes, PyDict};
 use serde_json::Value;
 
 use tk::pipeline::PipelineTokenizer;
+use tk::vocab::bucket_added_vocabulary::AddedToken;
 use tk::{
-    PaddingParams, Result, TruncationParams, canonicalize_value, from_json, padding_from_json,
-    padding_to_json, truncation_from_json, truncation_to_json,
+    PaddingParams, Result, TruncationParams, added_tokens_from_json, added_tokens_to_json,
+    canonicalize_value, from_json, padding_from_json, padding_to_json, truncation_from_json,
+    truncation_to_json,
 };
 
 use crate::JsonObject;
+use crate::added_token::TokenToAdd;
 use crate::compiled::CompiledTokenizer;
 use crate::error::err;
 use crate::options::{Padding, Truncation};
@@ -169,6 +172,39 @@ impl Tokenizer {
         self.spec().truncation = truncation.map(|truncation| truncation.params().clone());
     }
 
+    /// Adds tokens matched in the text before the model runs.
+    ///
+    /// A token already added with the same content gets the new flags. A token in the model's
+    /// vocabulary keeps its id there; any other new token gets the next free id at `compile()`.
+    ///
+    /// Args:
+    ///     tokens:
+    ///         The tokens to add. A `str` is added as `AddedToken(content)`.
+    ///
+    /// Returns:
+    ///     The number of tokens added or changed.
+    fn add_tokens(&self, tokens: Vec<TokenToAdd<'_>>) -> usize {
+        let tokens = tokens
+            .into_iter()
+            .map(|token| token.into_added_token(false));
+        self.spec().add_tokens(tokens)
+    }
+
+    /// Adds special tokens: `decode` skips them with `skip_special_tokens`.
+    ///
+    /// Works as `add_tokens`, with every token marked special.
+    ///
+    /// Args:
+    ///     tokens:
+    ///         The tokens to add. A `str` is added as `AddedToken(content, special=True)`.
+    ///
+    /// Returns:
+    ///     The number of tokens added or changed.
+    fn add_special_tokens(&self, tokens: Vec<TokenToAdd<'_>>) -> usize {
+        let tokens = tokens.into_iter().map(|token| token.into_added_token(true));
+        self.spec().add_tokens(tokens)
+    }
+
     /// Builds a new `CompiledTokenizer` from the spec as it is now.
     ///
     /// Every call builds the whole tokenizer again. Later edits of the spec do not reach the
@@ -217,7 +253,9 @@ pub(crate) struct TokenizerSpec {
     /// The padding an encode applies when it doesn't override it.
     padding: Option<PaddingParams>,
     role_to_token: Arc<Value>,
-    added_tokens: Arc<Value>,
+    /// In the order loading assigns their ids. The ids depend on the model's vocabulary, so the
+    /// spec doesn't store them.
+    added_tokens: Arc<Vec<AddedToken>>,
     normalizer: Option<Arc<ComponentSpec>>,
     pre_tokenizer: Option<Arc<ComponentSpec>>,
     post_processor: Option<Arc<ComponentSpec>>,
@@ -242,7 +280,7 @@ impl TokenizerSpec {
             truncation: truncation_from_json(&take("truncation").to_string())?,
             padding: padding_from_json(&take("padding").to_string())?,
             role_to_token: Arc::new(take("role_to_token")),
-            added_tokens: Arc::new(take("added_tokens")),
+            added_tokens: Arc::new(added_tokens_from_json(&take("added_tokens").to_string())?),
             normalizer: component(take("normalizer")),
             pre_tokenizer: component(take("pre_tokenizer")),
             post_processor: component(take("post_processor")),
@@ -255,6 +293,28 @@ impl TokenizerSpec {
     /// Builds a new [`PipelineTokenizer`] from the current spec, padding and truncation included.
     pub(crate) fn compile(&self) -> Result<PipelineTokenizer> {
         from_json(&self.to_json())
+    }
+
+    /// Adds `tokens` to `added_tokens`, or updates the flags of those with the same content, and
+    /// returns how many it added or updated.
+    fn add_tokens(&mut self, tokens: impl IntoIterator<Item = AddedToken>) -> usize {
+        let added_tokens = Arc::make_mut(&mut self.added_tokens);
+        let mut changed = 0;
+        for token in tokens {
+            if token.content.is_empty() {
+                continue;
+            }
+            match added_tokens
+                .iter_mut()
+                .find(|added| added.content == token.content)
+            {
+                Some(added) if *added == token => continue,
+                Some(added) => *added = token,
+                None => added_tokens.push(token),
+            }
+            changed += 1;
+        }
+        changed
     }
 
     /// A deep copy: the resulting object is independent.
@@ -286,10 +346,7 @@ impl TokenizerSpec {
                 "role_to_token",
                 Field::Json(Cow::Borrowed(&self.role_to_token)),
             ),
-            (
-                "added_tokens",
-                Field::Json(Cow::Borrowed(&self.added_tokens)),
-            ),
+            ("added_tokens", Field::AddedTokens(&self.added_tokens)),
             ("normalizer", component(&self.normalizer)),
             ("pre_tokenizer", component(&self.pre_tokenizer)),
             ("post_processor", component(&self.post_processor)),
@@ -323,6 +380,7 @@ impl TokenizerSpec {
 pub(crate) enum Field<'spec> {
     Json(Cow<'spec, Value>),
     Component(Option<Arc<JsonObject>>),
+    AddedTokens(&'spec [AddedToken]),
     Padding(Option<&'spec PaddingParams>),
     Truncation(Option<&'spec TruncationParams>),
 }
@@ -333,6 +391,7 @@ impl Field<'_> {
             Field::Json(value) => value.to_string(),
             Field::Component(json) => serde_json::to_string(&json.as_deref())
                 .expect("a JSON object with string keys always writes"),
+            Field::AddedTokens(tokens) => added_tokens_to_json(tokens),
             Field::Padding(padding) => padding_to_json(*padding),
             Field::Truncation(truncation) => truncation_to_json(*truncation),
         }
