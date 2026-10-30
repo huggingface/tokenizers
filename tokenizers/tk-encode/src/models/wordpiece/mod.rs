@@ -340,6 +340,23 @@ impl PipelineWordPiece {
         self.vocab_r.get(id as usize)?.as_deref().map(str::to_owned)
     }
 
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        // The trie leaves the empty token out, because yada cannot hold it.
+        if token.is_empty() {
+            let id = self.vocab_r.iter().position(|t| t.as_deref() == Some(""))?;
+            return Some(id as u32);
+        }
+        self.vocab_trie.exact_match_search(token)
+    }
+
+    pub fn get_vocab(&self) -> HashMap<String, u32> {
+        self.vocab().into_iter().collect()
+    }
+
+    pub fn get_vocab_size(&self) -> usize {
+        self.vocab_r.iter().flatten().count()
+    }
+
     /// `{"token": id}`, in id order. For a writer; the reverse table is dense over the ids, so the
     /// holes a config left are the `None`s that get skipped.
     pub fn vocab(&self) -> Vec<(String, u32)> {
@@ -504,6 +521,17 @@ mod tests {
         assert_eq!(pipeline_ids(&model, "hello", &mut scratch), [2]);
         assert_eq!(pipeline_ids(&model, "world", &mut scratch), [1]);
         assert_eq!(model.id_to_token(0).as_deref(), Some(""));
+        assert_eq!(model.token_to_id(""), Some(0));
+    }
+
+    #[test]
+    fn token_to_id_matches_whole_entries_only() {
+        let model = pipeline_wordpiece();
+
+        assert_eq!(model.token_to_id("hello"), Some(3));
+        assert_eq!(model.token_to_id("##o"), Some(2));
+        assert_eq!(model.token_to_id("hel"), None);
+        assert_eq!(model.token_to_id("helloo"), None);
     }
 
     #[test]

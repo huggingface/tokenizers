@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use tk::PaddingParams;
@@ -239,6 +241,60 @@ impl CompiledTokenizer {
         let ids = ids.as_slice();
         // py.detach releases the GIL while the Rust code runs.
         Ok(py.detach(|| self.pipeline.decode_tokens(ids, skip_special_tokens)))
+    }
+
+    /// Returns the vocabulary, as a dict from token to id.
+    ///
+    /// Args:
+    ///     with_added_tokens: bool
+    ///         Whether to include the added tokens, such as special tokens.
+    ///
+    /// Returns:
+    ///     dict[str, int]
+    #[pyo3(signature = (with_added_tokens=true))]
+    fn get_vocab(&self, py: Python<'_>, with_added_tokens: bool) -> HashMap<String, u32> {
+        // py.detach releases the GIL while the Rust code runs.
+        py.detach(|| self.pipeline.get_vocab(with_added_tokens))
+    }
+
+    /// Returns the size of the vocabulary.
+    ///
+    /// Args:
+    ///     with_added_tokens: bool
+    ///         Whether to count the added tokens, such as special tokens.
+    ///
+    /// Returns:
+    ///     int
+    #[pyo3(signature = (with_added_tokens=true))]
+    fn get_vocab_size(&self, py: Python<'_>, with_added_tokens: bool) -> usize {
+        // py.detach releases the GIL while the Rust code runs.
+        py.detach(|| self.pipeline.get_vocab_size(with_added_tokens))
+    }
+
+    /// Converts a token to its id.
+    ///
+    /// Takes the token as `get_vocab()` returns it, e.g. `"Ġhe"` for GPT-2's `" he"`.
+    ///
+    /// Args:
+    ///     token: str
+    ///         The token to convert.
+    ///
+    /// Returns:
+    ///     int or None: `None` when the token is not in the vocabulary.
+    fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.pipeline.token_to_id(token)
+    }
+
+    /// Converts an id to its token.
+    ///
+    /// Args:
+    ///     id: int
+    ///         The id to convert.
+    ///
+    /// Returns:
+    ///     str or None: `None` when the id is not in the vocabulary.
+    fn id_to_token(&self, id: u32) -> Option<String> {
+        self.pipeline.id_to_token(id)
     }
 
     /// Returns `self`: a compiled tokenizer cannot be changed, so a copy would be identical.
