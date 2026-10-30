@@ -46,6 +46,11 @@ def gpt2_spec():
 
 
 @pytest.fixture
+def bert_spec():
+    return Tokenizer.from_file(BERT)
+
+
+@pytest.fixture
 def padded_wiki(tmp_path):
     declared = json.loads(WIKI.read_text())
     declared["padding"] = {
