@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
@@ -12,6 +12,7 @@ use tk::pipeline::PipelineToken;
 use tk::pipeline::PipelineTokenizer;
 use tk::{from_json, to_json};
 
+use crate::added_token::AddedToken;
 use crate::encoding::Encoding;
 use crate::error::err;
 use crate::input::PyInput;
@@ -241,6 +242,20 @@ impl CompiledTokenizer {
         let ids = ids.as_slice();
         // py.detach releases the GIL while the Rust code runs.
         Ok(py.detach(|| self.pipeline.decode_tokens(ids, skip_special_tokens)))
+    }
+
+    /// The added tokens, indexed by their token id
+    // We use BTreeMap instead of HashMap to preserve key order
+    #[getter]
+    fn added_tokens(&self) -> BTreeMap<u32, AddedToken> {
+        let decoder = self
+            .pipeline
+            .get_added_vocabulary()
+            .get_added_tokens_decoder();
+        decoder
+            .into_iter()
+            .map(|(id, token)| (id, token.into()))
+            .collect()
     }
 
     /// Returns the vocabulary, as a dict from token to id.

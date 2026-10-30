@@ -6,6 +6,7 @@ Encode text to token ids and decode token ids back to text
 
 from . import decoders, models, normalizers, pre_tokenizers, processors
 from .tokenizers import (
+    AddedToken,
     CompiledTokenizer,
     Component,
     Encoding,
@@ -17,6 +18,7 @@ from .tokenizers import (
 )
 
 __all__ = [
+    "AddedToken",
     "CompiledTokenizer",
     "Component",
     "Encoding",
