@@ -142,17 +142,16 @@ def test_tokenizer_json_from_a_model():
     assert written["version"] == "2.0"
     assert written["added_tokens"] == []
     assert written["model"] == json.loads(tokenizer.model.__getstate__())
-    tokenizer.compile()
 
 
-# The keys 0.23 writes.
+# The keys 0.23 writes, plus 2.0's `byte_level`.
 @pytest.mark.parametrize(
     ("model", "keys"),
     [
         (
             models.BPE(),
             ["type", "dropout", "unk_token", "continuing_subword_prefix", "end_of_word_suffix"]
-            + ["fuse_unk", "byte_fallback", "ignore_merges", "vocab", "merges"],
+            + ["fuse_unk", "byte_fallback", "ignore_merges", "byte_level", "vocab", "merges"],
         ),
         (
             models.WordPiece(),
@@ -179,7 +178,7 @@ def test_bpe_from_dicts(wiki_spec):
     vocab = dict(reversed(declared["vocab"].items()))
     merges = [tuple(merge) for merge in declared["merges"]]
     tokenizer = copy.deepcopy(wiki_spec)
-    tokenizer.model = models.BPE(vocab, merges, unk_token="[UNK]")
+    tokenizer.model = models.BPE(vocab, merges, unk_token="[UNK]", byte_level=declared["byte_level"])
     text = f"{TEXT} 😀"
     assert tokenizer.compile().encode(text).ids == wiki_spec.compile().encode(text).ids
 
@@ -191,7 +190,7 @@ def test_bpe_from_files(gpt2_spec, tmp_path):
     merges = tmp_path / "merges.txt"
     merges.write_text("#version: 0.2\n" + "\n".join(" ".join(merge) for merge in declared["merges"]) + "\n")
     tokenizer = copy.deepcopy(gpt2_spec)
-    tokenizer.model = models.BPE(vocab=str(vocab), merges=str(merges))
+    tokenizer.model = models.BPE(vocab=str(vocab), merges=str(merges), byte_level=declared["byte_level"])
     assert tokenizer.compile().encode(TEXT).ids == gpt2_spec.compile().encode(TEXT).ids
 
 
@@ -213,6 +212,7 @@ def test_bpe_options():
         fuse_unk=True,
         byte_fallback=True,
         ignore_merges=True,
+        byte_level=True,
     )
     assert json.loads(bpe.__getstate__()) == {
         "type": "BPE",
@@ -223,6 +223,7 @@ def test_bpe_options():
         "fuse_unk": True,
         "byte_fallback": True,
         "ignore_merges": True,
+        "byte_level": True,
         "vocab": {"a": 0, "b": 1, "ab": 2},
         "merges": [["a", "b"]],
     }
