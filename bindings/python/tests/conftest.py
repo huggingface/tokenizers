@@ -51,11 +51,6 @@ def bert_spec():
 
 
 @pytest.fixture
-def wiki_spec():
-    return Tokenizer.from_file(WIKI)
-
-
-@pytest.fixture
 def padded_wiki(tmp_path):
     declared = json.loads(WIKI.read_text())
     declared["padding"] = {
