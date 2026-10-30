@@ -1,7 +1,5 @@
 use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
 
-use crate::tokenizer::Encoding;
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// Provides all the necessary steps to handle the BPE tokenization at the byte-level. Takes care
 /// of all the required processing steps to transform a UTF-8 string as needed before and after the
@@ -62,38 +60,4 @@ impl ByteLevel {
         self.use_regex = v;
         self
     }
-}
-
-pub fn process_offsets(encoding: &mut Encoding, add_prefix_space: bool) {
-    encoding.process_tokens_with_offsets_mut(|(i, (token, offsets))| {
-        let mut leading_spaces = token
-            .chars()
-            .take_while(|c| *c == BYTES_CHAR_LOOKUP[b' ' as usize] || c.is_whitespace())
-            .count();
-        let trailing_spaces = token
-            .chars()
-            .rev()
-            .take_while(|c| *c == BYTES_CHAR_LOOKUP[b' ' as usize] || c.is_whitespace())
-            .count();
-
-        if leading_spaces > 0 || trailing_spaces > 0 {
-            if leading_spaces > 0 {
-                // If user uses `is_pretokenized=True` we might have
-                // offsets that might begin at the start of the string but are
-                // NOT the first token.
-                let is_first = i == 0 || offsets.0 == 0;
-                if is_first && add_prefix_space && leading_spaces == 1 {
-                    // If we are processing the first pair of offsets, with `add_prefix_space`,
-                    // then we shouldn't remove anything we added. If there are more than one
-                    // leading spaces though, it means we didn't add them, and they should be
-                    // removed.
-                    leading_spaces = 0;
-                }
-                offsets.0 = std::cmp::min(offsets.0 + leading_spaces, offsets.1);
-            }
-            if trailing_spaces > 0 && offsets.1 >= trailing_spaces {
-                offsets.1 = std::cmp::max(offsets.1 - trailing_spaces, offsets.0);
-            }
-        }
-    });
 }
