@@ -66,8 +66,8 @@ def test_repr():
 def test_repr_nested(llama3):
     rendered = repr(llama3)
 
-    assert '            "id": 128004,' in rendered
-    assert '            "id": 128005,' not in rendered
+    assert '        AddedToken("<|finetune_right_pad_id|>", single_word=False,' in rendered
+    assert "<|reserved_special_token_2|>" not in rendered
     assert "        ...,\n    ],\n    normalizer=None," in rendered
     assert "    pre_tokenizer=Sequence(\n        pretokenizers=[\n            Split(\n" in rendered
     assert '                behavior="Isolated",\n                invert=False,\n' in rendered

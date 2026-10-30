@@ -41,6 +41,28 @@ impl From<CoreAddedToken> for AddedToken {
     }
 }
 
+/// A token passed to `Tokenizer.add_tokens` or `Tokenizer.add_special_tokens`: its content, or
+/// an `AddedToken`.
+#[derive(FromPyObject)]
+pub enum TokenToAdd<'py> {
+    Content(String),
+    Token(PyRef<'py, AddedToken>),
+}
+
+impl TokenToAdd<'_> {
+    /// The token to add. `special` marks it special, and a bare content gets the default flags of
+    /// `AddedToken(content, special=special)`.
+    pub fn into_added_token(self, special: bool) -> CoreAddedToken {
+        match self {
+            Self::Content(content) => CoreAddedToken::from(content, special),
+            Self::Token(token) => CoreAddedToken {
+                special: token.0.special || special,
+                ..token.0.clone()
+            },
+        }
+    }
+}
+
 #[pymethods]
 impl AddedToken {
     #[new]
