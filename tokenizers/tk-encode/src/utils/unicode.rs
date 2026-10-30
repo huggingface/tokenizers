@@ -1,5 +1,5 @@
-use crate::vocab::bucket_vocab_store::mix;
-use ptr_hash::{FastPtrHash, PtrHashParams, hash::NoHash};
+use crate::utils::perfect_hash::{Mphf, mix};
+use ptr_hash::PtrHashParams;
 
 const _: () = assert!(
     matches!(unicode_normalization::UNICODE_VERSION, (17, 0, 0)),
@@ -8,10 +8,6 @@ const _: () = assert!(
         "combining mark exceptions need to be updated too in tk-encode/src/utils/unicode.rs"
     )
 );
-
-// The same type as the vocabulary and the BPE pair_map, to avoid code duplication and keep the binary lean
-// (FastPtrHash is a generic)
-type Mphf = FastPtrHash<NoHash, u64>;
 
 /// A perfect hash lookup for chars that are combining marks in Unicode 17 but not in Unicode 9.
 /// We need to conform to unicode 9 to preserve backwards compatibility for legacy models:
@@ -24,8 +20,6 @@ pub(crate) struct Unicode9IgnoredCombiningMarks {
 
 impl Unicode9IgnoredCombiningMarks {
     pub(crate) fn new() -> Self {
-        // `NoHash` takes keys as already hashed, so the code points go through `mix` first.
-        // `mix` is a bijection, so the slot can still store and compare the char itself.
         let keys: Vec<u64> = MARKS_ONLY_IN_UNICODE_17
             .iter()
             .map(|&c| mix(c as u64))

@@ -1,11 +1,10 @@
 //! Merge lookup for pairs outside the dense grid: a perfect-hash map from a packed
 //! `(left, right)` pair of internal ids to the pair's packed merge value. The `tables` module
 //! documents the value layout.
+use crate::utils::perfect_hash::Mphf;
 use ahash::RandomState;
-use ptr_hash::{FastPtrHash, PtrHashParams, hash::NoHash};
+use ptr_hash::PtrHashParams;
 use std::cmp;
-
-type Mphf = FastPtrHash<NoHash, u64>;
 
 // Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
 // so build and query are guaranteed consistent regardless).

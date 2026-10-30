@@ -3,7 +3,10 @@ use super::buckets::{AddedTokenFlags, Buckets};
 use crate::pipeline::Normalizer;
 use crate::pipeline::PipelinePatternMatcher;
 use crate::pre_tokenizers::whitespace::is_word_char;
+use crate::utils::perfect_hash::{Mphf, mix};
 use ahash::AHashMap;
+use ptr_hash::PtrHashParams;
+use std::collections::BTreeMap;
 use std::fmt;
 /// Represent a token added by the user on top of the existing Model vocabulary.
 /// AddedToken can be configured to specify the behavior they should have in various situations
@@ -161,16 +164,67 @@ impl std::hash::Hash for AddedToken {
 ///
 #[derive(Clone)]
 pub struct AddedVocabulary {
+    ids: InternalIds,
+
     /// New fast path for normalize and extra needs:
     ///  - multi-bucket first bytes. If its len is 1, we use memchr; otherwise we just check each
     ///    byte on that table lookup. Its a 256-byte table.
     ///  - the actual buckets. We could use small vec here. Chose to impl it. Buckets give pointers
     ///    to the inner vocab store.
     ///  - the metadata of each token.
-    token_metadata: Box<[AddedTokenFlags]>, // indexed by token id
+    token_metadata: Box<[AddedTokenFlags]>, // indexed by internal id
+
     normalized_vocab: Buckets,
     vocab: Buckets,
 }
+
+/// Renumbers the added tokens 0..n in vocab-id order, and maps between those internal ids and the
+/// true vocab token ids.
+#[derive(Clone)]
+struct InternalIds {
+    vocab_ids: Box<[u32]>,
+    mphf: Mphf,
+    /// `internal_by_slot[mphf.index(hash(vocab_id))]` is the internal id of `vocab_id`.
+    internal_ids: Box<[u32]>,
+}
+
+impl InternalIds {
+    fn new(sorted_vocab_ids: Box<[u32]>) -> Self {
+        debug_assert!(
+            sorted_vocab_ids.is_sorted(),
+            "add_tokens collects the vocab ids from a BTreeMap, which yields them in order"
+        );
+        let keys: Vec<u64> = sorted_vocab_ids.iter().map(|&id| mix(id as u64)).collect();
+        let mphf = Mphf::new(&keys, PtrHashParams::default_fast());
+        // Unused slots hold 0 - `internal_id` rejects them by comparing the vocab id.
+        let mut internal_ids = vec![0; mphf.max_index()].into_boxed_slice();
+        for (internal_id, key) in keys.iter().enumerate() {
+            internal_ids[mphf.index(key)] = internal_id as u32;
+        }
+        Self {
+            vocab_ids: sorted_vocab_ids,
+            mphf,
+            internal_ids,
+        }
+    }
+
+    fn vocab_id(&self, internal_id: u32) -> u32 {
+        self.vocab_ids[internal_id as usize]
+    }
+
+    fn internal_id(&self, vocab_id: u32) -> Option<u32> {
+        // An empty vocabulary has no slots.
+        let internal_id = *self
+            .internal_ids
+            .get(self.mphf.index(&mix(vocab_id as u64)))?;
+        (self.vocab_id(internal_id) == vocab_id).then_some(internal_id)
+    }
+
+    fn highest_vocab_id(&self) -> Option<u32> {
+        self.vocab_ids.last().copied()
+    }
+}
+
 impl fmt::Debug for AddedVocabulary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO: make it clean.
@@ -186,10 +240,33 @@ impl fmt::Debug for AddedVocabulary {
 impl AddedVocabulary {
     pub fn new() -> Self {
         Self {
+            ids: InternalIds::new(Box::new([])),
             token_metadata: Box::new([]),
             normalized_vocab: Buckets::new(),
             vocab: Buckets::new(),
         }
+    }
+
+    /// Every added token with its internal id, raw tokens first.
+    fn tokens(&self) -> impl Iterator<Item = (String, u32)> {
+        self.vocab
+            .tokens()
+            .into_iter()
+            .chain(self.normalized_vocab.tokens())
+    }
+
+    fn matcher(&self, normalized: bool) -> &Buckets {
+        if normalized {
+            &self.normalized_vocab
+        } else {
+            &self.vocab
+        }
+    }
+
+    fn token_to_internal_id(&self, token: &str) -> Option<u32> {
+        self.vocab
+            .token_to_internal_id(token)
+            .or_else(|| self.normalized_vocab.token_to_internal_id(token))
     }
     /// Size of the additional vocabulary
     #[allow(dead_code)] // Suppress the "method is never used" warning
@@ -205,22 +282,19 @@ impl AddedVocabulary {
     /// Get the additional vocabulary (union of both matchers; normalized tokens appear by their
     /// normalized form, since the original content isn't retained after partitioning).
     pub fn get_vocab(&self) -> AHashMap<String, u32> {
-        self.vocab
-            .get_vocab()
-            .into_iter()
-            .chain(self.normalized_vocab.get_vocab())
+        self.tokens()
+            .map(|(token, internal_id)| (token, self.ids.vocab_id(internal_id)))
             .collect::<AHashMap<String, u32>>()
     }
 
     /// Get the additional vocabulary with the AddedTokens
     /// TODO: this will be slow because we rebuild the added tokens
     pub fn get_added_tokens_decoder(&self) -> AHashMap<u32, AddedToken> {
-        self.get_vocab()
-            .into_iter()
-            .map(|(token, id)| {
-                let m = &self.token_metadata[id as usize];
+        self.tokens()
+            .map(|(token, internal_id)| {
+                let m = &self.token_metadata[internal_id as usize];
                 (
-                    id,
+                    self.ids.vocab_id(internal_id),
                     AddedToken {
                         content: token,
                         single_word: m.single_word,
@@ -236,9 +310,8 @@ impl AddedVocabulary {
 
     /// Get the id matching one of our token if it exists
     pub fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.vocab
-            .token_to_id(token)
-            .or_else(|| self.normalized_vocab.token_to_id(token))
+        self.token_to_internal_id(token)
+            .map(|internal_id| self.ids.vocab_id(internal_id))
     }
 
     /// Return the string form of an added token used during **decoding**.
@@ -247,18 +320,16 @@ impl AddedVocabulary {
     /// this returns the cached normalized form so that the configured `Decoder` can
     /// invert the transformation correctly. For all other tokens, the original
     /// `content` is returned.
-    pub fn simple_id_to_token(&self, _id: u32) -> Option<String> {
-        self.vocab
-            .id_to_token(_id)
-            .or_else(|| self.normalized_vocab.id_to_token(_id))
+    pub fn simple_id_to_token(&self, id: u32) -> Option<String> {
+        let internal_id = self.ids.internal_id(id)?;
+        self.matcher(self.token_metadata[internal_id as usize].normalized)
+            .internal_id_to_token(internal_id)
     }
 
     /// Check if a token is a special token
     pub fn is_special_token(&self, token: &str) -> bool {
-        if let Some(tok) = self.token_to_id(token) {
-            return self.token_metadata[tok as usize].special;
-        }
-        false
+        self.token_to_internal_id(token)
+            .is_some_and(|internal_id| self.token_metadata[internal_id as usize].special)
     }
 
     /// Add some special tokens to the vocabulary
@@ -283,22 +354,23 @@ impl AddedVocabulary {
         let mut ignored = 0;
         let mut total = 0;
 
-        // One matcher per `normalized` flag: non-normalized tokens live in `vocab` (matched on the
-        // raw input), normalized ones in `normalized_vocab` (matched on normalized text). Single id
-        // space; `metadata` is indexed by id and sized to (max id + 1), so `metadata.len()` is the
-        // next free dense id (no scan/alloc). Added ids start above the model vocab; a token already
-        // in the model reuses the model id.
-        let mut metadata = self.token_metadata.to_vec();
+        // Added ids start above the model vocab; a token already in the model reuses the model id.
         let model_size = model_vocab_size as u32;
-        let mut next_id = (metadata.len() as u32).max(model_size);
+        let mut next_id = self
+            .ids
+            .highest_vocab_id()
+            .map_or(0, |id| id + 1)
+            .max(model_size);
 
-        let mut entries: AHashMap<u32, (Vec<u8>, bool)> = AHashMap::new();
-        // Because we allow changing from normalized=true to false, we need to keep track of both
-        for (form, id) in self.vocab.get_vocab_bytes() {
-            entries.insert(id, (form, false));
-        }
-        for (form, id) in self.normalized_vocab.get_vocab_bytes() {
-            entries.insert(id, (form, true));
+        let mut entries: BTreeMap<u32, (Vec<u8>, AddedTokenFlags)> = BTreeMap::new();
+        let existing_tokens = self
+            .vocab
+            .token_bytes()
+            .into_iter()
+            .chain(self.normalized_vocab.token_bytes());
+        for (form, internal_id) in existing_tokens {
+            let flags = self.token_metadata[internal_id as usize].clone();
+            entries.insert(self.ids.vocab_id(internal_id), (form, flags));
         }
         let mut seen: AHashMap<String, u32> = AHashMap::new();
 
@@ -309,14 +381,13 @@ impl AddedVocabulary {
                 continue;
             }
             let flags = AddedTokenFlags::from(&token);
-            let is_norm = flags.normalized;
             let norm_form: String = match normalizer {
                 // An added token is matched anywhere in the text, so its form is normalized as if
                 // it never opened the sequence.
                 Some(n) => n.normalize(&token.content, 1)?.into_owned(),
                 None => token.content.clone(),
             };
-            let form = if is_norm {
+            let form = if flags.normalized {
                 norm_form.clone().into_bytes()
             } else {
                 token.content.clone().into_bytes()
@@ -326,12 +397,14 @@ impl AddedVocabulary {
                 .get(&token.content)
                 .copied()
                 .or_else(|| model_token_to_id(&token.content))
-                .or_else(|| self.vocab.token_to_id(&token.content))
-                .or_else(|| self.normalized_vocab.token_to_id(&norm_form));
-            // Already present with the exact same flags AND matcher -> nothing to do.
+                .or_else(|| {
+                    self.vocab
+                        .token_to_internal_id(&token.content)
+                        .or_else(|| self.normalized_vocab.token_to_internal_id(&norm_form))
+                        .map(|internal_id| self.ids.vocab_id(internal_id))
+                });
             if let Some(id) = existing
-                && metadata.get(id as usize) == Some(&flags)
-                && entries.get(&id).map(|(_, n)| *n) == Some(is_norm)
+                && entries.get(&id).map(|(_, f)| f) == Some(&flags)
             {
                 ignored += 1;
                 continue;
@@ -341,26 +414,27 @@ impl AddedVocabulary {
                 next_id += 1;
                 i
             });
-            if id as usize >= metadata.len() {
-                metadata.resize(id as usize + 1, AddedTokenFlags::default());
-            }
-            metadata[id as usize] = flags;
-            entries.insert(id, (form, is_norm)); // if id existed, we overwrite it
+            entries.insert(id, (form, flags));
             seen.insert(token.content.clone(), id);
         }
 
-        // Partition the final set of tokens into two VocabStore and rebuild both from scratch.
+        let mut vocab_ids = Vec::with_capacity(entries.len());
+        let mut token_metadata = Vec::with_capacity(entries.len());
         let (mut raw_tokens, mut norm_tokens) = (Vec::new(), Vec::new());
-        for (id, (form, is_norm)) in entries {
-            if is_norm {
-                norm_tokens.push((form, id));
+        for (internal_id, (vocab_id, (form, flags))) in entries.into_iter().enumerate() {
+            let internal_id = internal_id as u32;
+            if flags.normalized {
+                norm_tokens.push((form, internal_id));
             } else {
-                raw_tokens.push((form, id));
+                raw_tokens.push((form, internal_id));
             }
+            vocab_ids.push(vocab_id);
+            token_metadata.push(flags);
         }
         let vocab = Buckets::from_tokens(raw_tokens)?;
         let normalized_vocab = Buckets::from_tokens(norm_tokens)?;
-        self.token_metadata = metadata.into();
+        self.ids = InternalIds::new(vocab_ids.into());
+        self.token_metadata = token_metadata.into();
         self.vocab = vocab;
         self.normalized_vocab = normalized_vocab;
         Ok(total - ignored)
@@ -375,21 +449,17 @@ impl PipelinePatternMatcher for AddedVocabulary {
         normalized: bool,
         encode_special_tokens: bool,
     ) -> Option<((usize, usize), u32)> {
-        let vocab = if normalized {
-            &self.normalized_vocab
-        } else {
-            &self.vocab
-        };
+        let vocab = self.matcher(normalized);
         let mut search = search_offset;
         while search < bytes.len() {
             // since match_bytes goes to the end, no match means we reached the end.
-            let (id, start, len) = match vocab.match_bytes(&bytes[search..]) {
-                Some((id, start, len)) if len > 0 => (id, start, len),
+            let (internal_id, start, len) = match vocab.match_bytes(&bytes[search..]) {
+                Some((internal_id, start, len)) if len > 0 => (internal_id, start, len),
                 _ => return None,
             };
             let mut match_start = search + start as usize;
             let mut match_end = match_start + len as usize;
-            let metadata = &self.token_metadata[id as usize];
+            let metadata = &self.token_metadata[internal_id as usize];
             if encode_special_tokens && metadata.special {
                 search = match_end;
                 continue;
@@ -407,7 +477,7 @@ impl PipelinePatternMatcher for AddedVocabulary {
             if metadata.rstrip {
                 match_end = skip_whitespace_forward(bytes, match_end)
             }
-            return Some(((match_start, match_end), id));
+            return Some(((match_start, match_end), self.ids.vocab_id(internal_id)));
         }
         None
     }
@@ -450,6 +520,76 @@ mod tests {
         fn get_vocab_size(&self) -> usize {
             self.vocab.len()
         }
+    }
+
+    fn sparse_vocabulary() -> AddedVocabulary {
+        let model = ModelMock::new(&[("[CLS]", 5)]);
+        let mut vocab = AddedVocabulary::new();
+        vocab
+            .add_tokens(
+                [
+                    AddedToken::from("<|end|>", true),
+                    AddedToken::from("[CLS]", true),
+                    AddedToken::from("hello", false),
+                ],
+                200_000,
+                |t| model.token_to_id(t),
+                None::<&Lowercase>,
+            )
+            .unwrap();
+        vocab
+    }
+
+    #[test]
+    fn empty_vocabulary_has_no_ids() {
+        assert_eq!(AddedVocabulary::new().simple_id_to_token(0), None);
+    }
+
+    #[test]
+    fn sparse_ids_round_trip() {
+        let vocab = sparse_vocabulary();
+        for (token, id) in [("<|end|>", 200_000), ("[CLS]", 5), ("hello", 200_001)] {
+            assert_eq!(vocab.token_to_id(token), Some(id));
+            assert_eq!(vocab.simple_id_to_token(id).as_deref(), Some(token));
+        }
+        assert_eq!(vocab.simple_id_to_token(6), None);
+        assert_eq!(vocab.simple_id_to_token(200_002), None);
+        assert!(vocab.is_special_token("[CLS]"));
+        assert!(!vocab.is_special_token("hello"));
+
+        let text = b"say hello<|end|>";
+        assert_eq!(
+            vocab.extract_next(text, 0, false, false),
+            Some(((9, 16), 200_000))
+        );
+        assert_eq!(
+            vocab.extract_next(text, 0, true, false),
+            Some(((4, 9), 200_001))
+        );
+    }
+
+    #[test]
+    fn changing_normalized_keeps_the_vocab_id() {
+        let mut vocab = sparse_vocabulary();
+        let text = b"say hello<|end|>";
+        let model = ModelMock::new(&[]);
+        vocab
+            .add_tokens(
+                [AddedToken::from("<|end|>", false)],
+                200_000,
+                |t| model.token_to_id(t),
+                None::<&Lowercase>,
+            )
+            .unwrap();
+        assert_eq!(
+            vocab.extract_next(text, 0, true, false),
+            Some(((4, 9), 200_001))
+        );
+        assert_eq!(
+            vocab.extract_next(b"<|end|>", 0, true, false),
+            Some(((0, 7), 200_000))
+        );
+        assert_eq!(vocab.extract_next(text, 0, false, false), None);
     }
 
     #[test]
