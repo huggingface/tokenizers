@@ -48,6 +48,9 @@ pub(super) const RANK_MASK: u64 = 0xFFFF_FFFF_0000_0000;
 /// of a product id masks rather than truncating to `u32`. 2^30 ids is ~1.07 B, far past any vocab.
 pub(super) const ID_MASK: u64 = (1 << 30) - 1;
 
+/// Sentinel value marking the absence of symbol
+pub(super) const NO_SYMBOL: u32 = u32::MAX;
+
 /// Bit 30: batching every occurrence of this pair in one multipass sweep is exact. It is only so
 /// when the product cannot reach a merge cheaper than the one being applied,
 /// `rank < min(min_rank_left[product], min_rank_right[product])` -- otherwise that cheaper merge is
@@ -117,7 +120,7 @@ impl BpeTables {
 
         // this one is destroyed afterwards, does not matter if its big.
         let mut internal_id_map =
-            vec![u32::MAX; *vocab.values().max().unwrap_or(&0u32) as usize + 1];
+            vec![NO_SYMBOL; *vocab.values().max().unwrap_or(&0u32) as usize + 1];
         let mut unmap = vec![u32::MAX; base + products.len()];
         // fill the first 0->base with the alphabet sorted by rank.
         for (internal, external) in alphabet.iter().enumerate() {
@@ -162,12 +165,12 @@ impl BpeTables {
             let ia = internal_id_map
                 .get(*a as usize)
                 .copied()
-                .unwrap_or(u32::MAX);
+                .unwrap_or(NO_SYMBOL);
             let ib = internal_id_map
                 .get(*b as usize)
                 .copied()
-                .unwrap_or(u32::MAX);
-            if ia == u32::MAX || ib == u32::MAX {
+                .unwrap_or(NO_SYMBOL);
+            if ia == NO_SYMBOL || ib == NO_SYMBOL {
                 dropped += 1; // merge over a token that is not in the vocab: malformed file
                 continue;
             }
