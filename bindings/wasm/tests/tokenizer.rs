@@ -6,7 +6,7 @@ use std::rc::Rc;
 use js_sys::{JSON, Promise, Reflect};
 use tokenizers::pipeline::{EncodeOptions, PipelineTokenizer};
 use tokenizers_wasm::Tokenizer;
-use tsify::Ts;
+use tsify::{Ts, Tsify};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_test::{wasm_bindgen_test, wasm_bindgen_test_configure};
 use web_sys::{Headers, RequestInit, Response};
@@ -15,6 +15,11 @@ wasm_bindgen_test_configure!(run_in_browser);
 
 const BERT: &str = include_str!("../data/bert-base-uncased.json");
 const TEXT: &str = "Hello world";
+
+// `JSON.parse` builds the same value a caller would write.
+fn js<T: Tsify>(json: &str) -> Ts<T> {
+    Ts::new_unchecked(JSON::parse(json).unwrap())
+}
 
 // JsError has no Debug impl, so `unwrap` cannot be called on it directly.
 fn unwrap<T>(result: Result<T, impl Into<JsValue>>) -> T {
@@ -34,7 +39,70 @@ fn core_encode() -> Vec<u32> {
 #[wasm_bindgen_test]
 fn test_from_json() {
     let tokenizer = unwrap(Tokenizer::from_json(BERT));
-    assert_eq!(unwrap(tokenizer.encode(TEXT, None)), core_encode());
+    assert_eq!(
+        unwrap(tokenizer.encode(js(r#""Hello world""#), None)).ids(),
+        core_encode()
+    );
+}
+
+#[wasm_bindgen_test]
+fn test_encode_returns_encoding() {
+    let tokenizer = unwrap(Tokenizer::from_json(BERT));
+    let options = js(r#"{"padding": {"length": 6}}"#);
+    let encoding = unwrap(tokenizer.encode(js(r#""Hello world""#), Some(options)));
+    let mut padded = core_encode();
+    padded.resize(6, 0);
+    assert_eq!(encoding.ids(), padded);
+    assert_eq!(encoding.type_ids(), [0; 6]);
+    assert_eq!(encoding.attention_mask(), [1, 1, 1, 1, 0, 0]);
+}
+
+#[wasm_bindgen_test]
+fn test_encode_pair() {
+    let tokenizer = unwrap(Tokenizer::from_json(BERT));
+    let encoding = unwrap(tokenizer.encode(js(r#"["Hello", "world"]"#), None));
+    assert_eq!(
+        tokenizer.decode_tokens(&encoding.ids(), None),
+        ["[CLS]", "hello", "[SEP]", "world", "[SEP]"]
+    );
+    assert_eq!(encoding.type_ids(), [0, 0, 0, 1, 1]);
+}
+
+#[wasm_bindgen_test]
+fn test_encode_refuses_what_is_not_a_text_or_pair() {
+    let tokenizer = unwrap(Tokenizer::from_json(BERT));
+    for json in [r#"["Hello"]"#, r#"["Hello", "world", "again"]"#, "3"] {
+        assert!(tokenizer.encode(js(json), None).is_err(), "{json}");
+    }
+}
+
+#[wasm_bindgen_test]
+fn test_encode_batch() {
+    let tokenizer = unwrap(Tokenizer::from_json(BERT));
+    let inputs = [r#""Hello world""#, r#"["Hello", "world"]"#, r#""Hello""#];
+    let batch =
+        unwrap(tokenizer.encode_batch(inputs.map(js).to_vec(), Some(js(r#"{"padding": {}}"#))));
+    let longest = unwrap(tokenizer.encode(js(inputs[1]), None)).ids().len();
+    for (encoding, input) in batch.iter().zip(inputs) {
+        let mut ids = unwrap(tokenizer.encode(js(input), None)).ids();
+        ids.resize(longest, 0);
+        assert_eq!(encoding.ids(), ids, "{input}");
+    }
+}
+
+#[wasm_bindgen_test]
+fn test_tokenize() {
+    let tokenizer = unwrap(Tokenizer::from_json(BERT));
+    let pair = r#"["Hello", "world"]"#;
+    assert_eq!(
+        unwrap(tokenizer.tokenize(js(pair), None)),
+        ["[CLS]", "hello", "[SEP]", "world", "[SEP]"]
+    );
+    let options = js(r#"{"addSpecialTokens": false}"#);
+    assert_eq!(
+        unwrap(tokenizer.tokenize(js(pair), Some(options))),
+        ["hello", "world"]
+    );
 }
 
 #[wasm_bindgen_test]

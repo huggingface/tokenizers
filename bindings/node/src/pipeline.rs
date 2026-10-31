@@ -1,15 +1,11 @@
-//! The pipeline encode path, over napi.
-//!
-//! This is the whole Node surface. The classes that used to live beside it -- `Tokenizer`,
-//! `Model`, `Normalizer`, `PreTokenizer`, `Processor`, `Decoder`, the trainers and their async
-//! tasks -- wrapped the pre-v1 engine, which no longer exists: `DecoderWrapper`,
-//! `PostProcessorWrapper`, `BpeBuilder`, `TrainerWrapper`, `Trainable` and `NormalizedString`
-//! were all removed with it, and this crate had stopped compiling. Rather than port wrappers for
-//! an engine that is gone, the binding now exposes the path that replaced it.
+//! The Node surface: a [`Tokenizer`] loaded from a `tokenizer.json`, and its [`Encoding`].
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use tokenizers::pipeline::{EncodeOptions as PipelineEncodeOptions, Override};
+use tokenizers::pipeline::{
+  EncodeOptions as PipelineEncodeOptions, Encoding as PipelineEncoding, Input, Inputs, Override,
+  PipelineToken,
+};
 use tokenizers::tokenizer::pipeline::PipelineTokenizer as Pipeline;
 use tokenizers::{
   PaddingDirection, PaddingParams, PaddingStrategy, TruncationDirection, TruncationParams,
@@ -157,7 +153,7 @@ impl TruncationOptions {
   }
 }
 
-impl PipelineTokenizer {
+impl Tokenizer {
   fn encode_options(options: Option<EncodeOptions>) -> Result<PipelineEncodeOptions> {
     let options = options.unwrap_or_default();
     Ok(PipelineEncodeOptions {
@@ -169,11 +165,62 @@ impl PipelineTokenizer {
   }
 }
 
+/// Text encoded to token ids by a tokenizer.
+///
+/// Each getter returns a `Uint32Array`, not a JS `Array`: an `Array` costs one napi value per
+/// token, which on token-dense input is 13x the encode itself (gpt2 chinese 31 vs 616 MB/s).
 #[napi]
-pub struct PipelineTokenizer(Pipeline);
+pub struct Encoding(PipelineEncoding);
 
 #[napi]
-impl PipelineTokenizer {
+impl Encoding {
+  /// The id of each token.
+  #[napi(getter)]
+  pub fn ids(&self) -> Uint32Array {
+    Uint32Array::new(self.0.ids().iter().map(|token| token.id()).collect())
+  }
+
+  /// The type id of each token: 0 for the first sequence of a pair, 1 for the second.
+  #[napi(getter)]
+  pub fn type_ids(&self) -> Uint32Array {
+    widen(self.0.type_ids(), 0, self.0.len())
+  }
+
+  /// 1 for each token, 0 for each padding token.
+  #[napi(getter)]
+  pub fn attention_mask(&self) -> Uint32Array {
+    widen(self.0.attention_mask(), 1, self.0.len())
+  }
+}
+
+// The core leaves out the all-zeros type ids and the all-ones mask.
+fn widen(values: Option<&[u8]>, absent: u32, len: usize) -> Uint32Array {
+  Uint32Array::new(match values {
+    Some(values) => values.iter().map(|&value| value as u32).collect(),
+    None => vec![absent; len],
+  })
+}
+
+/// A text, or a pair of texts.
+type TextInput = Either<String, Vec<String>>;
+
+// napi's tuple conversion would drop a third text without a word.
+fn text_input(input: TextInput) -> Result<Input> {
+  match input {
+    Either::A(text) => Ok(Input::Single(text)),
+    Either::B(pair) => match <[String; 2]>::try_from(pair) {
+      Ok([first, second]) => Ok(Input::Pair(first, second)),
+      Err(texts) => Err(err(format!("a pair holds 2 texts, not {}", texts.len()))),
+    },
+  }
+}
+
+/// A tokenizer. Encodes text into token ids, and decodes token ids back into text.
+#[napi]
+pub struct Tokenizer(Pipeline);
+
+#[napi]
+impl Tokenizer {
   /// Read a `tokenizer.json`. The file is put through the legacy "1.0" -> canonical "2.0"
   /// upgrade first, so the tokenizers already on disk keep loading; `tk_serialize` itself only
   /// reads the canonical form.
@@ -183,20 +230,55 @@ impl PipelineTokenizer {
     Ok(Self(tokenizers::from_json(&canonical).map_err(err)?))
   }
 
-  /// `Uint32Array`, not `Vec<u32>`: a JS `Array` costs one napi value per token, which on
-  /// token-dense input is 13x the encode itself (gpt2 chinese 31 vs 616 MB/s).
+  /// Encodes the given text, or pair of texts, to token ids. The post-processor joins a pair,
+  /// for example as `[CLS] A [SEP] B [SEP]`.
   #[napi]
-  pub fn encode(&self, text: String, options: Option<EncodeOptions>) -> Result<Uint32Array> {
+  pub fn encode(
+    &self,
+    #[napi(ts_arg_type = "string | [string, string]")] input: TextInput,
+    options: Option<EncodeOptions>,
+  ) -> Result<Encoding> {
+    let encoding = self
+      .0
+      .encode(
+        Inputs::Single(text_input(input)?),
+        &Self::encode_options(options)?,
+      )
+      .wait()
+      .map_err(err)?
+      .pop()
+      .expect("encoding a single input gives exactly one encoding");
+    Ok(Encoding(encoding))
+  }
+
+  /// Encodes the given text, or pair of texts, and returns the token of each id.
+  ///
+  /// Shorthand for `decodeTokens(encode(input, options).ids)`.
+  #[napi]
+  pub fn tokenize(
+    &self,
+    #[napi(ts_arg_type = "string | [string, string]")] input: TextInput,
+    options: Option<EncodeOptions>,
+  ) -> Result<Vec<String>> {
+    let encoding = self.encode(input, options)?;
+    Ok(self.decode_tokens(PipelineToken::cast_slice(encoding.0.ids()), None))
+  }
+
+  /// Encodes a batch of texts, or pairs of texts. A batch can mix both. The encodings come back
+  /// in input order.
+  #[napi]
+  pub fn encode_batch(
+    &self,
+    #[napi(ts_arg_type = "Array<string | [string, string]>")] inputs: Vec<TextInput>,
+    options: Option<EncodeOptions>,
+  ) -> Result<Vec<Encoding>> {
+    let inputs = inputs.into_iter().map(text_input).collect::<Result<_>>()?;
     let encodings = self
       .0
-      .encode(text.as_str(), &Self::encode_options(options)?)
+      .encode(Inputs::Batch(inputs), &Self::encode_options(options)?)
       .wait()
       .map_err(err)?;
-    let ids = encodings
-      .first()
-      .map(|e| e.ids().iter().map(|t| t.id()).collect())
-      .unwrap_or_default();
-    Ok(Uint32Array::new(ids))
+    Ok(encodings.into_iter().map(Encoding).collect())
   }
 
   /// Drops the two remaining per-call costs of [`Self::encode`]: the JS string -> UTF-8 copy
@@ -229,5 +311,28 @@ impl PipelineTokenizer {
       *d = t.id();
     }
     Ok(ids.len() as u32)
+  }
+
+  /// Decodes token ids back into text.
+  ///
+  /// `skipSpecialTokens` drops special tokens from the text. `true` when left out.
+  #[napi]
+  pub fn decode(&self, ids: &[u32], skip_special_tokens: Option<bool>) -> Result<String> {
+    self
+      .0
+      .decode(ids, skip_special_tokens.unwrap_or(true))
+      .map_err(err)
+  }
+
+  /// Converts token ids to their tokens. This does not run the decoder, so each token keeps its
+  /// spelling in the vocabulary: a byte-level BPE token reads `Ġworld`, not ` world`.
+  ///
+  /// `skipSpecialTokens` drops special tokens. `false` when left out. Ids not in the vocabulary
+  /// are dropped.
+  #[napi]
+  pub fn decode_tokens(&self, ids: &[u32], skip_special_tokens: Option<bool>) -> Vec<String> {
+    self
+      .0
+      .decode_tokens(ids, skip_special_tokens.unwrap_or(false))
   }
 }
