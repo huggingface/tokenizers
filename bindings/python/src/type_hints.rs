@@ -2,7 +2,9 @@
 
 use std::convert::Infallible;
 
-use numpy::{Element, PyArray1, PyReadonlyArray1};
+use numpy::{
+    Element, PyArray1, PyArrayDescrMethods, PyReadonlyArray1, PyUntypedArray, PyUntypedArrayMethods,
+};
 use pyo3::exceptions::PyTypeError;
 use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
@@ -46,7 +48,8 @@ impl<'py, T: Dtype> IntoPyObject<'py> for NDArray<'py, T> {
 /// `Encoding | Sequence[int] | NDArray[numpy.integer[Any]]`.
 ///
 /// An `Encoding` and a `uint32` numpy array are read in place, no copy.
-/// Any other sequence is copied into a `Vec<u32>` one element at a time.
+/// Contiguous native `int32` and `int64` arrays are range-checked and
+/// copied in Rust. Other sequences use Python's integer conversion.
 pub enum TokenIds<'py> {
     Encoding(Bound<'py, Encoding>),
     Array(PyReadonlyArray1<'py, u32>),
@@ -81,11 +84,72 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
                 Err(_) => Self::Copied(array.as_array().to_vec()),
             });
         }
+        if obj.is_exact_instance_of::<PyUntypedArray>() {
+            return Self::extract_numpy_ids(obj).map(Self::Copied);
+        }
         obj.extract::<Vec<u32>>().map(Self::Copied)
     }
 }
 
 impl TokenIds<'_> {
+    #[inline(never)]
+    fn extract_numpy_ids(obj: Borrowed<'_, '_, PyAny>) -> PyResult<Vec<u32>> {
+        let len = match obj.len() {
+            Ok(len) => len,
+            Err(_) => return obj.extract::<Vec<u32>>(),
+        };
+
+        if len == 0 {
+            return Ok(Vec::new());
+        }
+
+        if let Some(ids) = Self::copy_numpy_integer_ids(obj) {
+            return Ok(ids);
+        }
+
+        let mut ids = Vec::with_capacity(len);
+        for item in obj.try_iter()? {
+            ids.push(item?.extract::<u32>()?);
+        }
+
+        Ok(ids)
+    }
+
+    #[inline(never)]
+    fn copy_numpy_integer_ids(obj: Borrowed<'_, '_, PyAny>) -> Option<Vec<u32>> {
+        let array = obj.cast::<PyUntypedArray>().ok()?;
+        if array.ndim() != 1 || !array.is_contiguous() || !array.is_aligned() {
+            return None;
+        }
+
+        let dtype = array.dtype();
+        if !matches!((dtype.kind(), dtype.itemsize()), (b'i', 4 | 8))
+            || dtype.is_native_byteorder() != Some(true)
+        {
+            return None;
+        }
+
+        // Preserve Python's overflow errors through scalar conversion.
+        macro_rules! copy_integer_array {
+            ($ty:ty) => {
+                if let Ok(array) = obj.extract::<PyReadonlyArray1<$ty>>()
+                    && let Ok(slice) = array.as_slice()
+                    && let Ok(ids) = slice
+                        .iter()
+                        .map(|&id| u32::try_from(id))
+                        .collect::<Result<Vec<_>, _>>()
+                {
+                    return Some(ids);
+                }
+            };
+        }
+
+        copy_integer_array!(i32);
+        copy_integer_array!(i64);
+
+        None
+    }
+
     pub fn as_slice(&self) -> &[u32] {
         match self {
             Self::Encoding(encoding) => encoding.get().ids(),
