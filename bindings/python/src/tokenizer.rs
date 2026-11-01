@@ -1,77 +1,61 @@
+use std::borrow::Cow;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
-use tk::PaddingParams;
-use tk::TruncationParams;
-use tk::pipeline::Input;
-use tk::pipeline::Inputs;
-use tk::pipeline::PipelineToken;
-use tk::pipeline::{EncodeOptions, Override, PipelineTokenizer as Pipeline};
+use pyo3::types::{PyBytes, PyDict};
+use serde_json::Value;
 
-use crate::encoding::Encoding;
-use crate::error::{convert_err, err, poison_err};
-use crate::input::PyInput;
-use crate::options::{OverrideSentinel, Padding, Truncation};
+use tk::pipeline::PipelineTokenizer;
+use tk::{
+    PaddingParams, Result, TruncationParams, canonicalize_value, from_json, padding_from_json,
+    padding_to_json, truncation_from_json, truncation_to_json,
+};
+
+use crate::JsonObject;
+use crate::compiled::CompiledTokenizer;
+use crate::error::err;
+use crate::options::{Padding, Truncation};
 use crate::repr;
-use crate::type_hints::{Token, TokenIds};
+use crate::type_hints::Token;
 
-/// A tokenizer. Encodes text into token ids, and decodes token ids back into text.
-#[pyclass(frozen, module = "tokenizers")]
+/// The contents of a `tokenizer.json`, which can be edited.
+///
+/// Call `compile()` to get a `CompiledTokenizer`, which encodes and decodes.
+///
+/// Example:
+/// ```python
+/// from tokenizers import Tokenizer, Truncation
+///
+/// tokenizer = Tokenizer.from_pretrained("deepseek-ai/DeepSeek-V4.1-Flash")
+/// tokenizer.truncation = Truncation(max_length=512)
+/// compiled = tokenizer.compile()
+/// ids = compiled.encode("Hello, World!").ids
+/// print(ids)
+/// print(compiled.decode_tokens(ids))
+/// ```
+#[pyclass(frozen, dict, weakref, module = "tokenizers")]
 pub struct Tokenizer {
-    pipeline: Pipeline,
-    // Needs a mutex so a concurrent thread can access the value while
-    // encode is running.
-    padding: Mutex<Option<PaddingParams>>,
-    truncation: Mutex<Option<TruncationParams>>,
+    spec: Mutex<TokenizerSpec>,
 }
 
 impl Tokenizer {
-    fn make_options(
-        &self,
-        add_special_tokens: bool,
-        encode_special_tokens: bool,
-        padding: OverrideSentinel<PaddingParams>,
-        truncation: OverrideSentinel<TruncationParams>,
-    ) -> PyResult<EncodeOptions> {
-        let padding = match padding {
-            OverrideSentinel::InheritConfig => {
-                self.clone_padding()?.map_or(Override::Off, Override::With)
-            }
-            OverrideSentinel::Off => Override::Off,
-            OverrideSentinel::With(params) => Override::With(params),
-        };
-        let truncation = match truncation {
-            OverrideSentinel::InheritConfig => self
-                .clone_truncation()?
-                .map_or(Override::Off, Override::With),
-            OverrideSentinel::Off => Override::Off,
-            OverrideSentinel::With(params) => Override::With(params),
-        };
-        Ok(EncodeOptions {
-            add_special_tokens,
-            encode_special_tokens,
-            padding,
-            truncation,
-        })
+    fn new(spec: TokenizerSpec) -> Self {
+        Self {
+            spec: Mutex::new(spec),
+        }
     }
 
-    fn clone_padding(&self) -> PyResult<Option<PaddingParams>> {
-        Ok(self.padding.lock().map_err(poison_err)?.clone())
-    }
-
-    fn clone_truncation(&self) -> PyResult<Option<TruncationParams>> {
-        Ok(self.truncation.lock().map_err(poison_err)?.clone())
+    fn spec(&self) -> MutexGuard<'_, TokenizerSpec> {
+        self.spec.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
-
-/// What `Tokenizer.__reduce__` gives to pickle
-type UnpickleArguments = (String, Option<Padding>, Option<Truncation>);
 
 #[pymethods]
 impl Tokenizer {
-    /// Loads a `tokenizer.json`.
+    /// Loads a `tokenizer.json` and upgrades it to the 2.0 format.
+    ///
+    /// Errors in the file's components, such as the model or the normalizer, show up at `compile()`.
     ///
     /// Args:
     ///     path:
@@ -79,15 +63,10 @@ impl Tokenizer {
     #[staticmethod]
     #[pyo3(signature = (path))]
     fn from_file(path: PathBuf) -> PyResult<Self> {
-        let canonical = tk::canonicalize_file(path).map_err(convert_err)?;
-        let pipeline: Pipeline = tk::from_json(&canonical).map_err(err)?;
-        let padding = pipeline.get_padding().cloned();
-        let truncation = pipeline.get_truncation().cloned();
-        Ok(Self {
-            pipeline,
-            padding: Mutex::new(padding),
-            truncation: Mutex::new(truncation),
-        })
+        let text = std::fs::read_to_string(&path).map_err(|e| {
+            std::io::Error::new(e.kind(), format!("cannot read {}: {e}", path.display()))
+        })?;
+        Ok(Self::new(TokenizerSpec::from_json(&text).map_err(err)?))
     }
 
     /// Instantiate a new `Tokenizer` from an existing file on the Hugging Face Hub.
@@ -166,247 +145,218 @@ impl Tokenizer {
         Self::from_file(path)
     }
 
-    /// The padding applied to every encode, or `None`.
+    /// The padding a tokenizer compiled from this spec applies to every encode, or `None`.
     /// Assign `None` to switch padding off.
     #[getter]
-    fn padding(&self) -> PyResult<Option<Padding>> {
-        Ok(self.clone_padding()?.map(Padding::from))
+    fn padding(&self) -> Option<Padding> {
+        self.spec().padding.clone().map(Padding::from)
     }
 
     #[setter]
-    fn set_padding(&self, padding: Option<PyRef<'_, Padding>>) -> PyResult<()> {
-        *self.padding.lock().map_err(poison_err)? = padding.map(|padding| padding.params().clone());
-        Ok(())
+    fn set_padding(&self, padding: Option<PyRef<'_, Padding>>) {
+        self.spec().padding = padding.map(|padding| padding.params().clone());
     }
 
-    /// The truncation applied to every encode, or `None`.
+    /// The truncation a tokenizer compiled from this spec applies to every encode, or `None`.
     /// Assign `None` to switch truncation off.
     #[getter]
-    fn truncation(&self) -> PyResult<Option<Truncation>> {
-        Ok(self.clone_truncation()?.map(Truncation::from))
+    fn truncation(&self) -> Option<Truncation> {
+        self.spec().truncation.clone().map(Truncation::from)
     }
 
     #[setter]
-    fn set_truncation(&self, truncation: Option<PyRef<'_, Truncation>>) -> PyResult<()> {
-        *self.truncation.lock().map_err(poison_err)? =
-            truncation.map(|truncation| truncation.params().clone());
-        Ok(())
+    fn set_truncation(&self, truncation: Option<PyRef<'_, Truncation>>) {
+        self.spec().truncation = truncation.map(|truncation| truncation.params().clone());
     }
 
-    /// Encodes the given text, or pair of texts, to token ids.
+    /// Builds a new `CompiledTokenizer` from the spec as it is now.
     ///
-    /// Args:
-    ///     input: str or tuple[str, str]
-    ///         A text, or a pair of texts given as a two-item tuple or list.
-    ///         The post-processor joins a pair, for example as `[CLS] A [SEP] B [SEP]`.
-    ///     add_special_tokens: bool
-    ///          Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
-    ///     encode_special_tokens: bool
-    ///         Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
-    ///         or be replaced by their id in the added vocabulary.
-    ///     padding: `Padding` or `None`
-    ///         Padding options. Pass `None` to disable padding.
-    ///         When omitted, defaults to the padding options configured on the tokenizer.
-    ///     truncation: `Truncation` or `None`
-    ///         Truncation options. Pass `None` to disable truncation.
-    ///         When omitted, defaults to the truncation options configured on the tokenizer.
-    ///
-    /// Returns:
-    ///     Encoding
-    #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
-    fn encode(
-        &self,
-        py: Python<'_>,
-        input: PyInput,
-        add_special_tokens: bool,
-        encode_special_tokens: bool,
-        padding: OverrideSentinel<PaddingParams>,
-        truncation: OverrideSentinel<TruncationParams>,
-    ) -> PyResult<Encoding> {
-        let options = self.make_options(
-            add_special_tokens,
-            encode_special_tokens,
-            padding,
-            truncation,
-        )?;
-        // py.detach releases the GIL while encode runs on Rust side
-        let encoding = py
-            .detach(|| self.pipeline.encode(input, &options).wait())
-            .map_err(err)?
-            .pop()
-            .expect("encoding has exactly one element");
-        Ok(Encoding::from(encoding))
+    /// Every call builds the whole tokenizer again. Later edits of the spec do not reach the
+    /// compiled tokenizer: compile again to see them.
+    fn compile(&self, py: Python<'_>) -> PyResult<CompiledTokenizer> {
+        let spec = self.spec().copy();
+        CompiledTokenizer::new(py, &spec)
     }
 
-    /// Encodes the given text, or pair of texts, and returns the string representation of each token.
-    ///
-    /// Shorthand for `decode_tokens(encode(input))`.
-    /// If you also need to access token ids, use `encode(input)`.
-    ///
-    /// Args:
-    ///     input: str or tuple[str, str]
-    ///         A text, or a pair of texts given as a two-item tuple or list.
-    ///         The post-processor joins a pair, for example as `[CLS] A [SEP] B [SEP]`.
-    ///     add_special_tokens: bool
-    ///          Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
-    ///     encode_special_tokens: bool
-    ///         Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
-    ///         or be replaced by their id in the added vocabulary.
-    ///     padding: `Padding` or `None`
-    ///         Padding options. Pass `None` to disable padding.
-    ///         When omitted, defaults to the padding options configured on the tokenizer.
-    ///     truncation: `Truncation` or `None`
-    ///         Truncation options. Pass `None` to disable truncation.
-    ///         When omitted, defaults to the truncation options configured on the tokenizer.
-    ///
-    /// Returns:
-    ///     list[str]
-    #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
-    fn tokenize(
-        &self,
-        py: Python<'_>,
-        input: PyInput,
-        add_special_tokens: bool,
-        encode_special_tokens: bool,
-        padding: OverrideSentinel<PaddingParams>,
-        truncation: OverrideSentinel<TruncationParams>,
-    ) -> PyResult<Vec<String>> {
-        let options = self.make_options(
-            add_special_tokens,
-            encode_special_tokens,
-            padding,
-            truncation,
-        )?;
-        py.detach(|| -> tk::Result<Vec<String>> {
-            let encodings = self.pipeline.encode(input, &options).wait()?;
-            let ids: Vec<u32> = PipelineToken::cast_slice(encodings[0].ids()).to_vec();
-            Ok(self.pipeline.decode_tokens(&ids, false))
-        })
-        .map_err(err)
+    /// An independent copy: editing one spec leaves the other unchanged.
+    fn __copy__(&self) -> Self {
+        Self::new(self.spec().copy())
     }
 
-    /// Encodes a batch of texts, or pairs of texts.
-    /// The encodings come back in input order.
-    ///
-    /// Args:
-    ///     inputs: list[str | tuple[str, str]]
-    ///         The batch to encode. Each item is a text, or a pair of texts given as a two-item
-    ///         tuple or list. A batch can mix both.
-    ///     add_special_tokens: bool
-    ///         Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
-    ///     encode_special_tokens: bool
-    ///         Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
-    ///         or be replaced by their id in the added vocabulary.
-    ///     padding: `Padding` or `None`
-    ///         Padding options. Pass `None` to disable padding.
-    ///         When omitted, defaults to the padding options configured on the tokenizer.
-    ///     truncation: `Truncation` or `None`
-    ///         Truncation options. Pass `None` to disable truncation.
-    ///         When omitted, defaults to the truncation options configured on the tokenizer.
-    ///
-    /// Returns:
-    ///     List[Encoding]
-    #[pyo3(signature = (inputs, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
-    fn encode_batch(
-        &self,
-        py: Python<'_>,
-        inputs: Vec<PyInput>,
-        add_special_tokens: bool,
-        encode_special_tokens: bool,
-        padding: OverrideSentinel<PaddingParams>,
-        truncation: OverrideSentinel<TruncationParams>,
-    ) -> PyResult<Vec<Encoding>> {
-        let options = self.make_options(
-            add_special_tokens,
-            encode_special_tokens,
-            padding,
-            truncation,
-        )?;
-        let inputs = Inputs::Batch(inputs.into_iter().map(Input::from).collect());
-        // py.detach releases the GIL while encode runs on Rust side
-        let encodings = py
-            .detach(|| self.pipeline.encode(inputs, &options).wait())
-            .map_err(err)?;
-        Ok(encodings.into_iter().map(Encoding::from).collect())
-    }
-
-    /// Decodes token ids back into text
-    ///
-    /// Args:
-    ///     ids:
-    ///         The ids to decode, an `Encoding`, a numpy array or any sequence of ints.
-    ///     skip_special_tokens: bool
-    ///         Whether special tokens should not be added to the decoded text.
-    ///
-    /// Returns:
-    ///     str
-    #[pyo3(signature = (ids, skip_special_tokens=true))]
-    fn decode(
-        &self,
-        py: Python<'_>,
-        ids: TokenIds<'_>,
-        skip_special_tokens: bool,
-    ) -> PyResult<String> {
-        let ids = ids.as_slice();
-        // py.detach releases the GIL
-        py.detach(|| self.pipeline.decode(ids, skip_special_tokens))
-            .map_err(err)
-    }
-
-    /// Converts token ids to their string representation. This does NOT apply the decoder.
-    ///
-    /// Args:
-    ///     ids:
-    ///         The ids to convert, an `Encoding`, a numpy array or any sequence of ints.
-    ///     skip_special_tokens: bool
-    ///         Whether to skip special tokens
-    ///
-    /// Returns:
-    ///     list[str]
-    #[pyo3(signature = (ids, skip_special_tokens=false))]
-    fn decode_tokens(
-        &self,
-        py: Python<'_>,
-        ids: TokenIds<'_>,
-        skip_special_tokens: bool,
-    ) -> Vec<String> {
-        let ids = ids.as_slice();
-        py.detach(|| self.pipeline.decode_tokens(ids, skip_special_tokens))
+    /// An independent copy: editing one spec leaves the other unchanged.
+    fn __deepcopy__(&self, _memo: &Bound<'_, PyDict>) -> Self {
+        self.__copy__()
     }
 
     /// Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
-    fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<(Bound<'py, PyAny>, UnpickleArguments)> {
-        let json = tk::to_json(&self.pipeline).map_err(err)?;
-        Ok((
-            py.get_type::<Self>().getattr("_unpickle")?,
-            (json, self.padding()?, self.truncation()?),
-        ))
+    fn __reduce__<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<(Bound<'py, PyAny>, (Bound<'py, PyBytes>,))> {
+        // Bytes, not str: a non-ASCII str isn't stored as UTF-8, so each pickle step re-encodes it.
+        // https://docs.python.org/3.14/c-api/unicode.html#unicode-objects
+        let json = PyBytes::new(py, self.spec().to_json().as_bytes());
+        Ok((py.get_type::<Self>().getattr("_unpickle")?, (json,)))
     }
 
-    /// Unpickles a `Tokenizer`
     #[staticmethod]
-    fn _unpickle(
-        json: &str,
-        padding: Option<PyRef<'_, Padding>>,
-        truncation: Option<PyRef<'_, Truncation>>,
-    ) -> PyResult<Self> {
-        let pipeline: Pipeline = tk::from_json(json).map_err(err)?;
+    fn _unpickle(json: &[u8]) -> PyResult<Self> {
+        let json = std::str::from_utf8(json).map_err(err)?;
+        Ok(Self::new(TokenizerSpec::from_json(json).map_err(err)?))
+    }
+
+    fn __repr__(&self) -> String {
+        self.spec().repr("Tokenizer")
+    }
+}
+
+/// A `tokenizer.json` in the 2.0 format, one field per top-level key.
+pub(crate) struct TokenizerSpec {
+    /// The truncation an encode applies when it doesn't override it.
+    truncation: Option<TruncationParams>,
+    /// The padding an encode applies when it doesn't override it.
+    padding: Option<PaddingParams>,
+    role_to_token: Arc<Value>,
+    added_tokens: Arc<Value>,
+    normalizer: Option<Arc<ComponentSpec>>,
+    pre_tokenizer: Option<Arc<ComponentSpec>>,
+    post_processor: Option<Arc<ComponentSpec>>,
+    decoder: Option<Arc<ComponentSpec>>,
+    model: Arc<ComponentSpec>,
+}
+
+impl TokenizerSpec {
+    /// Reads a `tokenizer.json` of any version and upgrades it to the 2.0 format.
+    pub(crate) fn from_json(text: &str) -> Result<Self> {
+        let mut file = serde_json::from_str(text)?;
+        canonicalize_value(&mut file)?;
+        let Value::Object(mut file) = file else {
+            unreachable!("canonicalize_value refuses anything but an object");
+        };
+        let mut take = |key| file.remove(key).unwrap_or(Value::Null);
+        let component = |value| match value {
+            Value::Object(json) => Some(ComponentSpec::new(json)),
+            _ => None,
+        };
         Ok(Self {
-            pipeline,
-            padding: Mutex::new(padding.map(|padding| padding.params().clone())),
-            truncation: Mutex::new(truncation.map(|trunc| trunc.params().clone())),
+            truncation: truncation_from_json(&take("truncation").to_string())?,
+            padding: padding_from_json(&take("padding").to_string())?,
+            role_to_token: Arc::new(take("role_to_token")),
+            added_tokens: Arc::new(take("added_tokens")),
+            normalizer: component(take("normalizer")),
+            pre_tokenizer: component(take("pre_tokenizer")),
+            post_processor: component(take("post_processor")),
+            decoder: component(take("decoder")),
+            model: component(take("model"))
+                .expect("canonicalize_value refuses a model that is not an object"),
         })
     }
 
-    fn __repr__(&self) -> PyResult<String> {
-        let file = tk::to_json(&self.pipeline).map_err(err)?;
-        let file = tk::json::Json::parse(&file).map_err(err)?;
-        let padding = self
-            .padding()?
-            .map_or_else(|| "None".to_owned(), |padding| padding.__repr__());
-        let truncation = self
-            .truncation()?
-            .map_or_else(|| "None".to_owned(), |truncation| truncation.__repr__());
-        Ok(repr::tokenizer(&file, &padding, &truncation))
+    /// Builds a new [`PipelineTokenizer`] from the current spec, padding and truncation included.
+    pub(crate) fn compile(&self) -> Result<PipelineTokenizer> {
+        from_json(&self.to_json())
+    }
+
+    /// A deep copy: the resulting object is independent.
+    fn copy(&self) -> Self {
+        let copy = |spec: &Option<Arc<ComponentSpec>>| spec.as_ref().map(|spec| spec.copy());
+        Self {
+            truncation: self.truncation.clone(),
+            padding: self.padding.clone(),
+            role_to_token: self.role_to_token.clone(),
+            added_tokens: self.added_tokens.clone(),
+            normalizer: copy(&self.normalizer),
+            pre_tokenizer: copy(&self.pre_tokenizer),
+            post_processor: copy(&self.post_processor),
+            decoder: copy(&self.decoder),
+            model: self.model.copy(),
+        }
+    }
+
+    /// The top-level keys and their values, in the order `to_json` writes them.
+    fn fields(&self) -> [(&'static str, Field<'_>); 10] {
+        let component = |spec: &Option<Arc<ComponentSpec>>| {
+            Field::Component(spec.as_deref().map(ComponentSpec::json))
+        };
+        [
+            ("version", Field::Json(Cow::Owned(Value::from("2.0")))),
+            ("truncation", Field::Truncation(self.truncation.as_ref())),
+            ("padding", Field::Padding(self.padding.as_ref())),
+            (
+                "role_to_token",
+                Field::Json(Cow::Borrowed(&self.role_to_token)),
+            ),
+            (
+                "added_tokens",
+                Field::Json(Cow::Borrowed(&self.added_tokens)),
+            ),
+            ("normalizer", component(&self.normalizer)),
+            ("pre_tokenizer", component(&self.pre_tokenizer)),
+            ("post_processor", component(&self.post_processor)),
+            ("decoder", component(&self.decoder)),
+            ("model", Field::Component(Some(self.model.json()))),
+        ]
+    }
+
+    /// Renders the spec as `name(...)`, one line per top-level key.
+    pub(crate) fn repr(&self, name: &str) -> String {
+        repr::tokenizer(name, self.fields())
+    }
+
+    /// Writes the spec as a `tokenizer.json` in the 2.0 format.
+    fn to_json(&self) -> String {
+        let mut out = String::from("{");
+        for (key, field) in self.fields() {
+            out.push('"');
+            out.push_str(key);
+            out.push_str("\":");
+            out.push_str(&field.to_json());
+            out.push(',');
+        }
+        out.pop();
+        out.push('}');
+        out
+    }
+}
+
+/// The value under one top-level key of a `tokenizer.json`.
+pub(crate) enum Field<'spec> {
+    Json(Cow<'spec, Value>),
+    Component(Option<Arc<JsonObject>>),
+    Padding(Option<&'spec PaddingParams>),
+    Truncation(Option<&'spec TruncationParams>),
+}
+
+impl Field<'_> {
+    fn to_json(&self) -> String {
+        match self {
+            Field::Json(value) => value.to_string(),
+            Field::Component(json) => serde_json::to_string(&json.as_deref())
+                .expect("a JSON object with string keys always writes"),
+            Field::Padding(padding) => padding_to_json(*padding),
+            Field::Truncation(truncation) => truncation_to_json(*truncation),
+        }
+    }
+}
+
+/// A component's JSON spec, as a shared reference.
+struct ComponentSpec(Mutex<Arc<JsonObject>>);
+
+impl ComponentSpec {
+    fn new(json: JsonObject) -> Arc<Self> {
+        Arc::new(Self(Mutex::new(Arc::new(json))))
+    }
+
+    /// A new [`ComponentSpec`] over the same JSON. An edit of either one copies the JSON first.
+    fn copy(&self) -> Arc<Self> {
+        Arc::new(Self(Mutex::new(self.json())))
+    }
+
+    fn json(&self) -> Arc<JsonObject> {
+        self.lock().clone()
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Arc<JsonObject>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }

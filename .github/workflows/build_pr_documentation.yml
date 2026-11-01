@@ -21,7 +21,7 @@ jobs:
     # `tests/documentation` files that the v1 rework deleted in all three languages, so there is
     # nothing here to build yet. Drop this together with the `branches-ignore` filter.
     if: github.head_ref != 'feat/train_encode_split'
-    uses: huggingface/doc-builder/.github/workflows/build_pr_documentation.yml@90ddd199e07144a13408c523680c76987343c95f  # main
+    uses: huggingface/doc-builder/.github/workflows/build_pr_documentation.yml@e008c246aaa2eaa86b7b95a19a1944d59917990a  # main
     with:
       commit_sha: ${{ github.event.pull_request.head.sha }}
       pr_number: ${{ github.event.number }}

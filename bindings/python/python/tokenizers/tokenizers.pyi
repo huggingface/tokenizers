@@ -11,6 +11,165 @@ from numpy.typing import NDArray
 __version__: Final[str]
 
 @final
+class CompiledTokenizer:
+    """
+    A tokenizer built by `Tokenizer.compile()`. Encodes text into token ids, and decodes token
+    ids back into text.
+
+    A compiled tokenizer is immutable and can be shared across threads.
+    Pickling serializes to the JSON config, and unpickling compiles the CompiledTokenizer
+    again from that JSON config.
+    """
+    def __copy__(self, /) -> CompiledTokenizer:
+        """
+        Returns `self`: a compiled tokenizer cannot be changed, so a copy would be identical.
+        """
+    def __deepcopy__(self, /, _memo: dict) -> CompiledTokenizer:
+        """
+        Returns `self`: a compiled tokenizer cannot be changed, so a copy would be identical.
+        """
+    def __reduce__(self, /) -> tuple[Any, tuple[bytes]]:
+        """
+        Pickle rebuilds a `CompiledTokenizer` by calling `_unpickle` with these arguments.
+
+        The pickle holds the whole `tokenizer.json`, written from the built tokenizer, and unpickling
+        compiles it again.
+        """
+    def __repr__(self, /) -> str: ...
+    @staticmethod
+    def _unpickle(json: bytes) -> CompiledTokenizer: ...
+    def decode(
+        self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = True
+    ) -> str:
+        """
+        Decodes token ids back into text
+
+        Args:
+            ids:
+                The ids to decode, an `Encoding`, a numpy array or any sequence of ints.
+            skip_special_tokens: bool
+                Whether special tokens should not be added to the decoded text.
+
+        Returns:
+            str
+        """
+    def decode_tokens(
+        self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = False
+    ) -> list[str]:
+        """
+        Converts token ids to their string representation. This does NOT apply the decoder.
+
+        Args:
+            ids:
+                The ids to convert, an `Encoding`, a numpy array or any sequence of ints.
+            skip_special_tokens: bool
+                Whether to skip special tokens
+
+        Returns:
+            list[str]
+        """
+    def encode(
+        self,
+        /,
+        input: str | Sequence[str],
+        *,
+        add_special_tokens: bool = True,
+        encode_special_tokens: bool = False,
+        padding: Padding | None = ...,
+        truncation: Truncation | None = ...,
+    ) -> Encoding:
+        """
+        Encodes the given text, or pair of texts, to token ids.
+
+        Args:
+            input: str or tuple[str, str]
+                A text, or a pair of texts given as a two-item tuple or list.
+                The post-processor joins a pair, for example as `[CLS] A [SEP] B [SEP]`.
+            add_special_tokens: bool
+                 Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+            encode_special_tokens: bool
+                Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
+                or be replaced by their id in the added vocabulary.
+            padding: `Padding` or `None`
+                Padding options. Pass `None` to disable padding.
+                When omitted, defaults to the padding of the spec this tokenizer was compiled from.
+            truncation: `Truncation` or `None`
+                Truncation options. Pass `None` to disable truncation.
+                When omitted, defaults to the truncation of the spec this tokenizer was compiled from.
+
+        Returns:
+            Encoding
+        """
+    def encode_batch(
+        self,
+        /,
+        inputs: Sequence[str | Sequence[str]],
+        *,
+        add_special_tokens: bool = True,
+        encode_special_tokens: bool = False,
+        padding: Padding | None = ...,
+        truncation: Truncation | None = ...,
+    ) -> list[Encoding]:
+        """
+        Encodes a batch of texts, or pairs of texts.
+        The encodings come back in input order.
+
+        Args:
+            inputs: list[str | tuple[str, str]]
+                The batch to encode. Each item is a text, or a pair of texts given as a two-item
+                tuple or list. A batch can mix both.
+            add_special_tokens: bool
+                Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+            encode_special_tokens: bool
+                Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
+                or be replaced by their id in the added vocabulary.
+            padding: `Padding` or `None`
+                Padding options. Pass `None` to disable padding.
+                When omitted, defaults to the padding of the spec this tokenizer was compiled from.
+            truncation: `Truncation` or `None`
+                Truncation options. Pass `None` to disable truncation.
+                When omitted, defaults to the truncation of the spec this tokenizer was compiled from.
+
+        Returns:
+            List[Encoding]
+        """
+    def tokenize(
+        self,
+        /,
+        input: str | Sequence[str],
+        *,
+        add_special_tokens: bool = True,
+        encode_special_tokens: bool = False,
+        padding: Padding | None = ...,
+        truncation: Truncation | None = ...,
+    ) -> list[str]:
+        """
+        Encodes the given text, or pair of texts, and returns the string representation of each token.
+
+        Shorthand for `decode_tokens(encode(input))`.
+        If you also need to access token ids, use `encode(input)`.
+
+        Args:
+            input: str or tuple[str, str]
+                A text, or a pair of texts given as a two-item tuple or list.
+                The post-processor joins a pair, for example as `[CLS] A [SEP] B [SEP]`.
+            add_special_tokens: bool
+                 Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+            encode_special_tokens: bool
+                Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
+                or be replaced by their id in the added vocabulary.
+            padding: `Padding` or `None`
+                Padding options. Pass `None` to disable padding.
+                When omitted, defaults to the padding of the spec this tokenizer was compiled from.
+            truncation: `Truncation` or `None`
+                Truncation options. Pass `None` to disable truncation.
+                When omitted, defaults to the truncation of the spec this tokenizer was compiled from.
+
+        Returns:
+            list[str]
+        """
+
+@final
 class Encoding:
     """
     Text encoded to token ids by a tokenizer.
@@ -139,117 +298,50 @@ class Padding:
 @final
 class Tokenizer:
     """
-    A tokenizer. Encodes text into token ids, and decodes token ids back into text.
+    The contents of a `tokenizer.json`, which can be edited.
+
+    Call `compile()` to get a `CompiledTokenizer`, which encodes and decodes.
+
+    Example:
+    ```python
+    from tokenizers import Tokenizer, Truncation
+
+    tokenizer = Tokenizer.from_pretrained("deepseek-ai/DeepSeek-V4.1-Flash")
+    tokenizer.truncation = Truncation(max_length=512)
+    compiled = tokenizer.compile()
+    ids = compiled.encode("Hello, World!").ids
+    print(ids)
+    print(compiled.decode_tokens(ids))
+    ```
     """
-    def __reduce__(self, /) -> tuple[Any, tuple[str, Padding | None, Truncation | None]]:
+    def __copy__(self, /) -> Tokenizer:
+        """
+        An independent copy: editing one spec leaves the other unchanged.
+        """
+    def __deepcopy__(self, /, _memo: dict) -> Tokenizer:
+        """
+        An independent copy: editing one spec leaves the other unchanged.
+        """
+    def __reduce__(self, /) -> tuple[Any, tuple[bytes]]:
         """
         Pickle rebuilds a `Tokenizer` by calling `_unpickle` with these arguments.
         """
     def __repr__(self, /) -> str: ...
     @staticmethod
-    def _unpickle(json: str, padding: Padding | None, truncation: Truncation | None) -> Tokenizer:
+    def _unpickle(json: bytes) -> Tokenizer: ...
+    def compile(self, /) -> CompiledTokenizer:
         """
-        Unpickles a `Tokenizer`
-        """
-    def decode(
-        self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = True
-    ) -> str:
-        """
-        Decodes token ids back into text
+        Builds a new `CompiledTokenizer` from the spec as it is now.
 
-        Args:
-            ids:
-                The ids to decode, an `Encoding`, a numpy array or any sequence of ints.
-            skip_special_tokens: bool
-                Whether special tokens should not be added to the decoded text.
-
-        Returns:
-            str
-        """
-    def decode_tokens(
-        self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = False
-    ) -> list[str]:
-        """
-        Converts token ids to their string representation. This does NOT apply the decoder.
-
-        Args:
-            ids:
-                The ids to convert, an `Encoding`, a numpy array or any sequence of ints.
-            skip_special_tokens: bool
-                Whether to skip special tokens
-
-        Returns:
-            list[str]
-        """
-    def encode(
-        self,
-        /,
-        input: str | Sequence[str],
-        *,
-        add_special_tokens: bool = True,
-        encode_special_tokens: bool = False,
-        padding: Padding | None = ...,
-        truncation: Truncation | None = ...,
-    ) -> Encoding:
-        """
-        Encodes the given text, or pair of texts, to token ids.
-
-        Args:
-            input: str or tuple[str, str]
-                A text, or a pair of texts given as a two-item tuple or list.
-                The post-processor joins a pair, for example as `[CLS] A [SEP] B [SEP]`.
-            add_special_tokens: bool
-                 Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
-            encode_special_tokens: bool
-                Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
-                or be replaced by their id in the added vocabulary.
-            padding: `Padding` or `None`
-                Padding options. Pass `None` to disable padding.
-                When omitted, defaults to the padding options configured on the tokenizer.
-            truncation: `Truncation` or `None`
-                Truncation options. Pass `None` to disable truncation.
-                When omitted, defaults to the truncation options configured on the tokenizer.
-
-        Returns:
-            Encoding
-        """
-    def encode_batch(
-        self,
-        /,
-        inputs: Sequence[str | Sequence[str]],
-        *,
-        add_special_tokens: bool = True,
-        encode_special_tokens: bool = False,
-        padding: Padding | None = ...,
-        truncation: Truncation | None = ...,
-    ) -> list[Encoding]:
-        """
-        Encodes a batch of texts, or pairs of texts.
-        The encodings come back in input order.
-
-        Args:
-            inputs: list[str | tuple[str, str]]
-                The batch to encode. Each item is a text, or a pair of texts given as a two-item
-                tuple or list. A batch can mix both.
-            add_special_tokens: bool
-                Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
-            encode_special_tokens: bool
-                Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
-                or be replaced by their id in the added vocabulary.
-            padding: `Padding` or `None`
-                Padding options. Pass `None` to disable padding.
-                When omitted, defaults to the padding options configured on the tokenizer.
-            truncation: `Truncation` or `None`
-                Truncation options. Pass `None` to disable truncation.
-                When omitted, defaults to the truncation options configured on the tokenizer.
-
-        Returns:
-            List[Encoding]
+        Every call builds the whole tokenizer again. Later edits of the spec do not reach the
+        compiled tokenizer: compile again to see them.
         """
     @staticmethod
     def from_file(path: str | PathLike[str]) -> Tokenizer:
         """
-        Loads a `tokenizer.json`.
+        Loads a `tokenizer.json` and upgrades it to the 2.0 format.
+
+        Errors in the file's components, such as the model or the normalizer, show up at `compile()`.
 
         Args:
             path:
@@ -316,50 +408,15 @@ class Tokenizer:
     @property
     def padding(self, /) -> Padding | None:
         """
-        The padding applied to every encode, or `None`.
+        The padding a tokenizer compiled from this spec applies to every encode, or `None`.
         Assign `None` to switch padding off.
         """
     @padding.setter
     def padding(self, /, padding: Padding | None) -> None: ...
-    def tokenize(
-        self,
-        /,
-        input: str | Sequence[str],
-        *,
-        add_special_tokens: bool = True,
-        encode_special_tokens: bool = False,
-        padding: Padding | None = ...,
-        truncation: Truncation | None = ...,
-    ) -> list[str]:
-        """
-        Encodes the given text, or pair of texts, and returns the string representation of each token.
-
-        Shorthand for `decode_tokens(encode(input))`.
-        If you also need to access token ids, use `encode(input)`.
-
-        Args:
-            input: str or tuple[str, str]
-                A text, or a pair of texts given as a two-item tuple or list.
-                The post-processor joins a pair, for example as `[CLS] A [SEP] B [SEP]`.
-            add_special_tokens: bool
-                 Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
-            encode_special_tokens: bool
-                Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
-                or be replaced by their id in the added vocabulary.
-            padding: `Padding` or `None`
-                Padding options. Pass `None` to disable padding.
-                When omitted, defaults to the padding options configured on the tokenizer.
-            truncation: `Truncation` or `None`
-                Truncation options. Pass `None` to disable truncation.
-                When omitted, defaults to the truncation options configured on the tokenizer.
-
-        Returns:
-            list[str]
-        """
     @property
     def truncation(self, /) -> Truncation | None:
         """
-        The truncation applied to every encode, or `None`.
+        The truncation a tokenizer compiled from this spec applies to every encode, or `None`.
         Assign `None` to switch truncation off.
         """
     @truncation.setter
