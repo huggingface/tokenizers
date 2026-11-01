@@ -112,10 +112,13 @@ read path; `from_pretrained` needs a pipeline-native equivalent — `tk-encode` 
 
 ## 6. Truncation and padding on the object model
 
-`with_truncation` / `with_padding` and the `TruncationParams` / `PaddingParams` config types. The
-pipeline currently *swallows* truncation and padding declared in a `tokenizer.json` rather than
-erroring, which is the more dangerous of the two behaviours — a config that asks for truncation gets
-silently untruncated output. Worth fixing before v1 even if the feature itself lands later.
+**Done (load + encode path).** `tk_serialize::from_json` reads `truncation` / `padding` into
+`PipelineTokenizer`, and `EncodeOptions` defaults to `Override::InheritConfig`, so a config that
+declares either is applied on every `encode` / `wait`. Regression coverage:
+`tk-serialize/tests/config_truncation.rs`, `tk-serialize/tests/config_padding.rs`.
+
+Still open for v1: the mutable setters (`with_truncation` / `with_padding`) that §1's authoring
+surface will expose. The JSON → encode path no longer silently drops them.
 
 ## 7. The cross-reader id oracle
 
