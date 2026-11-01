@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::iter::Enumerate;
 use std::sync::Arc;
@@ -724,6 +725,16 @@ impl PipelineTokenizer {
         scratch: &mut EncodeScratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
+        // A trailing `MetaspaceNormalizer` came from a legacy Metaspace *pre-tokenizer*, which in
+        // 0.23 ran after normalized added-token extraction. Applying it before that extraction
+        // prepends a stray `▁` when the input opens with a normalized added token, and leaves a
+        // standalone `▁` before an `lstrip` one in the middle (#2512). `from_json` already drops
+        // the same trailing Metaspace when computing added-token match forms.
+        let (early_normalizers, metaspace) = match self.inner.normalizers.split_last() {
+            Some((PipelineNormalizer::Metaspace(m), rest)) => (rest, Some(m)),
+            _ => (self.inner.normalizers.as_slice(), None),
+        };
+
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(
             input,
@@ -739,12 +750,13 @@ impl PipelineTokenizer {
                     text: chunk,
                     input_offset,
                 } => {
-                    let normalized =
-                        normalize_all(&self.inner.normalizers, chunk, offset + input_offset)?;
+                    let early = normalize_all(early_normalizers, chunk, offset + input_offset)?;
 
-                    // Extract special tokens from the normalized input
+                    // Extract special tokens from the (early-)normalized input, then apply the
+                    // deferred Metaspace rewrite to each remaining text span.
+                    let mut first_subchunk = true;
                     for segment in SpecialSegmentIterator::new(
-                        &normalized,
+                        &early,
                         &self.inner.added_vocabulary,
                         true,
                         options.encode_special_tokens,
@@ -752,11 +764,27 @@ impl PipelineTokenizer {
                         match segment {
                             Segment::SpecialToken(token) => {
                                 output.push(PipelineToken::from(token));
+                                first_subchunk = false;
                             }
                             Segment::Text {
-                                text: normalized_chunk,
-                                ..
+                                text: text_chunk, ..
                             } => {
+                                // `PrependBehavior::First` must only fire on the span that opens
+                                // the sequence. Later spans (after a carved-out added token) get a
+                                // non-zero offset so they do not pick up another leading `▁`.
+                                let meta_offset = if first_subchunk {
+                                    offset + input_offset
+                                } else {
+                                    offset + input_offset + 1
+                                };
+                                first_subchunk = false;
+
+                                let normalized: Cow<'_, str> = match metaspace {
+                                    Some(m) => m.normalize(text_chunk, meta_offset)?,
+                                    None => Cow::Borrowed(text_chunk),
+                                };
+                                let normalized_chunk = normalized.as_ref();
+
                                 // A [`Span`] holds `u32` offsets, which breaks the `PreTokenizer` contract the
                                 // `str::get_unchecked` below relies on.
                                 // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),
