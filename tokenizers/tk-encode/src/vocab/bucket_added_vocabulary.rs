@@ -354,7 +354,9 @@ impl AddedVocabulary {
         let mut ignored = 0;
         let mut total = 0;
 
-        // Added ids start above the model vocab; a token already in the model reuses the model id.
+        // Two possible IDs for an added token:
+        //   - if the token is already in the model vocabulary, reuse the model's id
+        //   - if it's not in the model vocab, use the next id above model vocab and all previously added ids
         let model_size = model_vocab_size as u32;
         let mut next_id = self
             .ids
