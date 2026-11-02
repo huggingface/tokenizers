@@ -228,6 +228,8 @@ struct TokenizerInner {
     /// Lowest id owned by the added vocabulary, or `u32::MAX` when there is none.
     /// Allows to skip the added vocabulary lookup if the token id is lower than this value.
     added_id_min: u32,
+    /// The model + added tokens vocab size
+    total_vocab_size: usize,
     /// Which token plays which role (`"eos_token"` -> `"</s>"`), so a `tokenizer.json` can carry
     /// the special-token metadata that used to need a separate `tokenizer_config.json`. Empty
     /// when the config declares none. `BTreeMap` so the writer emits a stable key order.
@@ -277,6 +279,12 @@ impl PipelineTokenizer {
             .copied()
             .min()
             .unwrap_or(u32::MAX);
+        let added_outside_model = added_vocabulary
+            .get_vocab()
+            .keys()
+            .filter(|token| model.token_to_id(token).is_none())
+            .count();
+        let total_vocab_size = model.get_vocab_size() + added_outside_model;
         Self {
             inner: Arc::new(TokenizerInner {
                 added_vocabulary,
@@ -286,6 +294,7 @@ impl PipelineTokenizer {
                 post_processor,
                 decoder,
                 added_id_min,
+                total_vocab_size,
                 role_to_token,
                 padding,
                 truncation,
@@ -637,16 +646,11 @@ impl PipelineTokenizer {
 
     /// The length of [`Self::get_vocab`], without building the model's vocabulary.
     pub fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
-        let model_size = self.inner.model.get_vocab_size();
-        if !with_added_tokens {
-            return model_size;
+        if with_added_tokens {
+            self.inner.total_vocab_size
+        } else {
+            self.inner.model.get_vocab_size()
         }
-        let added = self.inner.added_vocabulary.get_vocab();
-        let added_only = added
-            .keys()
-            .filter(|token| self.inner.model.token_to_id(token).is_none())
-            .count();
-        model_size + added_only
     }
 
     /// Encode `input` into token ids.
