@@ -627,10 +627,10 @@ impl PipelineTokenizer {
     ///
     /// An id in both the added vocabulary and the model gets the added vocabulary's token.
     pub fn id_to_token(&self, id: u32) -> Option<String> {
-        self.inner
-            .added_vocabulary
-            .simple_id_to_token(id)
-            .or_else(|| self.inner.model.id_to_token(id))
+        match self.inner.added_vocabulary.id_to_token_bytes(id) {
+            Some((bytes, _)) => Some(String::from_utf8_lossy(bytes).into_owned()),
+            None => self.inner.model.id_to_token(id),
+        }
     }
 
     /// Each token of the model with its id, plus the added vocabulary when `with_added_tokens`.
