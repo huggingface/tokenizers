@@ -228,27 +228,27 @@ class CompiledTokenizer:
 
 class Component:
     """
-    Base class for tokenizer components: models, normalizers, pre-tokenizers, post-processors
+    Base class of every tokenizer component: models, normalizers, pre-tokenizers, post-processors
     and decoders.
 
-    Components are handles to the underlying JSON spec. An edit to the spec touches all handles
-    pointing to the same spec:
+    A component points at a shared spec object.
+    An edit through one component reaches every component that points at the same spec:
     ```python
     b.normalizer = a.normalizer
     a.normalizer.prepend = "_"  # b.normalizer changes too
     ```
 
-    Use `copy.deepcopy(component)` for an independent copy.
+    `copy.deepcopy(component)` returns an independent copy.
 
-    Edits after `compile()` don't affect the compiled tokenizer.
+    A compiled tokenizer ignores later edits. Call `compile()` again to apply them.
     """
     def __getstate__(self, /) -> bytes:
         """
-        The component's JSON, as `bytes`.
+        Returns the component's JSON, as `bytes`.
         """
     def __reduce__(self, /) -> tuple[Any, tuple[bytes]]:
         """
-        Pickle rebuilds a component through its kind's `_unpickle`.
+        Pickles the component as its JSON. Unpickling rebuilds it through its kind's `_unpickle`.
         """
     def __repr__(self, /) -> str: ...
 

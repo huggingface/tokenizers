@@ -1,3 +1,64 @@
+//! The specs behind the components of a [`Tokenizer`](crate::tokenizer::Tokenizer).
+//!
+//! A *spec* is a component's JSON representation in `tokenizer.json`, such as:
+//!
+//! ```json
+//! {"type": "Prepend", "prepend": "▁"}
+//! ```
+//!
+//! The [`components`](super#handles) docs introduce tokenizer fields and handles, and show how
+//! Python edits a spec.
+//!
+//! # Why components store JSON
+//!
+//! A tokenizer field holds the component's JSON, not a Rust struct.
+//!
+//! - **No conversion.** [`to_str`](crate::tokenizer::Tokenizer::to_str), pickle and
+//!   [`compile`](crate::tokenizer::Tokenizer::compile) all need the JSON. They read it as is.
+//! - **A Python class is a thin layer.** It adds one getter and setter per JSON key, such as
+//!   `Prepend.prepend` for `"prepend"`. No Rust struct duplicates the core's types, so the two
+//!   cannot drift apart.
+//!
+//! # Sharing and copying
+//!
+//! A tokenizer field or handle holds an `Arc<SingleSpec>`, and a [`SingleSpec`] holds its JSON as a `Mutex<Arc<JsonObject>>`.
+//!
+//! - **Handles share the `Arc<SingleSpec>`.**
+//!   An edit through `tok.normalizer` shows in every other handle on the same spec.
+//! - **Copies share the `Arc<JsonObject>`.**
+//!   `copy.deepcopy(tok)` and `compile()` give the copy a new `SingleSpec` over the same JSON.
+//!   Copying a tokenizer therefore copies no JSON.
+//! - **An edit copies the JSON only when it is shared.**
+//!   [`Arc::make_mut`] is copy-on-write.
+//!   It edits the `JsonObject` in place when this `SingleSpec` is its only owner.
+//!   Otherwise it copies the JSON first, so a copy keeps the JSON it was made from.
+//!
+//! # Sequences
+//!
+//! A `Sequence` runs several components of one kind in turn, such as two normalizers. Its
+//! [`SequenceSpec`] holds one `Arc<SingleSpec>` per item.
+//! Each item is a component like any other, with its own identity:
+//!
+//! - `seq[1]` returns a handle on item 1's `SingleSpec`.
+//! - After `seq = Sequence([p])`, `p` and `seq[0]` share one `SingleSpec`. An edit through `p`
+//!   changes the sequence too.
+//!
+//! ```text
+//!   tok.normalizer ──▶ SequenceSpec ─┬─▶ SingleSpec ──▶ {"type": "Prepend", "prepend": "▁"}
+//!                                    └─▶ SingleSpec ──▶ {"type": "NFC"}
+//!                                          ▲
+//!   tok.normalizer[1] ─────────────────────┘
+//! ```
+//!
+//! [`ComponentSpec::json`] rebuilds the sequence's JSON from its items on every read.
+//!
+//!
+//! # Locks
+//!
+//! Each spec has its own `Mutex`, held for a single read or edit. A `SequenceSpec` keeps its
+//! lock while it reads its items' JSON. A `SingleSpec` never locks a `SequenceSpec`. So every
+//! thread takes the two locks in the same order, which rules out a deadlock between them.
+
 use std::sync::{Arc, Mutex, PoisonError};
 
 use pyo3::prelude::*;
@@ -5,9 +66,11 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::JsonObject;
-use crate::error::{NestedSequence, err};
+use crate::error::{NestedSequenceError, err};
 
-/// The field key in the tokenizers.json file for each kind
+/// A component kind, named after its top-level key in `tokenizer.json`.
+///
+/// Each [`ComponentKind`](super::ComponentKind) class names its key in `JSON_KEY`.
 #[derive(Clone, Copy)]
 pub(crate) enum ComponentKey {
     Normalizer,
@@ -29,13 +92,15 @@ impl ComponentKey {
         }
     }
 
-    /// The key under which a `Sequence` of this kind lists its items:
+    /// Returns the key that lists the items of a `Sequence` of this kind:
     /// ```json
     /// "normalizer": {
     ///     "type": "Sequence",
     ///     "normalizers": [{ "type": "NFC" }]   // <-- the items key
     /// }
     /// ```
+    ///
+    /// Models have no `Sequence`, so they return `None`.
     pub(crate) fn sequence_items_key(self) -> Option<&'static str> {
         match self {
             ComponentKey::Normalizer => Some("normalizers"),
@@ -47,7 +112,10 @@ impl ComponentKey {
     }
 }
 
-/// A component's JSON spec, as a shared reference: cloning it shares the same spec.
+/// The spec of one component, or of a `Sequence`.
+///
+/// A clone shares the spec, so an edit through either one reaches both.
+/// [`deep_clone`](Self::deep_clone) returns an independent copy.
 #[derive(Clone)]
 pub(crate) enum ComponentSpec {
     Single(Arc<SingleSpec>),
@@ -55,7 +123,10 @@ pub(crate) enum ComponentSpec {
 }
 
 impl ComponentSpec {
-    /// Reads the `kind` component from its `tokenizer.json` object.
+    /// Builds the spec of a `kind` component from its JSON representation in `tokenizer.json`.
+    ///
+    /// It splits a `Sequence` into one [`SingleSpec`] per item. It returns an error for a
+    /// malformed item list or a nested `Sequence`.
     pub(crate) fn from_json(kind: ComponentKey, mut json: JsonObject) -> tk::Result<Self> {
         let Some(items_key) = kind.sequence_items_key() else {
             return Ok(Arc::new(SingleSpec::new(json)).into());
@@ -78,7 +149,8 @@ impl ComponentSpec {
         Ok(Arc::new(sequence).into())
     }
 
-    /// An independent [`ComponentSpec`]: an edit of either one does not reach the other.
+    /// Returns an independent copy.
+    /// The copy shares the JSON until the first edit, so it costs no JSON copy.
     pub(crate) fn deep_clone(&self) -> Self {
         match self {
             Self::Single(single) => Self::Single(Arc::new(single.deep_clone())),
@@ -86,7 +158,8 @@ impl ComponentSpec {
         }
     }
 
-    /// The component's `tokenizer.json` object.
+    /// Returns the component's JSON representation in `tokenizer.json`.
+    /// A `Sequence` builds it from its items on each call.
     pub(crate) fn json(&self) -> Arc<JsonObject> {
         match self {
             Self::Single(single) => single.json(),
@@ -107,19 +180,21 @@ impl From<Arc<SequenceSpec>> for ComponentSpec {
     }
 }
 
-/// The `SingleSpec` a `Sequence` item must be: a `Sequence` refuses another as an item.
+/// Unwraps a `Sequence` item. A `Sequence` cannot be an item, so it returns `NestedSequenceError`.
 impl TryFrom<ComponentSpec> for Arc<SingleSpec> {
-    type Error = NestedSequence;
+    type Error = NestedSequenceError;
 
-    fn try_from(spec: ComponentSpec) -> Result<Self, NestedSequence> {
+    fn try_from(spec: ComponentSpec) -> Result<Self, NestedSequenceError> {
         match spec {
             ComponentSpec::Single(single) => Ok(single),
-            ComponentSpec::Sequence(_) => Err(NestedSequence),
+            ComponentSpec::Sequence(_) => Err(NestedSequenceError),
         }
     }
 }
 
-/// A component that is a single JSON object: anything but a `Sequence`.
+/// The spec of one component that is not a `Sequence`.
+///
+/// Its JSON is copied on write: see [Sharing and copying](self#sharing-and-copying).
 pub(crate) struct SingleSpec {
     json: Mutex<Arc<JsonObject>>,
 }
@@ -131,13 +206,14 @@ impl SingleSpec {
         }
     }
 
-    /// A new [`SingleSpec`] sharing the JSON until either of them is edited.
+    /// Returns a new [`SingleSpec`] that shares this JSON until either one is edited.
     fn deep_clone(&self) -> Self {
         Self {
             json: Mutex::new(self.json()),
         }
     }
 
+    /// Returns the current JSON. A later edit leaves the returned value unchanged.
     pub(crate) fn json(&self) -> Arc<JsonObject> {
         self.json
             .lock()
@@ -145,31 +221,35 @@ impl SingleSpec {
             .clone()
     }
 
-    /// Runs `edit` on the JSON. A [`deep_clone`](Self::deep_clone) sharing that JSON keeps the previous value.
+    /// Runs `edit` on the JSON. It copies the JSON first if another [`SingleSpec`] shares it.
     fn edit<R>(&self, edit: impl FnOnce(&mut JsonObject) -> R) -> R {
         edit(Arc::make_mut(
             &mut self.json.lock().unwrap_or_else(PoisonError::into_inner),
         ))
     }
 
-    /// Reads the `key` field. A missing key reads as `null`, so `Option<T>` reads it as `None`.
+    /// Reads the `key` field as a `T`. A missing key reads as `null`, so an `Option<T>` gets
+    /// `None`.
     pub(crate) fn field<T: DeserializeOwned>(&self, key: &str) -> PyResult<T> {
         let json = self.json();
         let value = json.get(key).unwrap_or(&Value::Null);
         T::deserialize(value).map_err(|e| err(format!("`{key}`: {e}")))
     }
 
+    /// Sets the `key` field. Every tokenizer field and handle on this spec sees the new value.
     pub(crate) fn set_field(&self, key: &str, value: impl Into<Value>) {
         self.edit(|json| json.insert(key.to_owned(), value.into()));
     }
 
-    /// The `"type"` of the component, such as `"Prepend"`.
+    /// Returns the component's `"type"`, such as `"Prepend"`.
     pub(crate) fn json_type(&self) -> Option<String> {
         self.json().get("type")?.as_str().map(str::to_owned)
     }
 }
 
-/// A `Sequence` of components, each a [`SingleSpec`].
+/// The spec of a `Sequence`: one shared [`SingleSpec`] per item.
+///
+/// A handle on an item writes through to the sequence: see [Sequences](self#sequences).
 pub(crate) struct SequenceSpec {
     /// See [`ComponentKey::sequence_items_key`].
     items_key: &'static str,
@@ -177,10 +257,12 @@ pub(crate) struct SequenceSpec {
 }
 
 impl SequenceSpec {
+    /// Builds a `Sequence` of `kind` from its items.
+    /// It returns [`NestedSequence`] if an item is a `Sequence`.
     pub(crate) fn new(
         kind: ComponentKey,
         items: Vec<ComponentSpec>,
-    ) -> Result<Self, NestedSequence> {
+    ) -> Result<Self, NestedSequenceError> {
         let items_key = kind
             .sequence_items_key()
             .expect("only the kinds that have a Sequence class build a SequenceSpec");
@@ -201,6 +283,7 @@ impl SequenceSpec {
             .len()
     }
 
+    /// Returns a spec that shares the item at `index`, or `None` when `index` is out of range.
     pub(crate) fn get(&self, index: usize) -> Option<ComponentSpec> {
         let items = self.items.lock().unwrap_or_else(PoisonError::into_inner);
         items.get(index).cloned().map(ComponentSpec::Single)
@@ -213,7 +296,8 @@ impl SequenceSpec {
         Some(())
     }
 
-    /// `index` as Python reads it: a negative index counts from the end.
+    /// Converts a Python index into a position. A negative index counts from the end.
+    /// It returns `None` when `index` is out of range.
     pub(crate) fn index(&self, index: isize) -> Option<usize> {
         let len = self.len();
         let index = match usize::try_from(index) {
@@ -223,7 +307,7 @@ impl SequenceSpec {
         (index < len).then_some(index)
     }
 
-    /// A new [`SequenceSpec`] holding a [`SingleSpec::deep_clone`] of each item.
+    /// Returns a new [`SequenceSpec`] that holds a [`SingleSpec::deep_clone`] of each item.
     fn deep_clone(&self) -> Self {
         let items = self.items.lock().unwrap_or_else(PoisonError::into_inner);
         Self {
@@ -237,7 +321,8 @@ impl SequenceSpec {
         }
     }
 
-    /// The `tokenizer.json` object: the items' JSON listed under `items_key`.
+    /// Builds the sequence's JSON representation: `"type": "Sequence"`, and the items' JSON under
+    /// `items_key`.
     fn json(&self) -> JsonObject {
         let items: Vec<Value> = self
             .items
