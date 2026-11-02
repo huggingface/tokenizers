@@ -113,6 +113,14 @@ impl ComponentSpec {
         Self::Single(Arc::new(SingleSpec::new(json)))
     }
 
+    /// Builds a spec from a `json!` object literal, as the Python constructors write it.
+    pub(crate) fn from_literal(json: Value) -> Self {
+        let Value::Object(json) = json else {
+            unreachable!("callers pass a json! object literal, got {json}")
+        };
+        Self::single(json)
+    }
+
     /// Builds a spec from a component's JSON representation.
     ///
     /// A `Sequence` splits into one [`SingleSpec`] per item, so that a handle on an item can be

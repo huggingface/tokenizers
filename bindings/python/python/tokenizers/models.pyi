@@ -77,7 +77,13 @@ class WordPiece(Model):
     each written with `continuing_subword_prefix`.
     """
     def __new__(
-        cls, /, vocab: dict[str, int] | str | PathLike[str] | None = None, *, unk_token: str = "[UNK]"
+        cls,
+        /,
+        vocab: dict[str, int] | str | PathLike[str] | None = None,
+        *,
+        unk_token: str = "[UNK]",
+        continuing_subword_prefix: str = "##",
+        max_input_chars_per_word: int = 100,
     ) -> WordPiece: ...
     @property
     def continuing_subword_prefix(self, /) -> str | None: ...

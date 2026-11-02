@@ -167,9 +167,12 @@ def test_model_json_keys(model, keys):
     assert type(pickle.loads(pickle.dumps(model))) is type(model)
 
 
-@pytest.mark.parametrize(("state", "shown"), [(b'{"type": "Bogus"}', '"Bogus"'), (b"{}", "null")])
-def test_unpickle_refuses_an_unknown_model_type(state, shown):
-    with pytest.raises(ValueError, match=f'^Unknown model "type": {shown}$'):
+@pytest.mark.parametrize(
+    ("state", "message"),
+    [(b'{"type": "Bogus"}', 'Unknown model "type": "Bogus"'), (b"{}", 'Model has no "type"')],
+)
+def test_unpickle_refuses_an_unknown_model_type(state, message):
+    with pytest.raises(ValueError, match=f"^{message}$"):
         models.Model._unpickle(state)
 
 
@@ -241,6 +244,12 @@ def test_wordpiece(bert_spec, tmp_path):
         assert tokenizer.model.continuing_subword_prefix == "##"
         text = f"{TEXT} 😀"
         assert tokenizer.compile().encode(text).ids == bert_spec.compile().encode(text).ids
+
+
+def test_wordpiece_writes_its_keywords():
+    wordpiece = models.WordPiece({}, continuing_subword_prefix="@@", max_input_chars_per_word=5)
+    state = json.loads(wordpiece.__getstate__())
+    assert (state["continuing_subword_prefix"], state["max_input_chars_per_word"]) == ("@@", 5)
 
 
 def test_unigram(wiki_spec):

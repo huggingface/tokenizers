@@ -1,10 +1,10 @@
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
 
 use pyo3::prelude::*;
 use serde_json::{Value, json};
 
-use crate::JsonObject;
 use crate::components::component_spec::ComponentSpec;
 use crate::error::err;
 use crate::tokenizer::TokenizerSpec;
@@ -34,13 +34,13 @@ impl ComponentKind for Model {
 
     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
         let json = spec.json();
-        let model_type = json.get("type").unwrap_or(&Value::Null);
-        match model_type.as_str() {
+        match json.get("type").and_then(Value::as_str) {
             Some("BPE") => Self::concrete_component(py, spec, Bpe),
             Some("WordPiece") => Self::concrete_component(py, spec, WordPiece),
             Some("Unigram") => Self::concrete_component(py, spec, Unigram),
             Some("WordLevel") => Self::concrete_component(py, spec, WordLevel),
-            _ => Err(err(format!("Unknown model \"type\": {model_type}"))),
+            Some(model_type) => Err(err(format!("Unknown model \"type\": \"{model_type}\""))),
+            None => Err(err("Model has no \"type\"")),
         }
     }
 }
@@ -53,38 +53,30 @@ enum Vocab {
 }
 
 impl Vocab {
-    /// A path names a `vocab.json`.
-    fn read_json(self) -> PyResult<JsonObject> {
-        let vocab = match self {
-            Self::Dict(vocab) => vocab,
-            Self::Path(path) => {
-                serde_json::from_str(&std::fs::read_to_string(path)?).map_err(err)?
-            }
-        };
-        Ok(to_json(vocab))
+    /// A path names a `vocab.json`. No vocabulary reads as an empty one.
+    fn read_json(vocab: Option<Self>) -> PyResult<HashMap<String, u32>> {
+        match vocab {
+            None => Ok(HashMap::new()),
+            Some(Self::Dict(vocab)) => Ok(vocab),
+            Some(Self::Path(path)) => serde_json::from_str(&fs::read_to_string(path)?).map_err(err),
+        }
     }
 
-    /// A path names a `vocab.txt`: one token per line, its id being the line number.
-    fn read_lines(self) -> PyResult<JsonObject> {
-        let vocab = match self {
-            Self::Dict(vocab) => vocab,
-            Self::Path(path) => {
-                let text = std::fs::read_to_string(path)?;
+    /// A path names a `vocab.txt`: one token per line, its id being the line number. No
+    /// vocabulary reads as an empty one.
+    fn read_lines(vocab: Option<Self>) -> PyResult<HashMap<String, u32>> {
+        match vocab {
+            None => Ok(HashMap::new()),
+            Some(Self::Dict(vocab)) => Ok(vocab),
+            Some(Self::Path(path)) => {
+                let text = fs::read_to_string(path)?;
                 let lines = text.lines().zip(0..);
-                lines
+                Ok(lines
                     .map(|(line, id)| (line.trim_end().to_owned(), id))
-                    .collect()
+                    .collect())
             }
-        };
-        Ok(to_json(vocab))
+        }
     }
-}
-
-fn to_json(vocab: HashMap<String, u32>) -> JsonObject {
-    vocab
-        .into_iter()
-        .map(|(token, id)| (token, id.into()))
-        .collect()
 }
 
 /// BPE merges: `(left, right)` pairs, or the path of a `merges.txt`.
@@ -95,28 +87,33 @@ enum Merges {
 }
 
 impl Merges {
-    /// A `merges.txt` holds one `left right` pair per line, after a `#version` line.
-    fn read(self) -> PyResult<Vec<(String, String)>> {
-        let path = match self {
-            Self::Pairs(pairs) => return Ok(pairs),
-            Self::Path(path) => path,
+    /// A `merges.txt` holds one `left right` pair per line, after a `#version` line. No merges
+    /// read as an empty list.
+    fn read(merges: Option<Self>) -> PyResult<Vec<(String, String)>> {
+        let path = match merges {
+            None => return Ok(Vec::new()),
+            Some(Self::Pairs(pairs)) => return Ok(pairs),
+            Some(Self::Path(path)) => path,
         };
-        let text = std::fs::read_to_string(&path)?;
-        let lines = text
-            .lines()
-            .zip(1..)
-            .filter(|(line, _)| !line.starts_with("#version"));
-        lines
-            .map(
-                |(line, number)| match line.split(' ').collect::<Vec<_>>()[..] {
-                    [left, right] => Ok((left.to_owned(), right.to_owned())),
-                    _ => Err(err(format!(
-                        "{}: line {number} is not a `left right` pair",
-                        path.display()
-                    ))),
-                },
-            )
-            .collect()
+        let text = fs::read_to_string(&path)?;
+        let mut pairs = Vec::new();
+        for (line, number) in text.lines().zip(1..) {
+            if line.starts_with("#version") {
+                continue;
+            }
+            match line.split_once(' ') {
+                Some((left, right)) if !right.contains(' ') => {
+                    pairs.push((left.to_owned(), right.to_owned()));
+                }
+                _ => {
+                    let path = path.display();
+                    return Err(err(format!(
+                        "{path}: line {number} is not a `left right` pair"
+                    )));
+                }
+            }
+        }
+        Ok(pairs)
     }
 }
 
@@ -127,8 +124,23 @@ pub struct Bpe;
 #[pymethods]
 impl Bpe {
     #[new]
-    #[pyo3(signature = (vocab=None, merges=None, *, dropout=None, unk_token=None, continuing_subword_prefix=None, end_of_word_suffix=None, fuse_unk=false, byte_fallback=false, ignore_merges=false, byte_level=false))]
-    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        vocab=None,
+        merges=None,
+        *,
+        dropout=None,
+        unk_token=None,
+        continuing_subword_prefix=None,
+        end_of_word_suffix=None,
+        fuse_unk=false,
+        byte_fallback=false,
+        ignore_merges=false,
+        byte_level=false,
+    ))]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one argument per keyword of the Python `BPE` constructor"
+    )]
     fn new(
         vocab: Option<Vocab>,
         merges: Option<Merges>,
@@ -141,23 +153,22 @@ impl Bpe {
         ignore_merges: bool,
         byte_level: bool,
     ) -> PyResult<PyClassInitializer<Self>> {
-        let json = json!({
-            "type": "BPE",
-            "dropout": dropout,
-            "unk_token": unk_token,
-            "continuing_subword_prefix": continuing_subword_prefix,
-            "end_of_word_suffix": end_of_word_suffix,
-            "fuse_unk": fuse_unk,
-            "byte_fallback": byte_fallback,
-            "ignore_merges": ignore_merges,
-            "byte_level": byte_level,
-            "vocab": vocab.map(Vocab::read_json).transpose()?.unwrap_or_default(),
-            "merges": merges.map(Merges::read).transpose()?.unwrap_or_default(),
-        });
-        let Value::Object(json) = json else {
-            unreachable!("json! builds an object from an object literal")
-        };
-        Ok(Model::initializer(ComponentSpec::single(json), Self))
+        Ok(Model::initializer(
+            ComponentSpec::from_literal(json!({
+                "type": "BPE",
+                "dropout": dropout,
+                "unk_token": unk_token,
+                "continuing_subword_prefix": continuing_subword_prefix,
+                "end_of_word_suffix": end_of_word_suffix,
+                "fuse_unk": fuse_unk,
+                "byte_fallback": byte_fallback,
+                "ignore_merges": ignore_merges,
+                "byte_level": byte_level,
+                "vocab": Vocab::read_json(vocab)?,
+                "merges": Merges::read(merges)?,
+            })),
+            Self,
+        ))
     }
 
     #[getter]
@@ -178,6 +189,7 @@ impl Bpe {
     /// Whether a word found whole in the vocab skips the merges.
     #[getter]
     fn ignore_merges(slf: &Bound<'_, Self>) -> PyResult<bool> {
+        // Files written before the field existed leave it out.
         Ok(slf.field::<Option<bool>>("ignore_merges")?.unwrap_or(false))
     }
 
@@ -195,19 +207,29 @@ pub struct WordPiece;
 #[pymethods]
 impl WordPiece {
     #[new]
-    #[pyo3(signature = (vocab=None, *, unk_token="[UNK]"))]
-    fn new(vocab: Option<Vocab>, unk_token: &str) -> PyResult<PyClassInitializer<Self>> {
-        let json = json!({
-            "type": "WordPiece",
-            "unk_token": unk_token,
-            "continuing_subword_prefix": "##",
-            "max_input_chars_per_word": 100,
-            "vocab": vocab.map(Vocab::read_lines).transpose()?.unwrap_or_default(),
-        });
-        let Value::Object(json) = json else {
-            unreachable!("json! builds an object from an object literal")
-        };
-        Ok(Model::initializer(ComponentSpec::single(json), Self))
+    #[pyo3(signature = (
+        vocab=None,
+        *,
+        unk_token="[UNK]",
+        continuing_subword_prefix="##",
+        max_input_chars_per_word=100,
+    ))]
+    fn new(
+        vocab: Option<Vocab>,
+        unk_token: &str,
+        continuing_subword_prefix: &str,
+        max_input_chars_per_word: usize,
+    ) -> PyResult<PyClassInitializer<Self>> {
+        Ok(Model::initializer(
+            ComponentSpec::from_literal(json!({
+                "type": "WordPiece",
+                "unk_token": unk_token,
+                "continuing_subword_prefix": continuing_subword_prefix,
+                "max_input_chars_per_word": max_input_chars_per_word,
+                "vocab": Vocab::read_lines(vocab)?,
+            })),
+            Self,
+        ))
     }
 
     #[getter]
@@ -230,16 +252,15 @@ impl Unigram {
         unk_id: Option<usize>,
         byte_fallback: bool,
     ) -> PyClassInitializer<Self> {
-        let json = json!({
-            "type": "Unigram",
-            "unk_id": unk_id,
-            "vocab": vocab,
-            "byte_fallback": byte_fallback,
-        });
-        let Value::Object(json) = json else {
-            unreachable!("json! builds an object from an object literal")
-        };
-        Model::initializer(ComponentSpec::single(json), Self)
+        Model::initializer(
+            ComponentSpec::from_literal(json!({
+                "type": "Unigram",
+                "unk_id": unk_id,
+                "vocab": vocab,
+                "byte_fallback": byte_fallback,
+            })),
+            Self,
+        )
     }
 }
 
@@ -252,15 +273,14 @@ impl WordLevel {
     #[new]
     #[pyo3(signature = (vocab=None, unk_token=None))]
     fn new(vocab: Option<Vocab>, unk_token: Option<&str>) -> PyResult<PyClassInitializer<Self>> {
-        let json = json!({
-            "type": "WordLevel",
-            "vocab": vocab.map(Vocab::read_json).transpose()?.unwrap_or_default(),
-            "unk_token": unk_token.unwrap_or("<unk>"),
-        });
-        let Value::Object(json) = json else {
-            unreachable!("json! builds an object from an object literal")
-        };
-        Ok(Model::initializer(ComponentSpec::single(json), Self))
+        Ok(Model::initializer(
+            ComponentSpec::from_literal(json!({
+                "type": "WordLevel",
+                "vocab": Vocab::read_json(vocab)?,
+                "unk_token": unk_token.unwrap_or("<unk>"),
+            })),
+            Self,
+        ))
     }
 }
 
