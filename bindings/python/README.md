@@ -28,18 +28,18 @@ tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", revision="main")
 compiled = tokenizer.compile()
 
 encoding = compiled.encode("Hello there, how are you?")
-encoding.ids             # [101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102]
-encoding.type_ids        # [0, 0, 0, 0, 0, 0, 0, 0, 0]
-encoding.attention_mask  # [1, 1, 1, 1, 1, 1, 1, 1, 1]
+encoding.ids             # [15496, 612, 11, 703, 389, 345, 30]
+encoding.type_ids        # [0, 0, 0, 0, 0, 0, 0]
+encoding.attention_mask  # [1, 1, 1, 1, 1, 1, 1]
 
 # The same fields as numpy arrays. Each read returns a *new copy* that the caller owns.
-encoding.ids_array             # array([101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102], dtype=uint32)
-encoding.type_ids_array        # array([0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=uint32)
-encoding.attention_mask_array  # array([1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=uint32)
+encoding.ids_array             # array([15496, 612, 11, 703, 389, 345, 30], dtype=uint32)
+encoding.type_ids_array        # array([0, 0, 0, 0, 0, 0, 0], dtype=uint32)
+encoding.attention_mask_array  # array([1, 1, 1, 1, 1, 1, 1], dtype=uint32)
 torch.from_numpy(encoding.ids_array)  # no-copy translation
 
-compiled.encode("Hello", add_special_tokens=False).ids  # no [CLS]/[SEP]
-compiled.decode(encoding.ids)                           # "hello there, how are you?"
+compiled.encode("Hello", add_special_tokens=False).ids  # [15496]
+compiled.decode(encoding.ids)                           # "Hello there, how are you?"
 compiled.decode(encoding.ids_array)                     # a numpy array works too
 compiled.decode(encoding.ids, skip_special_tokens=False)
 
@@ -49,7 +49,7 @@ short, long = compiled.encode_batch(
     padding=Padding(direction="left", pad_id=0, pad_token="[PAD]"),
 )
 len(short) == len(long)  # True
-short.attention_mask     # [0, 0, 0, 0, 0, 0, 1, 1, 1]
+short.attention_mask     # [0, 0, 0, 0, 0, 0, 1]
 compiled.encode("Hello", padding=Padding(length=16))  # exactly 16 ids
 
 # Padding and truncation can also be set on the spec.
