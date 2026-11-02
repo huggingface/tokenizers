@@ -44,7 +44,7 @@ jobs:
       # from the Hub (and get rate-limited) on every run.
       - name: Cache HF test data
         if: matrix.os != 'windows-latest'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
         with:
           path: tokenizers/data
           key: hf-test-data-${{ hashFiles('tokenizers/Makefile') }}
@@ -53,7 +53,7 @@ jobs:
       # Provides `uvx`, used to run the huggingface_hub CLI that downloads
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
 
       - name: Run tests
         if: matrix.os != 'windows-latest'
@@ -255,7 +255,7 @@ jobs:
       # Test fixtures are immutable — cache them so CI doesn't re-download
       # from the Hub (and get rate-limited) on every run.
       - name: Cache HF test data
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
         with:
           path: tokenizers/data
           key: hf-test-data-${{ hashFiles('tokenizers/Makefile') }}
@@ -264,7 +264,7 @@ jobs:
       # Provides `uvx`, used to run the huggingface_hub CLI that downloads
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
 
       # The same two fixtures the Windows leg fetches, and for the same reason:
       # tk-encode's lib tests unwrap these outright. Every other fixture is
