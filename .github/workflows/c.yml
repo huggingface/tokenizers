@@ -97,3 +97,13 @@ jobs:
 
       - name: Run the example test suite
         run: make -C examples test
+
+      # Java bindings call the same cdylib through the FFM API (JDK 22+).
+      - name: Install Java
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3  # v4
+        with:
+          distribution: temurin
+          java-version: '22'
+
+      - name: Run the Java binding tests
+        run: make -C ../java test
