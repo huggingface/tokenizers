@@ -186,27 +186,12 @@ impl PipelineBPE {
             })
             .collect::<Result<MergeMap>>()?;
 
-        let vocab = if vocab.is_empty() {
-            BucketVocabStore::new()
-        } else {
-            BucketVocabStore::build(
-                vocab
-                    .into_iter()
-                    .map(|(k, v)| (k.into_bytes(), v))
-                    .collect(),
-            )?
-        };
-
         Self::from_merge_map(vocab, merges, config)
     }
 
-    /// The same construction, entered from a vocabulary store and a merge map that have *already*
+    /// The same construction, entered from a vocabulary and a merge map that have *already*
     /// been resolved against each other.
-    fn from_merge_map(
-        vocab: BucketVocabStore,
-        merges: MergeMap,
-        config: BpeConfig,
-    ) -> Result<Self> {
+    fn from_merge_map(vocab: Vocab, merges: MergeMap, config: BpeConfig) -> Result<Self> {
         let BpeConfig {
             unk_token,
             continuing_subword_prefix,
@@ -230,8 +215,7 @@ impl PipelineBPE {
             return Err("BPE affixes too long: raise AFFIX_BUF".into());
         }
 
-        let (tables, external_to_internal) =
-            BpeTables::build(vocab.get_vocab().into_iter().collect(), merges, byte_level);
+        let (tables, external_to_internal) = BpeTables::build(&vocab, merges, byte_level);
         // the symbol stream is internal ids, mapped back through `unmap` at the very end
         let to_internal = |external: u32| -> Option<u32> {
             external_to_internal
@@ -253,13 +237,14 @@ impl PipelineBPE {
             if !missing.is_empty() {
                 return Err(Error::ByteAtomOutOfVocabulary(missing).into());
             }
-            // Build the vocab and return it
-            let mut vocab = BucketVocabStore::build(vocab.byte_content())?;
-            vocab = byte_level::transform_vocab(vocab)?;
-
-            (vocab, Atoms::Bytes)
+            (byte_level::transform_vocab(vocab)?, Atoms::Bytes)
         } else {
-            let vocab = BucketVocabStore::build(vocab.byte_content())?;
+            let vocab = BucketVocabStore::build(
+                vocab
+                    .into_iter()
+                    .map(|(k, v)| (k.into_bytes(), v))
+                    .collect(),
+            )?;
             let unk_token = if let Some(unk_str) = unk_token {
                 let token_id = vocab
                     .token_to_id(&unk_str)
