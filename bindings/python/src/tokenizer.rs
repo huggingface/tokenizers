@@ -106,7 +106,7 @@ pub struct Tokenizer {
 }
 
 impl Tokenizer {
-    fn new(spec: TokenizerSpec) -> Self {
+    fn from_spec(spec: TokenizerSpec) -> Self {
         Self {
             spec: Mutex::new(spec),
         }
@@ -150,8 +150,8 @@ impl Tokenizer {
     ///         The model that turns words into ids.
     #[new]
     #[pyo3(signature = (model))]
-    fn with_model(model: Bound<'_, Model>) -> Self {
-        Self::new(TokenizerSpec::from_model(Model::spec(&model).clone()))
+    fn new(model: Bound<'_, Model>) -> Self {
+        Self::from_spec(TokenizerSpec::from_model(Model::spec(&model).clone()))
     }
 
     /// Loads a tokenizer from a `tokenizer.json` file.
@@ -189,7 +189,9 @@ impl Tokenizer {
     #[staticmethod]
     #[pyo3(signature = (json))]
     fn from_str(json: &str) -> PyResult<Self> {
-        Ok(Self::new(TokenizerSpec::from_json(json).map_err(err)?))
+        Ok(Self::from_spec(
+            TokenizerSpec::from_json(json).map_err(err)?,
+        ))
     }
 
     /// Returns the tokenizer as a JSON string, in the `tokenizer.json` format.
@@ -400,7 +402,7 @@ impl Tokenizer {
     /// Returns an independent copy. Editing one tokenizer leaves the other unchanged.
     /// Copying is cheap, even with a large vocab.
     fn __copy__(&self) -> Self {
-        Self::new(self.spec().deep_clone())
+        Self::from_spec(self.spec().deep_clone())
     }
 
     /// Returns an independent copy. Editing one tokenizer leaves the other unchanged.
@@ -424,7 +426,9 @@ impl Tokenizer {
     #[staticmethod]
     fn _unpickle(json: &[u8]) -> PyResult<Self> {
         let json = std::str::from_utf8(json).map_err(err)?;
-        Ok(Self::new(TokenizerSpec::from_json(json).map_err(err)?))
+        Ok(Self::from_spec(
+            TokenizerSpec::from_json(json).map_err(err)?,
+        ))
     }
 
     fn __repr__(&self) -> String {
