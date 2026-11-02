@@ -144,13 +144,16 @@ def test_sequence_item_assignment_writes_through(gpt2_spec):
 def test_sequence_iterates():
     sequence = normalizers.Sequence([normalizers.Prepend("a"), normalizers.Prepend("b")])
     assert len(sequence) == 2
-    assert [item.prepend for item in sequence] == ["a", "b"]
+    prepends = [item.prepend for item in sequence if isinstance(item, normalizers.Prepend)]
+    assert prepends == ["a", "b"]
 
 
 def test_editing_a_sequence_item_writes_through(gpt2_spec):
     unchanged = copy.deepcopy(gpt2_spec)
     gpt2_spec.normalizer = normalizers.Sequence([normalizers.Prepend("a")])
-    gpt2_spec.normalizer[0].prepend = "b"
+    prepend = gpt2_spec.normalizer[0]
+    assert isinstance(prepend, normalizers.Prepend)
+    prepend.prepend = "b"
     assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode("b" + TEXT).ids
 
 
@@ -158,14 +161,20 @@ def test_sequence_shares_the_components_it_was_built_from():
     prepend = normalizers.Prepend("a")
     sequence = normalizers.Sequence([prepend])
     prepend.prepend = "b"
-    assert sequence[0].prepend == "b"
+    item = sequence[0]
+    assert isinstance(item, normalizers.Prepend)
+    assert item.prepend == "b"
 
 
 def test_sequence_counts_negative_indices_from_the_end():
     sequence = normalizers.Sequence([normalizers.Prepend("a"), normalizers.Prepend("b")])
-    assert sequence[-1].prepend == "b"
+    last = sequence[-1]
+    assert isinstance(last, normalizers.Prepend)
+    assert last.prepend == "b"
     sequence[-2] = normalizers.Prepend("c")
-    assert sequence[0].prepend == "c"
+    first = sequence[0]
+    assert isinstance(first, normalizers.Prepend)
+    assert first.prepend == "c"
 
 
 def test_sequence_index_out_of_range_raises_index_error():
