@@ -105,14 +105,19 @@ impl Sequence {
         self.spec.len()
     }
 
-    fn __getitem__(slf: &Bound<'_, Self>, index: usize) -> PyResult<Py<Normalizer>> {
-        let item = slf.get().spec.get(index);
-        let item = item.ok_or_else(|| PyIndexError::new_err("Index not found"))?;
+    fn __getitem__(slf: &Bound<'_, Self>, index: isize) -> PyResult<Py<Normalizer>> {
+        let spec = &slf.get().spec;
+        let item = spec.index(index).and_then(|index| spec.get(index));
+        let item = item.ok_or_else(|| PyIndexError::new_err("Sequence index out of range"))?;
         Normalizer::from_spec(slf.py(), item)
     }
 
-    fn __setitem__(&self, index: usize, item: Bound<'_, Normalizer>) -> PyResult<()> {
-        self.spec.set(index, Normalizer::spec(&item).clone())
+    fn __setitem__(&self, index: isize, item: Bound<'_, Normalizer>) -> PyResult<()> {
+        let item = Arc::try_from(Normalizer::spec(&item).clone())?;
+        self.spec
+            .index(index)
+            .and_then(|index| self.spec.set(index, item))
+            .ok_or_else(|| PyIndexError::new_err("Sequence assignment index out of range"))
     }
 }
 

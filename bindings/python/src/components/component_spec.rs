@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
-use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -207,14 +206,21 @@ impl SequenceSpec {
         items.get(index).cloned().map(ComponentSpec::Single)
     }
 
-    pub(crate) fn set(&self, index: usize, item: ComponentSpec) -> PyResult<()> {
-        let item = Arc::try_from(item)?;
+    /// Replaces the item at `index`, or returns `None` when `index` is out of range.
+    pub(crate) fn set(&self, index: usize, item: Arc<SingleSpec>) -> Option<()> {
         let mut items = self.items.lock().unwrap_or_else(PoisonError::into_inner);
-        let slot = items
-            .get_mut(index)
-            .ok_or_else(|| PyIndexError::new_err("Index not found"))?;
-        *slot = item;
-        Ok(())
+        *items.get_mut(index)? = item;
+        Some(())
+    }
+
+    /// `index` as Python reads it: a negative index counts from the end.
+    pub(crate) fn index(&self, index: isize) -> Option<usize> {
+        let len = self.len();
+        let index = match usize::try_from(index) {
+            Ok(index) => index,
+            Err(_) => len.checked_sub(index.unsigned_abs())?,
+        };
+        (index < len).then_some(index)
     }
 
     /// A new [`SequenceSpec`] holding a [`SingleSpec::deep_clone`] of each item.

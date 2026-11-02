@@ -161,6 +161,21 @@ def test_sequence_shares_the_components_it_was_built_from():
     assert sequence[0].prepend == "b"
 
 
+def test_sequence_counts_negative_indices_from_the_end():
+    sequence = normalizers.Sequence([normalizers.Prepend("a"), normalizers.Prepend("b")])
+    assert sequence[-1].prepend == "b"
+    sequence[-2] = normalizers.Prepend("c")
+    assert sequence[0].prepend == "c"
+
+
+def test_sequence_index_out_of_range_raises_index_error():
+    sequence = normalizers.Sequence([normalizers.Prepend("a")])
+    with pytest.raises(IndexError):
+        sequence[-2]
+    with pytest.raises(IndexError):
+        sequence[1] = normalizers.Prepend("b")
+
+
 def test_sequence_refuses_a_sequence_item():
     sequence = normalizers.Sequence([normalizers.Prepend("a")])
     with pytest.raises(ValueError, match="can't be a Sequence"):
