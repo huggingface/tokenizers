@@ -1,11 +1,26 @@
-//! Component pyclasses:
+//! Component pyclasses: the Python objects behind `tokenizer.model`, `tokenizer.normalizer`, ...
 //!
+//! # handle vs copy
+//!
+//! A tokenizer stores each component as its `tokenizer.json` object: a [`ComponentSpec`].
+//! The [`Component`] `pyclass` is a handle to a shared `ComponentSpec`, which supports
+//! convenient python write-through syntax:
+//! 
 //! ```python
-//! tokenizer.pre_tokenizer = NFC()
+//! # Component aliasing
+//! b.normalizer = a.normalizer
+//! a.normalizer.prepend = "_"  # b.normalizer changes too
+//! 
+//! # Mutate the tokenizer spec in place
 //! tokenizer.model.ignore_merges = True
 //! ```
-//!
-//! Python class hierarchy:
+//! 
+//! To get an independent copy of a component, use `copy.deepcopy`:
+//! ```python
+//! independent = copy.deepcopy(tokenizer.normalizer)
+//! ```
+//! 
+//! # Python class hierarchy
 //!
 //! Component (base class for all components)
 //!  ⤷ Model | Normalizer | ... (component kind)
@@ -28,7 +43,7 @@ use crate::error::err;
 use crate::repr;
 use crate::tokenizer::{ComponentKey, ComponentSpec};
 
-/// Base class for stand-alone / detached tokenizer components
+/// Base class for stand-alone tokenizer components
 #[pyclass(frozen, subclass, module = "tokenizers")]
 pub struct Component {
     spec: Arc<ComponentSpec>,
