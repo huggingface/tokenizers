@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::iter::Enumerate;
 use std::sync::Arc;
 use std::vec::IntoIter;
@@ -228,6 +228,8 @@ struct TokenizerInner {
     /// Lowest id owned by the added vocabulary, or `u32::MAX` when there is none.
     /// Allows to skip the added vocabulary lookup if the token id is lower than this value.
     added_id_min: u32,
+    /// The model + added tokens vocab size
+    total_vocab_size: usize,
     /// Which token plays which role (`"eos_token"` -> `"</s>"`), so a `tokenizer.json` can carry
     /// the special-token metadata that used to need a separate `tokenizer_config.json`. Empty
     /// when the config declares none. `BTreeMap` so the writer emits a stable key order.
@@ -277,6 +279,12 @@ impl PipelineTokenizer {
             .copied()
             .min()
             .unwrap_or(u32::MAX);
+        let added_outside_model = added_vocabulary
+            .get_vocab()
+            .keys()
+            .filter(|token| model.token_to_id(token).is_none())
+            .count();
+        let total_vocab_size = model.get_vocab_size() + added_outside_model;
         Self {
             inner: Arc::new(TokenizerInner {
                 added_vocabulary,
@@ -286,6 +294,7 @@ impl PipelineTokenizer {
                 post_processor,
                 decoder,
                 added_id_min,
+                total_vocab_size,
                 role_to_token,
                 padding,
                 truncation,
@@ -602,6 +611,46 @@ impl PipelineTokenizer {
 
     pub fn get_truncation(&self) -> Option<&TruncationParams> {
         self.inner.truncation.as_ref()
+    }
+
+    /// The id of `token`, spelled as [`Self::get_vocab`] returns it.
+    ///
+    /// A token in both the added vocabulary and the model gets the added vocabulary's id.
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.inner
+            .added_vocabulary
+            .token_to_id(token)
+            .or_else(|| self.inner.model.token_to_id(token))
+    }
+
+    /// The token for `id`.
+    ///
+    /// An id in both the added vocabulary and the model gets the added vocabulary's token.
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
+        self.inner
+            .added_vocabulary
+            .simple_id_to_token(id)
+            .or_else(|| self.inner.model.id_to_token(id))
+    }
+
+    /// Each token of the model with its id, plus the added vocabulary when `with_added_tokens`.
+    ///
+    /// A token in both the added vocabulary and the model gets the added vocabulary's id.
+    pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
+        let mut vocab = self.inner.model.get_vocab();
+        if with_added_tokens {
+            vocab.extend(self.inner.added_vocabulary.get_vocab());
+        }
+        vocab
+    }
+
+    /// The length of [`Self::get_vocab`], without building the model's vocabulary.
+    pub fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
+        if with_added_tokens {
+            self.inner.total_vocab_size
+        } else {
+            self.inner.model.get_vocab_size()
+        }
     }
 
     /// Encode `input` into token ids.
@@ -1040,6 +1089,42 @@ impl PipelineModel {
             Self::WordLevel(model) => model.id_to_token(id),
             #[cfg(feature = "wordpiece")]
             Self::WordPiece(model) => model.id_to_token(id),
+        }
+    }
+
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        match self {
+            Self::BPE(model) => model.token_to_id(token),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.token_to_id(token),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.token_to_id(token),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.token_to_id(token),
+        }
+    }
+
+    pub fn get_vocab(&self) -> HashMap<String, u32> {
+        match self {
+            Self::BPE(model) => model.get_vocab(),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.get_vocab(),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.get_vocab(),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.get_vocab(),
+        }
+    }
+
+    pub fn get_vocab_size(&self) -> usize {
+        match self {
+            Self::BPE(model) => model.get_vocab_size(),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.get_vocab_size(),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.get_vocab_size(),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.get_vocab_size(),
         }
     }
 }
@@ -1791,6 +1876,35 @@ mod tests {
 
         assert_eq!(pipeline.decode_tokens(&[8, 7], false), ["<s>", "hello"]);
         assert_eq!(pipeline.decode_tokens(&[8, 7], true), ["hello"]);
+    }
+
+    // 0.23 looks a token up in the added vocabulary first.
+    #[test]
+    fn vocab_lookups_prefer_the_added_vocabulary() {
+        let pipeline = hello_pipeline_with_special("hello");
+
+        assert_eq!(pipeline.token_to_id("hello"), Some(8));
+        assert_eq!(pipeline.token_to_id("he"), Some(4));
+        assert_eq!(pipeline.token_to_id("hey"), None);
+        assert_eq!(pipeline.id_to_token(8).as_deref(), Some("hello"));
+        assert_eq!(pipeline.id_to_token(7).as_deref(), Some("hello"));
+        assert_eq!(pipeline.id_to_token(9), None);
+        assert_eq!(pipeline.get_vocab(true)["hello"], 8);
+        assert_eq!(pipeline.get_vocab(false)["hello"], 7);
+    }
+
+    // 0.23 counts a token found in both vocabularies once.
+    #[test]
+    fn vocab_size_counts_each_token_once() {
+        let overlapping = hello_pipeline_with_special("hello");
+        let distinct = hello_pipeline_with_special("lol");
+
+        assert_eq!(overlapping.get_vocab_size(false), 8);
+        assert_eq!(overlapping.get_vocab_size(true), 8);
+        assert_eq!(distinct.get_vocab_size(false), 8);
+        assert_eq!(distinct.get_vocab_size(true), 9);
+        assert_eq!(distinct.get_vocab(true).len(), 9);
+        assert!(!distinct.get_vocab(false).contains_key("lol"));
     }
 
     #[test]

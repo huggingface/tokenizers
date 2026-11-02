@@ -141,7 +141,7 @@ impl WordLevel {
     }
 
     pub fn get_vocab_size(&self) -> usize {
-        self.vocab.keys().len()
+        self.vocab.len()
     }
 }
 
