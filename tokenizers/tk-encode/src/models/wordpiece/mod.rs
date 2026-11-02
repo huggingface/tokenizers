@@ -241,6 +241,7 @@ impl pipeline::ModelScratch for WordPieceScratch {}
 pub struct PipelineWordPiece {
     vocab_trie: yada::DoubleArray<Vec<u8>>,
     vocab_r: Box<[Option<Box<str>>]>,
+    vocab_size: usize,
     unk_token: Option<u32>,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
@@ -268,6 +269,7 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
             return Err(Error::EmptyVocab.into());
         }
         let vocab_trie = DoubleArray::new(DoubleArrayBuilder::build(trie_keys)?)?;
+        let vocab_size = keyset.len();
         let max_id = keyset.iter().map(|&(_, id)| id).max().unwrap_or(0) as usize;
         let mut vocab_r = vec![None; max_id + 1];
         for (token, id) in keyset {
@@ -280,6 +282,7 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
             unk_token,
             vocab_trie,
             vocab_r: vocab_r.into_boxed_slice(),
+            vocab_size,
         })
     }
 }
@@ -354,7 +357,7 @@ impl PipelineWordPiece {
     }
 
     pub fn get_vocab_size(&self) -> usize {
-        self.vocab_r.iter().flatten().count()
+        self.vocab_size
     }
 
     /// `{"token": id}`, in id order. For a writer; the reverse table is dense over the ids, so the
@@ -522,6 +525,7 @@ mod tests {
         assert_eq!(pipeline_ids(&model, "world", &mut scratch), [1]);
         assert_eq!(model.id_to_token(0).as_deref(), Some(""));
         assert_eq!(model.token_to_id(""), Some(0));
+        assert_eq!(model.get_vocab_size(), 3);
     }
 
     #[test]
