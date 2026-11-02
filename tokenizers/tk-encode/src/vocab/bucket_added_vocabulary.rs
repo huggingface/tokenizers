@@ -314,22 +314,19 @@ impl AddedVocabulary {
             .map(|internal_id| self.ids.vocab_id(internal_id))
     }
 
-    /// Return the string form of an added token used during **decoding**.
+    /// The bytes decoding writes for the added token `id`, with the token's flags, or `None` when
+    /// `id` is not an added token.
     ///
-    /// For tokens that were normalized on the way *in* (e.g. byte-level encoding),
-    /// this returns the cached normalized form so that the configured `Decoder` can
-    /// invert the transformation correctly. For all other tokens, the original
-    /// `content` is returned.
-    pub fn simple_id_to_token(&self, id: u32) -> Option<String> {
+    /// A token added with `normalized` gives its normalized form (e.g. byte-level encoding), so
+    /// the configured `Decoder` can invert the normalization. Any other token gives its `content`.
+    pub fn id_to_token_bytes(&self, id: u32) -> Option<(&[u8], &AddedTokenFlags)> {
         let internal_id = self.ids.internal_id(id)?;
-        self.matcher(self.token_metadata[internal_id as usize].normalized)
-            .internal_id_to_token(internal_id)
-    }
-
-    /// Check if a token is a special token
-    pub fn is_special_token(&self, token: &str) -> bool {
-        self.token_to_internal_id(token)
-            .is_some_and(|internal_id| self.token_metadata[internal_id as usize].special)
+        let flags = &self.token_metadata[internal_id as usize];
+        let bytes = self
+            .matcher(flags.normalized)
+            .internal_id_to_token_bytes(internal_id)
+            .expect("add_tokens stores each internal id in the matcher its normalized flag names");
+        Some((bytes, flags))
     }
 
     /// Add some special tokens to the vocabulary
@@ -544,7 +541,7 @@ mod tests {
 
     #[test]
     fn empty_vocabulary_has_no_ids() {
-        assert_eq!(AddedVocabulary::new().simple_id_to_token(0), None);
+        assert!(AddedVocabulary::new().id_to_token_bytes(0).is_none());
     }
 
     #[test]
@@ -552,12 +549,12 @@ mod tests {
         let vocab = sparse_vocabulary();
         for (token, id) in [("<|end|>", 200_000), ("[CLS]", 5), ("hello", 200_001)] {
             assert_eq!(vocab.token_to_id(token), Some(id));
-            assert_eq!(vocab.simple_id_to_token(id).as_deref(), Some(token));
+            assert_eq!(vocab.id_to_token_bytes(id).unwrap().0, token.as_bytes());
         }
-        assert_eq!(vocab.simple_id_to_token(6), None);
-        assert_eq!(vocab.simple_id_to_token(200_002), None);
-        assert!(vocab.is_special_token("[CLS]"));
-        assert!(!vocab.is_special_token("hello"));
+        assert!(vocab.id_to_token_bytes(6).is_none());
+        assert!(vocab.id_to_token_bytes(200_002).is_none());
+        assert!(vocab.id_to_token_bytes(5).unwrap().1.special);
+        assert!(!vocab.id_to_token_bytes(200_001).unwrap().1.special);
 
         let text = b"say hello<|end|>";
         assert_eq!(
@@ -701,7 +698,8 @@ mod tests {
             1
         );
         assert_eq!(vocab.len(), 3); // New token was added
-        assert!(vocab.is_special_token("test"));
+        let test_id = vocab.token_to_id("test").unwrap();
+        assert!(vocab.id_to_token_bytes(test_id).unwrap().1.special);
         assert_eq!(
             *vocab.get_added_tokens_decoder(),
             vec![
@@ -778,12 +776,12 @@ mod tests {
         // normalized=false → stored under the original content
         assert!(decoder.values().any(|t| t.content == "[CLS]"));
 
-        assert_eq!(vocab.simple_id_to_token(0).unwrap(), "hello");
-        assert_eq!(vocab.simple_id_to_token(1).unwrap(), "[CLS]");
+        assert_eq!(vocab.id_to_token_bytes(0).unwrap().0, b"hello");
+        assert_eq!(vocab.id_to_token_bytes(1).unwrap().0, b"[CLS]");
     }
 
     #[test]
-    fn is_special_token_true_for_a_normalized_special_token() {
+    fn a_normalized_special_token_is_special() {
         let model = ModelMock::new(&[]);
         let mut vocab = AddedVocabulary::new();
         let normalizer: Option<&Lowercase> = None;
@@ -796,7 +794,8 @@ mod tests {
             )
             .unwrap();
 
-        assert!(vocab.is_special_token("<unk>"));
+        let unk_id = vocab.token_to_id("<unk>").unwrap();
+        assert!(vocab.id_to_token_bytes(unk_id).unwrap().1.special);
     }
 
     /// Drive the real `SpecialSegmentIterator` over an `AddedVocabulary`, mapping each

@@ -445,8 +445,8 @@ impl Buckets {
     pub fn token_to_internal_id(&self, token: &str) -> Option<u32> {
         self.vocab.token_to_id(token)
     }
-    pub fn internal_id_to_token(&self, internal_id: u32) -> Option<String> {
-        self.vocab.id_to_token(internal_id)
+    pub fn internal_id_to_token_bytes(&self, internal_id: u32) -> Option<&[u8]> {
+        self.vocab.id_to_token_bytes(internal_id)
     }
 }
 

@@ -717,18 +717,13 @@ impl PipelineTokenizer {
     pub fn decode_tokens(&self, ids: &[u32], skip_special_tokens: bool) -> Vec<String> {
         ids.iter()
             .filter_map(|&id| {
-                if id >= self.inner.added_id_min {
-                    self.inner
-                        .added_vocabulary
-                        .simple_id_to_token(id)
-                        .or_else(|| self.inner.model.id_to_token(id))
-                        .filter(|token| {
-                            !skip_special_tokens
-                                || !self.inner.added_vocabulary.is_special_token(token)
-                        })
-                } else {
-                    self.inner.model.id_to_token(id)
+                if id >= self.inner.added_id_min
+                    && let Some((bytes, flags)) = self.inner.added_vocabulary.id_to_token_bytes(id)
+                {
+                    return (!skip_special_tokens || !flags.special)
+                        .then(|| String::from_utf8_lossy(bytes).into_owned());
                 }
+                self.inner.model.id_to_token(id)
             })
             .collect()
     }
@@ -940,10 +935,10 @@ impl PipelineTokenizer {
         let mut out: Vec<u8> = Vec::with_capacity(ids.len() * 4);
         for &id in ids {
             if id >= self.inner.added_id_min
-                && let Some(token) = self.inner.added_vocabulary.simple_id_to_token(id)
+                && let Some((bytes, flags)) = self.inner.added_vocabulary.id_to_token_bytes(id)
             {
-                if !skip_special_tokens || !self.inner.added_vocabulary.is_special_token(&token) {
-                    out.extend_from_slice(token.as_bytes());
+                if !skip_special_tokens || !flags.special {
+                    out.extend_from_slice(bytes);
                 }
                 continue;
             }
@@ -1905,6 +1900,49 @@ mod tests {
         assert_eq!(distinct.get_vocab_size(true), 9);
         assert_eq!(distinct.get_vocab(true).len(), 9);
         assert!(!distinct.get_vocab(false).contains_key("lol"));
+    }
+
+    #[test]
+    fn byte_level_decode_skips_only_special_tokens_on_request() {
+        use crate::models::bpe::{BpeConfig, Vocab};
+        use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+
+        let byte_atoms: Vocab = (0..=255u8)
+            .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
+            .collect();
+        let bpe = PipelineBPE::from_config(BpeConfig {
+            vocab: byte_atoms,
+            byte_level: true,
+            ..BpeConfig::default()
+        })
+        .unwrap();
+        let mut added = BucketAddedVocabulary::new();
+        added
+            .add_tokens(
+                [
+                    AddedToken::from("<s>", true),
+                    AddedToken::from("<x>", false),
+                ],
+                256,
+                |_| None,
+                None::<&PipelineNormalizer>,
+            )
+            .unwrap();
+        let pipeline = PipelineTokenizer::from_parts(
+            added,
+            Vec::new(),
+            PipelinePreTokenizer::None,
+            PipelineModel::BPE(bpe),
+            PipelinePostProcessor::default(),
+            None,
+            Default::default(),
+            None,
+            None,
+        );
+
+        let ids = [256, u32::from(b'h'), u32::from(b'i'), 257];
+        assert_eq!(pipeline.decode(&ids, false).unwrap(), "<s>hi<x>");
+        assert_eq!(pipeline.decode(&ids, true).unwrap(), "hi<x>");
     }
 
     #[test]
