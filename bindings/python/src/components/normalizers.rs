@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
+use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use serde_json::{Value, json};
 
-use crate::tokenizer::{ComponentKey, ComponentSpec};
+use crate::components::component_spec::{ComponentKey, ComponentSpec, SequenceSpec, SingleSpec};
 
-use super::{Component, ComponentKind, ComponentType, JsonFields};
+use super::{Component, ComponentKind, ComponentType};
 
 /// Base class for all normalizers
 #[pyclass(frozen, subclass, extends = Component, module = "tokenizers.normalizers")]
@@ -24,20 +25,32 @@ impl Normalizer {
 impl ComponentKind for Normalizer {
     const JSON_KEY: ComponentKey = ComponentKey::Normalizer;
 
-    fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
-        match spec.json().get("type").and_then(Value::as_str) {
-            Some("Prepend") => Prepend::from_spec(py, spec),
-            _ => Normalizer::default_component(py, spec),
+    fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
+        match &spec {
+            ComponentSpec::Sequence(sequence) => Sequence::from_spec(py, sequence.clone()),
+            ComponentSpec::Single(single) => match single.json_type().as_deref() {
+                Some("Prepend") => Prepend::from_spec(py, single.clone()),
+                _ => Self::default_component(py, spec),
+            },
         }
     }
 }
 
 /// Adds `prepend` at the start of the text.
 #[pyclass(frozen, extends = Normalizer, module = "tokenizers.normalizers")]
-#[derive(Default)]
-pub struct Prepend;
+pub struct Prepend {
+    spec: Arc<SingleSpec>,
+}
 
-impl ComponentType for Prepend {}
+impl From<Arc<SingleSpec>> for Prepend {
+    fn from(spec: Arc<SingleSpec>) -> Self {
+        Self { spec }
+    }
+}
+
+impl ComponentType for Prepend {
+    type Spec = SingleSpec;
+}
 
 #[pymethods]
 impl Prepend {
@@ -46,22 +59,65 @@ impl Prepend {
         let Value::Object(json) = json!({"type": "Prepend", "prepend": prepend}) else {
             unreachable!("json! builds an object from an object literal")
         };
-        Self::initializer(ComponentSpec::new(json))
+        Self::initializer(Arc::new(SingleSpec::new(json)))
     }
 
     #[getter]
-    fn prepend(slf: &Bound<'_, Self>) -> PyResult<String> {
-        slf.field("prepend")
+    fn prepend(&self) -> PyResult<String> {
+        self.spec.field("prepend")
     }
 
     #[setter]
-    fn set_prepend(slf: &Bound<'_, Self>, prepend: String) {
-        slf.set_field("prepend", prepend);
+    fn set_prepend(&self, prepend: String) {
+        self.spec.set_field("prepend", prepend);
+    }
+}
+
+/// Applies each normalizer in turn.
+#[pyclass(frozen, extends = Normalizer, module = "tokenizers.normalizers")]
+pub struct Sequence {
+    spec: Arc<SequenceSpec>,
+}
+
+impl From<Arc<SequenceSpec>> for Sequence {
+    fn from(spec: Arc<SequenceSpec>) -> Self {
+        Self { spec }
+    }
+}
+
+impl ComponentType for Sequence {
+    type Spec = SequenceSpec;
+}
+
+#[pymethods]
+impl Sequence {
+    #[new]
+    fn new(normalizers: Vec<Bound<'_, Normalizer>>) -> PyResult<PyClassInitializer<Self>> {
+        let items: Vec<ComponentSpec> = normalizers
+            .iter()
+            .map(|item| Normalizer::spec(item).clone())
+            .collect();
+        let sequence = SequenceSpec::new(Normalizer::JSON_KEY, items)?;
+        Ok(Self::initializer(Arc::new(sequence)))
+    }
+
+    fn __len__(&self) -> usize {
+        self.spec.len()
+    }
+
+    fn __getitem__(slf: &Bound<'_, Self>, index: usize) -> PyResult<Py<Normalizer>> {
+        let item = slf.get().spec.get(index);
+        let item = item.ok_or_else(|| PyIndexError::new_err("Index not found"))?;
+        Normalizer::from_spec(slf.py(), item)
+    }
+
+    fn __setitem__(&self, index: usize, item: Bound<'_, Normalizer>) -> PyResult<()> {
+        self.spec.set(index, Normalizer::spec(&item).clone())
     }
 }
 
 #[pymodule]
 pub mod normalizers {
     #[pymodule_export]
-    use super::{Normalizer, Prepend};
+    use super::{Normalizer, Prepend, Sequence};
 }

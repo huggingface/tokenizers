@@ -1,8 +1,6 @@
-use std::sync::Arc;
-
 use pyo3::prelude::*;
 
-use crate::tokenizer::{ComponentKey, ComponentSpec};
+use crate::components::component_spec::{ComponentKey, ComponentSpec};
 
 use super::{Component, ComponentKind};
 
@@ -23,7 +21,7 @@ impl PreTokenizer {
 impl ComponentKind for PreTokenizer {
     const JSON_KEY: ComponentKey = ComponentKey::PreTokenizer;
 
-    fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
+    fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
         Self::default_component(py, spec)
     }
 }

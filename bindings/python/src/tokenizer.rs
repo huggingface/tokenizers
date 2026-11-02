@@ -15,6 +15,7 @@ use tk::{
 use crate::JsonObject;
 use crate::compiled::CompiledTokenizer;
 use crate::components::ComponentKind;
+use crate::components::component_spec::{ComponentKey, ComponentSpec};
 use crate::components::decoders::Decoder;
 use crate::components::models::Model;
 use crate::components::normalizers::Normalizer;
@@ -295,13 +296,13 @@ impl Tokenizer {
     /// Every call builds the whole tokenizer again. Later edits of the spec do not reach the
     /// compiled tokenizer: compile again to see them.
     fn compile(&self, py: Python<'_>) -> PyResult<CompiledTokenizer> {
-        let spec = self.spec().copy();
+        let spec = self.spec().deep_clone();
         CompiledTokenizer::new(py, &spec)
     }
 
     /// An independent copy: editing one spec leaves the other unchanged.
     fn __copy__(&self) -> Self {
-        Self::new(self.spec().copy())
+        Self::new(self.spec().deep_clone())
     }
 
     /// An independent copy: editing one spec leaves the other unchanged.
@@ -339,11 +340,11 @@ pub(crate) struct TokenizerSpec {
     padding: Option<PaddingParams>,
     role_to_token: Arc<Value>,
     added_tokens: Arc<Value>,
-    normalizer: Option<Arc<ComponentSpec>>,
-    pre_tokenizer: Option<Arc<ComponentSpec>>,
-    post_processor: Option<Arc<ComponentSpec>>,
-    decoder: Option<Arc<ComponentSpec>>,
-    model: Arc<ComponentSpec>,
+    normalizer: Option<ComponentSpec>,
+    pre_tokenizer: Option<ComponentSpec>,
+    post_processor: Option<ComponentSpec>,
+    decoder: Option<ComponentSpec>,
+    model: ComponentSpec,
 }
 
 impl TokenizerSpec {
@@ -355,20 +356,20 @@ impl TokenizerSpec {
             unreachable!("canonicalize_value refuses anything but an object");
         };
         let mut take = |key| file.remove(key).unwrap_or(Value::Null);
-        let component = |value| match value {
-            Value::Object(json) => Some(ComponentSpec::new(json)),
-            _ => None,
+        let component = |kind, value| match value {
+            Value::Object(json) => ComponentSpec::from_json(kind, json).map(Some),
+            _ => Ok(None),
         };
         Ok(Self {
             truncation: truncation_from_json(&take("truncation").to_string())?,
             padding: padding_from_json(&take("padding").to_string())?,
             role_to_token: Arc::new(take("role_to_token")),
             added_tokens: Arc::new(take("added_tokens")),
-            normalizer: component(take("normalizer")),
-            pre_tokenizer: component(take("pre_tokenizer")),
-            post_processor: component(take("post_processor")),
-            decoder: component(take("decoder")),
-            model: component(take("model"))
+            normalizer: component(ComponentKey::Normalizer, take("normalizer"))?,
+            pre_tokenizer: component(ComponentKey::PreTokenizer, take("pre_tokenizer"))?,
+            post_processor: component(ComponentKey::PostProcessor, take("post_processor"))?,
+            decoder: component(ComponentKey::Decoder, take("decoder"))?,
+            model: component(ComponentKey::Model, take("model"))?
                 .expect("canonicalize_value refuses a model that is not an object"),
         })
     }
@@ -379,22 +380,23 @@ impl TokenizerSpec {
     }
 
     /// A deep copy: the resulting object is independent.
-    fn copy(&self) -> Self {
-        let copy = |spec: &Option<Arc<ComponentSpec>>| spec.as_ref().map(|spec| spec.copy());
+    fn deep_clone(&self) -> Self {
+        let deep_clone =
+            |spec: &Option<ComponentSpec>| spec.as_ref().map(ComponentSpec::deep_clone);
         Self {
             truncation: self.truncation.clone(),
             padding: self.padding.clone(),
             role_to_token: self.role_to_token.clone(),
             added_tokens: self.added_tokens.clone(),
-            normalizer: copy(&self.normalizer),
-            pre_tokenizer: copy(&self.pre_tokenizer),
-            post_processor: copy(&self.post_processor),
-            decoder: copy(&self.decoder),
-            model: self.model.copy(),
+            normalizer: deep_clone(&self.normalizer),
+            pre_tokenizer: deep_clone(&self.pre_tokenizer),
+            post_processor: deep_clone(&self.post_processor),
+            decoder: deep_clone(&self.decoder),
+            model: self.model.deep_clone(),
         }
     }
 
-    pub(crate) fn component(&self, key: ComponentKey) -> Option<&Arc<ComponentSpec>> {
+    pub(crate) fn component(&self, key: ComponentKey) -> Option<&ComponentSpec> {
         match key {
             ComponentKey::Normalizer => self.normalizer.as_ref(),
             ComponentKey::PreTokenizer => self.pre_tokenizer.as_ref(),
@@ -404,7 +406,7 @@ impl TokenizerSpec {
         }
     }
 
-    pub(crate) fn set_component(&mut self, key: ComponentKey, spec: Option<Arc<ComponentSpec>>) {
+    pub(crate) fn set_component(&mut self, key: ComponentKey, spec: Option<ComponentSpec>) {
         match key {
             ComponentKey::Normalizer => self.normalizer = spec,
             ComponentKey::PreTokenizer => self.pre_tokenizer = spec,
@@ -418,9 +420,8 @@ impl TokenizerSpec {
 
     /// The top-level keys and their values, in the order `to_json` writes them.
     fn fields(&self) -> [(&'static str, Field<'_>); 10] {
-        let component = |spec: &Option<Arc<ComponentSpec>>| {
-            Field::Component(spec.as_deref().map(ComponentSpec::json))
-        };
+        let component =
+            |spec: &Option<ComponentSpec>| Field::Component(spec.as_ref().map(ComponentSpec::json));
         [
             ("version", Field::Json(Cow::Owned(Value::from("2.0")))),
             ("truncation", Field::Truncation(self.truncation.as_ref())),
@@ -479,43 +480,5 @@ impl Field<'_> {
             Field::Padding(padding) => padding_to_json(*padding),
             Field::Truncation(truncation) => truncation_to_json(*truncation),
         }
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum ComponentKey {
-    Normalizer,
-    PreTokenizer,
-    PostProcessor,
-    Decoder,
-    Model,
-}
-
-/// A component's JSON spec, as a shared reference.
-pub(crate) struct ComponentSpec(Mutex<Arc<JsonObject>>);
-
-impl ComponentSpec {
-    pub(crate) fn new(json: JsonObject) -> Arc<Self> {
-        Arc::new(Self(Mutex::new(Arc::new(json))))
-    }
-
-    /// A new [`ComponentSpec`] over the same JSON. An edit of either one copies the JSON first.
-    fn copy(&self) -> Arc<Self> {
-        Arc::new(Self(Mutex::new(self.json())))
-    }
-
-    pub(crate) fn json(&self) -> Arc<JsonObject> {
-        self.lock().clone()
-    }
-
-    /// Runs `edit` on the JSON, and store a reference to the new value in `self`.
-    /// Other pointers to the component (eg a compiled snapshot or a [`detached`](Self::detached) copy)
-    /// are unaffected and point to the previous value.
-    pub(crate) fn edit<R>(&self, edit: impl FnOnce(&mut JsonObject) -> R) -> R {
-        edit(Arc::make_mut(&mut self.lock()))
-    }
-
-    fn lock(&self) -> MutexGuard<'_, Arc<JsonObject>> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }

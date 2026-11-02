@@ -131,3 +131,52 @@ def test_editing_a_component_writes_through(gpt2_spec):
     assert type(gpt2_spec.normalizer) is normalizers.Prepend
     assert gpt2_spec.normalizer.prepend == "b"
     assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode("b" + TEXT).ids
+
+
+def test_sequence_item_assignment_writes_through(gpt2_spec):
+    unchanged = copy.deepcopy(gpt2_spec)
+    gpt2_spec.normalizer = normalizers.Sequence([normalizers.Prepend("a")])
+    gpt2_spec.normalizer[0] = normalizers.Prepend("b")
+    assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode("b" + TEXT).ids
+
+
+# Python iterates through `__getitem__` until it raises `IndexError`.
+def test_sequence_iterates():
+    sequence = normalizers.Sequence([normalizers.Prepend("a"), normalizers.Prepend("b")])
+    assert len(sequence) == 2
+    assert [item.prepend for item in sequence] == ["a", "b"]
+
+
+def test_editing_a_sequence_item_writes_through(gpt2_spec):
+    unchanged = copy.deepcopy(gpt2_spec)
+    gpt2_spec.normalizer = normalizers.Sequence([normalizers.Prepend("a")])
+    gpt2_spec.normalizer[0].prepend = "b"
+    assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode("b" + TEXT).ids
+
+
+def test_sequence_shares_the_components_it_was_built_from():
+    prepend = normalizers.Prepend("a")
+    sequence = normalizers.Sequence([prepend])
+    prepend.prepend = "b"
+    assert sequence[0].prepend == "b"
+
+
+def test_sequence_refuses_a_sequence_item():
+    sequence = normalizers.Sequence([normalizers.Prepend("a")])
+    with pytest.raises(ValueError, match="can't be a Sequence"):
+        sequence[0] = sequence
+
+
+def test_sequence_refuses_to_be_built_from_a_sequence():
+    inner = normalizers.Sequence([normalizers.Prepend("a")])
+    with pytest.raises(ValueError, match="can't be a Sequence"):
+        normalizers.Sequence([inner])
+
+
+def test_loading_refuses_a_nested_sequence(gpt2_spec):
+    file = json.loads(gpt2_spec.to_str())
+    prepend = {"type": "Prepend", "prepend": "a"}
+    inner = {"type": "Sequence", "normalizers": [prepend]}
+    file["normalizer"] = {"type": "Sequence", "normalizers": [inner]}
+    with pytest.raises(ValueError, match="can't be a Sequence"):
+        type(gpt2_spec).from_str(json.dumps(file))
