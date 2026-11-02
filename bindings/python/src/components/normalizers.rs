@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::components::component_spec::{ComponentSpec, SequenceSpec};
 use crate::error::err;
@@ -52,10 +52,10 @@ pub struct Prepend;
 impl Prepend {
     #[new]
     fn new(prepend: String) -> PyClassInitializer<Self> {
-        let Value::Object(json) = json!({"type": "Prepend", "prepend": prepend}) else {
-            unreachable!("json! builds an object from an object literal")
-        };
-        Normalizer::initializer(ComponentSpec::single(json), Self)
+        Normalizer::initializer(
+            ComponentSpec::from_literal(json!({"type": "Prepend", "prepend": prepend})),
+            Self,
+        )
     }
 
     #[getter]
