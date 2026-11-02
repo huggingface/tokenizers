@@ -133,4 +133,5 @@ jobs:
         run: cargo install cargo-audit
 
       - name: Run Audit
-        run: cargo audit -D warnings --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119 --ignore RUSTSEC-2026-0204 --ignore RUSTSEC-2025-0057
+        working-directory: .
+        run: cargo audit -D warnings -f bindings/node/Cargo.lock

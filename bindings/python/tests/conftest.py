@@ -18,54 +18,31 @@ WIKI = DATA / "tokenizer-wiki.json"
 LLAMA3 = DATA / "llama-3-tokenizer.json"
 
 
-# Loading a file takes over a second on the debug build `make develop` installs, so the tests share
-# one tokenizer per file. Padding and truncation are its only mutable state; each test starts
-# from none.
+# Compiling takes over a second on the debug build `make develop` installs, so the tests share one
+# compiled tokenizer per file. A compiled tokenizer cannot change, so no test can leak state into another.
+@pytest.fixture(scope="session")
+def gpt2():
+    return Tokenizer.from_file(GPT2).compile()
+
+
+@pytest.fixture(scope="session")
+def bert():
+    return Tokenizer.from_file(BERT).compile()
+
+
+@pytest.fixture(scope="session")
+def wiki():
+    return Tokenizer.from_file(WIKI).compile()
+
+
+@pytest.fixture(scope="session")
+def llama3():
+    return Tokenizer.from_file(LLAMA3).compile()
+
+
 @pytest.fixture
-def shared_gpt2():
+def gpt2_spec():
     return Tokenizer.from_file(GPT2)
-
-
-@pytest.fixture(scope="session")
-def shared_bert():
-    return Tokenizer.from_file(BERT)
-
-
-@pytest.fixture(scope="session")
-def shared_wiki():
-    return Tokenizer.from_file(WIKI)
-
-
-@pytest.fixture(scope="session")
-def shared_llama3():
-    return Tokenizer.from_file(LLAMA3)
-
-
-@pytest.fixture
-def gpt2(shared_gpt2):
-    yield shared_gpt2
-    shared_gpt2.padding = None
-    shared_gpt2.truncation = None
-
-
-@pytest.fixture
-def bert(shared_bert):
-    yield shared_bert
-    shared_bert.padding = None
-    shared_bert.truncation = None
-
-
-@pytest.fixture
-def wiki(shared_wiki):
-    yield shared_wiki
-    shared_wiki.padding = None
-    shared_wiki.truncation = None
-
-
-@pytest.fixture
-def llama3(shared_llama3):
-    yield shared_llama3
-    shared_llama3.padding = None
 
 
 @pytest.fixture

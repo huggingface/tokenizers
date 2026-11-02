@@ -110,13 +110,13 @@ cd bindings/python
 
 uv sync                 # creates .venv and installs the dev group (maturin, pytest, ruff, ty)
 source .venv/bin/activate
-make develop            # regenerates the .pyi stubs, then `maturin develop`
+make develop            # regenerates the .pyi stubs, then `maturin develop --release`
 make test               # develop + fixtures + pytest
 ```
 
-After a Rust change, `maturin develop` rebuilds the extension module in place —
-no reinstall needed. Add `--release` when you are benchmarking; the default build
-is a debug build and is far slower than the shipped one.
+After a Rust change, `make develop` rebuilds the extension module in place —
+no reinstall needed. It builds in release mode: a debug build compiles a tokenizer
+about 10x slower, which takes the test suite from ~6s to ~50s.
 
 `make style` formats (cargo fmt, ruff, stub regeneration) and `make check-style`
 verifies without writing. Stubs are generated — edit the Rust signatures, not
