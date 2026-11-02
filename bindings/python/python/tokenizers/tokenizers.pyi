@@ -182,7 +182,19 @@ class CompiledTokenizer:
 
 class Component:
     """
-    Base class for stand-alone / detached tokenizer components
+    Base class for tokenizer components: models, normalizers, pre-tokenizers, post-processors
+    and decoders.
+
+    Components are handles to the underlying JSON spec. An edit to the spec touches all handles
+    pointing to the same spec:
+    ```python
+    b.normalizer = a.normalizer
+    a.normalizer.prepend = "_"  # b.normalizer changes too
+    ```
+
+    Use `copy.deepcopy(component)` for an independent copy.
+
+    Edits after `compile()` don't affect the compiled tokenizer.
     """
     def __getstate__(self, /) -> bytes:
         """

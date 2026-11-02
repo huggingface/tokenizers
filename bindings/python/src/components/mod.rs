@@ -5,21 +5,23 @@
 //! A tokenizer stores each component as its `tokenizer.json` object: a [`ComponentSpec`].
 //! The [`Component`] `pyclass` is a handle to a shared `ComponentSpec`, which supports
 //! convenient python write-through syntax:
-//! 
+//!
 //! ```python
 //! # Component aliasing
 //! b.normalizer = a.normalizer
 //! a.normalizer.prepend = "_"  # b.normalizer changes too
-//! 
+//!
 //! # Mutate the tokenizer spec in place
 //! tokenizer.model.ignore_merges = True
 //! ```
-//! 
+//!
+//! This design allows drop-in compatibility with tokenizers 0.23 and a more pythonic api.
+//!
 //! To get an independent copy of a component, use `copy.deepcopy`:
 //! ```python
 //! independent = copy.deepcopy(tokenizer.normalizer)
 //! ```
-//! 
+//!
 //! # Python class hierarchy
 //!
 //! Component (base class for all components)
@@ -43,7 +45,19 @@ use crate::error::err;
 use crate::repr;
 use crate::tokenizer::{ComponentKey, ComponentSpec};
 
-/// Base class for stand-alone tokenizer components
+/// Base class for tokenizer components: models, normalizers, pre-tokenizers, post-processors
+/// and decoders.
+///
+/// Components are handles to the underlying JSON spec. An edit to the spec touches all handles
+/// pointing to the same spec:
+/// ```python
+/// b.normalizer = a.normalizer
+/// a.normalizer.prepend = "_"  # b.normalizer changes too
+/// ```
+///
+/// Use `copy.deepcopy(component)` for an independent copy.
+///
+/// Edits after `compile()` don't affect the compiled tokenizer.
 #[pyclass(frozen, subclass, module = "tokenizers")]
 pub struct Component {
     spec: Arc<ComponentSpec>,
