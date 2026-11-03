@@ -1,7 +1,9 @@
 //! The Python classes behind `tokenizer.model`, `tokenizer.normalizer` and the other components.
 //!
-//! A [`Tokenizer`] holds one spec per component, and each Python component object is a handle on
-//! one of them. The [`tokenizer`](crate::tokenizer) docs explain the tokenizer as a whole.
+//! The [`tokenizer`](crate::tokenizer) docs explain the tokenizer as a whole.
+//! 
+//! The [`component_spec`] docs explain how a component's JSON is stored, shared and copied,
+//! in a [`ComponentSpec`].
 //!
 //! [`Tokenizer`]: crate::tokenizer::Tokenizer
 //!
@@ -14,7 +16,7 @@
 //! ```
 //!
 //! [`TokenizerSpec`] holds one spec per component field: `normalizer`, `pre_tokenizer`,
-//! `post_processor`, `decoder` and `model`. [`component_spec`] explains how a spec is stored.
+//! `post_processor`, `decoder` and `model`.
 //!
 //! [`TokenizerSpec`]: crate::tokenizer::TokenizerSpec
 //!
@@ -34,35 +36,32 @@
 //! a.normalizer.prepend = "_"  # b.normalizer changes too
 //! ```
 //!
-//! # Why handles share
+//! # Editing in place
 //!
-//! Released `tokenizers` 0.23 works this way, and code written for it relies on it. transformers,
-//! for one, edits a loaded tokenizer with `tokenizer.pre_tokenizer[0] = split`. If the getter
-//! returned a copy, that edit would silently go nowhere.
+//! Since a getter returns a handle, not a copy, one line edits a loaded tokenizer at any depth:
+//!
+//! ```python
+//! tokenizer.normalizer[1].prepend = "_"
+//! ```
 //!
 //! # Python class hierarchy
 //!
 //! ```text
-//! Component                           holds the spec
+//! Component                           base class for all tokenizer components
 //!  ⤷ Model | Normalizer | ...         component kinds
 //!    ⤷ Prepend | Sequence | ...       concrete classes
 //! ```
 //!
-//! - [`Component`] holds the handle's spec, a [`ComponentSpec`].
-//! - A *kind*, such as [`Normalizer`](normalizers::Normalizer), holds nothing. It implements
-//!   [`ComponentKind`]. The trait knows the kind's field in a [`TokenizerSpec`], and the key its
-//!   `Sequence` lists items under.
-//! - A *concrete class*, such as [`Prepend`](normalizers::Prepend), holds nothing either. It reads
-//!   its spec from the [`Component`] base.
+//! - [`Component`] is the base of every component. It gives them `repr` and pickling.
+//! - A *kind*, such as [`Normalizer`](normalizers::Normalizer), is the type a tokenizer field
+//!   takes: `tokenizer.normalizer = x` accepts any `Normalizer`. The [`ComponentKind`] trait holds
+//!   the code all kinds share.
+//! - A *concrete class*, such as [`Prepend`](normalizers::Prepend), is one component type. Its
+//!   constructor builds the JSON, and its properties read and write the JSON keys, such as
+//!   `Prepend.prepend`.
 //!
-//! # Building a handle
-//!
-//! The [`Tokenizer`] getters and `Sequence.__getitem__` build a new handle on each call.
-//! [`ComponentKind::from_spec`] picks its class:
-//!
-//! - A `Sequence` spec gets the `Sequence` class.
-//! - Any other spec gets the class its `"type"` names, such as `Prepend`.
-//! - A `"type"` with no class of its own gets the plain kind class, such as `Normalizer`.
+//! Each read builds a new Python object, so `tokenizer.normalizer is tokenizer.normalizer` is
+//! `False`. Both objects still edit the same spec.
 
 pub(crate) mod component_spec;
 pub(crate) mod decoders;
