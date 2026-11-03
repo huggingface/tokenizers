@@ -1,0 +1,17 @@
+[package]
+name = "component-gen"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Generates the component classes of the Python bindings from the core's schemas"
+
+[[bin]]
+name = "component-gen"
+path = "src/main.rs"
+
+[dependencies]
+tk = { package = "tokenizers", path = "../../../../tokenizers", default-features = false, features = ["schemas"] }
+prettyplease = "0.2"
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", default-features = false, features = ["full", "parsing", "printing"] }

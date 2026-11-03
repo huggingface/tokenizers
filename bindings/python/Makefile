@@ -1,4 +1,4 @@
-.PHONY: develop stubs test examples style check-style
+.PHONY: develop components stubs test examples style check-style
 
 DATA_DIR = data
 HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
@@ -8,6 +8,9 @@ TESTS_RESOURCES = $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/gpt2.json $(DATA_D
 # Release build of the extension, installed editable into the active Python environment.
 develop: stubs
 	maturin develop --release
+
+components:
+	cargo run --manifest-path ./tools/component-gen/Cargo.toml
 
 stubs:
 	cargo run --manifest-path ./tools/stub-gen/Cargo.toml
