@@ -731,6 +731,25 @@ impl PipelineTokenizer {
     /// Pick the template the input shape calls for and let it add the specials.
     ///
     /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside.
+    /// [`Self::post_process`] for sequences in parts; glues first when truncation may apply.
+    fn post_process_parts(
+        &self,
+        a: Vec<Vec<PipelineToken>>,
+        b: Option<Vec<Vec<PipelineToken>>>,
+        options: &EncodeOptions,
+    ) -> Result<Encoding> {
+        if self.resolve_truncation(&options.truncation).is_some() {
+            return self.post_process(a.concat(), b.map(|b| b.concat()), options);
+        }
+        let pp = &self.inner.post_processor;
+        let template = if b.is_some() { &pp.pair } else { &pp.single };
+        Ok(if options.add_special_tokens {
+            template.post_process_parts::<true>(&a, b.as_deref())
+        } else {
+            template.post_process_parts::<false>(&a, b.as_deref())
+        })
+    }
+
     fn post_process(
         &self,
         s1: Vec<PipelineToken>,

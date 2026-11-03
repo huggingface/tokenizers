@@ -59,14 +59,9 @@ impl Template {
                 .any(|run| run.iter().any(|&(_, id)| id != 0))
     }
 
-    pub fn post_process<const SPECIALS: bool>(
-        &self,
-        s1: Vec<PipelineToken>,
-        s2: Option<Vec<PipelineToken>>,
-    ) -> Encoding {
-        let (a_len, b_len) = (s1.len(), s2.as_ref().map_or(0, Vec::len));
-
-        let type_ids = self.has_type_ids().then(|| {
+    /// Type ids for `a_len` ids of A and `b_len` of B; `None` when all 0.
+    fn type_ids<const SPECIALS: bool>(&self, a_len: usize, b_len: usize) -> Option<Vec<u8>> {
+        self.has_type_ids().then(|| {
             let mut out = Vec::with_capacity(self.n_special() + a_len + b_len);
             if SPECIALS {
                 push_type_ids(&self.prefix, &mut out);
@@ -82,8 +77,15 @@ impl Template {
                 push_type_ids(&self.suffix, &mut out);
             }
             out
-        });
+        })
+    }
 
+    pub fn post_process<const SPECIALS: bool>(
+        &self,
+        s1: Vec<PipelineToken>,
+        s2: Option<Vec<PipelineToken>>,
+    ) -> Encoding {
+        let type_ids = self.type_ids::<SPECIALS>(s1.len(), s2.as_ref().map_or(0, Vec::len));
         let ids = match s2 {
             Some(b) => self.wrap_pair::<SPECIALS>(s1, b),
             None => {
@@ -100,6 +102,38 @@ impl Template {
                 ids
             }
         };
+        Encoding::new(ids, type_ids, None)
+    }
+
+    /// [`Self::post_process`] for a sequence in parts: each part is copied once into an
+    /// exactly-sized output (glue + wrap copied up to three times).
+    pub fn post_process_parts<const SPECIALS: bool>(
+        &self,
+        a: &[Vec<PipelineToken>],
+        b: Option<&[Vec<PipelineToken>]>,
+    ) -> Encoding {
+        let len = |parts: &[Vec<PipelineToken>]| parts.iter().map(Vec::len).sum::<usize>();
+        let (a_len, b_len) = (len(a), b.map_or(0, len));
+        let type_ids = self.type_ids::<SPECIALS>(a_len, b_len);
+        let specials = if SPECIALS { self.n_special() } else { 0 };
+        let mut ids = Vec::with_capacity(specials + a_len + b_len);
+        if SPECIALS {
+            push_ids(&self.prefix, &mut ids);
+        }
+        for part in a {
+            ids.extend_from_slice(part);
+        }
+        if let Some(b) = b {
+            if SPECIALS {
+                push_ids(&self.infix, &mut ids);
+            }
+            for part in b {
+                ids.extend_from_slice(part);
+            }
+        }
+        if SPECIALS {
+            push_ids(&self.suffix, &mut ids);
+        }
         Encoding::new(ids, type_ids, None)
     }
 
@@ -156,5 +190,48 @@ mod tests {
         ] {
             assert!(tagged.has_type_ids());
         }
+    }
+
+    fn ids(range: std::ops::Range<u32>) -> Vec<PipelineToken> {
+        range.map(PipelineToken::from).collect()
+    }
+
+    /// Parts wrap exactly like the glued sequence.
+    #[test]
+    fn parts_wrap_like_the_glued_sequence() {
+        let tagged = |ids: &[u32], type_id: u8| -> Box<[(PipelineToken, u8)]> {
+            ids.iter().map(|&id| (id.into(), type_id)).collect()
+        };
+        let single = Template {
+            prefix: tagged(&[100], 0),
+            suffix: tagged(&[101, 102], 0),
+            ..Template::default()
+        };
+        let pair = Template {
+            prefix: tagged(&[100], 0),
+            infix: tagged(&[101], 0),
+            suffix: tagged(&[102], 1),
+            b_type_id: Some(1),
+            ..Template::default()
+        };
+        let a = vec![ids(0..3), ids(3..3), ids(3..7)];
+        let b = vec![ids(10..12), ids(12..20)];
+
+        assert_eq!(
+            single.post_process_parts::<true>(&a, None),
+            single.post_process::<true>(a.concat(), None)
+        );
+        assert_eq!(
+            single.post_process_parts::<false>(&a, None),
+            single.post_process::<false>(a.concat(), None)
+        );
+        assert_eq!(
+            pair.post_process_parts::<true>(&a, Some(&b)),
+            pair.post_process::<true>(a.concat(), Some(b.concat()))
+        );
+        assert_eq!(
+            pair.post_process_parts::<false>(&a, Some(&b)),
+            pair.post_process::<false>(a.concat(), Some(b.concat()))
+        );
     }
 }
