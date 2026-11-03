@@ -69,6 +69,7 @@ pub(crate) mod models;
 pub(crate) mod normalizers;
 pub(crate) mod pre_tokenizers;
 pub(crate) mod processors;
+pub(crate) mod stateless_component;
 
 use std::sync::Arc;
 

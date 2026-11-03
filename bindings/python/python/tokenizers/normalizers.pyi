@@ -82,8 +82,8 @@ class NFKD(Normalizer):
 @final
 class Nmt(Normalizer):
     """
-    Removes control characters and replaces line breaks, tabs and some invisible characters with a
-    space, like the Google NMT pipeline.
+    Removes control characters and replaces line breaks, tabs and some invisible characters
+    with a space, like the Google NMT pipeline.
     """
     def __new__(cls, /) -> Nmt: ...
 

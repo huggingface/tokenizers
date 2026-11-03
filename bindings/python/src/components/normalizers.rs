@@ -10,6 +10,7 @@ use crate::error::err;
 use crate::regex::Pattern;
 use crate::tokenizer::TokenizerSpec;
 
+use super::stateless_component::stateless_component;
 use super::{Component, ComponentKind, JsonFieldsExt};
 
 const SEQUENCE_ITEMS_KEY: &str = "normalizers";
@@ -61,110 +62,53 @@ impl ComponentKind for Normalizer {
     }
 }
 
-/// Lowercases the text, like `str.lower`.
-#[pyclass(frozen, extends = Normalizer, module = "tokenizers.normalizers")]
-pub struct Lowercase;
-
-#[pymethods]
-impl Lowercase {
-    #[new]
-    fn new() -> PyClassInitializer<Self> {
-        Normalizer::initializer(
-            ComponentSpec::from_literal(json!({"type": "Lowercase"})),
-            Self,
-        )
-    }
+stateless_component! {
+    /// Lowercases the text, like `str.lower`.
+    #[pyclass(extends = Normalizer, name = "Lowercase", module = "tokenizers.normalizers")]
+    pub struct Lowercase;
 }
 
-/// Replaces each byte of the text with its character in the GPT-2 byte-to-unicode mapping.
-#[pyclass(frozen, extends = Normalizer, module = "tokenizers.normalizers")]
-pub struct ByteLevel;
-
-#[pymethods]
-impl ByteLevel {
-    #[new]
-    fn new() -> PyClassInitializer<Self> {
-        Normalizer::initializer(
-            ComponentSpec::from_literal(json!({"type": "ByteLevel"})),
-            Self,
-        )
-    }
+stateless_component! {
+    /// Replaces each byte of the text with its character in the GPT-2 byte-to-unicode mapping.
+    #[pyclass(extends = Normalizer, name = "ByteLevel", module = "tokenizers.normalizers")]
+    pub struct ByteLevel;
 }
 
-/// Removes combining marks. Use it after `NFD` or `NFKD` to strip accents.
-#[pyclass(frozen, extends = Normalizer, module = "tokenizers.normalizers")]
-pub struct StripAccents;
-
-#[pymethods]
-impl StripAccents {
-    #[new]
-    fn new() -> PyClassInitializer<Self> {
-        Normalizer::initializer(
-            ComponentSpec::from_literal(json!({"type": "StripAccents"})),
-            Self,
-        )
-    }
+stateless_component! {
+    /// Removes combining marks. Use it after `NFD` or `NFKD` to strip accents.
+    #[pyclass(extends = Normalizer, name = "StripAccents", module = "tokenizers.normalizers")]
+    pub struct StripAccents;
 }
 
-/// Unicode NFC normalization.
-#[pyclass(frozen, extends = Normalizer, name = "NFC", module = "tokenizers.normalizers")]
-pub struct Nfc;
-
-#[pymethods]
-impl Nfc {
-    #[new]
-    fn new() -> PyClassInitializer<Self> {
-        Normalizer::initializer(ComponentSpec::from_literal(json!({"type": "NFC"})), Self)
-    }
+stateless_component! {
+    /// Unicode NFC normalization.
+    #[pyclass(extends = Normalizer, name = "NFC", module = "tokenizers.normalizers")]
+    pub struct Nfc;
 }
 
-/// Unicode NFD normalization.
-#[pyclass(frozen, extends = Normalizer, name = "NFD", module = "tokenizers.normalizers")]
-pub struct Nfd;
-
-#[pymethods]
-impl Nfd {
-    #[new]
-    fn new() -> PyClassInitializer<Self> {
-        Normalizer::initializer(ComponentSpec::from_literal(json!({"type": "NFD"})), Self)
-    }
+stateless_component! {
+    /// Unicode NFD normalization.
+    #[pyclass(extends = Normalizer, name = "NFD", module = "tokenizers.normalizers")]
+    pub struct Nfd;
 }
 
-/// Unicode NFKC normalization.
-#[pyclass(frozen, extends = Normalizer, name = "NFKC", module = "tokenizers.normalizers")]
-pub struct Nfkc;
-
-#[pymethods]
-impl Nfkc {
-    #[new]
-    fn new() -> PyClassInitializer<Self> {
-        Normalizer::initializer(ComponentSpec::from_literal(json!({"type": "NFKC"})), Self)
-    }
+stateless_component! {
+    /// Unicode NFKC normalization.
+    #[pyclass(extends = Normalizer, name = "NFKC", module = "tokenizers.normalizers")]
+    pub struct Nfkc;
 }
 
-/// Unicode NFKD normalization.
-#[pyclass(frozen, extends = Normalizer, name = "NFKD", module = "tokenizers.normalizers")]
-pub struct Nfkd;
-
-#[pymethods]
-impl Nfkd {
-    #[new]
-    fn new() -> PyClassInitializer<Self> {
-        Normalizer::initializer(ComponentSpec::from_literal(json!({"type": "NFKD"})), Self)
-    }
+stateless_component! {
+    /// Unicode NFKD normalization.
+    #[pyclass(extends = Normalizer, name = "NFKD", module = "tokenizers.normalizers")]
+    pub struct Nfkd;
 }
 
-/// Removes control characters and replaces line breaks, tabs and some invisible characters with a
-/// space, like the Google NMT pipeline.
-#[pyclass(frozen, extends = Normalizer, module = "tokenizers.normalizers")]
-pub struct Nmt;
-
-#[pymethods]
-impl Nmt {
-    #[new]
-    fn new() -> PyClassInitializer<Self> {
-        Normalizer::initializer(ComponentSpec::from_literal(json!({"type": "Nmt"})), Self)
-    }
+stateless_component! {
+    /// Removes control characters and replaces line breaks, tabs and some invisible characters
+    /// with a space, like the Google NMT pipeline.
+    #[pyclass(extends = Normalizer, name = "Nmt", module = "tokenizers.normalizers")]
+    pub struct Nmt;
 }
 
 /// Replaces every match of `pattern` with `content`. A `str` pattern is a literal.
