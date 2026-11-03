@@ -81,9 +81,7 @@ impl Sequence {
         for normalizer in &normalizers {
             match Normalizer::spec(normalizer) {
                 ComponentSpec::Single(single) => items.push(single.clone()),
-                ComponentSpec::Sequence(sequence) => {
-                    items.extend_from_slice(&sequence.lock_items())
-                }
+                ComponentSpec::Sequence(sequence) => items.extend(sequence.items()),
             }
         }
         let sequence = SequenceSpec::new(SEQUENCE_ITEMS_KEY, items);

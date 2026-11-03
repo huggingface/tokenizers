@@ -33,7 +33,7 @@
 //! See [`components`](crate::components) module docs for more details about components.
 //!
 //! Copying a [`Tokenizer`] or its components is cheap:
-//! see the section about [copy on write](crate::components::component_spec#two-kinds-of-arc).
+//! see the section about [copy on write](crate::components::component_spec#arc-pointers-make-copies-cheap).
 //! 
 //! # Loading from JSON
 //!
@@ -132,7 +132,9 @@ impl Tokenizer {
         *K::tokenizer_field_mut(&mut tokenizer_spec) = spec;
     }
 
-    pub(crate) fn spec(&self) -> MutexGuard<'_, TokenizerSpec> {
+    /// Locks the spec. Drop the guard before calling into Python, which can lock it again and
+    /// deadlock: copy out what you need first, as [`Self::get`] does.
+    fn spec(&self) -> MutexGuard<'_, TokenizerSpec> {
         self.spec.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
