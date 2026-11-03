@@ -10,6 +10,7 @@ mod encoding;
 mod error;
 mod input;
 mod options;
+mod parallelism;
 mod regex;
 mod repr;
 mod tokenizer;
@@ -35,6 +36,8 @@ mod tokenizers {
     use crate::options::Padding;
     #[pymodule_export]
     use crate::options::Truncation;
+    #[pymodule_export]
+    use crate::parallelism::{get_max_threads, set_max_threads};
     #[pymodule_export]
     use crate::regex::Regex;
     #[pymodule_export]

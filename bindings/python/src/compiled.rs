@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::num::NonZeroUsize;
 
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
@@ -66,12 +67,14 @@ fn encode_options(
     encode_special_tokens: bool,
     padding: OverrideSentinel<PaddingParams>,
     truncation: OverrideSentinel<TruncationParams>,
+    max_threads: Option<NonZeroUsize>,
 ) -> EncodeOptions {
     let mut options = EncodeOptions::default();
     options.add_special_tokens = add_special_tokens;
     options.encode_special_tokens = encode_special_tokens;
     options.padding = padding.into();
     options.truncation = truncation.into();
+    options.max_threads = max_threads;
     options
 }
 
@@ -94,10 +97,12 @@ impl CompiledTokenizer {
     ///     truncation: `Truncation` or `None`
     ///         Truncation options. Pass `None` to disable truncation.
     ///         When omitted, uses the truncation the tokenizer had when compiled.
+    ///     max_threads: int or None
+    ///         Most threads this call uses, the caller included, capped by `get_max_threads()`.
     ///
     /// Returns:
     ///     Encoding
-    #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
+    #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig, max_threads=None))]
     fn encode(
         &self,
         py: Python<'_>,
@@ -106,12 +111,14 @@ impl CompiledTokenizer {
         encode_special_tokens: bool,
         padding: OverrideSentinel<PaddingParams>,
         truncation: OverrideSentinel<TruncationParams>,
+        max_threads: Option<NonZeroUsize>,
     ) -> PyResult<Encoding> {
         let options = encode_options(
             add_special_tokens,
             encode_special_tokens,
             padding,
             truncation,
+            max_threads,
         );
         // py.detach releases the GIL while the Rust code runs.
         let encoding = py
@@ -140,10 +147,12 @@ impl CompiledTokenizer {
     ///     truncation: `Truncation` or `None`
     ///         Truncation options. Pass `None` to disable truncation.
     ///         When omitted, uses the truncation the tokenizer had when compiled.
+    ///     max_threads: int or None
+    ///         Most threads this call uses, the caller included, capped by `get_max_threads()`.
     ///
     /// Returns:
     ///     list[str]
-    #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
+    #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig, max_threads=None))]
     fn tokenize(
         &self,
         py: Python<'_>,
@@ -152,12 +161,14 @@ impl CompiledTokenizer {
         encode_special_tokens: bool,
         padding: OverrideSentinel<PaddingParams>,
         truncation: OverrideSentinel<TruncationParams>,
+        max_threads: Option<NonZeroUsize>,
     ) -> PyResult<Vec<String>> {
         let options = encode_options(
             add_special_tokens,
             encode_special_tokens,
             padding,
             truncation,
+            max_threads,
         );
         // py.detach releases the GIL while the Rust code runs.
         py.detach(|| -> tk::Result<Vec<String>> {
@@ -187,10 +198,12 @@ impl CompiledTokenizer {
     ///     truncation: `Truncation` or `None`
     ///         Truncation options. Pass `None` to disable truncation.
     ///         When omitted, uses the truncation the tokenizer had when compiled.
+    ///     max_threads: int or None
+    ///         Most threads this call uses, the caller included, capped by `get_max_threads()`.
     ///
     /// Returns:
     ///     List[Encoding]
-    #[pyo3(signature = (inputs, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
+    #[pyo3(signature = (inputs, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig, max_threads=None))]
     fn encode_batch(
         &self,
         py: Python<'_>,
@@ -199,12 +212,14 @@ impl CompiledTokenizer {
         encode_special_tokens: bool,
         padding: OverrideSentinel<PaddingParams>,
         truncation: OverrideSentinel<TruncationParams>,
+        max_threads: Option<NonZeroUsize>,
     ) -> PyResult<Vec<Encoding>> {
         let options = encode_options(
             add_special_tokens,
             encode_special_tokens,
             padding,
             truncation,
+            max_threads,
         );
         let inputs = Inputs::Batch(inputs.into_iter().map(Input::from).collect());
         // py.detach releases the GIL while the Rust code runs.
