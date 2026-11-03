@@ -242,12 +242,13 @@ impl CompiledTokenizer {
         encode_special_tokens: bool,
         truncation: OverrideSentinel<TruncationParams>,
     ) -> EncodeIter {
-        let options = encode_options(
+        // the streaming iterator never pads, so padding is left as is
+        let options = EncodeOptions {
             add_special_tokens,
             encode_special_tokens,
-            OverrideSentinel::Off,
-            truncation,
-        );
+            truncation: truncation.into(),
+            ..EncodeOptions::default()
+        };
         let inputs = Inputs::Batch(inputs.into_iter().map(Input::from).collect());
         // planning (or, serially, encoding) the batch is worth releasing the GIL for
         EncodeIter::new(py.detach(|| self.pipeline.encode(inputs, &options).into_iter()))
