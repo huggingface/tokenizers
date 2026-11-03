@@ -1812,6 +1812,66 @@ mod tests {
         })
     }
 
+    /// A handle crossing a fork must not hang in the child: unfinished inputs come back as errors,
+    /// every input exactly once.
+    #[cfg(all(unix, feature = "parallelism"))]
+    #[test]
+    fn a_handle_crossing_a_fork_errors_instead_of_hanging() {
+        use std::time::{Duration, Instant};
+
+        if crate::parallelism::max_threads() < 2 {
+            return; // no pool, so nothing in flight to lose
+        }
+        let pipeline = hello_pipeline();
+        let inputs: Vec<String> = (0..4_000).map(|_| "hello".repeat(800)).collect();
+        // fork while tasks are in flight; retry if a fork lands after all of them finished
+        let mut crossed = false;
+        for _ in 0..5 {
+            let handle = pipeline.encode(inputs.clone(), &EncodeOptions::default());
+            // SAFETY: the child only drains the handle and `_exit`s
+            let pid = unsafe { libc::fork() };
+            if pid == 0 {
+                let (mut ok, mut lost) = (0, 0);
+                for (_, result) in handle {
+                    match result {
+                        Ok(_) => ok += 1,
+                        Err(_) => lost += 1,
+                    }
+                }
+                let code = match (ok + lost == 4_000, lost > 0) {
+                    (false, _) => 1,
+                    (true, true) => 0,
+                    (true, false) => 2,
+                };
+                unsafe { libc::_exit(code) };
+            }
+            assert!(pid > 0, "fork failed");
+            drop(handle);
+            let deadline = Instant::now() + Duration::from_secs(20);
+            let status = loop {
+                let mut status = 0;
+                match unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) } {
+                    0 if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
+                    0 => {
+                        unsafe { libc::kill(pid, libc::SIGKILL) };
+                        panic!("the child hung on a handle that crossed the fork");
+                    }
+                    _ => break status,
+                }
+            };
+            assert!(libc::WIFEXITED(status), "the child crashed");
+            match libc::WEXITSTATUS(status) {
+                0 => crossed = true,
+                2 => {} // everything had finished before the fork: try again
+                code => panic!("the child saw the wrong number of results (exit {code})"),
+            }
+            if crossed {
+                break;
+            }
+        }
+        assert!(crossed, "never forked while work was in flight");
+    }
+
     fn pipeline_with(
         post_processor: PipelinePostProcessor,
         truncation: Option<TruncationParams>,
