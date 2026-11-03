@@ -14,6 +14,7 @@ use tk::pipeline::PipelineTokenizer;
 use tk::{from_json, to_json};
 
 use crate::added_token::AddedToken;
+use crate::encode_iter::EncodeIter;
 use crate::encoding::Encoding;
 use crate::error::err;
 use crate::input::PyInput;
@@ -208,6 +209,46 @@ impl CompiledTokenizer {
             .detach(|| self.pipeline.encode(inputs, &options).wait())
             .map_err(err)?;
         Ok(encodings.into_iter().map(Encoding::from).collect())
+    }
+
+    /// Encodes a batch of texts, or pairs of texts, yielding each encoding as soon as it is done.
+    ///
+    /// Iterates `(index, Encoding)` pairs in completion order, `index` being the input's position
+    /// in `inputs`. Encodings are not padded: padding needs the whole batch, use `encode_batch`.
+    ///
+    /// Args:
+    ///     inputs: list[str | tuple[str, str]]
+    ///         The batch to encode. Each item is a text, or a pair of texts given as a two-item
+    ///         tuple or list. A batch can mix both.
+    ///     add_special_tokens: bool
+    ///         Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+    ///     encode_special_tokens: bool
+    ///         Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
+    ///         or be replaced by their id in the added vocabulary.
+    ///     truncation: `Truncation` or `None`
+    ///         Truncation options. Pass `None` to disable truncation.
+    ///         When omitted, defaults to the truncation of the spec this tokenizer was compiled from.
+    ///
+    /// Returns:
+    ///     EncodeIter
+    #[pyo3(signature = (inputs, *, add_special_tokens=true, encode_special_tokens=false, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
+    fn encode_iter(
+        &self,
+        py: Python<'_>,
+        inputs: Vec<PyInput>,
+        add_special_tokens: bool,
+        encode_special_tokens: bool,
+        truncation: OverrideSentinel<TruncationParams>,
+    ) -> EncodeIter {
+        let options = encode_options(
+            add_special_tokens,
+            encode_special_tokens,
+            OverrideSentinel::Off,
+            truncation,
+        );
+        let inputs = Inputs::Batch(inputs.into_iter().map(Input::from).collect());
+        // planning a large batch is worth releasing the GIL for
+        EncodeIter::new(py.detach(|| self.pipeline.encode(inputs, &options).into_iter()))
     }
 
     /// Decodes token ids back into text

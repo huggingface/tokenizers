@@ -229,6 +229,37 @@ class CompiledTokenizer:
         Returns:
             List[Encoding]
         """
+    def encode_iter(
+        self,
+        /,
+        inputs: Sequence[str | Sequence[str]],
+        *,
+        add_special_tokens: bool = True,
+        encode_special_tokens: bool = False,
+        truncation: Truncation | None = ...,
+    ) -> EncodeIter:
+        """
+        Encodes a batch of texts, or pairs of texts, yielding each encoding as soon as it is done.
+
+        Iterates `(index, Encoding)` pairs in completion order, `index` being the input's position
+        in `inputs`. Encodings are not padded: padding needs the whole batch, use `encode_batch`.
+
+        Args:
+            inputs: list[str | tuple[str, str]]
+                The batch to encode. Each item is a text, or a pair of texts given as a two-item
+                tuple or list. A batch can mix both.
+            add_special_tokens: bool
+                Whether the post-processor adds its special tokens, such as `[CLS]` and `[SEP]`.
+            encode_special_tokens: bool
+                Whether special tokens should be encoded, ie go through the tokenizer model (`True`)
+                or be replaced by their id in the added vocabulary.
+            truncation: `Truncation` or `None`
+                Truncation options. Pass `None` to disable truncation.
+                When omitted, defaults to the truncation of the spec this tokenizer was compiled from.
+
+        Returns:
+            EncodeIter
+        """
     def get_added_tokens_decoder(self, /) -> dict[int, AddedToken]:
         """
         Returns `added_tokens`. Deprecated: use the `added_tokens` property instead.
@@ -340,6 +371,15 @@ class Component:
         Pickles the component as its JSON. Unpickling rebuilds it through its kind's `_unpickle`.
         """
     def __repr__(self, /) -> str: ...
+
+@final
+class EncodeIter:
+    """
+    The encodings of a batch as they complete: `(index, Encoding)` pairs, `index` being the input's
+    position in the batch. Returned by `CompiledTokenizer.encode_iter`.
+    """
+    def __iter__(self, /) -> EncodeIter: ...
+    def __next__(self, /) -> tuple[int, Encoding] | None: ...
 
 @final
 class Encoding:
