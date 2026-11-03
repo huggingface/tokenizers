@@ -198,6 +198,7 @@ pub(crate) fn blocks<C, S, B, R>(
 
 pub mod classes;
 pub mod classify;
+pub mod cuts;
 pub mod literal;
 pub mod models;
 pub mod regexes;
