@@ -3,7 +3,10 @@ use pyo3::prelude::*;
 use crate::components::component_spec::ComponentSpec;
 use crate::tokenizer::TokenizerSpec;
 
+use super::generated::pre_tokenizers as generated;
 use super::{Component, ComponentKind};
+
+pub use generated::pre_tokenizers;
 
 /// Base class for all pre-tokenizers
 #[pyclass(frozen, subclass, extends = Component, module = "tokenizers.pre_tokenizers")]
@@ -27,12 +30,12 @@ impl ComponentKind for PreTokenizer {
     }
 
     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
-        Self::default_component(py, spec)
+        match &spec {
+            ComponentSpec::Sequence(_) => Self::concrete_component(py, spec, generated::Sequence),
+            ComponentSpec::Single(single) => {
+                let json_type = single.json_type();
+                generated::from_json_type(py, spec, json_type.as_deref())
+            }
+        }
     }
-}
-
-#[pymodule]
-pub mod pre_tokenizers {
-    #[pymodule_export]
-    use super::PreTokenizer;
 }

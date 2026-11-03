@@ -65,6 +65,7 @@
 
 pub(crate) mod component_spec;
 pub(crate) mod decoders;
+pub(crate) mod generated;
 pub(crate) mod models;
 pub(crate) mod normalizers;
 pub(crate) mod pre_tokenizers;
@@ -73,6 +74,7 @@ pub(crate) mod processors;
 use std::sync::Arc;
 
 use pyo3::PyClass;
+use pyo3::exceptions::PyValueError;
 use pyo3::impl_::pyclass::PyClassBaseType;
 use pyo3::prelude::*;
 use serde::de::DeserializeOwned;
@@ -202,6 +204,16 @@ pub(crate) trait ComponentKind:
         let json: JsonObject = serde_json::from_slice(state).map_err(err)?;
         Self::from_spec(py, ComponentSpec::from_json(Self::ITEMS_KEY, json))
     }
+}
+
+/// Fails unless `value` is one of `choices`, the strings the `key` field of `tokenizer.json` takes.
+pub(crate) fn check_choice(key: &str, value: &str, choices: &[&str]) -> PyResult<()> {
+    if choices.contains(&value) {
+        return Ok(());
+    }
+    Err(PyValueError::new_err(format!(
+        "`{key}` must be one of {choices:?}, got {value:?}"
+    )))
 }
 
 /// Reads and writes the JSON fields of a concrete class's handle, such as `Prepend.prepend`.
