@@ -10,7 +10,7 @@ from tokenizers import Regex, normalizers
 TEXT = "Hello world, how are you?"
 
 
-# The JSON 0.23 writes for each.
+# The JSON 0.23 writes for each, and 2.0's for MetaspaceNormalizer.
 @pytest.mark.parametrize(
     ("normalizer", "written"),
     [
@@ -34,6 +34,14 @@ TEXT = "Hello world, how are you?"
         (normalizers.Strip(), '{"type":"Strip","strip_left":true,"strip_right":true}'),
         (normalizers.Strip(left=False), '{"type":"Strip","strip_left":false,"strip_right":true}'),
         (normalizers.Prepend("▁"), '{"type":"Prepend","prepend":"▁"}'),
+        (
+            normalizers.MetaspaceNormalizer(),
+            '{"type":"MetaspaceNormalizer","replacement":"▁","prepend":"always","drop_whitespace":false}',
+        ),
+        (
+            normalizers.MetaspaceNormalizer(replacement="_", prepend="first", drop_whitespace=True),
+            '{"type":"MetaspaceNormalizer","replacement":"_","prepend":"first","drop_whitespace":true}',
+        ),
     ],
     ids=lambda param: type(param).__name__ if isinstance(param, normalizers.Normalizer) else None,
 )

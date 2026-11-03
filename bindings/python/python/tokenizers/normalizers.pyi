@@ -41,6 +41,17 @@ class Lowercase(Normalizer):
     def __new__(cls, /) -> Lowercase: ...
 
 @final
+class MetaspaceNormalizer(Normalizer):
+    """
+    SentencePiece's whitespace handling: replaces spaces with `replacement`. `prepend` says when
+    `replacement` also goes in front of the text: `"always"`, `"first"` (only at the start of the
+    input) or `"never"`. `drop_whitespace` drops runs of whitespace instead of replacing them.
+    """
+    def __new__(
+        cls, /, replacement: str = "▁", prepend: str = "always", drop_whitespace: bool = False
+    ) -> MetaspaceNormalizer: ...
+
+@final
 class NFC(Normalizer):
     """
     Unicode NFC normalization.

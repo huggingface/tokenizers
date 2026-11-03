@@ -52,6 +52,9 @@ impl ComponentKind for Normalizer {
                 Some("BertNormalizer") => Self::concrete_component(py, spec, BertNormalizer),
                 Some("Strip") => Self::concrete_component(py, spec, Strip),
                 Some("Prepend") => Self::concrete_component(py, spec, Prepend),
+                Some("MetaspaceNormalizer") => {
+                    Self::concrete_component(py, spec, MetaspaceNormalizer)
+                }
                 _ => Self::default_component(py, spec),
             },
         }
@@ -276,6 +279,29 @@ impl Prepend {
     }
 }
 
+/// SentencePiece's whitespace handling: replaces spaces with `replacement`. `prepend` says when
+/// `replacement` also goes in front of the text: `"always"`, `"first"` (only at the start of the
+/// input) or `"never"`. `drop_whitespace` drops runs of whitespace instead of replacing them.
+#[pyclass(frozen, extends = Normalizer, module = "tokenizers.normalizers")]
+pub struct MetaspaceNormalizer;
+
+#[pymethods]
+impl MetaspaceNormalizer {
+    #[new]
+    #[pyo3(signature = (replacement='▁', prepend="always", drop_whitespace=false))]
+    fn new(replacement: char, prepend: &str, drop_whitespace: bool) -> PyClassInitializer<Self> {
+        Normalizer::initializer(
+            ComponentSpec::from_literal(json!({
+                "type": "MetaspaceNormalizer",
+                "replacement": replacement,
+                "prepend": prepend,
+                "drop_whitespace": drop_whitespace,
+            })),
+            Self,
+        )
+    }
+}
+
 /// Applies each normalizer in turn.
 #[pyclass(frozen, extends = Normalizer, module = "tokenizers.normalizers")]
 pub struct Sequence;
@@ -326,7 +352,7 @@ impl Sequence {
 pub mod normalizers {
     #[pymodule_export]
     use super::{
-        BertNormalizer, ByteLevel, Lowercase, Nfc, Nfd, Nfkc, Nfkd, Nmt, Normalizer, Precompiled,
-        Prepend, Replace, Sequence, Strip, StripAccents,
+        BertNormalizer, ByteLevel, Lowercase, MetaspaceNormalizer, Nfc, Nfd, Nfkc, Nfkd, Nmt,
+        Normalizer, Precompiled, Prepend, Replace, Sequence, Strip, StripAccents,
     };
 }
