@@ -336,3 +336,30 @@ fn a_unigram_score_is_serdes_f64_one_ulp_off_the_correctly_rounded_one() {
         "the score must sit exactly one ULP from the f32 the file encodes"
     );
 }
+
+#[test]
+fn byte_fallback_decode_stream_preserves_valid_prefix() {
+    let json = config(&[
+        (
+            "model",
+            r#"{"type": "BPE", "byte_level": false, "vocab": {
+                "a": 0, "<0xF0>": 1, "<0xA0>": 2, "<0x80>": 3,
+                "<0xE4>": 4, "ok": 5
+            }, "merges": []}"#,
+        ),
+        ("decoder", r#"{"type": "ByteFallback"}"#),
+    ]);
+    let tokenizer = from_json(&json).unwrap();
+    let ids = [0, 1, 2, 3, 3, 4, 5];
+    let mut stream = tokenizer.decode_stream(false);
+    let chunks: Vec<_> = ids
+        .iter()
+        .filter_map(|&id| stream.step(id).unwrap())
+        .collect();
+    assert_eq!(chunks, ["a", "𠀀", "�ok"]);
+    assert_eq!(tokenizer.decode(&ids, false).unwrap(), chunks.concat());
+    assert_eq!(
+        tokenizer.decode_batch(&[&ids], false).unwrap(),
+        [chunks.concat()]
+    );
+}

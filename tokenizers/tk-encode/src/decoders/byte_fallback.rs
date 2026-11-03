@@ -28,35 +28,60 @@ impl Decoder for ByteFallback {
                 previous_byte_tokens.push(bytes);
             } else {
                 if !previous_byte_tokens.is_empty() {
-                    if let Ok(string) = String::from_utf8(previous_byte_tokens.clone()) {
-                        new_tokens.push(string);
-                    } else {
-                        for _ in 0..previous_byte_tokens.len() {
-                            new_tokens.push("�".into());
-                        }
-                    }
+                    decode_bytes(&previous_byte_tokens, &mut new_tokens);
                     previous_byte_tokens.clear();
                 }
                 new_tokens.push(token);
             }
         }
         if !previous_byte_tokens.is_empty() {
-            if let Ok(string) = String::from_utf8(previous_byte_tokens.clone()) {
-                new_tokens.push(string);
-            } else {
-                for _ in 0..previous_byte_tokens.len() {
-                    new_tokens.push("�".into());
-                }
-            }
+            decode_bytes(&previous_byte_tokens, &mut new_tokens);
         }
 
         Ok(new_tokens)
     }
 }
 
+fn decode_bytes(bytes: &[u8], tokens: &mut Vec<String>) {
+    for chunk in bytes.utf8_chunks() {
+        if !chunk.valid().is_empty() {
+            tokens.push(chunk.valid().to_owned());
+        }
+        // Preserve one replacement token per invalid byte.
+        tokens.extend(chunk.invalid().iter().map(|_| "�".to_owned()));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decode_mixed_valid_and_invalid_bytes() {
+        let decoder = ByteFallback::new();
+        let cases: &[(&[u8], &[&str])] = &[
+            (&[0xF0, 0xA0, 0x80, 0x80, 0xE4], &["𠀀", "�"]),
+            (&[0xE4, 0xF0, 0xA0, 0x80, 0x80], &["�", "𠀀"]),
+            (&[0x61, 0xFF, 0x62], &["a", "�", "b"]),
+            (&[0xE5, 0x8F, 0x61], &["�", "�", "a"]),
+            (&[0xED, 0xA0, 0x80], &["�", "�", "�"]),
+            (&[0xC0, 0xAF], &["�", "�"]),
+        ];
+
+        for &(bytes, expected) in cases {
+            for suffix in [None, Some("ok")] {
+                let mut tokens: Vec<String> =
+                    bytes.iter().map(|byte| format!("<0x{byte:02X}>")).collect();
+                let mut expected: Vec<String> =
+                    expected.iter().map(|token| (*token).to_owned()).collect();
+                if let Some(suffix) = suffix {
+                    tokens.push(suffix.to_owned());
+                    expected.push(suffix.to_owned());
+                }
+                assert_eq!(decoder.decode_chain(tokens).unwrap(), expected);
+            }
+        }
+    }
 
     #[test]
     fn decode() {
