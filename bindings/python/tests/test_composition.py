@@ -185,10 +185,12 @@ def test_sequence_index_out_of_range_raises_index_error():
         sequence[1] = normalizers.Prepend("b")
 
 
-def test_sequence_refuses_to_hold_itself():
-    sequence = normalizers.Sequence([normalizers.Prepend("a")])
-    with pytest.raises(ValueError, match="can't hold itself"):
-        sequence[0] = sequence
+# A Sequence item that is a Sequence lets two sequences hold each other, and their JSON never ends.
+def test_sequence_refuses_a_sequence_item():
+    outer = normalizers.Sequence([normalizers.Prepend("a")])
+    inner = normalizers.Sequence([normalizers.Prepend("b")])
+    with pytest.raises(ValueError, match="can't be a Sequence"):
+        outer[0] = inner
 
 
 # A single component is a Sequence of one, so an empty one is the same object with no items.
@@ -200,9 +202,13 @@ def test_empty_sequence_is_legal(gpt2_spec):
     assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode(TEXT).ids
 
 
-# A Sequence inside a Sequence is flattened by `from_json`, so it loads and compiles.
-def test_sequence_holds_a_sequence(gpt2_spec):
+# A file can nest a Sequence in a Sequence. Loading flattens it, keeping the order.
+def test_loading_flattens_a_nested_sequence(gpt2_spec):
     unchanged = copy.deepcopy(gpt2_spec)
-    inner = normalizers.Sequence([normalizers.Prepend("a"), normalizers.Prepend("b")])
-    gpt2_spec.normalizer = normalizers.Sequence([inner])
-    assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode("ba" + TEXT).ids
+    file = json.loads(gpt2_spec.to_str())
+    prepend = [{"type": "Prepend", "prepend": text} for text in "abc"]
+    inner = {"type": "Sequence", "normalizers": prepend[:2]}
+    file["normalizer"] = {"type": "Sequence", "normalizers": [inner, prepend[2]]}
+    nested = type(gpt2_spec).from_str(json.dumps(file))
+    assert len(nested.normalizer) == 3
+    assert nested.compile().encode(TEXT).ids == unchanged.compile().encode("cba" + TEXT).ids

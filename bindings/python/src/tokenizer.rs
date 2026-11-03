@@ -340,11 +340,11 @@ pub(crate) struct TokenizerSpec {
     padding: Option<PaddingParams>,
     role_to_token: Arc<Value>,
     added_tokens: Arc<Value>,
-    pub(crate) normalizer: Option<Arc<ComponentSpec>>,
-    pub(crate) pre_tokenizer: Option<Arc<ComponentSpec>>,
-    pub(crate) post_processor: Option<Arc<ComponentSpec>>,
-    pub(crate) decoder: Option<Arc<ComponentSpec>>,
-    pub(crate) model: Option<Arc<ComponentSpec>>,
+    pub(crate) normalizer: Option<ComponentSpec>,
+    pub(crate) pre_tokenizer: Option<ComponentSpec>,
+    pub(crate) post_processor: Option<ComponentSpec>,
+    pub(crate) decoder: Option<ComponentSpec>,
+    pub(crate) model: Option<ComponentSpec>,
 }
 
 impl TokenizerSpec {
@@ -383,8 +383,7 @@ impl TokenizerSpec {
 
     /// A deep copy: the resulting object is independent.
     fn deep_clone(&self) -> Self {
-        let deep_clone =
-            |spec: &Option<Arc<ComponentSpec>>| spec.as_ref().map(|spec| spec.deep_clone());
+        let deep_clone = |spec: &Option<ComponentSpec>| spec.as_ref().map(|spec| spec.deep_clone());
         Self {
             truncation: self.truncation.clone(),
             padding: self.padding.clone(),
@@ -400,7 +399,7 @@ impl TokenizerSpec {
 
     /// The top-level keys and their values, in the order `to_json` writes them.
     fn fields(&self) -> [(&'static str, Field<'_>); 10] {
-        let component = |spec: &Option<Arc<ComponentSpec>>| {
+        let component = |spec: &Option<ComponentSpec>| {
             Field::Json(Cow::Owned(match spec {
                 Some(spec) => Value::Object((*spec.json()).clone()),
                 None => Value::Null,

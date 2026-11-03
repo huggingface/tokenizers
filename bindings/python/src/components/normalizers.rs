@@ -4,8 +4,7 @@ use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use serde_json::{Value, json};
 
-use crate::components::component_spec::ComponentSpec;
-use crate::error::err;
+use crate::components::component_spec::{ComponentSpec, SequenceSpec};
 
 use crate::tokenizer::TokenizerSpec;
 
@@ -28,14 +27,13 @@ impl Normalizer {
 impl ComponentKind for Normalizer {
     const ITEMS_KEY: Option<&'static str> = Some("normalizers");
 
-    const FIELD: fn(&mut TokenizerSpec) -> &mut Option<Arc<ComponentSpec>> =
-        |spec| &mut spec.normalizer;
+    const FIELD: fn(&mut TokenizerSpec) -> &mut Option<ComponentSpec> = |spec| &mut spec.normalizer;
 
-    fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
-        if spec.items_key().is_some() {
+    fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
+        let ComponentSpec::Single(single) = &spec else {
             return Self::of::<Sequence>(py, spec);
-        }
-        match spec.json_type().as_deref() {
+        };
+        match single.json_type().as_deref() {
             Some("Prepend") => Self::of::<Prepend>(py, spec),
             _ => Self::default_component(py, spec),
         }
@@ -77,23 +75,21 @@ pub struct Sequence;
 impl Sequence {
     #[new]
     fn new(normalizers: Vec<Bound<'_, Normalizer>>) -> PyResult<PyClassInitializer<Self>> {
-        let items: Vec<Arc<ComponentSpec>> = normalizers
+        let items: Vec<_> = normalizers
             .iter()
-            .map(|item| Normalizer::spec(item).clone())
-            .collect();
+            .map(|item| Normalizer::spec(item).as_item().cloned())
+            .collect::<PyResult<_>>()?;
         let items_key = Normalizer::ITEMS_KEY.expect("Normalizer lists its Sequence items");
-        Ok(
-            Normalizer::default_initializer(ComponentSpec::sequence(items_key, items))
-                .add_subclass(Self),
-        )
+        let spec = ComponentSpec::Sequence(Arc::new(SequenceSpec::new(items_key, items)));
+        Ok(Normalizer::default_initializer(spec).add_subclass(Self))
     }
 
     fn __len__(slf: &Bound<'_, Self>) -> usize {
-        Normalizer::spec(slf.as_super()).len()
+        Normalizer::sequence_spec(slf.as_super()).len()
     }
 
     fn __getitem__(slf: &Bound<'_, Self>, index: isize) -> PyResult<Py<Normalizer>> {
-        let spec = Normalizer::spec(slf.as_super());
+        let spec = Normalizer::sequence_spec(slf.as_super());
         let item = spec.index(index).and_then(|index| spec.get(index));
         let item = item.ok_or_else(|| PyIndexError::new_err("Sequence index out of range"))?;
         Normalizer::from_spec(slf.py(), item)
@@ -104,13 +100,8 @@ impl Sequence {
         index: isize,
         item: Bound<'_, Normalizer>,
     ) -> PyResult<()> {
-        let spec = Normalizer::spec(slf.as_super());
-        let item = Normalizer::spec(&item);
-        if Arc::ptr_eq(spec, item) {
-            return Err(err(
-                "a Sequence can't hold itself: its JSON is rebuilt from its items",
-            ));
-        }
+        let spec = Normalizer::sequence_spec(slf.as_super());
+        let item = Normalizer::spec(&item).as_item()?;
         spec.index(index)
             .and_then(|index| spec.set(index, item.clone()))
             .ok_or_else(|| PyIndexError::new_err("Sequence assignment index out of range"))
