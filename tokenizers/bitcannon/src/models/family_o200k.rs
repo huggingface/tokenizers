@@ -33,8 +33,10 @@ use crate::{
 /// Atom tag → dense 4-bit code. Unlike cl100k, `\p{M}` IS a letter here (both alt classes list
 /// `\p{M}`) — but only a true mark: `AlphaSymMark` (0x16, categorically `\p{S}`) and `Zwj` (0x26,
 /// `\p{Cf}`) stay "other", which is what keeps `[\p{L}\p{M}]+` off them.
-/// `HAN` routes Script=Han to code 11 for kimi's leading alternative. Kimi inputs with
-/// overlapping Han categories are handled in `super::kimi`; this fast path sees Han letters.
+/// `HAN` gives Script=Han its own codes for kimi's leading `[\p{Han}]+`: 11 for a Han letter (in no
+/// other kimi class), 12 for a Han `\p{P}`/`\p{S}`/`\p{M}` (also rule 4's), 13 for a Han `\p{N}`
+/// (also rule 3's). The last two are why Han cannot just be one code: Han wins at a token START,
+/// but a digit group or punct run that is already open keeps eating them (`1〇`, ` ⺀`, `!⺀`).
 /// Without `HAN`, each refined tag keeps its ordinary category for o200k and tekken.
 const fn lut<const HAN: bool>() -> [u8; 64] {
     let mut t = [8u8; 64]; // other = [^\s\p{L}\p{N}] (incl. Connector/Punct/Sym/Control/ASM/ZWJ)
@@ -49,24 +51,20 @@ const fn lut<const HAN: bool>() -> [u8; 64] {
     t[0x05] = 6; // WsOther
     t[0x09] = 9; // Apostrophe — "other" for every run rule, split out for the contraction flag
     t[0x30] = if HAN { 11 } else { 2 }; // Script=Han letter
-    t[0x31] = if HAN { 11 } else { 3 }; // Script=Han \p{N} (Nl)
-    t[0x36] = if HAN { 11 } else { 10 }; // Script=Han \p{M}
-    t[0x38] = if HAN { 11 } else { 8 }; // Script=Han \p{P}
-    t[0x3A] = if HAN { 11 } else { 8 }; // Script=Han \p{S} (So)
+    t[0x31] = if HAN { 13 } else { 3 }; // Script=Han \p{N} (Nl)
+    t[0x36] = if HAN { 12 } else { 10 }; // Script=Han \p{M}
+    t[0x38] = if HAN { 12 } else { 8 }; // Script=Han \p{P}
+    t[0x3A] = if HAN { 12 } else { 8 }; // Script=Han \p{S} (So)
     t[0x0F] = CODE_CONT;
     t
 }
 
-/// Atom -> code for [`seed_at`]. The Han row differs between the two tables, but a seed only ever
-/// reproduces a class the fill already assigned, and both tables agree on every class boundary that
-/// a continuation byte can inherit.
-const LUT_SEED: [u8; 64] = lut::<false>();
-
 streams!(
     /// `letter` is the union of the alt classes. Han needs no subtracting: with `HAN` it has its
     /// own code, so it is not in `u`/`l`/`c` to begin with (kimi's classes are literally
-    /// `[…&&[^\p{Han}]]`). `han` is that code; `slash` is the only remaining AUX stream.
-    Cls { lead, cont, u, l, c, mark, n, nl, sp, ws, oth, apo, letter, slash, han }
+    /// `[…&&[^\p{Han}]]`). `han` is every Han byte, `hoth`/`hnum` its rule-4 / rule-3 parts;
+    /// `oth` and `n` are the non-Han rest. `slash` is the only remaining AUX stream.
+    Cls { lead, cont, u, l, c, mark, n, nl, sp, ws, oth, apo, letter, slash, han, hoth, hnum }
 );
 
 /// Cross-block state that is not a stream.
@@ -84,7 +82,9 @@ struct Carry {
     force: u64,     // ...and the start it opens just past itself, if that landed past the edge
     sfx_end: usize, // just past the last consumed suffix: the apostrophe THERE is a prefix, not
     // a second suffix -- `(?i:...)?` applies once (`a's's` is `a's`, `'s`)
-    lc_open: bool, // an `lc` run was still open at the last block edge
+    lc_open: bool,  // an `lc` run was still open at the last block edge
+    han_open: bool, // a `[\p{Han}]+` token was still open at the last block edge
+    n_edge: bool,   // the previous block's last byte was in a digit group (not a Han token)
 }
 
 /// Build one block's streams; returns the fill seed and the Han carry for the block after.
@@ -106,7 +106,9 @@ fn cls<const AUX: u8, const HAN: bool>(
     let l = a & !p1 & p0;
     let c = a & p1 & !p0;
     let mark = p3 & p1 & !p0; // code 10
-    let han = p3 & p1 & p0 & valid; // code 11 — kimi only; zero for the other two
+    // codes 11-13 — kimi only; zero for the other two
+    let han = p3 & (p2 | (p1 & p0)) & valid;
+    let hi = p3 & p2 & !p1;
     let cls = Cls {
         lead: valid & !b.cont,
         cont: b.cont,
@@ -115,11 +117,13 @@ fn cls<const AUX: u8, const HAN: bool>(
         c,
         mark,
         n: a & p1 & p0,
+        hoth: hi & !p0,
+        hnum: hi & p0,
         nl: w & !p1 & !p0,
         sp: w & !p1 & p0,
-        ws: w & !(p1 & p0), // codes 4,5,6 — cont (7) excluded
-        oth: p3 & !p1,      // codes 8,9 — the apostrophe is "other" for run purposes
-        apo: p3 & p0 & !p1, // code 9
+        ws: w & !(p1 & p0),       // codes 4,5,6 — cont (7) excluded
+        oth: p3 & !p1 & !p2,      // codes 8,9 — the apostrophe is "other" for run purposes
+        apo: p3 & p0 & !p1 & !p2, // code 9
         letter: u | l | c | mark,
         slash: if AUX == AUX_SLASH { b.aux } else { 0 },
         han,
@@ -130,7 +134,7 @@ fn cls<const AUX: u8, const HAN: bool>(
 /// The fill seed for a block, recovered locally: only a block that opens mid-char needs one, and
 /// then the char's lead is at most three bytes back. That is what lets the backward pass below
 /// build each block on its own, with no forward dependency.
-fn seed_at(tags: &[u8], base: usize) -> u8 {
+fn seed_at<const HAN: bool>(tags: &[u8], base: usize) -> u8 {
     if base == 0 {
         return CODE_CONT;
     }
@@ -138,7 +142,7 @@ fn seed_at(tags: &[u8], base: usize) -> u8 {
     while p > 0 && tags[p] == CONT {
         p -= 1;
     }
-    LUT_SEED[tags[p] as usize]
+    lut::<HAN>()[tags[p] as usize]
 }
 
 /// `later_streams`: for every position, does an `l` occur at or after it inside the same letter run
@@ -161,7 +165,7 @@ pub(crate) fn later_streams<const AUX: u8, const HAN: bool>(
         let base = bi * 64;
         let len = (ntext - base).min(64);
         let valid = if len == 64 { !0u64 } else { (1u64 << len) - 1 };
-        let (c, _) = cls::<AUX, HAN>(text, tags, base, len, seed_at(tags, base));
+        let (c, _) = cls::<AUX, HAN>(text, tags, base, len, seed_at::<HAN>(tags, base));
         let (letter, l) = (c.letter, c.l);
         let uc = letter & !l;
         let cm = (c.c | c.mark) & letter;
@@ -233,6 +237,7 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             let mut o_start;
             let mut osf;
             let mut mark_oth;
+            let mut hoth_in = 0; // the Han `\p{P}\p{S}\p{M}` an open rule-4 run keeps eating
             let (mut nl_e, mut nl_span);
             loop {
                 let bk_oth = (oth << 1) | u64::from(cy.oth_edge);
@@ -285,7 +290,14 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
                     // the previous block, so `contested`'s `& lead` cannot see it
                     mark_oth |= lead_run(cur.mark, valid);
                 }
-                let grown = cur.oth | mark_oth;
+                if HAN {
+                    // Han wins at a token start, so a Han "other" joins rule 4 only when the run is
+                    // already open (`!⺀`) or took the space before it (` ⺀`). Monotone like
+                    // `mark_oth`: it only adds `oth`, which only removes `o_start`s.
+                    let body = (o_prev << 1) | u64::from(cy.oth_edge && !cy.prev_absorbed);
+                    hoth_in = fill_to_last(cur.hoth & (body | bk.sp), cur.hoth);
+                }
+                let grown = cur.oth | mark_oth | hoth_in;
                 if grown == oth {
                     break;
                 }
@@ -386,13 +398,30 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
             };
 
             // ── kimi's `[\p{Han}]+`, ahead of everything else. Zero for the other two.
-            let han_start = cur.han & lead & !bk.han;
+            //
+            // A Han token opens at a Han letter, a Han "other" rule 4 did not take, or a rule-3
+            // group start landing on a Han digit (see `digit_groups`), and runs to the end of the
+            // Han run. One still open from the last block is not a digit: a digit after it opens.
+            let han_in = if cy.han_open {
+                lead_run(cur.han, valid)
+            } else {
+                0
+            };
+            let n_all = (cur.n | cur.hnum) & !han_in;
+            let groups = cy
+                .dig
+                .starts(DIGITS, n_all, lead, cur.cont, cy.n_edge, cur.han);
+            let han_tok = han_in
+                | fill_to_last(
+                    (cur.han & !cur.hoth & !cur.hnum | cur.hoth & !hoth_in | groups & cur.hnum)
+                        & lead,
+                    cur.han,
+                );
+            let han_start = han_tok & lead & !((han_tok << 1) | u64::from(cy.han_open));
+            let n_eff = n_all & !han_tok;
 
             // ── the escape gate (see the header). An interior upper, or an apostrophe closing the
             // run, means some letter token in this block needs the scalar case/contraction pass.
-
-            // ── rule 3 `\p{N}{1,DIGITS}`
-            let groups = cy.dig.starts(DIGITS, cur.n, lead, cur.cont, was(pv.n));
 
             cy.anl.retract(starts, was(pv.ws), cur.ws, cur.nl, valid);
 
@@ -407,14 +436,24 @@ pub(crate) fn run<const AUX: u8, const CONTR: bool, const DIGITS: usize, const H
                 | steal;
             st &= !nl_span;
             st |= nl_e as u64;
+            st &= !han_tok | han_start; // a digit group start inside `中〇` is not one
             st &= !sfx; // nothing inside a contraction suffix opens a token
             st |= sfx_open;
 
             // ── carries
             cy.nl_run = nl_e >> 64 != 0;
             cy.prev_absorbed = nl_span >> (len - 1) & 1 != 0;
-            cy.dig
-                .commit(DIGITS, groups, cur.n, lead, valid, len, will(x.nx.n));
+            cy.dig.commit(
+                DIGITS,
+                groups,
+                n_eff,
+                lead,
+                valid,
+                len,
+                will(x.nx.n | x.nx.hnum),
+            );
+            cy.n_edge = n_eff >> (len - 1) & 1 != 0;
+            cy.han_open = han_tok >> (len - 1) & 1 != 0;
             let tws = trail_run(cur.ws, valid, len);
             cy.anl.commit(
                 x.base,

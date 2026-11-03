@@ -485,7 +485,9 @@ pub(crate) struct Digits {
 }
 
 impl Digits {
-    /// This block's group starts: a boundary every `cap` chars from the run start.
+    /// This block's group starts: a boundary every `cap` chars from the run start. A group that
+    /// would open on a `han` digit is kimi's `[\p{Han}]+` instead: it runs to the end of the Han
+    /// run, and a digit after it opens a fresh group. Pass 0 everywhere else.
     pub(crate) fn starts(
         &self,
         cap: usize,
@@ -493,8 +495,18 @@ impl Digits {
         lead: u64,
         cont: u64,
         prev_is_digit: bool,
+        han: u64,
     ) -> u64 {
-        digit_groups(cap, n, lead, cont, prev_is_digit, self.open, self.since)
+        digit_groups(
+            cap,
+            n,
+            lead,
+            cont,
+            prev_is_digit,
+            self.open,
+            self.since,
+            han,
+        )
     }
 
     /// Carry the run into the next block. `next_is_digit` is that block's first byte.
@@ -607,6 +619,7 @@ pub(crate) fn trail_run(x: u64, valid: u64, len: usize) -> u64 {
 /// re-masking with `n` at every hop matters, because the carry only says the byte *at* the edge was
 /// a digit, not that the run survived it.
 #[inline]
+#[allow(clippy::too_many_arguments)]
 fn digit_groups(
     cap: usize,
     n: u64,
@@ -615,6 +628,7 @@ fn digit_groups(
     prev_is_digit: bool,
     dig_run: bool,
     dig_since: u32,
+    han: u64,
 ) -> u64 {
     let mut m = n & lead & !((n << 1) | u64::from(prev_is_digit));
     if cap == 0 || cap >= 64 {
@@ -644,10 +658,11 @@ fn digit_groups(
         }
     } else {
         while m != 0 {
-            let mut e = m;
+            let mut e = m & !han;
             for _ in 0..cap {
                 e = adv(e, cont) & n & lead;
             }
+            e |= scanthru((m & han) as u128, han as u128) as u64 & n & lead;
             if e == 0 {
                 break;
             }

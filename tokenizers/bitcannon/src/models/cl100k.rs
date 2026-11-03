@@ -99,7 +99,7 @@ fn cl100k(
                 cur.l & lead & !bk.l & !(bk.ws & !bk.nl) & !((osf << 1) | u64::from(prev_osf));
 
             // ── rule 3 `\p{N}{1,digit_cap}`
-            let groups = dig.starts(digit_cap, cur.n, lead, cur.cont, was(pv.n));
+            let groups = dig.starts(digit_cap, cur.n, lead, cur.cont, was(pv.n), 0);
 
             // ── the other-run's `[\r\n]*` tail swallows the newlines directly behind it.
             let nl_m = ((bk.other & cur.nl & lead) as u128) | u128::from(nl_run);

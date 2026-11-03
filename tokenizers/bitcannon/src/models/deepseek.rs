@@ -150,7 +150,9 @@ pub fn bitcannon_deepseek(text: &[u8], tags: &[u8], starts: &mut [u64], out: &mu
 
             // ── Split-1 `\p{N}{1,3}` — a group boundary every 3 chars from the run start. This
             // was `digit_groups` written out by hand, fast path included; it is the shared one now.
-            let groups = cy.dig.starts(3, cur.num, cur.lead, cur.cont, was(pv.num));
+            let groups = cy
+                .dig
+                .starts(3, cur.num, cur.lead, cur.cont, was(pv.num), 0);
 
             // ── whitespace: `\s*[\r\n]+ | \s+(?!\S) | \s+`.
             // (a) the run's first token runs through its LAST newline → a start right after it,
