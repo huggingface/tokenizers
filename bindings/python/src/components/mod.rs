@@ -35,7 +35,7 @@
 //!    ⤷ Prepend | Sequence | ...       concrete classes
 //! ```
 //!
-//! - [`Component`] holds the spec: the component's JSON object.
+//! - [`Component`] holds the spec as a [`ComponentSpec`]: one component, or a sequence.
 //! - A *kind*, such as [`Normalizer`](normalizers::Normalizer), holds no data. It implements
 //!   [`ComponentKind`], which knows the kind's `tokenizer.json` keys.
 //! - A *concrete class*, such as [`Prepend`](normalizers::Prepend), is a subclass of its kind and
@@ -60,6 +60,7 @@ use pyo3::prelude::*;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+use crate::JsonObject;
 use crate::components::component_spec::{ComponentSpec, SequenceSpec, SingleSpec};
 use crate::error::err;
 use crate::repr;
@@ -112,31 +113,42 @@ pub(crate) trait ComponentKind:
     /// The key a `Sequence` of this kind lists its items under, such as `"normalizers"`.
     /// `None` for a kind with no `Sequence`.
     const ITEMS_KEY: Option<&'static str>;
+
     /// The [`TokenizerSpec`] field holding this kind's spec.
-    const FIELD: fn(&mut TokenizerSpec) -> &mut Option<ComponentSpec>;
+    fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec>;
 
     /// Builds a handle on `spec`, of the concrete class its `"type"` names.
     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>>;
+
+    /// Returns the pyo3 initializer of the plain kind over `spec`.
+    /// [`Self::initializer`] adds a concrete class on top of it.
+    fn default_initializer(spec: ComponentSpec) -> PyClassInitializer<Self> {
+        PyClassInitializer::from(Component { spec }).add_subclass(Self::default())
+    }
+
+    /// Returns the pyo3 initializer of the concrete class `C` on `spec`.
+    fn initializer<C: PyClass<BaseType = Self>>(
+        spec: ComponentSpec,
+        class: C,
+    ) -> PyClassInitializer<C> {
+        Self::default_initializer(spec).add_subclass(class)
+    }
 
     /// Builds a handle on `spec` of the plain kind, with no concrete class.
     fn default_component(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
         Py::new(py, Self::default_initializer(spec))
     }
 
-    /// Returns the pyo3 initializer of the plain kind over `spec`.
-    /// [`Self::of`] adds a concrete class on top of it.
-    fn default_initializer(spec: ComponentSpec) -> PyClassInitializer<Self> {
-        PyClassInitializer::from(Component { spec }).add_subclass(Self::default())
-    }
-
-    /// Builds a handle of the concrete class `T` on `spec`, typed as its kind.
-    /// So a getter can return any class of the kind.
-    fn of<T: PyClass<BaseType = Self> + Default>(
+    /// Builds a handle on `spec` of the concrete class `C`, typed as its kind.
+    fn concrete_component<C: PyClass<BaseType = Self>>(
         py: Python<'_>,
         spec: ComponentSpec,
+        class: C,
     ) -> PyResult<Py<Self>> {
-        let initializer = Self::default_initializer(spec).add_subclass(T::default());
-        Ok(Bound::new(py, initializer)?.into_super().unbind())
+        let handle = Bound::new(py, Self::initializer(spec, class))?;
+        // `into_super` changes only the Rust type, from `C` to the kind, so one getter can return
+        // any of the kind's classes. The Python object stays a `C`, for `isinstance` and methods.
+        Ok(handle.into_super().unbind())
     }
 
     /// Returns the spec that `handle` points at.
@@ -144,9 +156,23 @@ pub(crate) trait ComponentKind:
         &handle.as_super().get().spec
     }
 
+    /// Returns the spec of `handle`, a handle of a concrete class with JSON fields.
+    fn single_spec<'a, C: PyClass<BaseType = Self>>(
+        handle: &'a Bound<'_, C>,
+    ) -> &'a Arc<SingleSpec> {
+        let ComponentSpec::Single(single) = Self::spec(handle.as_super()) else {
+            unreachable!(
+                "a class with JSON fields is built only on a SingleSpec, by from_spec or new"
+            );
+        };
+        single
+    }
+
     /// Returns the spec of `handle`, a handle of this kind's `Sequence` class.
-    fn sequence_spec<'a>(handle: &'a Bound<'_, Self>) -> &'a Arc<SequenceSpec> {
-        let ComponentSpec::Sequence(sequence) = Self::spec(handle) else {
+    fn sequence_spec<'a, C: PyClass<BaseType = Self>>(
+        handle: &'a Bound<'_, C>,
+    ) -> &'a Arc<SequenceSpec> {
+        let ComponentSpec::Sequence(sequence) = Self::spec(handle.as_super()) else {
             unreachable!("a Sequence handle is built only on a SequenceSpec, by from_spec or new");
         };
         sequence
@@ -155,35 +181,26 @@ pub(crate) trait ComponentKind:
     /// Builds a handle from the bytes [`Component::__getstate__`] returns.
     /// Unpickling calls it through the kind's `_unpickle`.
     fn from_state(py: Python<'_>, state: &[u8]) -> PyResult<Py<Self>> {
-        let Value::Object(json) = serde_json::from_slice(state).map_err(err)? else {
-            return Err(err("a component's state must be a JSON object"));
-        };
+        let json: JsonObject = serde_json::from_slice(state).map_err(err)?;
         Self::from_spec(py, ComponentSpec::from_json(Self::ITEMS_KEY, json))
     }
 }
 
-/// Reads and writes one field of a component's JSON.
-pub(crate) trait JsonFields {
-    /// A missing key reads as `null`, so an `Option<T>` reads it as `None`.
+/// Reads and writes the JSON fields of a concrete class's handle, such as `Prepend.prepend`.
+pub(crate) trait JsonFieldsExt {
+    /// Reads the `key` field as a `T`. A missing key reads as `null`, so an `Option<T>` gets
+    /// `None`.
     fn field<T: DeserializeOwned>(&self, key: &str) -> PyResult<T>;
+    /// Sets the `key` field. Every handle on this spec sees the new value.
     fn set_field(&self, key: &str, value: impl Into<Value>);
 }
 
-impl<K: ComponentKind, T: PyClass<BaseType = K>> JsonFields for Bound<'_, T> {
-    fn field<V: DeserializeOwned>(&self, key: &str) -> PyResult<V> {
-        single_spec(self.as_super()).field(key)
+impl<K: ComponentKind, C: PyClass<BaseType = K>> JsonFieldsExt for Bound<'_, C> {
+    fn field<T: DeserializeOwned>(&self, key: &str) -> PyResult<T> {
+        K::single_spec(self).field(key)
     }
 
     fn set_field(&self, key: &str, value: impl Into<Value>) {
-        single_spec(self.as_super()).set_field(key, value);
+        K::single_spec(self).set_field(key, value);
     }
-}
-
-fn single_spec<'a, K: ComponentKind>(handle: &'a Bound<'_, K>) -> &'a Arc<SingleSpec> {
-    let ComponentSpec::Single(single) = K::spec(handle) else {
-        unreachable!(
-            "only a class with JSON fields reads them, and from_spec builds one only on a SingleSpec"
-        );
-    };
-    single
 }

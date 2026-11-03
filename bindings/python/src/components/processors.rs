@@ -1,7 +1,6 @@
 use pyo3::prelude::*;
 
 use crate::components::component_spec::ComponentSpec;
-
 use crate::tokenizer::TokenizerSpec;
 
 use super::{Component, ComponentKind};
@@ -23,8 +22,9 @@ impl PostProcessor {
 impl ComponentKind for PostProcessor {
     const ITEMS_KEY: Option<&'static str> = Some("processors");
 
-    const FIELD: fn(&mut TokenizerSpec) -> &mut Option<ComponentSpec> =
-        |spec| &mut spec.post_processor;
+    fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec> {
+        &mut spec.post_processor
+    }
 
     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
         Self::default_component(py, spec)

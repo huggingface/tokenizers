@@ -193,13 +193,15 @@ def test_sequence_refuses_a_sequence_item():
         outer[0] = inner
 
 
-# A single component is a Sequence of one, so an empty one is the same object with no items.
-def test_empty_sequence_is_legal(gpt2_spec):
+# transformers' pocket_tts converter wraps a loaded normalizer that may already be a Sequence.
+def test_sequence_splices_a_sequence_argument(gpt2_spec):
     unchanged = copy.deepcopy(gpt2_spec)
-    gpt2_spec.normalizer = normalizers.Sequence([])
-    assert len(gpt2_spec.normalizer) == 0
-    assert json.loads(gpt2_spec.to_str())["normalizer"] == {"type": "Sequence", "normalizers": []}
-    assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode(TEXT).ids
+    inner = normalizers.Sequence([normalizers.Prepend("a"), normalizers.Prepend("b")])
+    gpt2_spec.normalizer = normalizers.Sequence([inner, normalizers.Prepend("c")])
+    assert len(gpt2_spec.normalizer) == 3
+    # The spliced items are inner's own specs, so an edit through inner reaches the outer one.
+    inner[0].prepend = "x"
+    assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode("cbx" + TEXT).ids
 
 
 # A file can nest a Sequence in a Sequence. Loading flattens it, keeping the order.
