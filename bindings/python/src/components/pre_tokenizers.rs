@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 
-use crate::components::component_spec::{ComponentKey, ComponentSpec};
+use crate::components::component_spec::ComponentSpec;
+use crate::tokenizer::TokenizerSpec;
 
 use super::{Component, ComponentKind};
 
@@ -19,7 +20,11 @@ impl PreTokenizer {
 }
 
 impl ComponentKind for PreTokenizer {
-    const JSON_KEY: ComponentKey = ComponentKey::PreTokenizer;
+    const ITEMS_KEY: Option<&'static str> = Some("pretokenizers");
+
+    fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec> {
+        &mut spec.pre_tokenizer
+    }
 
     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
         Self::default_component(py, spec)

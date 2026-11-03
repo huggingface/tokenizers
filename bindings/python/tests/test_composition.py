@@ -185,22 +185,32 @@ def test_sequence_index_out_of_range_raises_index_error():
         sequence[1] = normalizers.Prepend("b")
 
 
+# A Sequence item that is a Sequence lets two sequences hold each other, and their JSON never ends.
 def test_sequence_refuses_a_sequence_item():
-    sequence = normalizers.Sequence([normalizers.Prepend("a")])
+    outer = normalizers.Sequence([normalizers.Prepend("a")])
+    inner = normalizers.Sequence([normalizers.Prepend("b")])
     with pytest.raises(ValueError, match="can't be a Sequence"):
-        sequence[0] = sequence
+        outer[0] = inner
 
 
-def test_sequence_refuses_to_be_built_from_a_sequence():
-    inner = normalizers.Sequence([normalizers.Prepend("a")])
-    with pytest.raises(ValueError, match="can't be a Sequence"):
-        normalizers.Sequence([inner])
+# transformers' pocket_tts converter wraps a loaded normalizer that may already be a Sequence.
+def test_sequence_splices_a_sequence_argument(gpt2_spec):
+    unchanged = copy.deepcopy(gpt2_spec)
+    inner = normalizers.Sequence([normalizers.Prepend("a"), normalizers.Prepend("b")])
+    gpt2_spec.normalizer = normalizers.Sequence([inner, normalizers.Prepend("c")])
+    assert len(gpt2_spec.normalizer) == 3
+    # The spliced items are inner's own specs, so an edit through inner reaches the outer one.
+    inner[0].prepend = "x"
+    assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode("cbx" + TEXT).ids
 
 
-def test_loading_refuses_a_nested_sequence(gpt2_spec):
+# A file can nest a Sequence in a Sequence. Loading flattens it, keeping the order.
+def test_loading_flattens_a_nested_sequence(gpt2_spec):
+    unchanged = copy.deepcopy(gpt2_spec)
     file = json.loads(gpt2_spec.to_str())
-    prepend = {"type": "Prepend", "prepend": "a"}
-    inner = {"type": "Sequence", "normalizers": [prepend]}
-    file["normalizer"] = {"type": "Sequence", "normalizers": [inner]}
-    with pytest.raises(ValueError, match="can't be a Sequence"):
-        type(gpt2_spec).from_str(json.dumps(file))
+    prepend = [{"type": "Prepend", "prepend": text} for text in "abc"]
+    inner = {"type": "Sequence", "normalizers": prepend[:2]}
+    file["normalizer"] = {"type": "Sequence", "normalizers": [inner, prepend[2]]}
+    nested = type(gpt2_spec).from_str(json.dumps(file))
+    assert len(nested.normalizer) == 3
+    assert nested.compile().encode(TEXT).ids == unchanged.compile().encode("cba" + TEXT).ids

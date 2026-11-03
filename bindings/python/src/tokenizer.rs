@@ -1,3 +1,60 @@
+//! The Python [`Tokenizer`]: a `tokenizer.json` you can edit, then compile to encode with.
+//!
+//! # Two tokenizer types
+//!
+//! The bindings split a tokenizer in two:
+//!
+//! - A [`Tokenizer`] is the editable one. It holds the settings as JSON.
+//! - A [`CompiledTokenizer`] encodes and decodes. It never changes once built.
+//!
+//! `compile()` builds the second from the first:
+//!
+//! ```text
+//! tokenizer.json ──from_str()──▶ Tokenizer ──compile()──▶ CompiledTokenizer
+//!                                   ▲
+//!                                   └── edits: tok.normalizer = ..., tok.padding = ...
+//! ```
+//!
+//! [`CompiledTokenizer`]: crate::compiled::CompiledTokenizer
+//!
+//! # What a `Tokenizer` holds
+//!
+//! A [`Tokenizer`] holds a [`TokenizerSpec`] behind a `Mutex`. The `Mutex` lets setters work on a
+//! frozen Python class, from any thread. The spec has one field per top-level key of
+//! `tokenizer.json`:
+//!
+//! - `truncation` and `padding` are the defaults an encode applies, unless the call overrides
+//!   them.
+//! - `added_tokens` and `role_to_token` stay raw JSON. No Python method edits them here.
+//! - `normalizer`, `pre_tokenizer`, `post_processor`, `decoder` and `model` hold one
+//!   [`ComponentSpec`] each. The [`components`](crate::components) docs explain them.
+//!
+//! # Loading
+//!
+//! `from_str`, `from_file` and `from_pretrained` accept a `tokenizer.json` of any version.
+//! `canonicalize_value` first rewrites it into the 2.0 format. Then each top-level key goes to its
+//! field.
+//!
+//! # Writing
+//!
+//! `to_str`, pickle, `repr` and `compile()` all write the spec out through
+//! [`TokenizerSpec::fields`]. It lists the top-level keys in one fixed order, so every output
+//! agrees. It writes each component from its shared JSON, so writing copies none of it.
+//!
+//! # Compiling
+//!
+//! `compile()` copies the spec and releases the lock straight away. It then builds from the copy
+//! through `tk::from_json`, with the GIL released. So the build blocks no other thread, and later
+//! edits never reach the compiled tokenizer.
+//!
+//! The copy is cheap. It shares every component's JSON until one side edits it: see
+//! [copy on write](crate::components::component_spec#two-kinds-of-arc).
+//!
+//! # Validation
+//!
+//! `tk::from_json` builds the tokenizer, or refuses a config it can't build. Nothing else checks
+//! the spec, so an invalid edit fails at `compile()`, not at the assignment.
+
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -15,7 +72,7 @@ use tk::{
 use crate::JsonObject;
 use crate::compiled::CompiledTokenizer;
 use crate::components::ComponentKind;
-use crate::components::component_spec::{ComponentKey, ComponentSpec};
+use crate::components::component_spec::ComponentSpec;
 use crate::components::decoders::Decoder;
 use crate::components::models::Model;
 use crate::components::normalizers::Normalizer;
@@ -53,18 +110,24 @@ impl Tokenizer {
         }
     }
 
-    /// Generic getter for a component kind
+    /// Generic getter for a component kind, read from [`ComponentKind::tokenizer_field_mut`].
     fn get<K: ComponentKind>(slf: &Bound<'_, Self>) -> PyResult<Option<Py<K>>> {
-        let Some(spec) = slf.get().spec().component(K::JSON_KEY).cloned() else {
-            return Ok(None);
+        // Copy the field out, so the lock is released before from_spec builds Python objects.
+        let spec = {
+            let mut tokenizer_spec = slf.get().spec();
+            K::tokenizer_field_mut(&mut tokenizer_spec).clone()
         };
-        K::from_spec(slf.py(), spec).map(Some)
+        match spec {
+            Some(spec) => K::from_spec(slf.py(), spec).map(Some),
+            None => Ok(None),
+        }
     }
 
-    /// Generic setter for a component kind
+    /// Generic setter for a component kind, written to [`ComponentKind::tokenizer_field_mut`].
     fn set<K: ComponentKind>(&self, component: Option<Bound<'_, K>>) {
-        let spec = component.map(|c| K::spec(&c).clone());
-        self.spec().set_component(K::JSON_KEY, spec);
+        let spec = component.map(|component| K::spec(&component).clone());
+        let mut tokenizer_spec = self.spec();
+        *K::tokenizer_field_mut(&mut tokenizer_spec) = spec;
     }
 
     pub(crate) fn spec(&self) -> MutexGuard<'_, TokenizerSpec> {
@@ -315,9 +378,10 @@ impl Tokenizer {
         &self,
         py: Python<'py>,
     ) -> PyResult<(Bound<'py, PyAny>, (Bound<'py, PyBytes>,))> {
+        let json = self.spec().to_json();
         // Bytes, not str: a non-ASCII str isn't stored as UTF-8, so each pickle step re-encodes it.
         // https://docs.python.org/3.14/c-api/unicode.html#unicode-objects
-        let json = PyBytes::new(py, self.spec().to_json().as_bytes());
+        let json = PyBytes::new(py, json.as_bytes());
         Ok((py.get_type::<Self>().getattr("_unpickle")?, (json,)))
     }
 
@@ -340,11 +404,11 @@ pub(crate) struct TokenizerSpec {
     padding: Option<PaddingParams>,
     role_to_token: Arc<Value>,
     added_tokens: Arc<Value>,
-    normalizer: Option<ComponentSpec>,
-    pre_tokenizer: Option<ComponentSpec>,
-    post_processor: Option<ComponentSpec>,
-    decoder: Option<ComponentSpec>,
-    model: ComponentSpec,
+    pub(crate) normalizer: Option<ComponentSpec>,
+    pub(crate) pre_tokenizer: Option<ComponentSpec>,
+    pub(crate) post_processor: Option<ComponentSpec>,
+    pub(crate) decoder: Option<ComponentSpec>,
+    pub(crate) model: Option<ComponentSpec>,
 }
 
 impl TokenizerSpec {
@@ -356,21 +420,23 @@ impl TokenizerSpec {
             unreachable!("canonicalize_value refuses anything but an object");
         };
         let mut take = |key| file.remove(key).unwrap_or(Value::Null);
-        let component = |kind, value| match value {
-            Value::Object(json) => ComponentSpec::from_json(kind, json).map(Some),
-            _ => Ok(None),
+        let component = |items_key, value| match value {
+            Value::Object(json) => Some(ComponentSpec::from_json(items_key, json)),
+            _ => None,
         };
         Ok(Self {
             truncation: truncation_from_json(&take("truncation").to_string())?,
             padding: padding_from_json(&take("padding").to_string())?,
             role_to_token: Arc::new(take("role_to_token")),
             added_tokens: Arc::new(take("added_tokens")),
-            normalizer: component(ComponentKey::Normalizer, take("normalizer"))?,
-            pre_tokenizer: component(ComponentKey::PreTokenizer, take("pre_tokenizer"))?,
-            post_processor: component(ComponentKey::PostProcessor, take("post_processor"))?,
-            decoder: component(ComponentKey::Decoder, take("decoder"))?,
-            model: component(ComponentKey::Model, take("model"))?
-                .expect("canonicalize_value refuses a model that is not an object"),
+            normalizer: component(Normalizer::ITEMS_KEY, take("normalizer")),
+            pre_tokenizer: component(PreTokenizer::ITEMS_KEY, take("pre_tokenizer")),
+            post_processor: component(PostProcessor::ITEMS_KEY, take("post_processor")),
+            decoder: component(Decoder::ITEMS_KEY, take("decoder")),
+            model: Some(
+                component(Model::ITEMS_KEY, take("model"))
+                    .expect("canonicalize_value refuses a model that is not an object"),
+            ),
         })
     }
 
@@ -392,53 +458,33 @@ impl TokenizerSpec {
             pre_tokenizer: deep_clone(&self.pre_tokenizer),
             post_processor: deep_clone(&self.post_processor),
             decoder: deep_clone(&self.decoder),
-            model: self.model.deep_clone(),
-        }
-    }
-
-    pub(crate) fn component(&self, key: ComponentKey) -> Option<&ComponentSpec> {
-        match key {
-            ComponentKey::Normalizer => self.normalizer.as_ref(),
-            ComponentKey::PreTokenizer => self.pre_tokenizer.as_ref(),
-            ComponentKey::PostProcessor => self.post_processor.as_ref(),
-            ComponentKey::Decoder => self.decoder.as_ref(),
-            ComponentKey::Model => Some(&self.model),
-        }
-    }
-
-    pub(crate) fn set_component(&mut self, key: ComponentKey, spec: Option<ComponentSpec>) {
-        match key {
-            ComponentKey::Normalizer => self.normalizer = spec,
-            ComponentKey::PreTokenizer => self.pre_tokenizer = spec,
-            ComponentKey::PostProcessor => self.post_processor = spec,
-            ComponentKey::Decoder => self.decoder = spec,
-            ComponentKey::Model => {
-                self.model = spec.expect("calling set_component on model should never pass None")
-            }
+            model: deep_clone(&self.model),
         }
     }
 
     /// The top-level keys and their values, in the order `to_json` writes them.
     fn fields(&self) -> [(&'static str, Field<'_>); 10] {
-        let component =
-            |spec: &Option<ComponentSpec>| Field::Component(spec.as_ref().map(ComponentSpec::json));
+        let component = |spec: &Option<ComponentSpec>| match spec {
+            Some(spec) => Field::JsonObject(spec.json()),
+            None => Field::JsonValue(Cow::Owned(Value::Null)),
+        };
         [
-            ("version", Field::Json(Cow::Owned(Value::from("2.0")))),
+            ("version", Field::JsonValue(Cow::Owned(Value::from("2.0")))),
             ("truncation", Field::Truncation(self.truncation.as_ref())),
             ("padding", Field::Padding(self.padding.as_ref())),
             (
                 "role_to_token",
-                Field::Json(Cow::Borrowed(&self.role_to_token)),
+                Field::JsonValue(Cow::Borrowed(&self.role_to_token)),
             ),
             (
                 "added_tokens",
-                Field::Json(Cow::Borrowed(&self.added_tokens)),
+                Field::JsonValue(Cow::Borrowed(&self.added_tokens)),
             ),
             ("normalizer", component(&self.normalizer)),
             ("pre_tokenizer", component(&self.pre_tokenizer)),
             ("post_processor", component(&self.post_processor)),
             ("decoder", component(&self.decoder)),
-            ("model", Field::Component(Some(self.model.json()))),
+            ("model", component(&self.model)),
         ]
     }
 
@@ -465,8 +511,8 @@ impl TokenizerSpec {
 
 /// The value under one top-level key of a `tokenizer.json`.
 pub(crate) enum Field<'spec> {
-    Json(Cow<'spec, Value>),
-    Component(Option<Arc<JsonObject>>),
+    JsonValue(Cow<'spec, Value>),
+    JsonObject(Arc<JsonObject>),
     Padding(Option<&'spec PaddingParams>),
     Truncation(Option<&'spec TruncationParams>),
 }
@@ -474,8 +520,8 @@ pub(crate) enum Field<'spec> {
 impl Field<'_> {
     fn to_json(&self) -> String {
         match self {
-            Field::Json(value) => value.to_string(),
-            Field::Component(json) => serde_json::to_string(&json.as_deref())
+            Field::JsonValue(value) => value.to_string(),
+            Field::JsonObject(json) => serde_json::to_string(&**json)
                 .expect("a JSON object with string keys always writes"),
             Field::Padding(padding) => padding_to_json(*padding),
             Field::Truncation(truncation) => truncation_to_json(*truncation),
