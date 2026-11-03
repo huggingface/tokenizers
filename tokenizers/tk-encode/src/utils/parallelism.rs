@@ -8,6 +8,7 @@ use rayon_cond::CondIterator;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use std::sync::OnceLock;
 use std::sync::PoisonError;
 use std::sync::TryLockError;
 use std::sync::atomic::AtomicBool;
@@ -76,7 +77,8 @@ fn register_fork_handler() {}
 
 #[derive(Clone)]
 struct Slot {
-    pool: Arc<rayon::ThreadPool>,
+    /// `None` when `max_threads()` is 1: cached too, so a serial process skips the rebuild path.
+    pool: Option<Arc<rayon::ThreadPool>>,
     version: usize,
     pid: u32,
 }
@@ -127,7 +129,7 @@ fn cached(generation: usize) -> Result<Option<Arc<rayon::ThreadPool>>, ()> {
         return Ok(None);
     };
     match guard.as_ref() {
-        Some(slot) if slot.version == generation => Ok(Some(slot.pool.clone())),
+        Some(slot) if slot.version == generation => Ok(slot.pool.clone()),
         _ => Err(()),
     }
 }
@@ -151,7 +153,7 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
 
     // the caller is one of the `max_threads`
     let workers = max_threads() - 1;
-    let slot = if workers == 0 {
+    let pool = if workers == 0 {
         None
     } else {
         let pool = rayon::ThreadPoolBuilder::new()
@@ -159,19 +161,14 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
             .thread_name(|i| format!("tk-encode-{i}"))
             .build()
             .ok()?;
-        let slot = Slot {
-            pool: Arc::new(pool),
-            version: generation,
-            pid: std::process::id(),
-        };
-        Some(slot)
+        Some(Arc::new(pool))
     };
-
     let mut guard = lock_blocking();
-    let old = match &slot {
-        Some(slot) => guard.replace(slot.clone()),
-        None => guard.take(),
-    };
+    let old = guard.replace(Slot {
+        pool: pool.clone(),
+        version: generation,
+        pid: std::process::id(),
+    });
     drop(guard);
 
     if let Some(old) = old
@@ -181,16 +178,22 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
         std::mem::forget(old.pool);
     }
 
-    slot.map(|slot| slot.pool.clone())
+    pool
 }
 
 /// Max threads per encode, caller included: the shared pool holds `max_threads() - 1`, so 1 means
 /// serial. Defaults to `available_parallelism()` (affinity mask, cgroup quota).
 pub fn max_threads() -> usize {
     match MAX_THREADS.load(Ordering::Acquire) {
-        0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
+        0 => available_parallelism(),
         n => n,
     }
+}
+
+/// Cached: on Linux it reads the cgroup quota from files, too slow for every encode.
+fn available_parallelism() -> usize {
+    static CORES: OnceLock<usize> = OnceLock::new();
+    *CORES.get_or_init(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
 }
 
 fn invalidate() {
