@@ -8,6 +8,7 @@ from . import decoders, models, normalizers, pre_tokenizers, processors
 from .tokenizers import (
     CompiledTokenizer,
     Component,
+    EncodeIter,
     Encoding,
     Padding,
     Regex,
@@ -19,6 +20,7 @@ from .tokenizers import (
 __all__ = [
     "CompiledTokenizer",
     "Component",
+    "EncodeIter",
     "Encoding",
     "Padding",
     "Regex",
