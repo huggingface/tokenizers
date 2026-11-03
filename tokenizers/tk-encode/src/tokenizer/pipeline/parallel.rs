@@ -4,7 +4,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use crate::parallelism::pool;
+use crate::parallelism::{fork_generation, pool};
 use crate::pipeline::scratch_pool::{EncodeScratch, ScratchGuard};
 use crate::pipeline::{
     EncodeHandle, EncodeOptions, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer,
@@ -126,6 +126,8 @@ struct EncodeBatch {
     /// Cursor that each thread increments to add a completed chunk to the completion queue
     next_completed: CachePadded<AtomicUsize>,
     side_a_len: Vec<usize>,
+    /// [`fork_generation`] at planning time; if it moves, the workers died in a fork.
+    fork_gen: usize,
 }
 
 impl EncodeBatch {
@@ -228,6 +230,8 @@ pub(crate) struct StreamingIter {
     batch: Arc<EncodeBatch>,
     next: usize,
     completed: usize,
+    /// After crossing a fork: the unyielded inputs, each yielded as an error.
+    orphaned: Option<std::vec::IntoIter<usize>>,
 }
 
 impl StreamingIter {
@@ -236,7 +240,19 @@ impl StreamingIter {
             batch,
             next: 0,
             completed: 0,
+            orphaned: None,
         }
+    }
+
+    /// Inputs not yielded yet (the yielded ones are `completion_queue[..next]`).
+    fn unyielded(&self) -> Vec<usize> {
+        let mut yielded = vec![false; self.batch.len()];
+        for i in 0..self.next {
+            if let Some(seq) = self.batch.completed_seq(i) {
+                yielded[seq] = true;
+            }
+        }
+        (0..self.batch.len()).filter(|&seq| !yielded[seq]).collect()
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -248,23 +264,39 @@ impl Iterator for StreamingIter {
     type Item = (usize, Result<Encoding>);
 
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(rest) = &mut self.orphaned {
+            return rest.next().map(|seq| {
+                (
+                    seq,
+                    Err("encode started before a fork; encode again in the child".into()),
+                )
+            });
+        }
         if self.completed == self.batch.len() {
             return None;
         }
-        let mut scratch = None;
-        loop {
-            if let Some(seq) = self.batch.completed_seq(self.next) {
-                self.next += 1;
-                self.completed += 1;
-                return Some((seq, self.batch.take_encoding(seq)));
-            }
-            let scratch = scratch.get_or_insert_with(|| self.batch.tokenizer.get_scratch());
-            // The caller has to wait for results regardless: instead of parking or empty
-            // spinning, we do useful work
-            if !self.batch.encode_task(scratch) {
-                std::hint::spin_loop();
+        {
+            let mut scratch = None;
+            loop {
+                if let Some(seq) = self.batch.completed_seq(self.next) {
+                    self.next += 1;
+                    self.completed += 1;
+                    return Some((seq, self.batch.take_encoding(seq)));
+                }
+                let scratch = scratch.get_or_insert_with(|| self.batch.tokenizer.get_scratch());
+                // The caller has to wait for results regardless: instead of parking or empty
+                // spinning, we do useful work
+                if !self.batch.encode_task(scratch) {
+                    // the missing work is held by workers that didn't survive a fork
+                    if fork_generation() != self.batch.fork_gen {
+                        break;
+                    }
+                    std::hint::spin_loop();
+                }
             }
         }
+        self.orphaned = Some(self.unyielded().into_iter());
+        self.next()
     }
 }
 
@@ -511,6 +543,7 @@ pub(crate) fn encode(
         side_a_len,
         chunks,
         tasks,
+        fork_gen: fork_generation(),
     });
     for _ in 0..pool_threads {
         let batch = batch.clone();
