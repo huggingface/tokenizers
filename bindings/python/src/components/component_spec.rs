@@ -1,34 +1,51 @@
-//! The specs behind the components of a [`Tokenizer`](crate::tokenizer::Tokenizer).
+//! How a component's spec is stored, shared and copied.
 //!
-//! A *spec* is a component's JSON representation in `tokenizer.json`, such as:
+//! The [`components`](super) docs say what a spec and a handle are.
 //!
-//! ```json
-//! {"type": "Prepend", "prepend": "▁"}
-//! ```
+//! # Why a spec is JSON
 //!
-//! The [`components`](super#handles) docs introduce tokenizer fields and handles, and show how
-//! Python edits a spec.
-//!
-//! # Why components store JSON
-//!
-//! A tokenizer field holds the component's JSON, not a Rust struct.
+//! A spec holds the component's JSON, not a Rust struct:
 //!
 //! - **No conversion.** [`to_str`](crate::tokenizer::Tokenizer::to_str), pickle and
 //!   [`compile`](crate::tokenizer::Tokenizer::compile) all need the JSON. They read it as is.
-//! - **A Python class is a thin layer.** It adds one getter and setter per JSON key, such as
-//!   `Prepend.prepend` for `"prepend"`. No Rust struct duplicates the core's types, so the two
-//!   cannot drift apart.
+//! - **Thin Python classes.** A class adds one getter and setter per JSON key, such as
+//!   `Prepend.prepend` for `"prepend"`. No Rust struct copies the core's types, so the two can't
+//!   drift apart.
 //!
-//! # Sharing and copying
+//! # The pointers
 //!
-//! [`ComponentSpec::deep_clone`] returns an independent copy. The two share their JSON until one is
-//! edited: [`Arc::make_mut`] copies on write.
+//! A tokenizer field and a handle hold clones of the same [`ComponentSpec`]. Cloning it copies a
+//! pointer, not the JSON:
+//!
+//! ```text
+//!   Tokenizer ──▶ TokenizerSpec ──▶ normalizer: ComponentSpec ──┐
+//!                                                               ├──▶ SingleSpec ──▶ JSON
+//!   tok.normalizer ──▶ Component ──▶ spec: ComponentSpec ───────┘
+//! ```
+//!
+//! A [`ComponentSpec`] is one of two variants:
+//!
+//! - `Single(Arc<SingleSpec>)` is one component. [`SingleSpec`] holds its JSON.
+//! - `Sequence(Arc<SequenceSpec>)` is a `Sequence`. [`SequenceSpec`] holds one `Arc<SingleSpec>`
+//!   per item.
+//!
+//! # Two kinds of `Arc`
+//!
+//! Each [`SingleSpec`] sits behind two `Arc`s, and each shares something different:
+//!
+//! - **`Arc<SingleSpec>` shares the spec.** Every handle on it holds this pointer. An edit
+//!   through one handle shows in all of them.
+//! - **`Arc<JsonObject>` shares the JSON.** `copy.deepcopy` and `compile()` build a new
+//!   `SingleSpec` over the same JSON. So copying a tokenizer copies no JSON, however big its vocab.
+//!
+//! An edit goes through [`Arc::make_mut`]. When this `SingleSpec` is the JSON's only owner, it
+//! edits the JSON in place. Otherwise it copies the JSON first, so the copy keeps the JSON it was
+//! made from. This is called *copy on write*.
 //!
 //! # Sequences
 //!
-//! A `Sequence` runs several components of one kind in turn. Its [`SequenceSpec`] keeps one
-//! `Arc<SingleSpec>` per item, so an item and the object the sequence was built from are *the same
-//! spec*: editing either changes both.
+//! A `Sequence` runs several components of one kind in turn. Its [`SequenceSpec`] holds the same
+//! `Arc<SingleSpec>` as the object each item came from, so editing either one changes both:
 //!
 //! ```text
 //!   tok.normalizer ──▶ SequenceSpec ─┬─▶ SingleSpec {"type": "Prepend", "prepend": "▁"}
@@ -39,21 +56,36 @@
 //!
 //! [`ComponentSpec::json`] rebuilds the sequence's JSON from its items on every read.
 //!
-//! An item is a [`SingleSpec`], never a sequence. A sequence holding another could end up holding
-//! itself, and its JSON would never end. A file or `Sequence([...])` may still nest them, and both
-//! flatten a nested `Sequence` into its items. tk runs a nested normalizer or decoder `Sequence` the
-//! same way. Only `seq[i] = x` refuses a `Sequence`, since splicing there would change the length.
+//! # No nested sequences
+//!
+//! An item is always a [`SingleSpec`], never a sequence. A sequence that held another could end
+//! up holding itself, and its JSON would never end.
+//!
+//! - Loading a file flattens a nested `Sequence` into its items.
+//! - `Sequence([...])` does the same with a `Sequence` argument.
+//! - `seq[i] = x` refuses a `Sequence`, since splicing it in would change the length.
+//!
+//! tk runs a nested normalizer or decoder `Sequence` like its items, so flattening keeps the ids.
 //!
 //! # Locks
 //!
-//! Each spec has its own `Mutex`, held for a single read or edit. A [`SequenceSpec`] keeps its lock
-//! while it reads its items' JSON. A [`SingleSpec`] never locks a [`SequenceSpec`], so every thread
-//! takes the two locks in the same order, and they can't deadlock. A caller of
-//! [`SequenceSpec::lock_items`] drops the guard before it calls into Python.
+//! Three kinds of `Mutex` guard a tokenizer, taken in this order:
+//!
+//! 1. The [`TokenizerSpec`](crate::tokenizer::TokenizerSpec), for which spec each field holds.
+//! 2. A [`SequenceSpec`], for its items.
+//! 3. A [`SingleSpec`], for its JSON.
+//!
+//! Two rules keep them from deadlocking:
+//!
+//! - **One order.** Code takes a lock only after the ones above it, never before. A
+//!   `SequenceSpec` holds its lock while it reads its items' JSON, and a `SingleSpec` never locks
+//!   anything else.
+//! - **No Python under a lock.** Code drops its guard before it calls into Python. Building a
+//!   Python object can run any Python code, and that code may need the same lock.
 //!
 //! # Validation
 //!
-//! A spec holds JSON as it is: `Prepend("x")` writes `{"type": "Prepend", "prepend": "x"}` and
+//! A spec holds JSON as it is: `Prepend("x")` writes `{"type": "Prepend", "prepend": "x"}`, and
 //! nothing checks it. [`compile`](crate::tokenizer::Tokenizer::compile) is the only place that
 //! builds anything, through `tk::from_json`, which refuses what it can't build.
 

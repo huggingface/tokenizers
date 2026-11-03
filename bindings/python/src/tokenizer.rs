@@ -1,3 +1,60 @@
+//! The Python [`Tokenizer`]: a `tokenizer.json` you can edit, then compile to encode with.
+//!
+//! # Two tokenizer types
+//!
+//! The bindings split a tokenizer in two:
+//!
+//! - A [`Tokenizer`] is the editable one. It holds the settings as JSON.
+//! - A [`CompiledTokenizer`] encodes and decodes. It never changes once built.
+//!
+//! `compile()` builds the second from the first:
+//!
+//! ```text
+//! tokenizer.json ──from_str()──▶ Tokenizer ──compile()──▶ CompiledTokenizer
+//!                                   ▲
+//!                                   └── edits: tok.normalizer = ..., tok.padding = ...
+//! ```
+//!
+//! [`CompiledTokenizer`]: crate::compiled::CompiledTokenizer
+//!
+//! # What a `Tokenizer` holds
+//!
+//! A [`Tokenizer`] holds a [`TokenizerSpec`] behind a `Mutex`. The `Mutex` lets setters work on a
+//! frozen Python class, from any thread. The spec has one field per top-level key of
+//! `tokenizer.json`:
+//!
+//! - `truncation` and `padding` are the defaults an encode applies, unless the call overrides
+//!   them.
+//! - `added_tokens` and `role_to_token` stay raw JSON. No Python method edits them here.
+//! - `normalizer`, `pre_tokenizer`, `post_processor`, `decoder` and `model` hold one
+//!   [`ComponentSpec`] each. The [`components`](crate::components) docs explain them.
+//!
+//! # Loading
+//!
+//! `from_str`, `from_file` and `from_pretrained` accept a `tokenizer.json` of any version.
+//! `canonicalize_value` first rewrites it into the 2.0 format. Then each top-level key goes to its
+//! field.
+//!
+//! # Writing
+//!
+//! `to_str`, pickle, `repr` and `compile()` all write the spec out through
+//! [`TokenizerSpec::fields`]. It lists the top-level keys in one fixed order, so every output
+//! agrees. It writes each component from its shared JSON, so writing copies none of it.
+//!
+//! # Compiling
+//!
+//! `compile()` copies the spec and releases the lock straight away. It then builds from the copy
+//! through `tk::from_json`, with the GIL released. So the build blocks no other thread, and later
+//! edits never reach the compiled tokenizer.
+//!
+//! The copy is cheap. It shares every component's JSON until one side edits it: see
+//! [copy on write](crate::components::component_spec#two-kinds-of-arc).
+//!
+//! # Validation
+//!
+//! `tk::from_json` builds the tokenizer, or refuses a config it can't build. Nothing else checks
+//! the spec, so an invalid edit fails at `compile()`, not at the assignment.
+
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
