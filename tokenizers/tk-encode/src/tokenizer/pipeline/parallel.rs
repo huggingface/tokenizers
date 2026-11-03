@@ -305,11 +305,18 @@ impl PipelineTokenizer {
     /// Cut points for a special-free `segment`: the first safe cut past each
     /// [`PARALLEL_MIN_BYTES`] stride point, probing at most [`MAX_PROBE`] bytes (a point with no
     /// cut that close is skipped, which bounds the serial scan).
-    fn cut_points<'a>(&self, segment: &'a str) -> impl Iterator<Item = usize> + 'a {
+    ///
+    /// None with `encode_special_tokens`: specials stay in the text, and a cut inside one could
+    /// expose a shorter added token the serial scan skips over.
+    fn cut_points<'a>(
+        &self,
+        segment: &'a str,
+        encode_special_tokens: bool,
+    ) -> impl Iterator<Item = usize> + 'a {
         let cut = self
             .inner
             .cut
-            .filter(|_| segment.len() >= 2 * PARALLEL_MIN_BYTES);
+            .filter(|_| !encode_special_tokens && segment.len() >= 2 * PARALLEL_MIN_BYTES);
         let last = segment.len().saturating_sub(PARALLEL_MIN_BYTES);
         let mut next = PARALLEL_MIN_BYTES;
         std::iter::from_fn(move || {
@@ -363,7 +370,10 @@ impl PipelineTokenizer {
                 Segment::Text { text, input_offset } => (text, input_offset),
             };
             let mut start = 0;
-            for end in self.cut_points(segment).chain([segment.len()]) {
+            for end in self
+                .cut_points(segment, encode_special_tokens)
+                .chain([segment.len()])
+            {
                 chunks.push(SequenceChunk {
                     seq: seq_idx,
                     idx: seq_outputs.len(),
