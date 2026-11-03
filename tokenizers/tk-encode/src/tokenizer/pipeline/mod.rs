@@ -2101,7 +2101,7 @@ mod tests {
     }
 
     #[test]
-    fn added_tokens_a_cut_could_break_disable_cuts() {
+    fn only_single_word_tokens_disable_cuts() {
         let pre_tokenizer = llama3_pre_tokenizer();
         // normalized tokens are peeled before cutting too (no normalizer)
         let normalized = AddedToken::from("<|endoftext|>", true)
