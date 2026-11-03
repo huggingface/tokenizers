@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use crate::{PaddingParams, TruncationParams};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11,6 +13,9 @@ pub struct EncodeOptions {
     /// Override the tokenizer's padding options. Defaults to [`Override::InheritConfig`].
     pub padding: Override<PaddingParams>,
     pub truncation: Override<TruncationParams>,
+    /// Max threads for this call, caller included, capped by `parallelism::max_threads()`.
+    /// Defaults to `None` (the process-wide max).
+    pub max_threads: Option<NonZeroUsize>,
 }
 
 impl Default for EncodeOptions {
@@ -20,6 +25,7 @@ impl Default for EncodeOptions {
             encode_special_tokens: false,
             padding: Override::InheritConfig,
             truncation: Override::InheritConfig,
+            max_threads: None,
         }
     }
 }

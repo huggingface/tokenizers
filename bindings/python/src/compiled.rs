@@ -56,6 +56,7 @@ fn encode_options(
         encode_special_tokens,
         padding: padding.into(),
         truncation: truncation.into(),
+        max_threads: None,
     }
 }
 
