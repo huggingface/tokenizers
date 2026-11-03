@@ -89,13 +89,13 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
 
     let generation = POOL_GEN.load(Ordering::Acquire);
     // no lock: encode serially rather than build a throwaway pool
-    let guard = lock()?;
+    let mut guard = lock()?;
     if let Some(slot) = guard.as_ref()
         && generation == slot.version
     {
         return Some(slot.pool.clone());
     }
-    drop(guard);
+    // build under the lock: callers that find it held go serial instead of building their own
 
     let num_threads = num_threads();
     // We don't create a thread pool when thread == 1
@@ -115,10 +115,11 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
         Some(slot)
     };
 
-    let old = lock().and_then(|mut guard| match &slot {
+    let old = match &slot {
         Some(slot) => guard.replace(slot.clone()),
         None => guard.take(),
-    });
+    };
+    drop(guard);
 
     if let Some(old) = old
         && old.pid != std::process::id()
@@ -406,7 +407,8 @@ mod tests {
         if num_threads() == 1 {
             return; // no pool on a one-core machine
         }
-        let first = pool().expect("a pool");
+        // start stale, so the callers race the rebuild too
+        invalidate();
         let callers: Vec<_> = (0..32)
             .map(|_| {
                 std::thread::spawn(|| {
@@ -417,13 +419,11 @@ mod tests {
                 })
             })
             .collect();
-        for caller in callers {
-            let seen = caller.join().unwrap();
-            assert!(
-                seen.iter().all(|&ptr| ptr == Arc::as_ptr(&first) as usize),
-                "a contended caller built a pool of its own"
-            );
-        }
+        let seen: std::collections::HashSet<_> = callers
+            .into_iter()
+            .flat_map(|caller| caller.join().unwrap())
+            .collect();
+        assert_eq!(seen.len(), 1, "contended callers built pools of their own");
     }
 
     #[test]
