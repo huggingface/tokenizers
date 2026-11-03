@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from os import PathLike
 from typing import Any, Final, Literal, final
 
+from _typeshed import Incomplete
 from numpy import integer, uint32
 from numpy.typing import NDArray
 
@@ -110,6 +111,7 @@ class CompiledTokenizer:
                 When omitted, uses the truncation the tokenizer had when compiled.
             max_threads: int or None
                 Most threads this call uses, the caller included, capped by `get_max_threads()`.
+                `None` or `0`: no per-call cap.
 
         Returns:
             Encoding
@@ -146,6 +148,7 @@ class CompiledTokenizer:
                 When omitted, uses the truncation the tokenizer had when compiled.
             max_threads: int or None
                 Most threads this call uses, the caller included, capped by `get_max_threads()`.
+                `None` or `0`: no per-call cap.
 
         Returns:
             List[Encoding]
@@ -230,6 +233,7 @@ class CompiledTokenizer:
                 When omitted, uses the truncation the tokenizer had when compiled.
             max_threads: int or None
                 Most threads this call uses, the caller included, capped by `get_max_threads()`.
+                `None` or `0`: no per-call cap.
 
         Returns:
             list[str]
@@ -684,3 +688,5 @@ def set_max_threads(max_threads: int) -> None:
     Args:
         max_threads: int
     """
+
+def __getattr__(name: str) -> Incomplete: ...
