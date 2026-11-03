@@ -297,6 +297,11 @@ fn drain(results: &[ChunkResult]) -> Result<Vec<PipelineToken>> {
     Ok(out.concat())
 }
 
+/// A peeled added token: its id is the chunk's whole result.
+fn push_special(id: u32, seq_outputs: &mut Vec<ChunkResult>) {
+    seq_outputs.push(ChunkResult::new(Some(Ok(vec![PipelineToken::from(id)]))));
+}
+
 impl PipelineTokenizer {
     fn get_scratch(&self) -> ScratchGuard<'_> {
         self.inner.scratch_pool.get(&self.inner.model)
@@ -391,13 +396,18 @@ impl PipelineTokenizer {
         ) {
             let (segment, offset) = match segment {
                 Segment::SpecialToken(id) => {
-                    let token = PipelineToken::from(id);
-                    seq_outputs.push(ChunkResult::new(Some(Ok(vec![token]))));
+                    push_special(id, seq_outputs);
                     continue;
                 }
                 Segment::Text { text, input_offset } => (text, input_offset),
             };
-            if self.inner.cut.is_none() {
+            // Where a cut may follow, normalized tokens are peeled here too: with no normalizer
+            // they match the raw text, so in full context.
+            let peel = self.inner.cut.is_some()
+                && self.inner.normalizers.is_empty()
+                && !encode_special_tokens
+                && segment.len() >= 2 * PARALLEL_MIN_BYTES;
+            if !peel {
                 self.push_chunks(
                     seq_idx,
                     side,
@@ -409,18 +419,11 @@ impl PipelineTokenizer {
                 );
                 continue;
             }
-            // a cut implies no normalizer: normalized tokens match the raw text, peel them here
-            for inner in SpecialSegmentIterator::new(
-                segment,
-                &self.inner.added_vocabulary,
-                true,
-                encode_special_tokens,
-            ) {
+            for inner in
+                SpecialSegmentIterator::new(segment, &self.inner.added_vocabulary, true, false)
+            {
                 match inner {
-                    Segment::SpecialToken(id) => {
-                        let token = PipelineToken::from(id);
-                        seq_outputs.push(ChunkResult::new(Some(Ok(vec![token]))));
-                    }
+                    Segment::SpecialToken(id) => push_special(id, seq_outputs),
                     Segment::Text { text, input_offset } => self.push_chunks(
                         seq_idx,
                         side,
