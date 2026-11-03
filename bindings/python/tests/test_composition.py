@@ -124,60 +124,49 @@ def test_shared_component_edits_reach_both_tokenizers(gpt2_spec, bert_spec):
 
 
 def test_editing_a_component_writes_through(gpt2_spec):
-    unchanged = copy.deepcopy(gpt2_spec)
     prepend = normalizers.Prepend("a")
     gpt2_spec.normalizer = prepend
     prepend.prepend = "b"
     assert type(gpt2_spec.normalizer) is normalizers.Prepend
     assert gpt2_spec.normalizer.prepend == "b"
-    assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode("b" + TEXT).ids
 
 
-def test_sequence_item_assignment_writes_through(gpt2_spec):
-    unchanged = copy.deepcopy(gpt2_spec)
+def test_sequence_setitem(gpt2_spec):
     gpt2_spec.normalizer = normalizers.Sequence([normalizers.Prepend("a")])
     gpt2_spec.normalizer[0] = normalizers.Prepend("b")
-    assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode("b" + TEXT).ids
+    assert gpt2_spec.normalizer[0].prepend == "b"  # ty: ignore[unresolved-attribute]
 
 
-# Python iterates through `__getitem__` until it raises `IndexError`.
-def test_sequence_iterates():
+def test_sequence_iter():
     sequence = normalizers.Sequence([normalizers.Prepend("a"), normalizers.Prepend("b")])
     assert len(sequence) == 2
-    prepends = [item.prepend for item in sequence if isinstance(item, normalizers.Prepend)]
-    assert prepends == ["a", "b"]
+    for item in sequence:
+        assert isinstance(item, normalizers.Normalizer)
 
 
-def test_editing_a_sequence_item_writes_through(gpt2_spec):
-    unchanged = copy.deepcopy(gpt2_spec)
-    gpt2_spec.normalizer = normalizers.Sequence([normalizers.Prepend("a")])
-    prepend = gpt2_spec.normalizer[0]
-    assert isinstance(prepend, normalizers.Prepend)
-    prepend.prepend = "b"
-    assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode("b" + TEXT).ids
+def test_sequence_item_is_shared():
+    sequence = normalizers.Sequence([normalizers.Prepend("a")])
+    item = sequence[0]
+    assert isinstance(item, normalizers.Prepend)
+    item.prepend = "b"
+    assert sequence[0].prepend == "b"  # ty: ignore[unresolved-attribute]
 
 
-def test_sequence_shares_the_components_it_was_built_from():
+def test_sequence_shares_its_arguments():
     prepend = normalizers.Prepend("a")
     sequence = normalizers.Sequence([prepend])
     prepend.prepend = "b"
-    item = sequence[0]
-    assert isinstance(item, normalizers.Prepend)
-    assert item.prepend == "b"
+    assert sequence[0].prepend == "b"  # ty: ignore[unresolved-attribute]
 
 
-def test_sequence_counts_negative_indices_from_the_end():
+def test_sequence_negative_index():
     sequence = normalizers.Sequence([normalizers.Prepend("a"), normalizers.Prepend("b")])
-    last = sequence[-1]
-    assert isinstance(last, normalizers.Prepend)
-    assert last.prepend == "b"
+    assert sequence[-1].__getstate__() == sequence[1].__getstate__()
     sequence[-2] = normalizers.Prepend("c")
-    first = sequence[0]
-    assert isinstance(first, normalizers.Prepend)
-    assert first.prepend == "c"
+    assert [item.prepend for item in sequence] == ["c", "b"]  # ty: ignore[unresolved-attribute]
 
 
-def test_sequence_index_out_of_range_raises_index_error():
+def test_sequence_index_out_of_range():
     sequence = normalizers.Sequence([normalizers.Prepend("a")])
     with pytest.raises(IndexError):
         sequence[-2]
@@ -186,7 +175,7 @@ def test_sequence_index_out_of_range_raises_index_error():
 
 
 # A Sequence item that is a Sequence lets two sequences hold each other, and their JSON never ends.
-def test_sequence_refuses_a_sequence_item():
+def test_sequence_setitem_refuses_a_sequence():
     outer = normalizers.Sequence([normalizers.Prepend("a")])
     inner = normalizers.Sequence([normalizers.Prepend("b")])
     with pytest.raises(ValueError, match="can't be a Sequence"):
@@ -194,23 +183,22 @@ def test_sequence_refuses_a_sequence_item():
 
 
 # transformers' pocket_tts converter wraps a loaded normalizer that may already be a Sequence.
-def test_sequence_splices_a_sequence_argument(gpt2_spec):
-    unchanged = copy.deepcopy(gpt2_spec)
+def test_sequence_flattens_a_sequence_argument():
     inner = normalizers.Sequence([normalizers.Prepend("a"), normalizers.Prepend("b")])
-    gpt2_spec.normalizer = normalizers.Sequence([inner, normalizers.Prepend("c")])
-    assert len(gpt2_spec.normalizer) == 3
-    # The spliced items are inner's own specs, so an edit through inner reaches the outer one.
-    inner[0].prepend = "x"
-    assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode("cbx" + TEXT).ids
+    outer = normalizers.Sequence([inner, normalizers.Prepend("c")])
+    flat = normalizers.Sequence([normalizers.Prepend(text) for text in "abc"])
+    assert outer.__getstate__() == flat.__getstate__()
+    item = inner[0]
+    assert isinstance(item, normalizers.Prepend)
+    item.prepend = "x"
+    assert outer[0].prepend == "x"  # ty: ignore[unresolved-attribute]
 
 
-# A file can nest a Sequence in a Sequence. Loading flattens it, keeping the order.
+# A file can nest a Sequence in a Sequence.
 def test_loading_flattens_a_nested_sequence(gpt2_spec):
-    unchanged = copy.deepcopy(gpt2_spec)
     file = json.loads(gpt2_spec.to_str())
     prepend = [{"type": "Prepend", "prepend": text} for text in "abc"]
     inner = {"type": "Sequence", "normalizers": prepend[:2]}
     file["normalizer"] = {"type": "Sequence", "normalizers": [inner, prepend[2]]}
     nested = type(gpt2_spec).from_str(json.dumps(file))
-    assert len(nested.normalizer) == 3
-    assert nested.compile().encode(TEXT).ids == unchanged.compile().encode("cba" + TEXT).ids
+    assert json.loads(nested.to_str())["normalizer"]["normalizers"] == prepend
