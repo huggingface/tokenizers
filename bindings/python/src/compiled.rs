@@ -211,10 +211,12 @@ impl CompiledTokenizer {
         Ok(encodings.into_iter().map(Encoding::from).collect())
     }
 
-    /// Encodes a batch of texts, or pairs of texts, yielding each encoding as soon as it is done.
+    /// Encodes a batch of texts, or pairs of texts, yielding the encodings as they complete.
     ///
     /// Iterates `(index, Encoding)` pairs in completion order, `index` being the input's position
-    /// in `inputs`. Encodings are not padded: padding needs the whole batch, use `encode_batch`.
+    /// in `inputs`. A failed input raises `ValueError` naming its index. Encodings are not padded:
+    /// padding needs the whole batch, use `encode_batch`. A batch encoded serially (small, or with
+    /// no thread pool) is encoded up front, then iterated.
     ///
     /// Args:
     ///     inputs: list[str | tuple[str, str]]
@@ -247,7 +249,7 @@ impl CompiledTokenizer {
             truncation,
         );
         let inputs = Inputs::Batch(inputs.into_iter().map(Input::from).collect());
-        // planning a large batch is worth releasing the GIL for
+        // planning (or, serially, encoding) the batch is worth releasing the GIL for
         EncodeIter::new(py.detach(|| self.pipeline.encode(inputs, &options).into_iter()))
     }
 
