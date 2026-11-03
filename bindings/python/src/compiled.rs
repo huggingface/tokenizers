@@ -74,10 +74,10 @@ impl CompiledTokenizer {
     ///         or be replaced by their id in the added vocabulary.
     ///     padding: `Padding` or `None`
     ///         Padding options. Pass `None` to disable padding.
-    ///         When omitted, defaults to the padding of the spec this tokenizer was compiled from.
+    ///         When omitted, uses the padding the tokenizer had when compiled.
     ///     truncation: `Truncation` or `None`
     ///         Truncation options. Pass `None` to disable truncation.
-    ///         When omitted, defaults to the truncation of the spec this tokenizer was compiled from.
+    ///         When omitted, uses the truncation the tokenizer had when compiled.
     ///
     /// Returns:
     ///     Encoding
@@ -120,10 +120,10 @@ impl CompiledTokenizer {
     ///         or be replaced by their id in the added vocabulary.
     ///     padding: `Padding` or `None`
     ///         Padding options. Pass `None` to disable padding.
-    ///         When omitted, defaults to the padding of the spec this tokenizer was compiled from.
+    ///         When omitted, uses the padding the tokenizer had when compiled.
     ///     truncation: `Truncation` or `None`
     ///         Truncation options. Pass `None` to disable truncation.
-    ///         When omitted, defaults to the truncation of the spec this tokenizer was compiled from.
+    ///         When omitted, uses the truncation the tokenizer had when compiled.
     ///
     /// Returns:
     ///     list[str]
@@ -167,10 +167,10 @@ impl CompiledTokenizer {
     ///         or be replaced by their id in the added vocabulary.
     ///     padding: `Padding` or `None`
     ///         Padding options. Pass `None` to disable padding.
-    ///         When omitted, defaults to the padding of the spec this tokenizer was compiled from.
+    ///         When omitted, uses the padding the tokenizer had when compiled.
     ///     truncation: `Truncation` or `None`
     ///         Truncation options. Pass `None` to disable truncation.
-    ///         When omitted, defaults to the truncation of the spec this tokenizer was compiled from.
+    ///         When omitted, uses the truncation the tokenizer had when compiled.
     ///
     /// Returns:
     ///     List[Encoding]
