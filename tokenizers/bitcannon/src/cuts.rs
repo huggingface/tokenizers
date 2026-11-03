@@ -20,7 +20,7 @@ const WINDOW: usize = 256;
 ///
 /// Unsound for o200k (contractions are word suffixes) and deepseek (`[\p{L}\p{M}]+`).
 ///
-/// `text` must be valid UTF-8, and `from` a char boundary. Returns `None` if there is no such cut
+/// `text` must be valid UTF-8; `from` may fall mid-char. Returns `None` if there is no such cut
 /// before `to` (clamped to `text.len()`).
 #[must_use]
 pub fn after_letter(text: &[u8], from: usize, to: usize) -> Option<usize> {
@@ -103,6 +103,8 @@ mod tests {
         assert_eq!(after_letter(b"ab cd", 3, 5), None);
         // `to` is exclusive
         assert_eq!(after_letter(b"ab cd", 1, 2), None);
+        // `from` mid-char
+        assert_eq!(after_letter("中文。".as_bytes(), 1, 9), Some(6));
         // a cut far past the first window
         let text = format!("{}x.", "1".repeat(1000));
         assert_eq!(after_letter(text.as_bytes(), 1, text.len()), Some(1001));
