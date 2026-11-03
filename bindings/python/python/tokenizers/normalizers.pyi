@@ -4,7 +4,113 @@
 from collections.abc import Sequence as Sequence2
 from typing import final
 
-from . import Component
+from . import Component, Regex
+
+@final
+class BertNormalizer(Normalizer):
+    """
+    BERT's normalization: control characters removed, spaces around CJK characters, accents
+    stripped and the text lowercased, each optional. `strip_accents` unset strips accents when
+    `lowercase` is set.
+    """
+    def __new__(
+        cls,
+        /,
+        clean_text: bool = True,
+        handle_chinese_chars: bool = True,
+        strip_accents: bool | None = None,
+        lowercase: bool = True,
+    ) -> BertNormalizer: ...
+    @property
+    def clean_text(self, /) -> bool: ...
+    @clean_text.setter
+    def clean_text(self, /, clean_text: bool) -> None: ...
+    @property
+    def handle_chinese_chars(self, /) -> bool: ...
+    @handle_chinese_chars.setter
+    def handle_chinese_chars(self, /, handle_chinese_chars: bool) -> None: ...
+    @property
+    def lowercase(self, /) -> bool: ...
+    @lowercase.setter
+    def lowercase(self, /, lowercase: bool) -> None: ...
+    @property
+    def strip_accents(self, /) -> bool | None: ...
+    @strip_accents.setter
+    def strip_accents(self, /, strip_accents: bool | None) -> None: ...
+
+@final
+class ByteLevel(Normalizer):
+    """
+    Replaces each byte of the text with its character in the GPT-2 byte-to-unicode mapping.
+    """
+    def __new__(cls, /) -> ByteLevel: ...
+
+@final
+class Lowercase(Normalizer):
+    """
+    Lowercases the text.
+    """
+    def __new__(cls, /) -> Lowercase: ...
+
+@final
+class MetaspaceNormalizer(Normalizer):
+    """
+    SentencePiece's whitespace handling: replaces spaces with `replacement`. `prepend` says
+    when `replacement` also goes in front of the text: `"always"`, `"first"` (only at the start
+    of the input) or `"never"`. `drop_whitespace` drops runs of whitespace instead of replacing
+    them.
+    """
+    def __new__(
+        cls, /, replacement: str = "▁", prepend: str = "always", drop_whitespace: bool = False
+    ) -> MetaspaceNormalizer: ...
+    @property
+    def drop_whitespace(self, /) -> bool: ...
+    @drop_whitespace.setter
+    def drop_whitespace(self, /, drop_whitespace: bool) -> None: ...
+    @property
+    def prepend(self, /) -> str: ...
+    @prepend.setter
+    def prepend(self, /, prepend: str) -> None: ...
+    @property
+    def replacement(self, /) -> str: ...
+    @replacement.setter
+    def replacement(self, /, replacement: str) -> None: ...
+
+@final
+class NFC(Normalizer):
+    """
+    Unicode NFC normalization.
+    """
+    def __new__(cls, /) -> NFC: ...
+
+@final
+class NFD(Normalizer):
+    """
+    Unicode NFD normalization.
+    """
+    def __new__(cls, /) -> NFD: ...
+
+@final
+class NFKC(Normalizer):
+    """
+    Unicode NFKC normalization.
+    """
+    def __new__(cls, /) -> NFKC: ...
+
+@final
+class NFKD(Normalizer):
+    """
+    Unicode NFKD normalization.
+    """
+    def __new__(cls, /) -> NFKD: ...
+
+@final
+class Nmt(Normalizer):
+    """
+    Removes control characters and replaces line breaks, tabs and some invisible characters
+    with a space, like the Google NMT pipeline.
+    """
+    def __new__(cls, /) -> Nmt: ...
 
 class Normalizer(Component):
     """
@@ -17,9 +123,20 @@ class Normalizer(Component):
         """
 
 @final
+class Precompiled(Normalizer):
+    """
+    SentencePiece's normalization rules, compiled into a charsmap (T5, ALBERT, XLM-R).
+    """
+    def __new__(cls, /, precompiled_charsmap: bytes) -> Precompiled: ...
+    @property
+    def precompiled_charsmap(self, /) -> bytes: ...
+    @precompiled_charsmap.setter
+    def precompiled_charsmap(self, /, precompiled_charsmap: bytes) -> None: ...
+
+@final
 class Prepend(Normalizer):
     """
-    Adds `prepend` at the start of the text.
+    Adds `prepend` at the start of the text, unless the text is empty.
     """
     def __new__(cls, /, prepend: str) -> Prepend: ...
     @property
@@ -28,11 +145,48 @@ class Prepend(Normalizer):
     def prepend(self, /, prepend: str) -> None: ...
 
 @final
+class Replace(Normalizer):
+    """
+    Replaces every match of `pattern` with `content`. A string pattern is a literal.
+    """
+    def __new__(cls, /, pattern: str | Regex, content: str) -> Replace: ...
+    @property
+    def content(self, /) -> str: ...
+    @content.setter
+    def content(self, /, content: str) -> None: ...
+    @property
+    def pattern(self, /) -> str | Regex: ...
+    @pattern.setter
+    def pattern(self, /, pattern: str | Regex) -> None: ...
+
+@final
 class Sequence(Normalizer):
     """
     Applies each normalizer in turn.
     """
     def __getitem__(self, index: int, /) -> Normalizer: ...
     def __len__(self, /) -> int: ...
-    def __new__(cls, /, normalizers: Sequence2[Normalizer]) -> Sequence: ...
+    def __new__(cls, items: Sequence2[Normalizer], /) -> Sequence: ...
     def __setitem__(self, index: int, item: Normalizer, /) -> None: ...
+
+@final
+class Strip(Normalizer):
+    """
+    Removes whitespace from the start and the end of the text.
+    """
+    def __new__(cls, /, strip_left: bool = True, strip_right: bool = True) -> Strip: ...
+    @property
+    def strip_left(self, /) -> bool: ...
+    @strip_left.setter
+    def strip_left(self, /, strip_left: bool) -> None: ...
+    @property
+    def strip_right(self, /) -> bool: ...
+    @strip_right.setter
+    def strip_right(self, /, strip_right: bool) -> None: ...
+
+@final
+class StripAccents(Normalizer):
+    """
+    Removes combining marks. Use it after `NFD` or `NFKD` to strip accents.
+    """
+    def __new__(cls, /) -> StripAccents: ...

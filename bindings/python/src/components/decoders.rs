@@ -3,7 +3,10 @@ use pyo3::prelude::*;
 use crate::components::component_spec::ComponentSpec;
 use crate::tokenizer::TokenizerSpec;
 
+use super::generated::decoders as generated;
 use super::{Component, ComponentKind};
+
+pub use generated::decoders;
 
 /// Base class for all decoders
 #[pyclass(frozen, subclass, extends = Component, module = "tokenizers.decoders")]
@@ -27,12 +30,12 @@ impl ComponentKind for Decoder {
     }
 
     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
-        Self::default_component(py, spec)
+        match &spec {
+            ComponentSpec::Sequence(_) => Self::concrete_component(py, spec, generated::Sequence),
+            ComponentSpec::Single(single) => {
+                let json_type = single.json_type();
+                generated::from_json_type(py, spec, json_type.as_deref())
+            }
+        }
     }
-}
-
-#[pymodule]
-pub mod decoders {
-    #[pymodule_export]
-    use super::Decoder;
 }
