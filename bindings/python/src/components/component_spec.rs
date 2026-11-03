@@ -169,9 +169,9 @@ impl ComponentSpec {
         self.base().get("type")?.as_str().map(str::to_owned)
     }
 
-    /// Whether this spec is a `Sequence` over the items it holds.
-    pub(crate) fn is_sequence(&self) -> bool {
-        self.items_key.is_some()
+    /// The key this spec's items live under, or `None` for a component that holds its JSON as is.
+    pub(crate) fn items_key(&self) -> Option<&'static str> {
+        self.items_key
     }
 
     pub(crate) fn len(&self) -> usize {

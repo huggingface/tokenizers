@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use crate::components::component_spec::ComponentSpec;
 use crate::error::err;
 
-use super::{Component, ComponentKind, ComponentType, JsonFields};
+use super::{Component, ComponentKind, JsonFields};
 
 /// Base class for all normalizers
 #[pyclass(frozen, subclass, extends = Component, module = "tokenizers.normalizers")]
@@ -28,11 +28,11 @@ impl ComponentKind for Normalizer {
     const ITEMS_KEY: Option<&'static str> = Some("normalizers");
 
     fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
-        if spec.is_sequence() {
-            return Sequence::from_spec(py, spec);
+        if spec.items_key().is_some() {
+            return Self::of::<Sequence>(py, spec);
         }
         match spec.json_type().as_deref() {
-            Some("Prepend") => Prepend::from_spec(py, spec),
+            Some("Prepend") => Self::of::<Prepend>(py, spec),
             _ => Self::default_component(py, spec),
         }
     }
@@ -43,8 +43,6 @@ impl ComponentKind for Normalizer {
 #[derive(Default)]
 pub struct Prepend;
 
-impl ComponentType for Prepend {}
-
 #[pymethods]
 impl Prepend {
     #[new]
@@ -52,7 +50,7 @@ impl Prepend {
         let Value::Object(json) = json!({"type": "Prepend", "prepend": prepend}) else {
             unreachable!("json! builds an object from an object literal")
         };
-        Self::initializer(ComponentSpec::new(json))
+        Normalizer::default_initializer(ComponentSpec::new(json)).add_subclass(Self)
     }
 
     #[getter]
@@ -71,8 +69,6 @@ impl Prepend {
 #[derive(Default)]
 pub struct Sequence;
 
-impl ComponentType for Sequence {}
-
 #[pymethods]
 impl Sequence {
     #[new]
@@ -82,7 +78,10 @@ impl Sequence {
             .map(|item| Normalizer::spec(item).clone())
             .collect();
         let items_key = Normalizer::ITEMS_KEY.expect("Normalizer lists its Sequence items");
-        Ok(Self::initializer(ComponentSpec::sequence(items_key, items)))
+        Ok(
+            Normalizer::default_initializer(ComponentSpec::sequence(items_key, items))
+                .add_subclass(Self),
+        )
     }
 
     fn __len__(slf: &Bound<'_, Self>) -> usize {

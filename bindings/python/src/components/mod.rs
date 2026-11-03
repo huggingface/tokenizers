@@ -38,7 +38,8 @@
 //! - [`Component`] holds the spec: the component's JSON object.
 //! - A *kind*, such as [`Normalizer`](normalizers::Normalizer), holds no data. It implements
 //!   [`ComponentKind`], which knows the kind's `tokenizer.json` keys.
-//! - A *concrete class*, such as [`Prepend`](normalizers::Prepend), implements [`ComponentType`].
+//! - A *concrete class*, such as [`Prepend`](normalizers::Prepend), is a subclass of its kind and
+//!   holds no data either: [`ComponentKind::spec`] reads the spec from the [`Component`] base.
 //!
 //! The [`Tokenizer`](crate::tokenizer::Tokenizer) getters and `Sequence.__getitem__` build a new
 //! handle on each call. [`ComponentKind::from_spec`] picks the class from the spec's `"type"`.
@@ -122,9 +123,19 @@ pub(crate) trait ComponentKind:
     }
 
     /// Returns the pyo3 initializer of the plain kind over `spec`.
-    /// [`ComponentType::initializer`] adds a concrete class on top of it.
+    /// [`Self::of`] adds a concrete class on top of it.
     fn default_initializer(spec: Arc<ComponentSpec>) -> PyClassInitializer<Self> {
         PyClassInitializer::from(Component { spec }).add_subclass(Self::default())
+    }
+
+    /// Builds a handle of the concrete class `T` on `spec`, typed as its kind.
+    /// So a getter can return any class of the kind.
+    fn of<T: PyClass<BaseType = Self> + Default>(
+        py: Python<'_>,
+        spec: Arc<ComponentSpec>,
+    ) -> PyResult<Py<Self>> {
+        let initializer = Self::default_initializer(spec).add_subclass(T::default());
+        Ok(Bound::new(py, initializer)?.into_super().unbind())
     }
 
     /// Returns the spec that `handle` points at.
@@ -139,23 +150,6 @@ pub(crate) trait ComponentKind:
             return Err(err("a component's state must be a JSON object"));
         };
         Self::from_spec(py, ComponentSpec::from_json(Self::ITEMS_KEY, json))
-    }
-}
-
-/// The shared methods of a concrete class, such as `Prepend` or `Sequence`.
-///
-/// Its [`Component`] base holds the spec, and [`ComponentKind::spec`] reads it back.
-pub(crate) trait ComponentType: PyClass<BaseType: ComponentKind> + Default {
-    fn initializer(spec: Arc<ComponentSpec>) -> PyClassInitializer<Self> {
-        Self::BaseType::default_initializer(spec).add_subclass(Self::default())
-    }
-
-    /// Builds a handle on `spec`, typed as its kind.
-    /// So a getter can return any class of the kind.
-    fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self::BaseType>> {
-        Ok(Bound::new(py, Self::initializer(spec))?
-            .into_super()
-            .unbind())
     }
 }
 
