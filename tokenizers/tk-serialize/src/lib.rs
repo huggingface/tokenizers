@@ -6,6 +6,8 @@
 #![doc = include_str!("../SPEC.md")]
 
 pub mod json;
+#[cfg(feature = "schemas")]
+pub mod schemas;
 mod vendored;
 
 /// Standard alphabet, padded on the way out and padding-*indifferent* on the way in, as `base64`

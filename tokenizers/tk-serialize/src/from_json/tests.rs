@@ -340,3 +340,73 @@ fn a_unigram_score_is_serdes_f64_one_ulp_off_the_correctly_rounded_one() {
         "the score must sit exactly one ULP from the f32 the file encodes"
     );
 }
+
+/// The JSON the bindings write for `schema` with its defaults, with a sample value for each field
+/// that has none.
+#[cfg(all(
+    feature = "schemas",
+    feature = "normalizers",
+    feature = "unicode-scripts"
+))]
+fn schema_json(schema: &crate::schemas::ComponentSchema) -> String {
+    use std::fmt::Write as _;
+
+    use crate::schemas::{FieldType, FieldValue};
+
+    let mut json = format!(r#"{{"type": "{}""#, schema.json_type);
+    for field in schema.fields {
+        let value = match (&field.default, &field.field_type) {
+            (Some(FieldValue::Bool(value)), _) => value.to_string(),
+            (Some(FieldValue::Str(value)), _) => format!("{value:?}"),
+            (Some(FieldValue::Char(value)), _) => format!(r#""{value}""#),
+            (Some(FieldValue::Usize(value)), _) => value.to_string(),
+            (Some(FieldValue::Null), _) => "null".to_owned(),
+            (None, FieldType::Bool) => "true".to_owned(),
+            (None, FieldType::String) => r#""a""#.to_owned(),
+            (None, FieldType::Char) => r#""▁""#.to_owned(),
+            (None, FieldType::Usize) => "1".to_owned(),
+            (None, FieldType::OptionalBool) => "null".to_owned(),
+            (None, FieldType::Choice(choices)) => format!("{:?}", choices[0]),
+            (None, FieldType::Pattern) => r#"{"String": "a"}"#.to_owned(),
+            // A charsmap with an empty trie and no normalized text.
+            (None, FieldType::Base64Bytes) => r#""AAAAAA==""#.to_owned(),
+        };
+        write!(json, r#", "{}": {value}"#, field.key).unwrap();
+    }
+    json.push('}');
+    json
+}
+
+// The bindings write each component's JSON from its schema, with the schema's defaults. The
+// schema is a list apart from the reader, so this catches a key or a value the reader refuses.
+#[cfg(all(
+    feature = "schemas",
+    feature = "normalizers",
+    feature = "unicode-scripts"
+))]
+#[test]
+fn reads_every_component_as_its_schema_writes_it() {
+    use crate::schemas::{DECODERS, NORMALIZERS, PRE_TOKENIZERS};
+
+    for schema in NORMALIZERS.components {
+        let json = schema_json(schema);
+        let doc = Json::parse(&json).unwrap();
+        if let Err(e) = read_normalizers(Some(&doc)) {
+            panic!("{json}: {e}");
+        }
+    }
+    for schema in PRE_TOKENIZERS.components {
+        let json = schema_json(schema);
+        let doc = Json::parse(&json).unwrap();
+        if let Err(e) = pre_tokenizers::read_pre_tokenizer(Some(&doc)) {
+            panic!("{json}: {e}");
+        }
+    }
+    for schema in DECODERS.components {
+        let json = schema_json(schema);
+        let doc = Json::parse(&json).unwrap();
+        if let Err(e) = read_one_decoder(&doc) {
+            panic!("{json}: {e}");
+        }
+    }
+}
