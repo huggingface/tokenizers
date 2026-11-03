@@ -85,24 +85,24 @@ impl Template {
         s1: Vec<PipelineToken>,
         s2: Option<Vec<PipelineToken>>,
     ) -> Encoding {
-        let type_ids = self.type_ids::<SPECIALS>(s1.len(), s2.as_ref().map_or(0, Vec::len));
-        let ids = match s2 {
-            Some(b) => self.wrap_pair::<SPECIALS>(s1, b),
-            None => {
-                // A's buffer already holds the front of the answer, so keep it.
-                debug_assert!(self.infix.is_empty(), "[BUG] single template with an infix");
-                let mut ids = s1;
-                if SPECIALS {
-                    ids.reserve(self.n_special());
-                    push_ids(&self.suffix, &mut ids);
-                    if !self.prefix.is_empty() {
-                        ids.splice(0..0, self.prefix.iter().map(|&(id, _)| id));
-                    }
+        let Some(b) = s2 else {
+            // A's buffer already holds the front of the answer, so keep it.
+            debug_assert!(self.infix.is_empty(), "[BUG] single template with an infix");
+            let type_ids = self.type_ids::<SPECIALS>(s1.len(), 0);
+            let mut ids = s1;
+            if SPECIALS {
+                ids.reserve(self.n_special());
+                push_ids(&self.suffix, &mut ids);
+                if !self.prefix.is_empty() {
+                    ids.splice(0..0, self.prefix.iter().map(|&(id, _)| id));
                 }
-                ids
             }
+            return Encoding::new(ids, type_ids, None);
         };
-        Encoding::new(ids, type_ids, None)
+        self.post_process_parts::<SPECIALS>(
+            std::slice::from_ref(&s1),
+            Some(std::slice::from_ref(&b)),
+        )
     }
 
     /// [`Self::post_process`] for a sequence in parts: each part is copied once into an
@@ -114,6 +114,10 @@ impl Template {
     ) -> Encoding {
         let len = |parts: &[Vec<PipelineToken>]| parts.iter().map(Vec::len).sum::<usize>();
         let (a_len, b_len) = (len(a), b.map_or(0, len));
+        debug_assert!(
+            b.is_some() || self.infix.is_empty(),
+            "[BUG] single template with an infix"
+        );
         let type_ids = self.type_ids::<SPECIALS>(a_len, b_len);
         let specials = if SPECIALS { self.n_special() } else { 0 };
         let mut ids = Vec::with_capacity(specials + a_len + b_len);
@@ -135,27 +139,6 @@ impl Template {
             push_ids(&self.suffix, &mut ids);
         }
         Encoding::new(ids, type_ids, None)
-    }
-
-    #[inline(never)]
-    fn wrap_pair<const SPECIALS: bool>(
-        &self,
-        a: Vec<PipelineToken>,
-        b: Vec<PipelineToken>,
-    ) -> Vec<PipelineToken> {
-        let mut ids = Vec::with_capacity(self.n_special() + a.len() + b.len());
-        if SPECIALS {
-            push_ids(&self.prefix, &mut ids);
-        }
-        ids.extend(a);
-        if SPECIALS {
-            push_ids(&self.infix, &mut ids);
-        }
-        ids.extend(b);
-        if SPECIALS {
-            push_ids(&self.suffix, &mut ids);
-        }
-        ids
     }
 }
 

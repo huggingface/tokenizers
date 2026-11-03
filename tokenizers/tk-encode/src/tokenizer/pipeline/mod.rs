@@ -728,9 +728,6 @@ impl PipelineTokenizer {
             .collect()
     }
 
-    /// Pick the template the input shape calls for and let it add the specials.
-    ///
-    /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside.
     /// [`Self::post_process`] for sequences in parts; glues first when truncation may apply.
     fn post_process_parts(
         &self,
@@ -750,6 +747,9 @@ impl PipelineTokenizer {
         })
     }
 
+    /// Pick the template the input shape calls for and let it add the specials.
+    ///
+    /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside.
     fn post_process(
         &self,
         s1: Vec<PipelineToken>,
@@ -2034,5 +2034,54 @@ mod tests {
 
     fn hello_pipeline_with_truncation(truncation: TruncationParams) -> PipelineTokenizer {
         hello_pipeline_with(PipelinePostProcessor::default(), None, Some(truncation))
+    }
+
+    /// A pair chunked on both sides reassembles like the serial encode, truncated or not.
+    #[cfg(feature = "parallelism")]
+    #[test]
+    fn chunked_pairs_reassemble_like_serial() {
+        let mut added = BucketAddedVocabulary::new();
+        added
+            .add_special_tokens(
+                [AddedToken::from("<s>", true)],
+                8,
+                |_| None,
+                None::<&PipelineNormalizer>,
+            )
+            .unwrap();
+        // specials every 8 bytes: thousands of chunks per side
+        let input = Input::Pair("hello<s>".repeat(3000), "hel<s>lo".repeat(2500));
+        for truncation in [
+            None,
+            truncation(50, TruncationStrategy::LongestFirst),
+            truncation(8000, TruncationStrategy::OnlySecond),
+            // A alone exceeds 50: both paths must fail
+            truncation(50, TruncationStrategy::OnlySecond),
+        ] {
+            let pipeline = PipelineTokenizer::from_parts(
+                added.clone(),
+                Vec::new(),
+                PipelinePreTokenizer::None,
+                PipelineModel::BPE(hello_bpe()),
+                bert_post_processor(),
+                None,
+                Default::default(),
+                None,
+                truncation,
+            );
+            let options = EncodeOptions::default();
+            let parallel = pipeline
+                .encode(Inputs::Single(input.clone()), &options)
+                .wait();
+            let serial = pipeline
+                .encode_serial(Inputs::Single(input.clone()), &options)
+                .pop()
+                .unwrap();
+            match (parallel, serial) {
+                (Ok(parallel), Ok(serial)) => assert_eq!(parallel, vec![serial]),
+                (Err(_), Err(_)) => {}
+                (parallel, serial) => panic!("parallel {parallel:?} vs serial {serial:?}"),
+            }
+        }
     }
 }
