@@ -239,10 +239,12 @@ class CompiledTokenizer:
         truncation: Truncation | None = ...,
     ) -> EncodeIter:
         """
-        Encodes a batch of texts, or pairs of texts, yielding each encoding as soon as it is done.
+        Encodes a batch of texts, or pairs of texts, yielding the encodings as they complete.
 
         Iterates `(index, Encoding)` pairs in completion order, `index` being the input's position
-        in `inputs`. Encodings are not padded: padding needs the whole batch, use `encode_batch`.
+        in `inputs`. A failed input raises `ValueError` naming its index. Encodings are not padded:
+        padding needs the whole batch, use `encode_batch`. A batch encoded serially (small, or with
+        no thread pool) is encoded up front, then iterated.
 
         Args:
             inputs: list[str | tuple[str, str]]
@@ -379,7 +381,11 @@ class EncodeIter:
     position in the batch. Returned by `CompiledTokenizer.encode_iter`.
     """
     def __iter__(self, /) -> EncodeIter: ...
-    def __next__(self, /) -> tuple[int, Encoding] | None: ...
+    def __next__(self, /) -> tuple[int, Encoding]:
+        """
+        Raises `StopIteration` itself rather than returning `None`, so the stub's item type is not
+        `Optional`.
+        """
 
 @final
 class Encoding:

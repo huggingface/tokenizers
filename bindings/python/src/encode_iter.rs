@@ -1,17 +1,16 @@
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyStopIteration, PyValueError};
 use pyo3::prelude::*;
 use tk::pipeline::HandleIter;
 
 use crate::encoding::Encoding;
-use crate::error::err;
 
 /// The encodings of a batch as they complete: `(index, Encoding)` pairs, `index` being the input's
 /// position in the batch. Returned by `CompiledTokenizer.encode_iter`.
-#[pyclass(module = "tokenizers")]
+#[pyclass(frozen, module = "tokenizers")]
 pub struct EncodeIter {
-    // `HandleIter` is `Send` but not `Sync`; the lock is only ever taken by the iterating thread.
+    // `HandleIter` is `Send` but not `Sync`
     inner: Mutex<HandleIter>,
 }
 
@@ -29,18 +28,21 @@ impl EncodeIter {
         slf
     }
 
-    fn __next__(&self, py: Python<'_>) -> PyResult<Option<(usize, Encoding)>> {
-        // py.detach releases the GIL while waiting for the next completion.
+    /// Raises `StopIteration` itself rather than returning `None`, so the stub's item type is not
+    /// `Optional`.
+    fn __next__(&self, py: Python<'_>) -> PyResult<(usize, Encoding)> {
+        // py.detach releases the GIL while waiting for the next completion. A panic in an earlier
+        // call doesn't lose the encodings still pending: ignore the poison.
         let next = py.detach(|| {
-            let mut inner = self
-                .inner
+            self.inner
                 .lock()
-                .map_err(|_| PyRuntimeError::new_err("a previous iteration panicked"))?;
-            Ok::<_, PyErr>(inner.next())
-        })?;
+                .unwrap_or_else(PoisonError::into_inner)
+                .next()
+        });
         match next {
-            None => Ok(None),
-            Some((index, result)) => Ok(Some((index, Encoding::from(result.map_err(err)?)))),
+            None => Err(PyStopIteration::new_err(())),
+            Some((index, Ok(encoding))) => Ok((index, Encoding::from(encoding))),
+            Some((index, Err(e))) => Err(PyValueError::new_err(format!("input {index}: {e}"))),
         }
     }
 }
