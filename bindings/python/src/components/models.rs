@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use crate::components::component_spec::ComponentSpec;
 
+use crate::tokenizer::TokenizerSpec;
+
 use super::{Component, ComponentKind};
 
 /// Base class for all tokenizer models
@@ -21,8 +23,9 @@ impl Model {
 }
 
 impl ComponentKind for Model {
-    const JSON_KEY: &'static str = "model";
     const ITEMS_KEY: Option<&'static str> = None;
+
+    const FIELD: fn(&mut TokenizerSpec) -> &mut Option<Arc<ComponentSpec>> = |spec| &mut spec.model;
 
     fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
         Self::default_component(py, spec)

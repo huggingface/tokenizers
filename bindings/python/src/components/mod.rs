@@ -63,6 +63,7 @@ use serde_json::Value;
 use crate::components::component_spec::ComponentSpec;
 use crate::error::err;
 use crate::repr;
+use crate::tokenizer::TokenizerSpec;
 
 /// Base class of every tokenizer component: models, normalizers, pre-tokenizers, post-processors
 /// and decoders.
@@ -108,11 +109,11 @@ impl Component {
 pub(crate) trait ComponentKind:
     PyClass<BaseType = Component> + PyClassBaseType<Initializer = PyClassInitializer<Self>> + Default
 {
-    /// The kind's top-level key in `tokenizer.json`, such as `"pre_tokenizer"`.
-    const JSON_KEY: &'static str;
     /// The key a `Sequence` of this kind lists its items under, such as `"normalizers"`.
     /// `None` for a kind with no `Sequence`.
     const ITEMS_KEY: Option<&'static str>;
+    /// The [`TokenizerSpec`](crate::tokenizer::TokenizerSpec) field holding this kind's spec.
+    const FIELD: fn(&mut TokenizerSpec) -> &mut Option<Arc<ComponentSpec>>;
 
     /// Builds a handle on `spec`, of the concrete class its `"type"` names.
     fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>>;

@@ -7,6 +7,8 @@ use serde_json::{Value, json};
 use crate::components::component_spec::ComponentSpec;
 use crate::error::err;
 
+use crate::tokenizer::TokenizerSpec;
+
 use super::{Component, ComponentKind, JsonFields};
 
 /// Base class for all normalizers
@@ -24,8 +26,10 @@ impl Normalizer {
 }
 
 impl ComponentKind for Normalizer {
-    const JSON_KEY: &'static str = "normalizer";
     const ITEMS_KEY: Option<&'static str> = Some("normalizers");
+
+    const FIELD: fn(&mut TokenizerSpec) -> &mut Option<Arc<ComponentSpec>> =
+        |spec| &mut spec.normalizer;
 
     fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
         if spec.items_key().is_some() {

@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use crate::components::component_spec::ComponentSpec;
 
+use crate::tokenizer::TokenizerSpec;
+
 use super::{Component, ComponentKind};
 
 /// Base class for all post-processors
@@ -21,8 +23,10 @@ impl PostProcessor {
 }
 
 impl ComponentKind for PostProcessor {
-    const JSON_KEY: &'static str = "post_processor";
     const ITEMS_KEY: Option<&'static str> = Some("processors");
+
+    const FIELD: fn(&mut TokenizerSpec) -> &mut Option<Arc<ComponentSpec>> =
+        |spec| &mut spec.post_processor;
 
     fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
         Self::default_component(py, spec)
