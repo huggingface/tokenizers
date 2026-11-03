@@ -333,6 +333,34 @@ impl PipelineTokenizer {
         })
     }
 
+    /// `segment` (at `offset` in its sequence) as chunks split at [`Self::cut_points`].
+    #[allow(clippy::too_many_arguments)]
+    fn push_chunks(
+        &self,
+        seq: usize,
+        side: Seq,
+        segment: &str,
+        offset: usize,
+        encode_special_tokens: bool,
+        chunks: &mut Vec<SequenceChunk>,
+        seq_outputs: &mut Vec<ChunkResult>,
+    ) {
+        let mut start = 0;
+        for end in self
+            .cut_points(segment, encode_special_tokens)
+            .chain([segment.len()])
+        {
+            chunks.push(SequenceChunk {
+                seq,
+                idx: seq_outputs.len(),
+                side,
+                range: offset + start..offset + end,
+            });
+            seq_outputs.push(ChunkResult::new(None));
+            start = end;
+        }
+    }
+
     fn plan_sequence(
         &self,
         seq_idx: usize,
@@ -369,19 +397,40 @@ impl PipelineTokenizer {
                 }
                 Segment::Text { text, input_offset } => (text, input_offset),
             };
-            let mut start = 0;
-            for end in self
-                .cut_points(segment, encode_special_tokens)
-                .chain([segment.len()])
-            {
-                chunks.push(SequenceChunk {
-                    seq: seq_idx,
-                    idx: seq_outputs.len(),
+            if self.inner.cut.is_none() {
+                self.push_chunks(
+                    seq_idx,
                     side,
-                    range: offset + start..offset + end,
-                });
-                seq_outputs.push(ChunkResult::new(None));
-                start = end;
+                    segment,
+                    offset,
+                    encode_special_tokens,
+                    chunks,
+                    seq_outputs,
+                );
+                continue;
+            }
+            // a cut implies no normalizer: normalized tokens match the raw text, peel them here
+            for inner in SpecialSegmentIterator::new(
+                segment,
+                &self.inner.added_vocabulary,
+                true,
+                encode_special_tokens,
+            ) {
+                match inner {
+                    Segment::SpecialToken(id) => {
+                        let token = PipelineToken::from(id);
+                        seq_outputs.push(ChunkResult::new(Some(Ok(vec![token]))));
+                    }
+                    Segment::Text { text, input_offset } => self.push_chunks(
+                        seq_idx,
+                        side,
+                        text,
+                        offset + input_offset,
+                        encode_special_tokens,
+                        chunks,
+                        seq_outputs,
+                    ),
+                }
             }
         }
         // make sure we have at least one chunk per sequence, otherwise we'll wait indefinitely

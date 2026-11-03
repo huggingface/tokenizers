@@ -64,6 +64,10 @@ fn texts(special: &str) -> Vec<(&'static str, String)> {
             sized("don't we'll they've I'M it's y'all'd've ", len),
         ),
         ("specials", with_specials),
+        (
+            "dense specials",
+            sized(&format!("{}{special}", &english[..64]), len),
+        ),
     ]
 }
 
@@ -93,9 +97,8 @@ fn roberta_cut_encode_matches_serial() {
     assert_cut_encode_matches_serial("roberta.json", "<|endoftext|>");
 }
 
-/// Control: not cut (normalized `<|endoftext|>`).
 #[test]
-fn gpt2_encode_matches_serial() {
+fn gpt2_cut_encode_matches_serial() {
     assert_cut_encode_matches_serial("gpt2.json", "<|endoftext|>");
 }
 

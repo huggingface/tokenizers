@@ -334,8 +334,9 @@ impl PipelineTokenizer {
 /// pre-token and the post-processor on the reassembled sequence; what can break a cut:
 /// - any normalizer (for now)
 /// - a `single_word` added token (reads the chars around its match)
-/// - a normalized added token a cut could split, or an `lstrip`/`rstrip` one (raw ones are peeled
-///   off the whole input before cutting)
+///
+/// Added tokens are peeled off the whole input before cutting, normalized ones included (with no
+/// normalizer they match the raw text).
 fn safe_cut(
     added_vocabulary: &BucketAddedVocabulary,
     normalizers: &[PipelineNormalizer],
@@ -346,13 +347,10 @@ fn safe_cut(
         return None;
     }
     let tokens = added_vocabulary.get_added_tokens_decoder();
-    let preserved = tokens.values().all(|token| {
-        let content = token.content.as_bytes();
-        !token.single_word
-            && (!token.normalized
-                || (!token.lstrip && !token.rstrip && cut(content, 0, content.len()).is_none()))
-    });
-    preserved.then_some(cut)
+    tokens
+        .values()
+        .all(|token| !token.single_word)
+        .then_some(cut)
 }
 
 #[derive(Clone)]
@@ -2096,14 +2094,11 @@ mod tests {
     #[test]
     fn added_tokens_a_cut_could_break_disable_cuts() {
         let pre_tokenizer = llama3_pre_tokenizer();
-        // normalized tokens are matched per chunk: a cut inside one breaks it
-        let inside = AddedToken::from("<|endoftext|>", true).normalized(true);
-        assert!(safe_cut(&added([inside]), &[], &pre_tokenizer).is_none());
-        let whole = AddedToken::from("<<>>", true).normalized(true);
-        assert!(safe_cut(&added([whole]), &[], &pre_tokenizer).is_some());
-        // stripped whitespace may hold a cut: refused, conservatively
-        let rstrip = AddedToken::from("<<>>", true).normalized(true).rstrip(true);
-        assert!(safe_cut(&added([rstrip]), &[], &pre_tokenizer).is_none());
+        // normalized tokens are peeled before cutting too (no normalizer)
+        let normalized = AddedToken::from("<|endoftext|>", true)
+            .normalized(true)
+            .rstrip(true);
+        assert!(safe_cut(&added([normalized]), &[], &pre_tokenizer).is_some());
         let single_word = AddedToken::from("<<>>", true).single_word(true);
         assert!(safe_cut(&added([single_word]), &[], &pre_tokenizer).is_none());
     }
