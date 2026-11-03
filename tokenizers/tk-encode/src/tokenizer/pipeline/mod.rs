@@ -1971,6 +1971,55 @@ mod tests {
         assert_eq!(pipeline.decode(&[7, 4], false).unwrap(), "hello he");
     }
 
+    /// A pair chunked on both sides reassembles like the serial encode, truncated or not.
+    #[cfg(feature = "parallelism")]
+    #[test]
+    fn chunked_pairs_reassemble_like_serial() {
+        let mut added = BucketAddedVocabulary::new();
+        added
+            .add_special_tokens(
+                [AddedToken::from("<s>", true)],
+                8,
+                |_| None,
+                None::<&PipelineNormalizer>,
+            )
+            .unwrap();
+        // specials every 8 bytes: thousands of chunks per side
+        let input = Input::Pair("hello<s>".repeat(3000), "hel<s>lo".repeat(2500));
+        for truncation in [
+            None,
+            truncation(50, TruncationStrategy::LongestFirst),
+            truncation(8000, TruncationStrategy::OnlySecond),
+            // A alone exceeds 50: both paths must fail
+            truncation(50, TruncationStrategy::OnlySecond),
+        ] {
+            let pipeline = PipelineTokenizer::from_parts(
+                added.clone(),
+                Vec::new(),
+                PipelinePreTokenizer::None,
+                PipelineModel::BPE(hello_bpe()),
+                bert_post_processor(),
+                None,
+                Default::default(),
+                None,
+                truncation,
+            );
+            let options = EncodeOptions::default();
+            let parallel = pipeline
+                .encode(Inputs::Single(input.clone()), &options)
+                .wait();
+            let serial = pipeline
+                .encode_serial(Inputs::Single(input.clone()), &options)
+                .pop()
+                .unwrap();
+            match (parallel, serial) {
+                (Ok(parallel), Ok(serial)) => assert_eq!(parallel, vec![serial]),
+                (Err(_), Err(_)) => {}
+                (parallel, serial) => panic!("parallel {parallel:?} vs serial {serial:?}"),
+            }
+        }
+    }
+
     fn hello_bpe() -> PipelineBPE {
         use crate::models::bpe::{BpeConfig, Merges, Vocab};
 
@@ -2034,54 +2083,5 @@ mod tests {
 
     fn hello_pipeline_with_truncation(truncation: TruncationParams) -> PipelineTokenizer {
         hello_pipeline_with(PipelinePostProcessor::default(), None, Some(truncation))
-    }
-
-    /// A pair chunked on both sides reassembles like the serial encode, truncated or not.
-    #[cfg(feature = "parallelism")]
-    #[test]
-    fn chunked_pairs_reassemble_like_serial() {
-        let mut added = BucketAddedVocabulary::new();
-        added
-            .add_special_tokens(
-                [AddedToken::from("<s>", true)],
-                8,
-                |_| None,
-                None::<&PipelineNormalizer>,
-            )
-            .unwrap();
-        // specials every 8 bytes: thousands of chunks per side
-        let input = Input::Pair("hello<s>".repeat(3000), "hel<s>lo".repeat(2500));
-        for truncation in [
-            None,
-            truncation(50, TruncationStrategy::LongestFirst),
-            truncation(8000, TruncationStrategy::OnlySecond),
-            // A alone exceeds 50: both paths must fail
-            truncation(50, TruncationStrategy::OnlySecond),
-        ] {
-            let pipeline = PipelineTokenizer::from_parts(
-                added.clone(),
-                Vec::new(),
-                PipelinePreTokenizer::None,
-                PipelineModel::BPE(hello_bpe()),
-                bert_post_processor(),
-                None,
-                Default::default(),
-                None,
-                truncation,
-            );
-            let options = EncodeOptions::default();
-            let parallel = pipeline
-                .encode(Inputs::Single(input.clone()), &options)
-                .wait();
-            let serial = pipeline
-                .encode_serial(Inputs::Single(input.clone()), &options)
-                .pop()
-                .unwrap();
-            match (parallel, serial) {
-                (Ok(parallel), Ok(serial)) => assert_eq!(parallel, vec![serial]),
-                (Err(_), Err(_)) => {}
-                (parallel, serial) => panic!("parallel {parallel:?} vs serial {serial:?}"),
-            }
-        }
     }
 }
