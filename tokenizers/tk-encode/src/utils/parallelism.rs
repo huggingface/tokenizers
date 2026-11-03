@@ -8,6 +8,7 @@ use rayon_cond::CondIterator;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use std::sync::Once;
 use std::sync::TryLockError;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU8;
@@ -37,20 +38,19 @@ static POOL_GEN: AtomicUsize = AtomicUsize::new(0);
 /// this is required because when forking only the parent thread is copied to the child process so
 /// you lose access to the previously built thread pool -> rebuild needed
 /// cf the POSIX spec: https://pubs.opengroup.org/onlinepubs/9699919799/functions/fork.html
+///
+/// `Once`: no caller proceeds before the handler is registered.
 #[cfg(unix)]
 fn register_fork_handler() {
-    static REGISTERED: AtomicBool = AtomicBool::new(false);
-    if REGISTERED
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_ok()
-    {
+    static REGISTERED: Once = Once::new();
+    REGISTERED.call_once(|| {
         unsafe extern "C" fn child_after_fork() {
             POOL_GEN.fetch_add(1, Ordering::SeqCst);
         }
         unsafe {
             let _ = libc::pthread_atfork(None, None, Some(child_after_fork));
         }
-    }
+    });
 }
 
 #[cfg(not(unix))]
