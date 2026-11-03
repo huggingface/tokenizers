@@ -1,15 +1,12 @@
-use std::sync::Arc;
-
 use base64::Engine as _;
-use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use serde_json::{Value, json};
 
-use crate::components::component_spec::{ComponentSpec, SequenceSpec};
-use crate::error::err;
+use crate::components::component_spec::ComponentSpec;
 use crate::regex::Pattern;
 use crate::tokenizer::TokenizerSpec;
 
+use super::sequence_component::sequence_component;
 use super::stateless_component::stateless_component;
 use super::{Component, ComponentKind, JsonFieldsExt};
 
@@ -60,6 +57,13 @@ impl ComponentKind for Normalizer {
             },
         }
     }
+}
+
+sequence_component! {
+    /// Applies each normalizer in turn.
+    #[pyclass(extends = Normalizer, module = "tokenizers.normalizers")]
+    pub struct Sequence;
+    items_key = SEQUENCE_ITEMS_KEY;
 }
 
 stateless_component! {
@@ -243,52 +247,6 @@ impl MetaspaceNormalizer {
             })),
             Self,
         )
-    }
-}
-
-/// Applies each normalizer in turn.
-#[pyclass(frozen, extends = Normalizer, module = "tokenizers.normalizers")]
-pub struct Sequence;
-
-#[pymethods]
-impl Sequence {
-    #[new]
-    fn new(normalizers: Vec<Bound<'_, Normalizer>>) -> PyClassInitializer<Self> {
-        let mut items = Vec::with_capacity(normalizers.len());
-        for normalizer in &normalizers {
-            match Normalizer::spec(normalizer) {
-                ComponentSpec::Single(single) => items.push(single.clone()),
-                ComponentSpec::Sequence(sequence) => items.extend(sequence.items()),
-            }
-        }
-        let sequence = SequenceSpec::new(SEQUENCE_ITEMS_KEY, items);
-        let spec = ComponentSpec::Sequence(Arc::new(sequence));
-        Normalizer::initializer(spec, Self)
-    }
-
-    fn __len__(slf: &Bound<'_, Self>) -> usize {
-        Normalizer::sequence_spec(slf).len()
-    }
-
-    fn __getitem__(slf: &Bound<'_, Self>, index: isize) -> PyResult<Py<Normalizer>> {
-        let spec = Normalizer::sequence_spec(slf);
-        let item = spec.index(index).and_then(|index| spec.get(index));
-        let item = item.ok_or_else(|| PyIndexError::new_err("Sequence index out of range"))?;
-        Normalizer::from_spec(slf.py(), item)
-    }
-
-    fn __setitem__(
-        slf: &Bound<'_, Self>,
-        index: isize,
-        item: Bound<'_, Normalizer>,
-    ) -> PyResult<()> {
-        let spec = Normalizer::sequence_spec(slf);
-        let Some(item) = Normalizer::spec(&item).as_single() else {
-            return Err(err("a Sequence item can't be a Sequence"));
-        };
-        spec.index(index)
-            .and_then(|index| spec.set(index, item.clone()))
-            .ok_or_else(|| PyIndexError::new_err("Sequence assignment index out of range"))
     }
 }
 
