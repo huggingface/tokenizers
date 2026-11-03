@@ -44,3 +44,4 @@ import sys as _sys
 _mp = _sys.modules.get("multiprocessing")
 if _mp is not None and _mp.parent_process() is not None:
     set_max_threads(1)
+del _sys, _mp

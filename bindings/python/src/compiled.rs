@@ -51,14 +51,15 @@ fn encode_options(
     encode_special_tokens: bool,
     padding: OverrideSentinel<PaddingParams>,
     truncation: OverrideSentinel<TruncationParams>,
-    max_threads: Option<NonZeroUsize>,
+    max_threads: Option<usize>,
 ) -> EncodeOptions {
     EncodeOptions {
         add_special_tokens,
         encode_special_tokens,
         padding: padding.into(),
         truncation: truncation.into(),
-        max_threads,
+        // 0, like `set_max_threads(0)`, means the default: no per-call cap
+        max_threads: max_threads.and_then(NonZeroUsize::new),
     }
 }
 
@@ -83,6 +84,7 @@ impl CompiledTokenizer {
     ///         When omitted, uses the truncation the tokenizer had when compiled.
     ///     max_threads: int or None
     ///         Most threads this call uses, the caller included, capped by `get_max_threads()`.
+    ///         `None` or `0`: no per-call cap.
     ///
     /// Returns:
     ///     Encoding
@@ -95,7 +97,7 @@ impl CompiledTokenizer {
         encode_special_tokens: bool,
         padding: OverrideSentinel<PaddingParams>,
         truncation: OverrideSentinel<TruncationParams>,
-        max_threads: Option<NonZeroUsize>,
+        max_threads: Option<usize>,
     ) -> PyResult<Encoding> {
         let options = encode_options(
             add_special_tokens,
@@ -133,6 +135,7 @@ impl CompiledTokenizer {
     ///         When omitted, uses the truncation the tokenizer had when compiled.
     ///     max_threads: int or None
     ///         Most threads this call uses, the caller included, capped by `get_max_threads()`.
+    ///         `None` or `0`: no per-call cap.
     ///
     /// Returns:
     ///     list[str]
@@ -145,7 +148,7 @@ impl CompiledTokenizer {
         encode_special_tokens: bool,
         padding: OverrideSentinel<PaddingParams>,
         truncation: OverrideSentinel<TruncationParams>,
-        max_threads: Option<NonZeroUsize>,
+        max_threads: Option<usize>,
     ) -> PyResult<Vec<String>> {
         let options = encode_options(
             add_special_tokens,
@@ -184,6 +187,7 @@ impl CompiledTokenizer {
     ///         When omitted, uses the truncation the tokenizer had when compiled.
     ///     max_threads: int or None
     ///         Most threads this call uses, the caller included, capped by `get_max_threads()`.
+    ///         `None` or `0`: no per-call cap.
     ///
     /// Returns:
     ///     List[Encoding]
@@ -196,7 +200,7 @@ impl CompiledTokenizer {
         encode_special_tokens: bool,
         padding: OverrideSentinel<PaddingParams>,
         truncation: OverrideSentinel<TruncationParams>,
-        max_threads: Option<NonZeroUsize>,
+        max_threads: Option<usize>,
     ) -> PyResult<Vec<Encoding>> {
         let options = encode_options(
             add_special_tokens,

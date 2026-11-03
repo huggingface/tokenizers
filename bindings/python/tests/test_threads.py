@@ -64,8 +64,8 @@ def test_per_call_max_threads(gpt2):
     for max_threads in (1, 2, 64):
         assert [e.ids for e in gpt2.encode_batch(texts, max_threads=max_threads)] == expected
     assert gpt2.encode(texts[0], max_threads=1).ids == expected[0]
-    with pytest.raises((ValueError, OverflowError)):
-        gpt2.encode(texts[0], max_threads=0)
+    # 0 means no per-call cap, like `set_max_threads(0)`
+    assert gpt2.encode(texts[0], max_threads=0).ids == expected[0]
 
 
 @pytest.mark.filterwarnings("ignore:.*fork.*:DeprecationWarning")
