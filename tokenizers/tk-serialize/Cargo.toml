@@ -48,6 +48,9 @@ bitcannon = { path = "../bitcannon", version = "0.1.0-dev.2" }
 # crate is for, and an inference build wants exactly this and nothing else.
 default = ["deserialize"]
 deserialize = []
+# The fields of each component's JSON, for the bindings' code generators. Off by default: nothing
+# reads or writes a `tokenizer.json` through it.
+schemas = []
 # Writing a `PipelineTokenizer` back out as a canonical `tokenizer.json`. Off by default: an
 # inference build never writes a config, and the writer is the only reason the pipeline has to keep
 # anything it does not read -- the `Precompiled` charsmap being the one such thing.
