@@ -1,4 +1,5 @@
 use std::cell::UnsafeCell;
+use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -439,12 +440,19 @@ impl PipelineTokenizer {
     }
 }
 
+/// Pool threads to spawn: one per task, at most the pool, and `max_threads - 1` (the caller is one).
+fn workers(tasks: usize, pool: usize, max_threads: Option<NonZeroUsize>) -> usize {
+    let max = max_threads.map_or(usize::MAX, |n| n.get() - 1);
+    tasks.min(pool).min(max)
+}
+
 pub(crate) fn encode(
     tok: &PipelineTokenizer,
     inputs: Inputs,
     options: &EncodeOptions,
 ) -> EncodeHandle {
-    if inputs.size_bytes() < PARALLEL_MIN_BYTES {
+    if inputs.size_bytes() < PARALLEL_MIN_BYTES || options.max_threads.is_some_and(|n| n.get() == 1)
+    {
         return EncodeHandle::blocking(
             tok.encode_serial(inputs, options),
             tok.resolve_padding(&options.padding).cloned(),
@@ -479,7 +487,7 @@ pub(crate) fn encode(
         );
     }
     let n_seq = outputs.len();
-    let threads = tasks.len().min(pool.current_num_threads());
+    let threads = workers(tasks.len(), pool.current_num_threads(), options.max_threads);
     let batch = Arc::new(EncodeBatch {
         inputs: Box::new(inputs),
         cancelled: AtomicBool::new(false),
@@ -508,4 +516,21 @@ pub(crate) fn encode(
         StreamingIter::new(batch),
         tok.resolve_padding(&options.padding).cloned(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::workers;
+    use std::num::NonZeroUsize;
+
+    #[test]
+    fn per_call_max_threads_caps_the_workers() {
+        let max = |n| NonZeroUsize::new(n);
+        assert_eq!(workers(100, 11, None), 11);
+        assert_eq!(workers(3, 11, None), 3);
+        assert_eq!(workers(100, 11, max(4)), 3);
+        assert_eq!(workers(100, 11, max(1)), 0);
+        // never more than the pool
+        assert_eq!(workers(100, 11, max(64)), 11);
+    }
 }
