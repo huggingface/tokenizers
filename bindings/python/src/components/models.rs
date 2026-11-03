@@ -1,6 +1,8 @@
 use pyo3::prelude::*;
 
-use crate::components::component_spec::{ComponentKey, ComponentSpec};
+use std::sync::Arc;
+
+use crate::components::component_spec::ComponentSpec;
 
 use super::{Component, ComponentKind};
 
@@ -19,9 +21,10 @@ impl Model {
 }
 
 impl ComponentKind for Model {
-    const JSON_KEY: ComponentKey = ComponentKey::Model;
+    const JSON_KEY: &'static str = "model";
+    const ITEMS_KEY: Option<&'static str> = None;
 
-    fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
+    fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
         Self::default_component(py, spec)
     }
 }

@@ -1,6 +1,8 @@
 use pyo3::prelude::*;
 
-use crate::components::component_spec::{ComponentKey, ComponentSpec};
+use std::sync::Arc;
+
+use crate::components::component_spec::ComponentSpec;
 
 use super::{Component, ComponentKind};
 
@@ -19,9 +21,10 @@ impl PostProcessor {
 }
 
 impl ComponentKind for PostProcessor {
-    const JSON_KEY: ComponentKey = ComponentKey::PostProcessor;
+    const JSON_KEY: &'static str = "post_processor";
+    const ITEMS_KEY: Option<&'static str> = Some("processors");
 
-    fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
+    fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
         Self::default_component(py, spec)
     }
 }

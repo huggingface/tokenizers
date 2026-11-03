@@ -15,7 +15,7 @@ use tk::{
 use crate::JsonObject;
 use crate::compiled::CompiledTokenizer;
 use crate::components::ComponentKind;
-use crate::components::component_spec::{ComponentKey, ComponentSpec};
+use crate::components::component_spec::ComponentSpec;
 use crate::components::decoders::Decoder;
 use crate::components::models::Model;
 use crate::components::normalizers::Normalizer;
@@ -340,11 +340,11 @@ pub(crate) struct TokenizerSpec {
     padding: Option<PaddingParams>,
     role_to_token: Arc<Value>,
     added_tokens: Arc<Value>,
-    normalizer: Option<ComponentSpec>,
-    pre_tokenizer: Option<ComponentSpec>,
-    post_processor: Option<ComponentSpec>,
-    decoder: Option<ComponentSpec>,
-    model: ComponentSpec,
+    normalizer: Option<Arc<ComponentSpec>>,
+    pre_tokenizer: Option<Arc<ComponentSpec>>,
+    post_processor: Option<Arc<ComponentSpec>>,
+    decoder: Option<Arc<ComponentSpec>>,
+    model: Arc<ComponentSpec>,
 }
 
 impl TokenizerSpec {
@@ -356,20 +356,20 @@ impl TokenizerSpec {
             unreachable!("canonicalize_value refuses anything but an object");
         };
         let mut take = |key| file.remove(key).unwrap_or(Value::Null);
-        let component = |kind, value| match value {
-            Value::Object(json) => ComponentSpec::from_json(kind, json).map(Some),
-            _ => Ok(None),
+        let component = |items_key, value| match value {
+            Value::Object(json) => Some(ComponentSpec::from_json(items_key, json)),
+            _ => None,
         };
         Ok(Self {
             truncation: truncation_from_json(&take("truncation").to_string())?,
             padding: padding_from_json(&take("padding").to_string())?,
             role_to_token: Arc::new(take("role_to_token")),
             added_tokens: Arc::new(take("added_tokens")),
-            normalizer: component(ComponentKey::Normalizer, take("normalizer"))?,
-            pre_tokenizer: component(ComponentKey::PreTokenizer, take("pre_tokenizer"))?,
-            post_processor: component(ComponentKey::PostProcessor, take("post_processor"))?,
-            decoder: component(ComponentKey::Decoder, take("decoder"))?,
-            model: component(ComponentKey::Model, take("model"))?
+            normalizer: component(Normalizer::ITEMS_KEY, take("normalizer")),
+            pre_tokenizer: component(PreTokenizer::ITEMS_KEY, take("pre_tokenizer")),
+            post_processor: component(PostProcessor::ITEMS_KEY, take("post_processor")),
+            decoder: component(Decoder::ITEMS_KEY, take("decoder")),
+            model: component(Model::ITEMS_KEY, take("model"))
                 .expect("canonicalize_value refuses a model that is not an object"),
         })
     }
@@ -382,7 +382,7 @@ impl TokenizerSpec {
     /// A deep copy: the resulting object is independent.
     fn deep_clone(&self) -> Self {
         let deep_clone =
-            |spec: &Option<ComponentSpec>| spec.as_ref().map(ComponentSpec::deep_clone);
+            |spec: &Option<Arc<ComponentSpec>>| spec.as_ref().map(|spec| spec.deep_clone());
         Self {
             truncation: self.truncation.clone(),
             padding: self.padding.clone(),
@@ -396,32 +396,36 @@ impl TokenizerSpec {
         }
     }
 
-    pub(crate) fn component(&self, key: ComponentKey) -> Option<&ComponentSpec> {
+    /// The spec stored under `key`, a `tokenizer.json` top-level key such as `"normalizer"`.
+    pub(crate) fn component(&self, key: &str) -> Option<&Arc<ComponentSpec>> {
         match key {
-            ComponentKey::Normalizer => self.normalizer.as_ref(),
-            ComponentKey::PreTokenizer => self.pre_tokenizer.as_ref(),
-            ComponentKey::PostProcessor => self.post_processor.as_ref(),
-            ComponentKey::Decoder => self.decoder.as_ref(),
-            ComponentKey::Model => Some(&self.model),
+            "normalizer" => self.normalizer.as_ref(),
+            "pre_tokenizer" => self.pre_tokenizer.as_ref(),
+            "post_processor" => self.post_processor.as_ref(),
+            "decoder" => self.decoder.as_ref(),
+            "model" => Some(&self.model),
+            other => unreachable!("{other} is not a component key"),
         }
     }
 
-    pub(crate) fn set_component(&mut self, key: ComponentKey, spec: Option<ComponentSpec>) {
+    pub(crate) fn set_component(&mut self, key: &str, spec: Option<Arc<ComponentSpec>>) {
         match key {
-            ComponentKey::Normalizer => self.normalizer = spec,
-            ComponentKey::PreTokenizer => self.pre_tokenizer = spec,
-            ComponentKey::PostProcessor => self.post_processor = spec,
-            ComponentKey::Decoder => self.decoder = spec,
-            ComponentKey::Model => {
+            "normalizer" => self.normalizer = spec,
+            "pre_tokenizer" => self.pre_tokenizer = spec,
+            "post_processor" => self.post_processor = spec,
+            "decoder" => self.decoder = spec,
+            "model" => {
                 self.model = spec.expect("calling set_component on model should never pass None")
             }
+            other => unreachable!("{other} is not a component key"),
         }
     }
 
     /// The top-level keys and their values, in the order `to_json` writes them.
     fn fields(&self) -> [(&'static str, Field<'_>); 10] {
-        let component =
-            |spec: &Option<ComponentSpec>| Field::Component(spec.as_ref().map(ComponentSpec::json));
+        let component = |spec: &Option<Arc<ComponentSpec>>| {
+            Field::Component(spec.as_ref().map(|spec| spec.json()))
+        };
         [
             ("version", Field::Json(Cow::Owned(Value::from("2.0")))),
             ("truncation", Field::Truncation(self.truncation.as_ref())),

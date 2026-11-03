@@ -35,11 +35,10 @@
 //!    ⤷ Prepend | Sequence | ...       concrete classes
 //! ```
 //!
-//! - [`Component`] holds the spec as a [`ComponentSpec`]: one component, or a sequence.
+//! - [`Component`] holds the spec: the component's JSON object.
 //! - A *kind*, such as [`Normalizer`](normalizers::Normalizer), holds no data. It implements
-//!   [`ComponentKind`], which knows the kind's `tokenizer.json` key.
+//!   [`ComponentKind`], which knows the kind's `tokenizer.json` keys.
 //! - A *concrete class*, such as [`Prepend`](normalizers::Prepend), implements [`ComponentType`].
-//!   It keeps a typed pointer to the same spec.
 //!
 //! The [`Tokenizer`](crate::tokenizer::Tokenizer) getters and `Sequence.__getitem__` build a new
 //! handle on each call. [`ComponentKind::from_spec`] picks the class from the spec's `"type"`.
@@ -57,9 +56,10 @@ use std::sync::Arc;
 use pyo3::PyClass;
 use pyo3::impl_::pyclass::PyClassBaseType;
 use pyo3::prelude::*;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::components::component_spec::{ComponentKey, ComponentSpec};
+use crate::components::component_spec::ComponentSpec;
 use crate::error::err;
 use crate::repr;
 
@@ -78,7 +78,7 @@ use crate::repr;
 /// A compiled tokenizer ignores later edits. Call `compile()` again to apply them.
 #[pyclass(frozen, subclass, module = "tokenizers")]
 pub struct Component {
-    spec: ComponentSpec,
+    spec: Arc<ComponentSpec>,
 }
 
 #[pymethods]
@@ -107,25 +107,28 @@ impl Component {
 pub(crate) trait ComponentKind:
     PyClass<BaseType = Component> + PyClassBaseType<Initializer = PyClassInitializer<Self>> + Default
 {
-    /// The kind's top-level key in `tokenizer.json`, such as [`ComponentKey::PreTokenizer`].
-    const JSON_KEY: ComponentKey;
+    /// The kind's top-level key in `tokenizer.json`, such as `"pre_tokenizer"`.
+    const JSON_KEY: &'static str;
+    /// The key a `Sequence` of this kind lists its items under, such as `"normalizers"`.
+    /// `None` for a kind with no `Sequence`.
+    const ITEMS_KEY: Option<&'static str>;
 
     /// Builds a handle on `spec`, of the concrete class its `"type"` names.
-    fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>>;
+    fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>>;
 
     /// Builds a handle on `spec` of the plain kind, with no concrete class.
-    fn default_component(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
+    fn default_component(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
         Py::new(py, Self::default_initializer(spec))
     }
 
     /// Returns the pyo3 initializer of the plain kind over `spec`.
     /// [`ComponentType::initializer`] adds a concrete class on top of it.
-    fn default_initializer(spec: ComponentSpec) -> PyClassInitializer<Self> {
+    fn default_initializer(spec: Arc<ComponentSpec>) -> PyClassInitializer<Self> {
         PyClassInitializer::from(Component { spec }).add_subclass(Self::default())
     }
 
     /// Returns the spec that `handle` points at.
-    fn spec<'a>(handle: &'a Bound<'_, Self>) -> &'a ComponentSpec {
+    fn spec<'a>(handle: &'a Bound<'_, Self>) -> &'a Arc<ComponentSpec> {
         &handle.as_super().get().spec
     }
 
@@ -135,37 +138,40 @@ pub(crate) trait ComponentKind:
         let Value::Object(json) = serde_json::from_slice(state).map_err(err)? else {
             return Err(err("a component's state must be a JSON object"));
         };
-        Self::from_spec(
-            py,
-            ComponentSpec::from_json(Self::JSON_KEY, json).map_err(err)?,
-        )
+        Self::from_spec(py, ComponentSpec::from_json(Self::ITEMS_KEY, json))
     }
 }
 
 /// The shared methods of a concrete class, such as `Prepend` or `Sequence`.
 ///
-/// Each class keeps a typed pointer to its spec.
-/// Its [`Component`] base holds the same spec as a [`ComponentSpec`].
-pub(crate) trait ComponentType:
-    PyClass<BaseType: ComponentKind> + From<Arc<<Self as ComponentType>::Spec>>
-where
-    ComponentSpec: From<Arc<<Self as ComponentType>::Spec>>,
-{
-    /// [`SequenceSpec`](component_spec::SequenceSpec) for a `Sequence` class,
-    /// [`SingleSpec`](component_spec::SingleSpec) for any other.
-    type Spec;
-
-    /// Returns the pyo3 initializer over `spec`: the [`Component`] base, the kind, then this class.
-    fn initializer(spec: Arc<Self::Spec>) -> PyClassInitializer<Self> {
-        let base = Self::BaseType::default_initializer(ComponentSpec::from(spec.clone()));
-        base.add_subclass(Self::from(spec))
+/// Its [`Component`] base holds the spec, and [`ComponentKind::spec`] reads it back.
+pub(crate) trait ComponentType: PyClass<BaseType: ComponentKind> + Default {
+    fn initializer(spec: Arc<ComponentSpec>) -> PyClassInitializer<Self> {
+        Self::BaseType::default_initializer(spec).add_subclass(Self::default())
     }
 
     /// Builds a handle on `spec`, typed as its kind.
     /// So a getter can return any class of the kind.
-    fn from_spec(py: Python<'_>, spec: Arc<Self::Spec>) -> PyResult<Py<Self::BaseType>> {
+    fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self::BaseType>> {
         Ok(Bound::new(py, Self::initializer(spec))?
             .into_super()
             .unbind())
+    }
+}
+
+/// Reads and writes one field of a component's JSON.
+pub(crate) trait JsonFields {
+    /// A missing key reads as `null`, so an `Option<T>` reads it as `None`.
+    fn field<T: DeserializeOwned>(&self, key: &str) -> PyResult<T>;
+    fn set_field(&self, key: &str, value: impl Into<Value>);
+}
+
+impl<K: ComponentKind, T: PyClass<BaseType = K>> JsonFields for Bound<'_, T> {
+    fn field<V: DeserializeOwned>(&self, key: &str) -> PyResult<V> {
+        K::spec(self.as_super()).field(key)
+    }
+
+    fn set_field(&self, key: &str, value: impl Into<Value>) {
+        K::spec(self.as_super()).set_field(key, value);
     }
 }

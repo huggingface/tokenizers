@@ -185,22 +185,15 @@ def test_sequence_index_out_of_range_raises_index_error():
         sequence[1] = normalizers.Prepend("b")
 
 
-def test_sequence_refuses_a_sequence_item():
+def test_sequence_refuses_to_hold_itself():
     sequence = normalizers.Sequence([normalizers.Prepend("a")])
-    with pytest.raises(ValueError, match="can't be a Sequence"):
+    with pytest.raises(ValueError, match="can't hold itself"):
         sequence[0] = sequence
 
 
-def test_sequence_refuses_to_be_built_from_a_sequence():
-    inner = normalizers.Sequence([normalizers.Prepend("a")])
-    with pytest.raises(ValueError, match="can't be a Sequence"):
-        normalizers.Sequence([inner])
-
-
-def test_loading_refuses_a_nested_sequence(gpt2_spec):
-    file = json.loads(gpt2_spec.to_str())
-    prepend = {"type": "Prepend", "prepend": "a"}
-    inner = {"type": "Sequence", "normalizers": [prepend]}
-    file["normalizer"] = {"type": "Sequence", "normalizers": [inner]}
-    with pytest.raises(ValueError, match="can't be a Sequence"):
-        type(gpt2_spec).from_str(json.dumps(file))
+# A Sequence inside a Sequence is flattened by `from_json`, so it loads and compiles.
+def test_sequence_holds_a_sequence(gpt2_spec):
+    unchanged = copy.deepcopy(gpt2_spec)
+    inner = normalizers.Sequence([normalizers.Prepend("a"), normalizers.Prepend("b")])
+    gpt2_spec.normalizer = normalizers.Sequence([inner])
+    assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode("ba" + TEXT).ids
