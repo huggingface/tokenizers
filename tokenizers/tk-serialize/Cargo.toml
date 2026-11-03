@@ -86,6 +86,10 @@ name = "binsize_pipeline"
 # is a configuration `cargo clippy --all-targets` can actually check.
 required-features = ["deserialize"]
 
+[[example]]
+name = "parallel_scaling"
+required-features = ["deserialize"]
+
 # Every bench reads a `tokenizer.json`, so none of them can build without the reader.
 [[bench]]
 name = "encode"
