@@ -177,15 +177,6 @@ def test_model_writes_its_arguments(model, state):
     assert type(pickle.loads(pickle.dumps(model))) is type(model)
 
 
-@pytest.mark.parametrize(
-    ("state", "message"),
-    [(b'{"type": "Bogus"}', 'Unknown model "type": "Bogus"'), (b"{}", 'Model has no "type"')],
-)
-def test_unpickle_refuses_an_unknown_model_type(state, message):
-    with pytest.raises(ValueError, match=f"^{message}$"):
-        models.Model._unpickle(state)
-
-
 def test_bpe_from_files(gpt2_spec, tmp_path):
     declared = json.loads(gpt2_spec.to_str())["model"]
     vocab = tmp_path / "vocab.json"

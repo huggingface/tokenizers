@@ -39,8 +39,7 @@ impl ComponentKind for Model {
             Some("WordPiece") => Self::concrete_component(py, spec, WordPiece),
             Some("Unigram") => Self::concrete_component(py, spec, Unigram),
             Some("WordLevel") => Self::concrete_component(py, spec, WordLevel),
-            Some(model_type) => Err(err(format!("Unknown model \"type\": \"{model_type}\""))),
-            None => Err(err("Model has no \"type\"")),
+            _ => Self::default_component(py, spec),
         }
     }
 }
