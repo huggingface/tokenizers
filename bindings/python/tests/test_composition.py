@@ -191,6 +191,15 @@ def test_sequence_refuses_to_hold_itself():
         sequence[0] = sequence
 
 
+# A single component is a Sequence of one, so an empty one is the same object with no items.
+def test_empty_sequence_is_legal(gpt2_spec):
+    unchanged = copy.deepcopy(gpt2_spec)
+    gpt2_spec.normalizer = normalizers.Sequence([])
+    assert len(gpt2_spec.normalizer) == 0
+    assert json.loads(gpt2_spec.to_str())["normalizer"] == {"type": "Sequence", "normalizers": []}
+    assert gpt2_spec.compile().encode(TEXT).ids == unchanged.compile().encode(TEXT).ids
+
+
 # A Sequence inside a Sequence is flattened by `from_json`, so it loads and compiles.
 def test_sequence_holds_a_sequence(gpt2_spec):
     unchanged = copy.deepcopy(gpt2_spec)

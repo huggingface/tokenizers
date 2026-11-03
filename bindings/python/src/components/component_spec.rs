@@ -27,6 +27,23 @@
 //!
 //! Its JSON is therefore rebuilt from its items on each read.
 //!
+//! # One type, one rule
+//!
+//! A component is a `Sequence` of its items. A single component is the degenerate case: a sequence
+//! of one, whose item is the JSON it holds (`items_key: None`). Both are [`ComponentSpec`]:
+//!
+//! ```text
+//!                          items_key        items     json()
+//! ─────────────────────────────────────────────────────────────────────────────
+//! Prepend("a")             None             []        {"type": "Prepend", ...}
+//! Sequence([Prepend("a")]) "normalizers"    [p]       {"type": "Sequence", "normalizers": [p]}
+//! Sequence([])             "normalizers"    []        {"type": "Sequence", "normalizers": []}
+//! ```
+//!
+//! `items_key.is_some()` is the whole discriminator. Nothing else in the spec distinguishes the two.
+//!
+//! Its JSON is therefore rebuilt from its items on each read.
+//!
 //! # Validation
 //!
 //! A spec holds JSON as it is: `Prepend("x")` writes `{"type": "Prepend", "prepend": "x"}` and
