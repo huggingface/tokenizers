@@ -230,8 +230,8 @@ pub(crate) struct StreamingIter {
     batch: Arc<EncodeBatch>,
     next: usize,
     completed: usize,
-    /// After crossing a fork: the unyielded inputs, each yielded as an error.
-    orphaned: Option<std::vec::IntoIter<usize>>,
+    /// After crossing a fork: what is left to yield.
+    orphaned: Option<std::vec::IntoIter<(usize, Result<Encoding>)>>,
 }
 
 impl StreamingIter {
@@ -244,15 +244,33 @@ impl StreamingIter {
         }
     }
 
-    /// Inputs not yielded yet (the yielded ones are `completion_queue[..next]`).
-    fn unyielded(&self) -> Vec<usize> {
-        let mut yielded = vec![false; self.batch.len()];
+    /// In a forked child: the inputs not yielded yet, finished ones with their encoding (published
+    /// past `next`, possibly behind a slot a dead worker reserved), the rest as errors.
+    fn salvage(&self) -> Vec<(usize, Result<Encoding>)> {
+        let mut pending = vec![true; self.batch.len()];
         for i in 0..self.next {
             if let Some(seq) = self.batch.completed_seq(i) {
-                yielded[seq] = true;
+                pending[seq] = false;
             }
         }
-        (0..self.batch.len()).filter(|&seq| !yielded[seq]).collect()
+        let mut out = Vec::new();
+        for i in self.next..self.batch.len() {
+            if let Some(seq) = self.batch.completed_seq(i) {
+                pending[seq] = false;
+                out.push((seq, self.batch.take_encoding(seq)));
+            }
+        }
+        out.extend(
+            (0..self.batch.len())
+                .filter(|&seq| pending[seq])
+                .map(|seq| {
+                    (
+                        seq,
+                        Err("encode started before a fork; encode again in the child".into()),
+                    )
+                }),
+        );
+        out
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -265,15 +283,15 @@ impl Iterator for StreamingIter {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(rest) = &mut self.orphaned {
-            return rest.next().map(|seq| {
-                (
-                    seq,
-                    Err("encode started before a fork; encode again in the child".into()),
-                )
-            });
+            return rest.next();
         }
         if self.completed == self.batch.len() {
             return None;
+        }
+        // Checked before touching the scratch pool, whose locks a dead worker may hold.
+        if fork_generation() != self.batch.fork_gen {
+            self.orphaned = Some(self.salvage().into_iter());
+            return self.next();
         }
         {
             let mut scratch = None;
@@ -295,7 +313,7 @@ impl Iterator for StreamingIter {
                 }
             }
         }
-        self.orphaned = Some(self.unyielded().into_iter());
+        self.orphaned = Some(self.salvage().into_iter());
         self.next()
     }
 }
