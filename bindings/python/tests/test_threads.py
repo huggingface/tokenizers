@@ -1,9 +1,11 @@
+import multiprocessing
 import sys
 import sysconfig
 import threading
 
 import pytest
 
+import tokenizers
 from conftest import GPT2
 
 
@@ -45,3 +47,31 @@ def test_read_array_while_decoding_it(gpt2):
 @pytest.mark.skipif(not sysconfig.get_config_var("Py_GIL_DISABLED"), reason="only meaningful on a free-threaded build")
 def test_gil_disabled():
     assert sys._is_gil_enabled() is False  # ty: ignore[unresolved-attribute]
+
+
+def test_max_threads_roundtrip():
+    tokenizers.set_max_threads(3)
+    try:
+        assert tokenizers.get_max_threads() == 3
+    finally:
+        tokenizers.set_max_threads(0)
+    assert tokenizers.get_max_threads() >= 1
+
+
+def test_per_call_max_threads(gpt2):
+    texts = [GPT2.read_text()[:20_000]] * 8
+    expected = [e.ids for e in gpt2.encode_batch(texts)]
+    for max_threads in (1, 2, 64):
+        assert [e.ids for e in gpt2.encode_batch(texts, max_threads=max_threads)] == expected
+    assert gpt2.encode(texts[0], max_threads=1).ids == expected[0]
+    with pytest.raises((ValueError, OverflowError)):
+        gpt2.encode(texts[0], max_threads=0)
+
+
+@pytest.mark.filterwarnings("ignore:.*fork.*:DeprecationWarning")
+@pytest.mark.parametrize("method", ["spawn", "fork"])
+def test_multiprocessing_workers_start_serial(method):
+    if method not in multiprocessing.get_all_start_methods():
+        pytest.skip(f"no {method}")
+    with multiprocessing.get_context(method).Pool(1) as pool:
+        assert pool.apply(tokenizers.get_max_threads) == 1
