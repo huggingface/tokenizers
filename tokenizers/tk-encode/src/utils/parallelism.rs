@@ -67,24 +67,35 @@ static CELL: Mutex<Option<Slot>> = Mutex::new(None);
 
 type MaybeLockGuard = Option<MutexGuard<'static, Option<Slot>>>;
 
+/// How many times [`lock`] retries a held lock before giving up.
+const LOCK_ATTEMPTS: u32 = 64;
+
+/// Take the pool lock, briefly waiting out a holder (it only guards an `Arc` clone or swap).
+/// Bounded: a child forked while the lock was held inherits it locked forever.
 fn lock() -> MaybeLockGuard {
-    match CELL.try_lock() {
-        Ok(g) => Some(g),
-        Err(TryLockError::Poisoned(p)) => Some(p.into_inner()),
-        Err(TryLockError::WouldBlock) => None,
+    for attempt in 0..LOCK_ATTEMPTS {
+        match CELL.try_lock() {
+            Ok(g) => return Some(g),
+            Err(TryLockError::Poisoned(p)) => return Some(p.into_inner()),
+            Err(TryLockError::WouldBlock) if attempt < LOCK_ATTEMPTS / 2 => std::hint::spin_loop(),
+            Err(TryLockError::WouldBlock) => std::thread::yield_now(),
+        }
     }
+    None
 }
 
 pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     register_fork_handler();
 
     let generation = POOL_GEN.load(Ordering::Acquire);
-    if let Some(guard) = lock()
-        && let Some(slot) = guard.as_ref()
+    // no lock: encode serially rather than build a throwaway pool
+    let guard = lock()?;
+    if let Some(slot) = guard.as_ref()
         && generation == slot.version
     {
         return Some(slot.pool.clone());
     }
+    drop(guard);
 
     let num_threads = num_threads();
     // We don't create a thread pool when thread == 1
@@ -387,6 +398,32 @@ mod tests {
         );
         assert_eq!(v.maybe_par_iter().sum::<u32>(), 42);
         assert_eq!(v.into_maybe_par_iter().sum::<u32>(), 42);
+    }
+
+    /// Contended callers must reuse the cached pool, not build their own.
+    #[test]
+    fn concurrent_callers_share_one_pool() {
+        if num_threads() == 1 {
+            return; // no pool on a one-core machine
+        }
+        let first = pool().expect("a pool");
+        let callers: Vec<_> = (0..32)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    (0..2_000)
+                        .filter_map(|_| pool())
+                        .map(|pool| Arc::as_ptr(&pool) as usize)
+                        .collect::<std::collections::HashSet<_>>()
+                })
+            })
+            .collect();
+        for caller in callers {
+            let seen = caller.join().unwrap();
+            assert!(
+                seen.iter().all(|&ptr| ptr == Arc::as_ptr(&first) as usize),
+                "a contended caller built a pool of its own"
+            );
+        }
     }
 
     #[test]
