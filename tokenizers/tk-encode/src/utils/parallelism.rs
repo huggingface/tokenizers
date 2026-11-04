@@ -183,10 +183,13 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     pool
 }
 
-/// Max threads per encode, caller included: the shared pool holds `max_threads() - 1`, so 1 means
-/// serial. Defaults to `available_parallelism()` (affinity mask, cgroup quota), or to 1 in a forked
-/// child, which can't know how many siblings share the cores. The fork is only seen once this
-/// module was used (an encode, `max_threads` or `set_max_threads`) before it.
+/// Max threads one encode uses, caller included: the shared pool holds `max_threads() - 1`, so 1
+/// means serial.
+///
+/// A value set with [`set_max_threads`] always wins, and forked children inherit it. Unset, it is
+/// `available_parallelism()` (affinity mask, cgroup quota), except in a forked child, which can't
+/// know how many siblings share the cores and runs serially. A fork is only detected if this module
+/// was used before it (an encode, `max_threads` or `set_max_threads`).
 pub fn max_threads() -> usize {
     register_fork_handler();
     match MAX_THREADS.load(Ordering::Acquire) {
@@ -202,7 +205,9 @@ fn available_parallelism() -> usize {
     *CORES.get_or_init(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
 }
 
-/// Set [`max_threads`] process-wide; `0` restores the default. Takes effect on the next encode.
+/// Set [`max_threads`] for the process. It takes precedence over every default, including the
+/// serial one of a forked child, and forked children inherit it. `0` restores the default. Takes
+/// effect on the next encode.
 pub fn set_max_threads(n: usize) {
     register_fork_handler();
     MAX_THREADS.store(n, Ordering::Release);
