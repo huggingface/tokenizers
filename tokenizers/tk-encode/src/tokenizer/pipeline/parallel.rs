@@ -314,20 +314,21 @@ impl PipelineTokenizer {
     /// None with `encode_special_tokens`: specials stay in the text, and a cut inside one could
     /// expose a shorter added token the serial scan skips over.
     fn cut_points<'a>(
-        &self,
+        &'a self,
         segment: &'a str,
         encode_special_tokens: bool,
     ) -> impl Iterator<Item = usize> + 'a {
         let cut = self
             .inner
             .cut
+            .as_ref()
             .filter(|_| !encode_special_tokens && segment.len() >= 2 * PARALLEL_MIN_BYTES);
         let last = segment.len().saturating_sub(PARALLEL_MIN_BYTES);
         let mut next = PARALLEL_MIN_BYTES;
         std::iter::from_fn(move || {
             let cut = cut?;
             while next < last {
-                let found = cut(segment.as_bytes(), next, (next + MAX_PROBE).min(last));
+                let found = cut.find(segment.as_bytes(), next, (next + MAX_PROBE).min(last));
                 if let Some(p) = found {
                     next = p + PARALLEL_MIN_BYTES;
                     return Some(p);
@@ -401,40 +402,15 @@ impl PipelineTokenizer {
                 }
                 Segment::Text { text, input_offset } => (text, input_offset),
             };
-            // Where a cut may follow, normalized tokens are peeled here too: with no normalizer
-            // they match the raw text, so in full context.
-            let peel = self.inner.cut.is_some()
-                && self.inner.normalizers.is_empty()
-                && !encode_special_tokens
-                && segment.len() >= 2 * PARALLEL_MIN_BYTES;
-            if !peel {
-                self.push_chunks(
-                    seq_idx,
-                    side,
-                    segment,
-                    offset,
-                    encode_special_tokens,
-                    chunks,
-                    seq_outputs,
-                );
-                continue;
-            }
-            for inner in
-                SpecialSegmentIterator::new(segment, &self.inner.added_vocabulary, true, false)
-            {
-                match inner {
-                    Segment::SpecialToken(id) => push_special(id, seq_outputs),
-                    Segment::Text { text, input_offset } => self.push_chunks(
-                        seq_idx,
-                        side,
-                        text,
-                        offset + input_offset,
-                        encode_special_tokens,
-                        chunks,
-                        seq_outputs,
-                    ),
-                }
-            }
+            self.push_chunks(
+                seq_idx,
+                side,
+                segment,
+                offset,
+                encode_special_tokens,
+                chunks,
+                seq_outputs,
+            );
         }
         // make sure we have at least one chunk per sequence, otherwise we'll wait indefinitely
         // for a completion event
