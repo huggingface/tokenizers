@@ -42,12 +42,6 @@ impl Grammar {
     ) -> usize {
         match self {
             Grammar::Gpt2 => bitcannon::bitcannon_byte_level(text, tags, starts, flag, out),
-            Grammar::Cl100k { digit_cap: 1 } => {
-                bitcannon::bitcannon_qwen(text, tags, starts, flag, out)
-            }
-            Grammar::Cl100k { digit_cap: 3 } => {
-                bitcannon::bitcannon_cl100k(text, tags, starts, flag, out)
-            }
             Grammar::Cl100k { digit_cap } => {
                 bitcannon::bitcannon_cl100k_with_digit_cap(text, tags, starts, flag, out, digit_cap)
             }
