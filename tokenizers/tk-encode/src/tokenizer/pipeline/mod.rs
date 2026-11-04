@@ -723,6 +723,7 @@ impl Tokenizer {
     }
 
     /// [`Self::post_process`] for sequences in parts; glues first when truncation may apply.
+    #[cfg(feature = "parallelism")]
     fn post_process_parts(
         &self,
         a: Vec<Vec<Token>>,
