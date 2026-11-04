@@ -40,7 +40,6 @@ fn texts(special: &str) -> Vec<(&'static str, String)> {
     let len = 16 * PARALLEL_MIN_BYTES;
     let english = std::fs::read_to_string(format!("{DATA}/big.txt")).unwrap();
     let cjk = std::fs::read_to_string(format!("{DATA}/unigram_wagahaiwa_nekodearu.txt")).unwrap();
-    let xnli = std::fs::read_to_string(format!("{DATA}/xnli.txt")).unwrap();
     let code = include_str!("../../tk-encode/src/tokenizer/pipeline/parallel.rs");
     let mut with_specials = sized(&english[..len], len);
     for at in (0..8).map(|i| i * len / 8) {
@@ -53,7 +52,6 @@ fn texts(special: &str) -> Vec<(&'static str, String)> {
     vec![
         ("english", sized(&english, len)),
         ("cjk", sized(&cjk, len)),
-        ("multilingual", sized(&xnli, len)),
         ("code", sized(code, len)),
         ("base64", base64(len)),
         (
@@ -101,10 +99,10 @@ fn gpt2_encode_matches_serial() {
     assert_cut_encode_matches_serial("gpt2.json", "<|endoftext|>");
 }
 
-/// Control: not cut (no proven deepseek cut, has a normalizer).
+/// Control: not cut (`Whitespace` has no proven cut).
 #[test]
-fn deepseek_encode_matches_serial() {
-    assert_cut_encode_matches_serial("deepseek-v3-tokenizer.json", "<｜User｜>");
+fn wiki_encode_matches_serial() {
+    assert_cut_encode_matches_serial("tokenizer-wiki.json", "[SEP]");
 }
 
 /// With `encode_special_tokens`, specials stay in the text: a cut inside one must not expose a

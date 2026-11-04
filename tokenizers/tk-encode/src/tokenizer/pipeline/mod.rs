@@ -241,6 +241,7 @@ struct TokenizerInner {
     /// Pool of scratch buffers. Scratch buffers hold intermediate state (cache, intermediate buffers, etc) required by the tokenization algorithms.
     scratch_pool: ScratchPool,
     /// See [`safe_cut`].
+    #[cfg_attr(not(feature = "parallelism"), allow(dead_code))]
     cut: Option<Cut>,
 }
 
