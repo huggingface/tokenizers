@@ -440,10 +440,16 @@ impl PipelineTokenizer {
     }
 }
 
-/// Pool threads to spawn: one per task, at most the pool, and `max_threads - 1` (the caller is one).
-fn workers(tasks: usize, pool: usize, max_threads: Option<NonZeroUsize>) -> usize {
-    let max = max_threads.map_or(usize::MAX, |n| n.get() - 1);
-    tasks.min(pool).min(max)
+/// How many pool threads to put on one encode. The calling thread claims tasks too while it waits
+/// on the handle, so a call capped at `call_max_threads` gets `call_max_threads - 1` of them.
+fn pool_threads_for_call(
+    tasks: usize,
+    pool_size: usize,
+    call_max_threads: Option<NonZeroUsize>,
+) -> usize {
+    let besides_caller = call_max_threads.map_or(usize::MAX, |max| max.get() - 1);
+    // a thread beyond one per task would find nothing to claim
+    tasks.min(pool_size).min(besides_caller)
 }
 
 pub(crate) fn encode(
@@ -487,7 +493,8 @@ pub(crate) fn encode(
         );
     }
     let n_seq = outputs.len();
-    let threads = workers(tasks.len(), pool.current_num_threads(), options.max_threads);
+    let pool_threads =
+        pool_threads_for_call(tasks.len(), pool.current_num_threads(), options.max_threads);
     let batch = Arc::new(EncodeBatch {
         inputs: Box::new(inputs),
         cancelled: AtomicBool::new(false),
@@ -505,7 +512,7 @@ pub(crate) fn encode(
         chunks,
         tasks,
     });
-    for _ in 0..threads {
+    for _ in 0..pool_threads {
         let batch = batch.clone();
         pool.spawn(move || {
             let mut scratch = batch.tokenizer.get_scratch();
@@ -520,17 +527,17 @@ pub(crate) fn encode(
 
 #[cfg(test)]
 mod tests {
-    use super::workers;
+    use super::pool_threads_for_call;
     use std::num::NonZeroUsize;
 
     #[test]
     fn per_call_max_threads_caps_the_workers() {
         let max = |n| NonZeroUsize::new(n);
-        assert_eq!(workers(100, 11, None), 11);
-        assert_eq!(workers(3, 11, None), 3);
-        assert_eq!(workers(100, 11, max(4)), 3);
-        assert_eq!(workers(100, 11, max(1)), 0);
+        assert_eq!(pool_threads_for_call(100, 11, None), 11);
+        assert_eq!(pool_threads_for_call(3, 11, None), 3);
+        assert_eq!(pool_threads_for_call(100, 11, max(4)), 3);
+        assert_eq!(pool_threads_for_call(100, 11, max(1)), 0);
         // never more than the pool
-        assert_eq!(workers(100, 11, max(64)), 11);
+        assert_eq!(pool_threads_for_call(100, 11, max(64)), 11);
     }
 }
