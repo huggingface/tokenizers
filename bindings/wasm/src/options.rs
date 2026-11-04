@@ -211,6 +211,7 @@ mod tests {
                     direction: TruncationDirection::Left,
                     stride: 0,
                 }),
+                max_threads: None,
             }
         );
     }
