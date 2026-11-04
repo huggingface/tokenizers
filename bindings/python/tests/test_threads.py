@@ -75,3 +75,23 @@ def test_multiprocessing_workers_start_serial(method):
         pytest.skip(f"no {method}")
     with multiprocessing.get_context(method).Pool(1) as pool:
         assert pool.apply(tokenizers.get_max_threads) == 1
+
+
+def test_spawn_workers_take_an_explicit_value_from_their_initializer():
+    if "spawn" not in multiprocessing.get_all_start_methods():
+        pytest.skip("no spawn")
+    ctx = multiprocessing.get_context("spawn")
+    with ctx.Pool(1, initializer=tokenizers.set_max_threads, initargs=(3,)) as pool:
+        assert pool.apply(tokenizers.get_max_threads) == 3
+
+
+@pytest.mark.filterwarnings("ignore:.*fork.*:DeprecationWarning")
+def test_forked_workers_inherit_an_explicit_value():
+    if "fork" not in multiprocessing.get_all_start_methods():
+        pytest.skip("no fork")
+    tokenizers.set_max_threads(3)
+    try:
+        with multiprocessing.get_context("fork").Pool(1) as pool:
+            assert pool.apply(tokenizers.get_max_threads) == 3
+    finally:
+        tokenizers.set_max_threads(0)
