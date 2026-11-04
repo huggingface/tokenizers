@@ -102,6 +102,11 @@ fn any_bits(text: &[u8], base: usize, b: u8) -> bool {
             // SAFETY: bounds checked above, SSSE3 checked here.
             return unsafe { crate::simd::x86::any64(text, base, b) };
         }
+        #[cfg(all(target_arch = "riscv64", target_os = "linux"))]
+        if crate::simd::rvv::available() {
+            // SAFETY: a full block is available and RVV was detected above.
+            return unsafe { crate::simd::rvv::any64(text, base, b) };
+        }
     }
     true
 }
@@ -118,6 +123,11 @@ fn eq_bits(text: &[u8], base: usize, b: u8) -> u64 {
         if crate::has_ssse3() {
             // SAFETY: bounds checked above, SSSE3 checked here.
             return unsafe { crate::simd::x86::eq64(text, base, b) };
+        }
+        #[cfg(all(target_arch = "riscv64", target_os = "linux"))]
+        if crate::simd::rvv::available() {
+            // SAFETY: a full block is available and RVV was detected above.
+            return unsafe { crate::simd::rvv::eq64(text, base, b) };
         }
     }
     let mut m = 0u64;
