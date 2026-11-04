@@ -27,12 +27,7 @@ static PARALLELISM: AtomicU8 = AtomicU8::new(0);
 
 /// See [`max_threads`]. 0 means the default.
 static MAX_THREADS: AtomicUsize = AtomicUsize::new(0);
-/// Counter to track the current version of the pool
-/// After forking or changing the number of threads, we need to invalidate and recreate a new pool
-/// Old pools will be dropped when they go out of scope (arc refcount goes to 0)
-static POOL_GEN: AtomicUsize = AtomicUsize::new(0);
-
-/// Bumped only in a forked child (unlike [`POOL_GEN`], which a resize bumps too).
+/// Bumped in a forked child, which has none of the parent's pool threads.
 static FORK_GEN: AtomicUsize = AtomicUsize::new(0);
 
 /// Lets an in-flight encode tell it crossed a fork.
@@ -66,7 +61,6 @@ fn register_fork_handler() {
         }
         unsafe extern "C" fn child_after_fork() {
             unsafe { after_fork() };
-            POOL_GEN.fetch_add(1, Ordering::SeqCst);
             FORK_GEN.fetch_add(1, Ordering::SeqCst);
             // a build in flight at fork time has no thread here to finish it
             BUILDING.store(false, Ordering::SeqCst);
@@ -81,13 +75,15 @@ fn register_fork_handler() {
 #[cfg(not(unix))]
 fn register_fork_handler() {}
 
-#[derive(Clone)]
+/// The cached pool, keyed by what it was built from: a change to either rebuilds it.
 struct Slot {
     /// `None` when `max_threads()` is 1 or the build failed: cached too, so a serial process skips
     /// the rebuild path.
     pool: Option<Arc<rayon::ThreadPool>>,
-    version: usize,
-    pid: u32,
+    /// [`FORK_GEN`] at build time.
+    fork_gen: usize,
+    /// `max_threads() - 1` at build time.
+    workers: usize,
 }
 
 static CELL: Mutex<Option<Slot>> = Mutex::new(None);
@@ -129,14 +125,14 @@ fn lock_blocking() -> MutexGuard<'static, Option<Slot>> {
     CELL.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The cached pool for `generation`, or `Err` if it must be (re)built.
-fn cached(generation: usize) -> Result<Option<Arc<rayon::ThreadPool>>, ()> {
+/// The cached pool, if it was built for `fork_gen` / `workers`, or `Err` if it must be (re)built.
+fn cached(fork_gen: usize, workers: usize) -> Result<Option<Arc<rayon::ThreadPool>>, ()> {
     // no lock (a fork in progress): encode serially rather than wait it out
     let Some(guard) = lock() else {
         return Ok(None);
     };
     match guard.as_ref() {
-        Some(slot) if slot.version == generation => Ok(slot.pool.clone()),
+        Some(slot) if slot.fork_gen == fork_gen && slot.workers == workers => Ok(slot.pool.clone()),
         _ => Err(()),
     }
 }
@@ -144,8 +140,11 @@ fn cached(generation: usize) -> Result<Option<Arc<rayon::ThreadPool>>, ()> {
 pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     register_fork_handler();
 
-    let generation = POOL_GEN.load(Ordering::Acquire);
-    if let Ok(pool) = cached(generation) {
+    // Read once and stored as the key: a racing `set_max_threads` is caught by the next call.
+    let fork_gen = fork_generation();
+    // the caller is one of the `max_threads`
+    let workers = max_threads() - 1;
+    if let Ok(pool) = cached(fork_gen, workers) {
         return pool;
     }
     // another caller is building: encode serially instead of building our own
@@ -154,12 +153,9 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     }
     let _building = Building;
     // it may have finished between our check and the flag
-    if let Ok(pool) = cached(generation) {
+    if let Ok(pool) = cached(fork_gen, workers) {
         return pool;
     }
-
-    // the caller is one of the `max_threads`
-    let workers = max_threads() - 1;
     let pool = if workers == 0 {
         None
     } else {
@@ -174,15 +170,15 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     let mut guard = lock_blocking();
     let old = guard.replace(Slot {
         pool: pool.clone(),
-        version: generation,
-        pid: std::process::id(),
+        fork_gen,
+        workers,
     });
     drop(guard);
 
     if let Some(old) = old
-        && old.pid != std::process::id()
+        && old.fork_gen != fork_gen
     {
-        // mem::forget is here to avoid deadlocking on the pool drop after forking
+        // built before a fork: dropping it would wait on threads the child doesn't have
         std::mem::forget(old.pool);
     }
 
@@ -204,14 +200,9 @@ fn available_parallelism() -> usize {
     *CORES.get_or_init(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
 }
 
-fn invalidate() {
-    POOL_GEN.fetch_add(1, Ordering::SeqCst);
-}
-
 /// Set [`max_threads`] process-wide; `0` restores the default. Takes effect on the next encode.
 pub fn set_max_threads(n: usize) {
     MAX_THREADS.store(n, Ordering::Release);
-    invalidate();
 }
 
 /// Whether [`set_parallelism`] was called.
@@ -482,8 +473,9 @@ mod tests {
         if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
-        // start stale, so the callers race the rebuild too
-        invalidate();
+        // start stale (cached for another size), so the callers race the rebuild too
+        pool();
+        set_max_threads(max_threads() + 1);
         let callers: Vec<_> = (0..32)
             .map(|_| {
                 std::thread::spawn(|| {
@@ -498,6 +490,7 @@ mod tests {
             .into_iter()
             .flat_map(|caller| caller.join().unwrap())
             .collect();
+        set_max_threads(0);
         assert_eq!(seen.len(), 1, "contended callers built pools of their own");
     }
 
