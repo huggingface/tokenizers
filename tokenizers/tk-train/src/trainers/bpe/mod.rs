@@ -20,10 +20,10 @@ use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 // private to `tk-encode`.
 use word::{WithFirstLastIterator, Word};
 
+use crate::parallelism::*;
 use crate::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 use tk_encode::Result;
 use tk_encode::models::bpe::{BpeConfig, Merges, Pair, PipelineBPE, Vocab};
-use tk_encode::parallelism::*;
 
 #[derive(Debug, Eq)]
 struct Merge {
