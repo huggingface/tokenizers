@@ -1,11 +1,11 @@
 use crate::Trainer;
+use crate::parallelism::*;
 use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::convert::Infallible;
 use tk_encode::Result;
 use tk_encode::models::wordlevel::WordLevel;
-use tk_encode::utils::parallelism::*;
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 
 #[non_exhaustive]
