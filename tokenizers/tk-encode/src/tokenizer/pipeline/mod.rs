@@ -242,7 +242,7 @@ struct TokenizerInner {
     scratch_pool: ScratchPool,
     /// See [`safe_cut`].
     #[cfg_attr(not(feature = "parallelism"), allow(dead_code))]
-    cut: Option<Cut>,
+    cut: Option<SafeCut>,
 }
 
 /// Experimental encode-only pipeline built from a [`Tokenizer`]. Runs the same
@@ -334,23 +334,66 @@ impl PipelineTokenizer {
 /// pre-token and the post-processor on the reassembled sequence; what can break a cut:
 /// - any normalizer (for now)
 /// - a `single_word` added token (reads the chars around its match)
-///
-/// Added tokens are peeled off the whole input before cutting, normalized ones included (with no
-/// normalizer they match the raw text).
+/// - a cut inside a normalized added token, which is matched within each chunk: guarded below
+///   (raw ones are peeled off the whole input before cutting)
 fn safe_cut(
     added_vocabulary: &BucketAddedVocabulary,
     normalizers: &[PipelineNormalizer],
     pre_tokenizer: &PipelinePreTokenizer,
-) -> Option<Cut> {
+) -> Option<SafeCut> {
     let cut = pre_tokenizer.cut()?;
     if !normalizers.is_empty() {
         return None;
     }
     let tokens = added_vocabulary.get_added_tokens_decoder();
-    tokens
+    if tokens.values().any(|token| token.single_word) {
+        return None;
+    }
+    // Every offset where `cut` fires inside a normalized token, and at its end when `rstrip` glues
+    // the following whitespace onto it.
+    let guards = tokens
         .values()
-        .all(|token| !token.single_word)
-        .then_some(cut)
+        .filter(|token| token.normalized)
+        .flat_map(|token| {
+            let mut text = token.content.clone().into_bytes();
+            if token.rstrip {
+                text.push(b' ');
+            }
+            let offsets: Vec<usize> = std::iter::successors(cut(&text, 0, text.len()), |&p| {
+                cut(&text, p + 1, text.len())
+            })
+            .collect();
+            let content: Box<[u8]> = token.content.as_bytes().into();
+            offsets.into_iter().map(move |k| (content.clone(), k))
+        })
+        .collect();
+    Some(SafeCut { cut, guards })
+}
+
+/// A [`Cut`] that never splits a normalized added token.
+#[derive(Clone)]
+#[cfg_attr(not(feature = "parallelism"), allow(dead_code))]
+pub(crate) struct SafeCut {
+    cut: Cut,
+    /// `(token, k)`: a cut `k` bytes into an occurrence of `token` would split it.
+    guards: Box<[(Box<[u8]>, usize)]>,
+}
+
+#[cfg_attr(not(feature = "parallelism"), allow(dead_code))]
+impl SafeCut {
+    /// The first cut in `text[from..to)` that splits no guarded token.
+    pub(crate) fn find(&self, text: &[u8], mut from: usize, to: usize) -> Option<usize> {
+        loop {
+            let p = (self.cut)(text, from, to)?;
+            let splits = self.guards.iter().any(|(token, k)| {
+                p >= *k && text.get(p - k..p - k + token.len()) == Some(&**token)
+            });
+            if !splits {
+                return Some(p);
+            }
+            from = p + 1;
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -2072,7 +2115,7 @@ mod tests {
     #[test]
     fn llama3_shape_is_cut_at_letter_ends() {
         let cut = safe_cut(&added([]), &[], &llama3_pre_tokenizer()).expect("cuttable");
-        assert_eq!(cut(b"hello world", 0, 11), Some(5));
+        assert_eq!(cut.find(b"hello world", 0, 11), Some(5));
         // raw specials are peeled before cutting
         let specials = added([AddedToken::from("<|reserved_special_token_0|>", true)]);
         assert!(safe_cut(&specials, &[], &llama3_pre_tokenizer()).is_some());
@@ -2094,11 +2137,23 @@ mod tests {
     #[test]
     fn only_single_word_tokens_disable_cuts() {
         let pre_tokenizer = llama3_pre_tokenizer();
-        // normalized tokens are peeled before cutting too (no normalizer)
+        // a normalized token is guarded instead: no cut inside it, nor before what `rstrip` eats
         let normalized = AddedToken::from("<|endoftext|>", true)
             .normalized(true)
             .rstrip(true);
-        assert!(safe_cut(&added([normalized]), &[], &pre_tokenizer).is_some());
+        let cut = safe_cut(&added([normalized]), &[], &pre_tokenizer).expect("cuttable");
+        // skips the cut after `endoftext`, finds the one after `a`
+        let text = b"x<|endoftext|>a b";
+        assert_eq!(cut.find(text, 2, text.len()), Some(15));
+        // without the guard, the cut after `endoftext` comes first
+        assert_eq!(pre_tokenizer.cut().unwrap()(text, 2, text.len()), Some(12));
+        let stripped = AddedToken::from("hello", true)
+            .normalized(true)
+            .rstrip(true);
+        let cut = safe_cut(&added([stripped]), &[], &pre_tokenizer).expect("cuttable");
+        // skips the cut between `hello` and the space it strips, finds the one after `there`
+        let text = b"say hello there!";
+        assert_eq!(cut.find(text, 4, text.len()), Some(15));
         let single_word = AddedToken::from("<<>>", true).single_word(true);
         assert!(safe_cut(&added([single_word]), &[], &pre_tokenizer).is_none());
     }
