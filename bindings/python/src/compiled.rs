@@ -89,6 +89,7 @@ impl CompiledTokenizer {
     /// Returns:
     ///     Encoding
     #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig, max_threads=None))]
+    #[allow(clippy::too_many_arguments)]
     fn encode(
         &self,
         py: Python<'_>,
@@ -140,6 +141,7 @@ impl CompiledTokenizer {
     /// Returns:
     ///     list[str]
     #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig, max_threads=None))]
+    #[allow(clippy::too_many_arguments)]
     fn tokenize(
         &self,
         py: Python<'_>,
@@ -192,6 +194,7 @@ impl CompiledTokenizer {
     /// Returns:
     ///     List[Encoding]
     #[pyo3(signature = (inputs, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig, max_threads=None))]
+    #[allow(clippy::too_many_arguments)]
     fn encode_batch(
         &self,
         py: Python<'_>,
