@@ -131,13 +131,13 @@ impl Component {
     }
 }
 
-/// Builds a handle of the concrete class, such as `Strip`, that a spec's `"type"` names.
+/// Implemented on concrete classes, for example `Split` normalizer
+/// 
+/// Instantiates the correct pyclass from the `"type"` JSON field, defaulting
+/// to the base class if the type is unknown.
 ///
-/// It is a separate trait from [`ComponentKind`] because it needs the list of concrete classes.
-/// `component_module!` writes it for the kinds with a list in `tk::schemas`.
-/// `models.rs` and `processors.rs` write their own.
+/// See [`macros`] module doc for more information.
 pub(crate) trait FromSpec: Sized {
-    /// Builds a handle on `spec`, of the concrete class its `"type"` names.
     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>>;
 }
 
