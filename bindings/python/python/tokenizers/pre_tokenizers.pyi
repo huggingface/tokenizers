@@ -49,7 +49,7 @@ class FixedLength(PreTokenizer):
 
 class PreTokenizer(Component):
     """
-    Base class for all pre-tokenizers
+    Base class of the classes in `tokenizers.pre_tokenizers`.
     """
     @staticmethod
     def _unpickle(state: bytes) -> PreTokenizer:

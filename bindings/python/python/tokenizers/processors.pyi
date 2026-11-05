@@ -5,7 +5,7 @@ from . import Component
 
 class PostProcessor(Component):
     """
-    Base class for all post-processors
+    Base class of the classes in `tokenizers.processors`.
     """
     @staticmethod
     def _unpickle(state: bytes) -> PostProcessor:

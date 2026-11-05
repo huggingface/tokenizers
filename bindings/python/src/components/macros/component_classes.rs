@@ -5,7 +5,8 @@
 //! the `tk_serialize::schemas` docs describe. For the kind, the macro writes:
 //!
 //! 1. one class per component, with a constructor, and a getter and a setter per field,
-//! 2. `from_json_type`, which picks the class of a component from its `"type"`,
+//! 2. the kind's [`ConcreteClasses`](crate::components::ConcreteClasses) impl, which picks the
+//!    class of a component from its `"type"`,
 //! 3. the kind's `#[pymodule]`, with the kind, its `Sequence` and the classes.
 //!
 //! The method bodies are one-line calls. A field's shape, such as `Bool`, names the type its
@@ -57,15 +58,16 @@ macro_rules! component_classes {
             }
         )*
 
-        /// Builds a handle of the class `json_type` names, or a plain kind handle for another type.
-        pub(crate) fn from_json_type(
-            py: Python<'_>,
-            spec: ComponentSpec,
-            json_type: Option<&str>,
-        ) -> PyResult<Py<$kind>> {
-            match json_type {
-                $(Some(stringify!($class)) => $kind::concrete_component(py, spec, $class),)*
-                _ => $kind::default_component(py, spec),
+        impl ConcreteClasses for $kind {
+            fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<$kind>> {
+                let single = match &spec {
+                    ComponentSpec::Sequence(_) => return $kind::concrete_component(py, spec, Sequence),
+                    ComponentSpec::Single(single) => single,
+                };
+                match single.json_type().as_deref() {
+                    $(Some(stringify!($class)) => $kind::concrete_component(py, spec, $class),)*
+                    _ => $kind::default_component(py, spec),
+                }
             }
         }
 

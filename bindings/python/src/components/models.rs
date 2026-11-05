@@ -9,29 +9,17 @@ use crate::components::component_spec::ComponentSpec;
 use crate::error::err;
 use crate::tokenizer::TokenizerSpec;
 
-use super::{Component, ComponentKind, JsonFieldsExt};
+use super::macros::component_kind;
+use super::{Component, ComponentKind, ConcreteClasses, JsonFieldsExt};
 
-/// Base class for all tokenizer models
-#[pyclass(frozen, subclass, extends = Component, module = "tokenizers.models")]
-#[derive(Default)]
-pub struct Model;
-
-#[pymethods]
-impl Model {
-    /// Rebuilds a component from its `__getstate__`
-    #[staticmethod]
-    fn _unpickle(py: Python<'_>, state: &[u8]) -> PyResult<Py<Self>> {
-        Self::from_state(py, state)
-    }
+component_kind! {
+    kind: Model,
+    python_module: "tokenizers.models",
+    tokenizer_field: model,
+    sequence_item_key: None,
 }
 
-impl ComponentKind for Model {
-    const SEQUENCE_ITEM_KEY: Option<&'static str> = None;
-
-    fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec> {
-        &mut spec.model
-    }
-
+impl ConcreteClasses for Model {
     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
         let json = spec.json();
         match json.get("type").and_then(Value::as_str) {

@@ -115,7 +115,7 @@ class Nmt(Normalizer):
 
 class Normalizer(Component):
     """
-    Base class for all normalizers
+    Base class of the classes in `tokenizers.normalizers`.
     """
     @staticmethod
     def _unpickle(state: bytes) -> Normalizer:
