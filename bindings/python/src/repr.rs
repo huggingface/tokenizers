@@ -24,11 +24,9 @@ pub(crate) fn tokenizer<'spec>(
         out.push_str(key);
         out.push('=');
         match field {
-            Field::Json(value) => write_value(key, &value, Some(1), &mut out),
-            Field::Component(Some(fields)) => write_object(key, &fields, Some(1), &mut out),
-            Field::Component(None) | Field::Padding(None) | Field::Truncation(None) => {
-                out.push_str("None")
-            }
+            Field::JsonValue(value) => write_value(key, &value, Some(1), &mut out),
+            Field::JsonObject(fields) => write_object(key, &fields, Some(1), &mut out),
+            Field::Padding(None) | Field::Truncation(None) => out.push_str("None"),
             Field::Padding(Some(padding)) => push_indented(&Padding::repr(padding), &mut out),
             Field::Truncation(Some(truncation)) => {
                 push_indented(&Truncation::repr(truncation), &mut out)

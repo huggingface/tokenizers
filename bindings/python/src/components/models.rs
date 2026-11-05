@@ -1,8 +1,7 @@
-use std::sync::Arc;
-
 use pyo3::prelude::*;
 
-use crate::tokenizer::{ComponentKey, ComponentSpec};
+use crate::components::component_spec::ComponentSpec;
+use crate::tokenizer::TokenizerSpec;
 
 use super::{Component, ComponentKind};
 
@@ -21,9 +20,13 @@ impl Model {
 }
 
 impl ComponentKind for Model {
-    const JSON_KEY: ComponentKey = ComponentKey::Model;
+    const ITEMS_KEY: Option<&'static str> = None;
 
-    fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
+    fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec> {
+        &mut spec.model
+    }
+
+    fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
         Self::default_component(py, spec)
     }
 }
