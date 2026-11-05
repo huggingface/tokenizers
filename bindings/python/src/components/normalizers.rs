@@ -3,10 +3,12 @@ use pyo3::prelude::*;
 use crate::components::component_spec::ComponentSpec;
 use crate::tokenizer::TokenizerSpec;
 
-use super::generated::normalizers as generated;
+use super::fields::py_classes;
 use super::{Component, ComponentKind};
 
-pub use generated::normalizers;
+tk::normalizer_schemas!(
+    py_classes! { Normalizer, normalizers, "tokenizers.normalizers", "Applies each normalizer in turn." }
+);
 
 /// Base class for all normalizers
 #[pyclass(frozen, subclass, extends = Component, module = "tokenizers.normalizers")]
@@ -31,10 +33,10 @@ impl ComponentKind for Normalizer {
 
     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
         match &spec {
-            ComponentSpec::Sequence(_) => Self::concrete_component(py, spec, generated::Sequence),
+            ComponentSpec::Sequence(_) => Self::concrete_component(py, spec, Sequence),
             ComponentSpec::Single(single) => {
                 let json_type = single.json_type();
-                generated::from_json_type(py, spec, json_type.as_deref())
+                from_json_type(py, spec, json_type.as_deref())
             }
         }
     }

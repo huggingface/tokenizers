@@ -3,10 +3,12 @@ use pyo3::prelude::*;
 use crate::components::component_spec::ComponentSpec;
 use crate::tokenizer::TokenizerSpec;
 
-use super::generated::pre_tokenizers as generated;
+use super::fields::py_classes;
 use super::{Component, ComponentKind};
 
-pub use generated::pre_tokenizers;
+tk::pre_tokenizer_schemas!(
+    py_classes! { PreTokenizer, pre_tokenizers, "tokenizers.pre_tokenizers", "Applies each pre-tokenizer in turn, each one splitting the pieces the previous one made." }
+);
 
 /// Base class for all pre-tokenizers
 #[pyclass(frozen, subclass, extends = Component, module = "tokenizers.pre_tokenizers")]
@@ -31,10 +33,10 @@ impl ComponentKind for PreTokenizer {
 
     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
         match &spec {
-            ComponentSpec::Sequence(_) => Self::concrete_component(py, spec, generated::Sequence),
+            ComponentSpec::Sequence(_) => Self::concrete_component(py, spec, Sequence),
             ComponentSpec::Single(single) => {
                 let json_type = single.json_type();
-                generated::from_json_type(py, spec, json_type.as_deref())
+                from_json_type(py, spec, json_type.as_deref())
             }
         }
     }

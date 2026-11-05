@@ -38,6 +38,7 @@ tk = { package = "tokenizers", path = "../../tokenizers", default-features = fal
   "unicode-scripts",
   "regex",
 ] }
+pastey = "0.2.3"
 
 [build-dependencies]
 pyo3-build-config = "=0.29"
