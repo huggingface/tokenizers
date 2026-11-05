@@ -193,8 +193,8 @@ impl Bpe {
     }
 
     #[setter]
-    fn set_ignore_merges(slf: &Bound<'_, Self>, ignore_merges: bool) {
-        slf.set_field("ignore_merges", ignore_merges);
+    fn set_ignore_merges(slf: &Bound<'_, Self>, ignore_merges: bool) -> PyResult<()> {
+        slf.set_field("ignore_merges", ignore_merges)
     }
 }
 

@@ -3,12 +3,21 @@ use pyo3::prelude::*;
 use crate::components::component_spec::ComponentSpec;
 use crate::tokenizer::TokenizerSpec;
 
-use super::fields::py_classes;
-use super::{Component, ComponentKind};
+use super::component_sequence::ComponentSequence;
+use super::fields::{arg, value};
+use super::macros::{component_classes, sequence_class};
+use super::{Component, ComponentKind, JsonFieldsExt, check_choice};
 
-tk::normalizer_schemas!(
-    py_classes! { Normalizer, normalizers, "tokenizers.normalizers", "Applies each normalizer in turn." }
-);
+sequence_class! {
+    kind: Normalizer,
+    python_module: "tokenizers.normalizers",
+}
+
+tk::normalizer_schemas!(component_classes! {
+    kind: Normalizer,
+    module: normalizers,
+    python_module: "tokenizers.normalizers",
+});
 
 /// Base class for all normalizers
 #[pyclass(frozen, subclass, extends = Component, module = "tokenizers.normalizers")]

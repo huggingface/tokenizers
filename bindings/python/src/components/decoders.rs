@@ -3,12 +3,21 @@ use pyo3::prelude::*;
 use crate::components::component_spec::ComponentSpec;
 use crate::tokenizer::TokenizerSpec;
 
-use super::fields::py_classes;
-use super::{Component, ComponentKind};
+use super::component_sequence::ComponentSequence;
+use super::fields::{arg, value};
+use super::macros::{component_classes, sequence_class};
+use super::{Component, ComponentKind, JsonFieldsExt, check_choice};
 
-tk::decoder_schemas!(
-    py_classes! { Decoder, decoders, "tokenizers.decoders", "Applies each decoder in turn." }
-);
+sequence_class! {
+    kind: Decoder,
+    python_module: "tokenizers.decoders",
+}
+
+tk::decoder_schemas!(component_classes! {
+    kind: Decoder,
+    module: decoders,
+    python_module: "tokenizers.decoders",
+});
 
 /// Base class for all decoders
 #[pyclass(frozen, subclass, extends = Component, module = "tokenizers.decoders")]

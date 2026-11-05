@@ -105,7 +105,7 @@ class Replace(Decoder):
 @final
 class Sequence(Decoder):
     """
-    Applies each decoder in turn.
+    Applies each `Decoder` in turn.
     """
     def __getitem__(self, index: int, /) -> Decoder: ...
     def __len__(self, /) -> int: ...

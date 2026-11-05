@@ -3,12 +3,21 @@ use pyo3::prelude::*;
 use crate::components::component_spec::ComponentSpec;
 use crate::tokenizer::TokenizerSpec;
 
-use super::fields::py_classes;
-use super::{Component, ComponentKind};
+use super::component_sequence::ComponentSequence;
+use super::fields::{arg, value};
+use super::macros::{component_classes, sequence_class};
+use super::{Component, ComponentKind, JsonFieldsExt, check_choice};
 
-tk::pre_tokenizer_schemas!(
-    py_classes! { PreTokenizer, pre_tokenizers, "tokenizers.pre_tokenizers", "Applies each pre-tokenizer in turn, each one splitting the pieces the previous one made." }
-);
+sequence_class! {
+    kind: PreTokenizer,
+    python_module: "tokenizers.pre_tokenizers",
+}
+
+tk::pre_tokenizer_schemas!(component_classes! {
+    kind: PreTokenizer,
+    module: pre_tokenizers,
+    python_module: "tokenizers.pre_tokenizers",
+});
 
 /// Base class for all pre-tokenizers
 #[pyclass(frozen, subclass, extends = Component, module = "tokenizers.pre_tokenizers")]

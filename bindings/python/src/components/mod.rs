@@ -63,9 +63,11 @@
 //! Each read builds a new Python object, so `tokenizer.normalizer is tokenizer.normalizer` is
 //! `False`. Both objects still edit the same spec.
 
+pub(crate) mod component_sequence;
 pub(crate) mod component_spec;
 pub(crate) mod decoders;
 pub(crate) mod fields;
+mod macros;
 pub(crate) mod models;
 pub(crate) mod normalizers;
 pub(crate) mod pre_tokenizers;
@@ -77,11 +79,11 @@ use pyo3::PyClass;
 use pyo3::exceptions::PyValueError;
 use pyo3::impl_::pyclass::PyClassBaseType;
 use pyo3::prelude::*;
+use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde_json::Value;
 
 use crate::JsonObject;
-use crate::components::component_spec::{ComponentSpec, SequenceSpec, SingleSpec};
+use crate::components::component_spec::{ComponentSpec, SingleSpec};
 use crate::error::err;
 use crate::repr;
 use crate::tokenizer::TokenizerSpec;
@@ -188,16 +190,6 @@ pub(crate) trait ComponentKind:
         single
     }
 
-    /// Returns the spec of `handle`, a handle of this kind's `Sequence` class.
-    fn sequence_spec<'a, C: PyClass<BaseType = Self>>(
-        handle: &'a Bound<'_, C>,
-    ) -> &'a Arc<SequenceSpec> {
-        let ComponentSpec::Sequence(sequence) = Self::spec(handle.as_super()) else {
-            unreachable!("a Sequence handle is built only on a SequenceSpec, by from_spec or new");
-        };
-        sequence
-    }
-
     /// Builds a handle from the bytes [`Component::__getstate__`] returns.
     /// Unpickling calls it through the kind's `_unpickle`.
     fn from_state(py: Python<'_>, state: &[u8]) -> PyResult<Py<Self>> {
@@ -222,7 +214,7 @@ pub(crate) trait JsonFieldsExt {
     /// `None`.
     fn field<T: DeserializeOwned>(&self, key: &str) -> PyResult<T>;
     /// Sets the `key` field. Every handle on this spec sees the new value.
-    fn set_field(&self, key: &str, value: impl Into<Value>);
+    fn set_field(&self, key: &str, value: impl Serialize) -> PyResult<()>;
 }
 
 impl<K: ComponentKind, C: PyClass<BaseType = K>> JsonFieldsExt for Bound<'_, C> {
@@ -230,7 +222,9 @@ impl<K: ComponentKind, C: PyClass<BaseType = K>> JsonFieldsExt for Bound<'_, C> 
         K::single_spec(self).field(key)
     }
 
-    fn set_field(&self, key: &str, value: impl Into<Value>) {
+    fn set_field(&self, key: &str, value: impl Serialize) -> PyResult<()> {
+        let value = serde_json::to_value(value).map_err(err)?;
         K::single_spec(self).set_field(key, value);
+        Ok(())
     }
 }
