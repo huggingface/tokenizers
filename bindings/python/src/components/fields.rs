@@ -1,9 +1,9 @@
-//! The Rust types of the field shapes in `tk_serialize::schemas`, such as `Bool` or `Pattern`.
+//! The types of the field shapes in `tk_serialize::schemas`.
 //!
-//! [`component_classes!`](super::macros::component_classes) writes a field of shape
-//! `Bool` as an `arg::Bool` constructor and setter argument, and a `value::Bool` getter result.
-//! Each type moves to and from the JSON with serde, so a new field shape is one type here, and
-//! the macro does not change.
+//! A field's shape, such as `Bool`, names a type in [`arg`] (what the constructor and the setter
+//! take) and in [`value`] (what the getter returns). Each type moves to and from the JSON with
+//! serde, so a new field shape is one type here, and
+//! [`component_classes!`](super::macros::component_classes) does not change.
 
 use std::convert::Infallible;
 
@@ -15,8 +15,7 @@ use pyo3::types::PyBytes;
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// What the constructor and the setter take from Python, by field shape. Each alias is named
-/// after its shape, so `arg::String` is a `&str`.
+/// What the constructor and the setter take from Python, by field shape.
 pub(crate) mod arg {
     pub(crate) type Bool = bool;
     pub(crate) type String<'a> = &'a str;

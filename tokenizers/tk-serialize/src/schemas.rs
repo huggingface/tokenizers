@@ -17,20 +17,8 @@
 //! names its JSON shape: `Bool`, `String`, `Char` (a one-character string), `Usize`,
 //! `OptionalBool` (a `bool` or `null`), `Choice(strings)` (one of `strings`), `Pattern`
 //! (`{"String": ...}` for a literal or `{"Regex": ...}`) or `Base64Bytes` (bytes, as a base64
-//! string). A field with no default is a required argument. A component with no fields is its
-//! `"type"` alone.
-//!
-//! A macro reading the entries matches each one with this pattern:
-//!
-//! ```ignore
-//! $(#[doc = $doc:literal])+
-//! $json_type:ident $({
-//!     $($key:ident: $field_type:ident $(($choices:expr))? $(= $default:tt)?),* $(,)?
-//! })?
-//! ```
-//!
-//! A default is a single token, not an `expr`. pyo3 writes an `expr` default as `...` in the
-//! Python stubs.
+//! string). A default is a single token; a field with none is a required argument. A component
+//! with no fields is its `"type"` alone.
 //!
 //! Registering a component is one entry here. Post-processors and models are not listed: their
 //! fields are templates and vocabularies, which no field shape describes.

@@ -1,22 +1,21 @@
 //! The classes of the simple components, written by [`component_classes!`] from the core's lists.
 //!
-//! `tk::normalizer_schemas!(component_classes! { ... })` hands each normalizer's entry to
-//! [`component_classes!`]. An entry is the component's doc, its JSON `"type"` and its fields, as
-//! the `tk_serialize::schemas` docs describe. For the kind, the macro writes:
+//! `tk::normalizer_schemas!(component_classes! { ... })` hands each normalizer's entry (its doc,
+//! its JSON `"type"` and its fields) to [`component_classes!`], which writes, for the kind:
 //!
 //! 1. one class per component, with a constructor, and a getter and a setter per field,
 //! 2. the kind's [`ConcreteClasses`](crate::components::ConcreteClasses) impl, which picks the
 //!    class of a component from its `"type"`,
-//! 3. the kind's `#[pymodule]`, with the kind, its `Sequence` and the classes.
+//! 3. the kind's `#[pymodule]`.
 //!
-//! The method bodies are one-line calls. A field's shape, such as `Bool`, names the type its
-//! constructor argument and its getter take in [`fields`](crate::components::fields).
+//! A field's shape, such as `Bool`, names its types in [`fields`](crate::components::fields).
 
 /// Writes a kind's component classes from its `tk::*_schemas!` entries.
 macro_rules! component_classes {
     ({ kind: $kind:ident, module: $module:ident, python_module: $python_module:literal $(,)? } $(
         $(#[doc = $doc:literal])+
         $class:ident $({
+            // A default is a `tt`. pyo3 writes an `expr` default as `...` in the stubs.
             $($key:ident: $field_type:ident $(($choices:expr))? $(= $default:tt)?),* $(,)?
         })?
     ),* $(,)?) => {
