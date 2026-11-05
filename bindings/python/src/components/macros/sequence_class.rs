@@ -1,6 +1,44 @@
-//! The `Sequence` class of a component kind, written by [`sequence_class!`].
+//! Macro to generate the `Sequence` class pyo3 definitions
+//!
+//! Normalizers, pre-tokenizers and decoders each have a `Sequence` class, such as `normalizers.Sequence`.
+//! pyo3 can't make a generic class, so each kind needs its own definition of the `Sequence` class.
+//!
+//! The macro writes only the pyo3 code: the class and its Python methods.
+//! Each method defers logic to the [`ComponentSequence`] trait.
+//!
+//! For the `Normalizer` kind, the macro generates this Python class:
+//!
+//! ```python
+//! class Sequence(Normalizer):
+//!     """
+//!     Applies each `Normalizer` in turn.
+//!     """
+//!     def __new__(cls, items: list[Normalizer], /) -> Sequence: ...
+//!     def __len__(self, /) -> int: ...
+//!     def __getitem__(self, index: int, /) -> Normalizer: ...
+//!     def __setitem__(self, index: int, item: Normalizer, /) -> None: ...
+//! ```
+//!
+//! [`ComponentSequence`]: crate::components::component_sequence::ComponentSequence
 
-/// Writes the `Sequence` class of the kind `kind`, in the Python module `python_module`.
+/// Writes the `Sequence` class of a component kind, such as `normalizers.Sequence`.
+///
+/// ```rust,ignore
+/// sequence_class! {
+///     kind: Normalizer,
+///     python_module: "tokenizers.normalizers",
+/// }
+/// ```
+///
+/// Shall be called next to the kind class, here `Normalizer`. It writes:
+///
+/// - `Sequence`, a Python class that extends `Normalizer`, in `tokenizers.normalizers`.
+/// - Its constructor, `Sequence(items)`, which takes a list of `Normalizer`s.
+/// - methods supporting `len(seq)`, `seq[i]` and `seq[i] = item`.
+///
+/// Its methods call [`ComponentSequence`], which needs the kind to have an `items_key`.
+///
+/// [`ComponentSequence`]: crate::components::component_sequence::ComponentSequence
 macro_rules! sequence_class {
     (kind: $kind:ident, python_module: $python_module:literal $(,)?) => {
         // pyo3 writes the `__setitem__` slot as an item next to the impl, calling an unsafe fn
