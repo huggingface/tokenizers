@@ -1,30 +1,103 @@
-//! The fields of each component's JSON in `tokenizer.json`, for the bindings.
+//! Lists of components and their JSON fields.
 //!
-//! A binding needs one class per component, with a constructor and an accessor per field. Each
-//! kind's list is a macro that hands its entries to a macro of the binding's, which writes the
-//! classes: [`normalizer_schemas!`](crate::normalizer_schemas),
-//! [`pre_tokenizer_schemas!`](crate::pre_tokenizer_schemas) and
-//! [`decoder_schemas!`](crate::decoder_schemas).
+//! The Python bindings have one class per component, such as `normalizers.Strip`.
+//! Each Python class has a constructor, and a getter and a setter per field.
+//! To avoid writing and maintaining that code by hand, we use Rust macros in the
+//! bindings to generate classes.
 //!
-//! ```ignore
-//! tk_serialize::normalizer_schemas!(my_classes! { arguments of my_classes });
-//! // expands to
-//! my_classes! { { arguments of my_classes } /// doc
-//!     Strip { strip_left: Bool = true, strip_right: Bool = true }, ... }
+//! This works because most components are plain data.
+//! Their Python class is only a view over a small JSON object, with no additional logic.
+//! Models and post-processors are different: their fields are vocabularies and templates,
+//! with logic around them. Model and post-processor classes are written by hand.
+//!
+//! This module defines lists of components with their JSON shape. Those lists are
+//! used by the Python bindings macros to generate code systematically.
+//!
+//! # Component definitions
+//!
+//! Here is an example of a component definition:
+//!
+//! ```text
+//! /// Removes whitespace from the start and the end of the text.
+//! Strip { strip_left: Bool = true, strip_right: Bool = true },
 //! ```
 //!
-//! An entry is its doc, its JSON `"type"`, and its fields with their constructor defaults.
-//! The `"type"` is also the class name in the bindings, so renaming a class changes the file format.
-//! A field names its JSON shape: `Bool`, `String`, `Char` (a one-character string), `Usize`,
-//! `OptionalBool` (a `bool` or `null`), `Choice(choices)` (one of the [`Choice`]s), `Pattern`
-//! (`{"String": ...}` for a literal or `{"Regex": ...}`) or `Base64Bytes` (bytes, as a base64
-//! string).
-//! A default is a single token, and a `Choice`'s default is its name.
-//! A field with none is a required argument.
-//! A component with no fields is its `"type"` alone.
+//! From this definition, the Python bindings generate the class `normalizers.Strip`:
 //!
-//! Registering a component is one entry here. Post-processors and models are not listed: their
-//! fields are templates and vocabularies, which no field shape describes.
+//! ```python
+//! @final
+//! class Strip(Normalizer):
+//!     """
+//!     Removes whitespace from the start and the end of the text.
+//!     """
+//!     def __new__(cls, /, strip_left: bool = True, strip_right: bool = True) -> Strip:
+//!         ...
+//!     @property
+//!     def strip_left(self, /) -> bool:
+//!         ...
+//!     @strip_left.setter
+//!     def strip_left(self, /, strip_left: bool) -> None:
+//!         ...
+//!     @property
+//!     def strip_right(self, /) -> bool:
+//!         ...
+//!     @strip_right.setter
+//!     def strip_right(self, /, strip_right: bool) -> None:
+//!         ...
+//! ```
+//!
+//! The corresponding JSON object looks like:
+//! ```json
+//! {"type": "Strip", "strip_left": false, "strip_right": true}
+//! ```
+//!
+//! A component definition has three parts:
+//!
+//! - **The doc** becomes the class docstring.
+//! - **The `"type"`**, here `Strip`, is also the class name.
+//! - **The fields**, in braces, if the component has any.
+//!
+//! Each field has a key, a shape and an optional default.
+//! The key names the field in the JSON, in the constructor and on the class.
+//! The shape says which JSON value the field holds:
+//!
+//! - `Bool`: a bool.
+//! - `OptionalBool`: a bool or `null`.
+//! - `Usize`: a non-negative integer.
+//! - `String`: a string.
+//! - `Char`: a string of one character.
+//! - `Choice(choices)`: the `json` of one of `choices`, a list of [`Choice`].
+//!   The default is a `name`.
+//! - `Pattern`: `{"String": "..."}` or `{"Regex": "..."}`.
+//! - `Base64Bytes`: bytes, written as a base64 string.
+//!
+//! A field with no default is a required argument.
+//! The getter also returns the default when the JSON leaves the field out.
+//!
+//! # Component lists
+//!
+//! There is one list per component kind:
+//!
+//! - [`normalizer_schemas!`](crate::normalizer_schemas)
+//! - [`pre_tokenizer_schemas!`](crate::pre_tokenizer_schemas)
+//! - [`decoder_schemas!`](crate::decoder_schemas)
+//!
+//! `Sequence` components have special handling in the Python bindings.
+//!
+//! The Python bindings call the list macros with their own `component_module!` macro:
+//!
+//! ```ignore
+//! tk::normalizer_schemas!(component_module! {
+//!     kind: Normalizer,
+//!     module: normalizers,
+//!     ...
+//! });
+//! ```
+//!
+//! # Adding a component to the bindings
+//!
+//! 1. Make the reader in `from_json` accept the new `"type"`.
+//! 2. Add a definition to the list of its kind. The Python class gets automatically generated.
 
 /// One value of a `Choice` field: the `name` the bindings take, and the `json` string
 /// `tokenizer.json` holds.
@@ -55,7 +128,22 @@ pub const PREPEND_SCHEMES: &[Choice] = &[
     choice("never", "never"),
 ];
 
-/// Calls `$callback! { { $args } entries }` with one entry per normalizer.
+/// Calls a macro with the definition of every normalizer.
+///
+/// `normalizer_schemas!(my_macro! { args })` expands to:
+///
+/// ```rust,ignore
+/// my_macro! {
+///     { args }
+///     /// Lowercases the text.
+///     Lowercase,
+///     /// Removes whitespace from the start and the end of the text.
+///     Strip { strip_left: Bool = true, strip_right: Bool = true },
+///     ...
+/// }
+/// ```
+///
+/// The [module doc](crate::schemas) explains definitions and their fields.
 #[macro_export]
 macro_rules! normalizer_schemas {
     ($callback:ident! { $($args:tt)* }) => {
@@ -109,7 +197,22 @@ macro_rules! normalizer_schemas {
     };
 }
 
-/// Calls `$callback! { { $args } entries }` with one entry per pre-tokenizer.
+/// Calls a macro with the definition of every pre-tokenizer.
+///
+/// `pre_tokenizer_schemas!(my_macro! { args })` expands to:
+///
+/// ```rust,ignore
+/// my_macro! {
+///     { args }
+///     /// Splits the text into runs of word characters and runs of punctuation, ...
+///     Whitespace,
+///     /// Splits the text around runs of digits, or around each digit with `individual_digits`.
+///     Digits { individual_digits: Bool = false },
+///     ...
+/// }
+/// ```
+///
+/// The [module doc](crate::schemas) explains definitions and their fields.
 #[macro_export]
 macro_rules! pre_tokenizer_schemas {
     ($callback:ident! { $($args:tt)* }) => {
@@ -147,7 +250,22 @@ macro_rules! pre_tokenizer_schemas {
     };
 }
 
-/// Calls `$callback! { { $args } entries }` with one entry per decoder.
+/// Calls a macro with the definition of every decoder.
+///
+/// `decoder_schemas!(my_macro! { args })` expands to:
+///
+/// ```rust,ignore
+/// my_macro! {
+///     { args }
+///     /// Maps each character of the GPT-2 byte-to-unicode alphabet back to its byte, ...
+///     ByteLevel,
+///     /// Joins every token into one string, with no separator.
+///     Fuse,
+///     ...
+/// }
+/// ```
+///
+/// The [module doc](crate::schemas) explains definitions and their fields.
 #[macro_export]
 macro_rules! decoder_schemas {
     ($callback:ident! { $($args:tt)* }) => {
