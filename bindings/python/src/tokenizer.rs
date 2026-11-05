@@ -460,8 +460,8 @@ impl TokenizerSpec {
             unreachable!("canonicalize_value refuses anything but an object");
         };
         let mut take = |key| file.remove(key).unwrap_or(Value::Null);
-        let component = |sequence_item_key, value| match value {
-            Value::Object(json) => Some(ComponentSpec::from_json(sequence_item_key, json)),
+        let component = |items_key, value| match value {
+            Value::Object(json) => Some(ComponentSpec::from_json(items_key, json)),
             _ => None,
         };
         Ok(Self {
@@ -469,12 +469,12 @@ impl TokenizerSpec {
             padding: padding_from_json(&take("padding").to_string())?,
             role_to_token: Arc::new(take("role_to_token")),
             added_tokens: Arc::new(take("added_tokens")),
-            normalizer: component(Normalizer::SEQUENCE_ITEM_KEY, take("normalizer")),
-            pre_tokenizer: component(PreTokenizer::SEQUENCE_ITEM_KEY, take("pre_tokenizer")),
-            post_processor: component(PostProcessor::SEQUENCE_ITEM_KEY, take("post_processor")),
-            decoder: component(Decoder::SEQUENCE_ITEM_KEY, take("decoder")),
+            normalizer: component(Normalizer::ITEMS_KEY, take("normalizer")),
+            pre_tokenizer: component(PreTokenizer::ITEMS_KEY, take("pre_tokenizer")),
+            post_processor: component(PostProcessor::ITEMS_KEY, take("post_processor")),
+            decoder: component(Decoder::ITEMS_KEY, take("decoder")),
             model: Some(
-                component(Model::SEQUENCE_ITEM_KEY, take("model"))
+                component(Model::ITEMS_KEY, take("model"))
                     .expect("canonicalize_value refuses a model that is not an object"),
             ),
         })

@@ -28,9 +28,8 @@ pub(crate) trait ComponentSequence<K: ComponentKind>:
                 ComponentSpec::Sequence(sequence) => flat.extend(sequence.items()),
             }
         }
-        let sequence_item_key =
-            K::SEQUENCE_ITEM_KEY.expect("only a kind with a sequence item key has a Sequence");
-        let spec = ComponentSpec::Sequence(Arc::new(SequenceSpec::new(sequence_item_key, flat)));
+        let items_key = K::ITEMS_KEY.expect("only a kind with an items key has a Sequence");
+        let spec = ComponentSpec::Sequence(Arc::new(SequenceSpec::new(items_key, flat)));
         K::initializer(spec, Self::default())
     }
 

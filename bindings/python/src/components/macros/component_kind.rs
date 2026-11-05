@@ -32,7 +32,7 @@ macro_rules! component_kind {
         }
 
         impl ComponentKind for $kind {
-            const SEQUENCE_ITEM_KEY: Option<&'static str> = $sequence_item_key;
+            const ITEMS_KEY: Option<&'static str> = $sequence_item_key;
 
             fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec> {
                 &mut spec.$tokenizer_field

@@ -126,12 +126,12 @@ impl ComponentSpec {
     /// A `Sequence` splits into one [`SingleSpec`] per item, so that a handle on an item can be
     /// built and edited. A `Sequence` whose items are not a list of objects is kept as it is, for
     /// `compile()` to refuse.
-    pub(crate) fn from_json(sequence_item_key: Option<&'static str>, json: JsonObject) -> Self {
-        if let Some(sequence_item_key) = sequence_item_key
+    pub(crate) fn from_json(items_key: Option<&'static str>, json: JsonObject) -> Self {
+        if let Some(items_key) = items_key
             && is_sequence(&json)
-            && let Some(items) = sequence_items(sequence_item_key, &json)
+            && let Some(items) = sequence_items(items_key, &json)
         {
-            return Self::Sequence(Arc::new(SequenceSpec::new(sequence_item_key, items)));
+            return Self::Sequence(Arc::new(SequenceSpec::new(items_key, items)));
         }
         Self::single(json)
     }
@@ -163,15 +163,15 @@ impl ComponentSpec {
 
 /// Returns the items of the `Sequence` `json`, with a nested `Sequence` replaced by its items.
 /// It returns `None` when an item list is not a list of objects.
-fn sequence_items(sequence_item_key: &str, json: &JsonObject) -> Option<Vec<Arc<SingleSpec>>> {
-    let Value::Array(values) = json.get(sequence_item_key)? else {
+fn sequence_items(items_key: &str, json: &JsonObject) -> Option<Vec<Arc<SingleSpec>>> {
+    let Value::Array(values) = json.get(items_key)? else {
         return None;
     };
     let mut items = Vec::with_capacity(values.len());
     for value in values {
         let item = value.as_object()?;
         if is_sequence(item) {
-            items.extend(sequence_items(sequence_item_key, item)?);
+            items.extend(sequence_items(items_key, item)?);
         } else {
             items.push(Arc::new(SingleSpec::new(item.clone())));
         }
@@ -233,14 +233,14 @@ impl SingleSpec {
 /// The spec of a `Sequence`: one shared [`SingleSpec`] per item.
 pub(crate) struct SequenceSpec {
     /// The key the items live under in `tokenizer.json`, such as `"normalizers"`.
-    sequence_item_key: &'static str,
+    items_key: &'static str,
     items: Mutex<Vec<Arc<SingleSpec>>>,
 }
 
 impl SequenceSpec {
-    pub(crate) fn new(sequence_item_key: &'static str, items: Vec<Arc<SingleSpec>>) -> Self {
+    pub(crate) fn new(items_key: &'static str, items: Vec<Arc<SingleSpec>>) -> Self {
         Self {
-            sequence_item_key,
+            items_key,
             items: Mutex::new(items),
         }
     }
@@ -287,10 +287,10 @@ impl SequenceSpec {
             .iter()
             .map(|item| Arc::new(item.deep_clone()))
             .collect();
-        Self::new(self.sequence_item_key, items)
+        Self::new(self.items_key, items)
     }
 
-    /// Builds the sequence's JSON: `"type": "Sequence"`, and the items' JSON under `sequence_item_key`.
+    /// Builds the sequence's JSON: `"type": "Sequence"`, and the items' JSON under `items_key`.
     fn json(&self) -> JsonObject {
         let items: Vec<Value> = self
             .lock_items()
@@ -299,7 +299,7 @@ impl SequenceSpec {
             .collect();
         let mut json = JsonObject::new();
         json.insert("type".to_owned(), "Sequence".into());
-        json.insert(self.sequence_item_key.to_owned(), items.into());
+        json.insert(self.items_key.to_owned(), items.into());
         json
     }
 
