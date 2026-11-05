@@ -41,7 +41,7 @@ npm install tokenizers-wasm@latest
 import { Tokenizer } from "tokenizers-wasm";
 
 const tokenizer = await Tokenizer.from_pretrained("openai-community/gpt2");
-const ids = tokenizer.encode("Hello world!");
+const { ids } = tokenizer.encode("Hello world!");
 console.log(ids); // Uint32Array [15496, 995, 0]
 console.log(tokenizer.decode_tokens(ids)); // ["Hello", "Ġworld", "!"]
 console.log(tokenizer.decode(ids)); // "Hello world!"

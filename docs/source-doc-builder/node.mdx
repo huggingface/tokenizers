@@ -1,8 +1,7 @@
 # Node
 
-The Node binding is encode-only. It loads a `tokenizer.json` and turns text into
-token ids; it does not decode, and it does not build, edit, save or train
-tokenizers.
+The Node binding loads a `tokenizer.json`, encodes text into token ids and
+decodes ids back into text. It does not build, edit, save or train tokenizers.
 
 ## Installation
 
@@ -13,9 +12,9 @@ npm install tokenizers
 ## Loading a tokenizer
 
 ```js
-const { PipelineTokenizer } = require('tokenizers')
+const { Tokenizer } = require('tokenizers')
 
-const tokenizer = PipelineTokenizer.fromFile('tokenizer.json')
+const tokenizer = Tokenizer.fromFile('tokenizer.json')
 ```
 
 The file is put through the legacy `1.0` → canonical `2.0` upgrade on the way in,
@@ -23,16 +22,41 @@ so tokenizers already on disk keep loading.
 
 ## Encoding
 
-`encode` returns a `Uint32Array` of ids rather than an object: a JS `Array` costs
-one napi value per token, which on token-dense input is 13x the encode itself.
+`encode` takes a text, or a pair of texts given as a two-item array, and returns
+an `Encoding`. The post-processor joins a pair, for example as
+`[CLS] A [SEP] B [SEP]`.
 
 ```js
-const ids = tokenizer.encode("Hello, y'all! How are you 😁 ?")
+const encoding = tokenizer.encode("Hello, y'all! How are you 😁 ?")
+const pair = tokenizer.encode(["Hello, y'all!", 'How are you 😁 ?'])
 ```
 
-For a tight loop, `encodeBytesInto` writes into a `Uint32Array` you own. That drops
-the two remaining per-call costs — the JS string → UTF-8 copy, and a fresh
-`ArrayBuffer` every call — and returns how many ids it wrote:
+| Property | Description |
+| --- | --- |
+| `ids` | The id of each token. |
+| `typeIds` | The type id of each token: 0 for the first text of a pair, 1 for the second. |
+| `attentionMask` | 1 for each token, 0 for each padding token. |
+
+Each property is a `Uint32Array` rather than a JS `Array`: an `Array` costs one
+napi value per token, which on token-dense input is 13x the encode itself.
+
+`encodeBatch` encodes a batch of texts and pairs in one call, and returns the
+encodings in input order. Batch padding pads every item to the longest one.
+
+```js
+const batch = tokenizer.encodeBatch(["Hello, y'all!", ["Hello, y'all!", 'How are you 😁 ?']], { padding: {} })
+```
+
+`tokenize` returns the token of each id, special tokens included. It is
+`decodeTokens(encode(input, options).ids)`.
+
+```js
+const tokens = tokenizer.tokenize("Hello, y'all!")
+```
+
+For a tight loop, `encodeBytesInto` encodes one text and writes its ids into a
+`Uint32Array` you own. That drops two per-call costs: the JS string → UTF-8 copy,
+and a fresh `ArrayBuffer` for every call. It returns how many ids it wrote:
 
 ```js
 const out = new Uint32Array(512)
@@ -40,13 +64,25 @@ const n = tokenizer.encodeBytesInto(Buffer.from("Hello, y'all!"), out)
 // out.subarray(0, n) holds the ids
 ```
 
+## Decoding
+
+`decode` turns ids back into text and skips special tokens unless its second
+argument is `false`. `decodeTokens` gives the token of each id without running the
+decoder, so a byte-level BPE token reads `Ġworld`, not ` world`. It keeps special
+tokens unless its second argument is `true`.
+
+```js
+const text = tokenizer.decode(encoding.ids)
+const tokens = tokenizer.decodeTokens(encoding.ids)
+```
+
 ## Options
 
-Both methods take an optional second argument. A field left out keeps the
+Every encode method takes an optional last argument. A field left out keeps the
 tokenizer's own behaviour.
 
 ```js
-const ids = tokenizer.encode("Hello, y'all!", {
+const encoding = tokenizer.encode("Hello, y'all!", {
   addSpecialTokens: true,
   encodeSpecialTokens: false,
   padding: { padId: 0, padToken: '[PAD]', length: 16 },
@@ -73,7 +109,7 @@ below, not the configured value.
 | `padTypeId` | `0` | The type id of the padding token. |
 | `padToken` | `[PAD]` | The text of the padding token. |
 | `length` | batch longest | Pads every encoding to exactly this many tokens. |
-| `padToMultipleOf` | — | Rounds the padded length up to a multiple of this. |
+| `padToMultipleOf` | none | Rounds the padded length up to a multiple of this. |
 
 ### `truncation`
 
