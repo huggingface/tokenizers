@@ -4,9 +4,8 @@ use crate::components::component_spec::ComponentSpec;
 use crate::tokenizer::TokenizerSpec;
 
 use super::component_sequence::ComponentSequence;
-use super::fields::{arg, value};
 use super::macros::{component_classes, component_kind, sequence_class};
-use super::{Component, ComponentKind, ConcreteClasses, JsonFieldsExt, check_choice};
+use super::{Component, ComponentKind, ConcreteClasses};
 
 component_kind! {
     kind: Normalizer,

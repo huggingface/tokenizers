@@ -2,6 +2,7 @@
 
 mod component_classes;
 mod component_kind;
+pub(crate) mod fields;
 mod sequence_class;
 
 pub(crate) use component_classes::component_classes;

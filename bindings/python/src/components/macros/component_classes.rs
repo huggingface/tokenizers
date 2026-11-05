@@ -8,7 +8,7 @@
 //!    class of a component from its `"type"`,
 //! 3. the kind's `#[pymodule]`.
 //!
-//! A field's shape, such as `Bool`, names its types in [`fields`](crate::components::fields).
+//! A field's shape, such as `Bool`, names its types in [`fields`](super::fields).
 
 /// Writes a kind's component classes from its `tk::*_schemas!` entries.
 macro_rules! component_classes {
@@ -19,6 +19,9 @@ macro_rules! component_classes {
             $($key:ident: $field_type:ident $(($choices:expr))? $(= $default:tt)?),* $(,)?
         })?
     ),* $(,)?) => {
+        use $crate::components::JsonFieldsExt;
+        use $crate::components::macros::fields::{arg, choice_json, choice_name, value};
+
         $(
             $(#[doc = $doc])+
             #[allow(clippy::upper_case_acronyms)]
@@ -33,7 +36,7 @@ macro_rules! component_classes {
                     #[new]
                     #[pyo3(signature = ($($($key $(= $default)?),*)?))]
                     fn new($($($key: arg::$field_type),*)?) -> PyResult<PyClassInitializer<Self>> {
-                        $($($(check_choice(stringify!($key), $key, $choices)?;)?)*)?
+                        $($($(let $key = choice_json(stringify!($key), $key, $choices)?;)?)*)?
                         let spec = ComponentSpec::from_literal(serde_json::json!({
                             "type": stringify!($class),
                             $($(stringify!($key): $key,)*)?
@@ -44,12 +47,14 @@ macro_rules! component_classes {
                     $($(
                         #[getter]
                         fn $key(slf: &Bound<'_, Self>) -> PyResult<value::$field_type> {
-                            slf.field(stringify!($key))
+                            let value = slf.field(stringify!($key))?;
+                            $(let value = choice_name(stringify!($key), value, $choices)?;)?
+                            Ok(value)
                         }
 
                         #[setter]
                         fn [<set_ $key>](slf: &Bound<'_, Self>, $key: arg::$field_type) -> PyResult<()> {
-                            $(check_choice(stringify!($key), $key, $choices)?;)?
+                            $(let $key = choice_json(stringify!($key), $key, $choices)?;)?
                             slf.set_field(stringify!($key), $key)
                         }
                     )*)?

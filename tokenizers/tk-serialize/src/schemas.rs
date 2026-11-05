@@ -15,25 +15,43 @@
 //!
 //! An entry is its doc, its JSON `"type"`, and its fields with their constructor defaults. A field
 //! names its JSON shape: `Bool`, `String`, `Char` (a one-character string), `Usize`,
-//! `OptionalBool` (a `bool` or `null`), `Choice(strings)` (one of `strings`), `Pattern`
+//! `OptionalBool` (a `bool` or `null`), `Choice(choices)` (one of the [`Choice`]s), `Pattern`
 //! (`{"String": ...}` for a literal or `{"Regex": ...}`) or `Base64Bytes` (bytes, as a base64
-//! string). A default is a single token; a field with none is a required argument. A component
+//! string). A default is a single token, and a `Choice`'s default is its name. A field with none
+//! is a required argument. A component
 //! with no fields is its `"type"` alone.
 //!
 //! Registering a component is one entry here. Post-processors and models are not listed: their
 //! fields are templates and vocabularies, which no field shape describes.
 
+/// One value of a `Choice` field: the `name` the bindings take, and the `json` string
+/// `tokenizer.json` holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Choice {
+    pub name: &'static str,
+    pub json: &'static str,
+}
+
+const fn choice(name: &'static str, json: &'static str) -> Choice {
+    Choice { name, json }
+}
+
 /// How `Split` and `Punctuation` treat the delimiters they find.
-pub const SPLIT_BEHAVIORS: &[&str] = &[
-    "Removed",
-    "Isolated",
-    "MergedWithPrevious",
-    "MergedWithNext",
-    "Contiguous",
+pub const SPLIT_BEHAVIORS: &[Choice] = &[
+    choice("removed", "Removed"),
+    choice("isolated", "Isolated"),
+    choice("merged_with_previous", "MergedWithPrevious"),
+    choice("merged_with_next", "MergedWithNext"),
+    choice("contiguous", "Contiguous"),
 ];
 
 /// When a Metaspace puts its replacement character in front of the text.
-pub const PREPEND_SCHEMES: &[&str] = &["always", "first", "never"];
+pub const PREPEND_SCHEMES: &[Choice] = &[
+    choice("always", "always"),
+    choice("first", "first"),
+    choice("never", "never"),
+];
 
 /// Calls `$callback! { { $args } entries }` with one entry per normalizer.
 #[macro_export]
@@ -109,13 +127,13 @@ macro_rules! pre_tokenizer_schemas {
             /// string pattern is a literal. `invert` splits on what does not match instead.
             Split {
                 pattern: Pattern,
-                behavior: Choice($crate::schemas::SPLIT_BEHAVIORS) = "Isolated",
+                behavior: Choice($crate::schemas::SPLIT_BEHAVIORS) = "isolated",
                 invert: Bool = false,
             },
             /// Splits the text around runs of digits, or around each digit with `individual_digits`.
             Digits { individual_digits: Bool = false },
             /// Splits the text on each punctuation character. `behavior` is that of `Split`.
-            Punctuation { behavior: Choice($crate::schemas::SPLIT_BEHAVIORS) = "Isolated" },
+            Punctuation { behavior: Choice($crate::schemas::SPLIT_BEHAVIORS) = "isolated" },
             /// Splits the text on each `delimiter` character, which is dropped, like
             /// `str.split(delimiter)` without the empty pieces.
             CharDelimiterSplit { delimiter: Char },

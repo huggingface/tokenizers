@@ -372,8 +372,15 @@ macro_rules! schema_value {
     (Char = $default:tt) => {
         format!(r#""{}""#, $default)
     };
+    (Choice($choices:expr) = $default:tt) => {{
+        let choice = $choices.iter().find(|choice| choice.name == $default);
+        format!(
+            "{:?}",
+            choice.expect("a Choice's default is one of its names").json
+        )
+    }};
     // Every other default is a bool, a number or a plain string, which JSON spells as Rust does.
-    ($field_type:ident $(($choices:expr))? = $default:tt) => {
+    ($field_type:ident = $default:tt) => {
         stringify!($default).to_owned()
     };
     (Bool) => {
@@ -392,7 +399,7 @@ macro_rules! schema_value {
         "null".to_owned()
     };
     (Choice($choices:expr)) => {
-        format!("{:?}", $choices[0])
+        format!("{:?}", $choices[0].json)
     };
     (Pattern) => {
         r#"{"String": "a"}"#.to_owned()
@@ -489,9 +496,9 @@ fn every_component_the_reader_takes_has_a_schema() {
         let arms = string_arms(source);
         assert!(arms.len() > types.len(), "{file}: found only {arms:?}");
         for arm in arms {
+            let choices = SPLIT_BEHAVIORS.iter().chain(PREPEND_SCHEMES);
             let listed = types.contains(&arm)
-                || SPLIT_BEHAVIORS.contains(&arm)
-                || PREPEND_SCHEMES.contains(&arm)
+                || choices.map(|choice| choice.json).any(|json| json == arm)
                 || not_listed.contains(&arm);
             assert!(listed, "{file} reads `{arm}`, which no schema lists");
         }

@@ -66,7 +66,6 @@
 pub(crate) mod component_sequence;
 pub(crate) mod component_spec;
 pub(crate) mod decoders;
-pub(crate) mod fields;
 mod macros;
 pub(crate) mod models;
 pub(crate) mod normalizers;
@@ -76,7 +75,6 @@ pub(crate) mod processors;
 use std::sync::Arc;
 
 use pyo3::PyClass;
-use pyo3::exceptions::PyValueError;
 use pyo3::impl_::pyclass::PyClassBaseType;
 use pyo3::prelude::*;
 use serde::Serialize;
@@ -207,16 +205,6 @@ pub(crate) trait ComponentKind:
     }
 }
 
-/// Fails unless `value` is one of `choices`, the strings the `key` field of `tokenizer.json` takes.
-pub(crate) fn check_choice(key: &str, value: &str, choices: &[&str]) -> PyResult<()> {
-    if choices.contains(&value) {
-        return Ok(());
-    }
-    Err(PyValueError::new_err(format!(
-        "`{key}` must be one of {choices:?}, got {value:?}"
-    )))
-}
-
 /// Reads and writes the JSON fields of a concrete class's handle, such as `Prepend.prepend`.
 pub(crate) trait JsonFieldsExt {
     /// Reads the `key` field as a `T`. A missing key reads as `null`, so an `Option<T>` gets
@@ -226,7 +214,11 @@ pub(crate) trait JsonFieldsExt {
     fn set_field(&self, key: &str, value: impl Serialize) -> PyResult<()>;
 }
 
-impl<K: ComponentKind, C: PyClass<BaseType = K>> JsonFieldsExt for Bound<'_, C> {
+impl<K, C> JsonFieldsExt for Bound<'_, C>
+where
+    K: ComponentKind,
+    C: PyClass<BaseType = K>,
+{
     fn field<T: DeserializeOwned>(&self, key: &str) -> PyResult<T> {
         K::single_spec(self).field(key)
     }
