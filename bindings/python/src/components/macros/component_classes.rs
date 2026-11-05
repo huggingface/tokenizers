@@ -60,13 +60,12 @@ macro_rules! component_classes {
 
         impl ConcreteClasses for $kind {
             fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<$kind>> {
-                let single = match &spec {
-                    ComponentSpec::Sequence(_) => return $kind::concrete_component(py, spec, Sequence),
-                    ComponentSpec::Single(single) => single,
-                };
-                match single.json_type().as_deref() {
-                    $(Some(stringify!($class)) => $kind::concrete_component(py, spec, $class),)*
-                    _ => $kind::default_component(py, spec),
+                match &spec {
+                    ComponentSpec::Sequence(_) => $kind::concrete_component(py, spec, Sequence),
+                    ComponentSpec::Single(single) => match single.json_type().as_deref() {
+                        $(Some(stringify!($class)) => $kind::concrete_component(py, spec, $class),)*
+                        _ => $kind::default_component(py, spec),
+                    },
                 }
             }
         }

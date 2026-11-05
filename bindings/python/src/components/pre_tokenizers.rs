@@ -12,7 +12,7 @@ component_kind! {
     kind: PreTokenizer,
     python_module: "tokenizers.pre_tokenizers",
     tokenizer_field: pre_tokenizer,
-    sequence_item_key: Some("pre_tokenizers"),
+    sequence_item_key: Some("pretokenizers"),
 }
 
 sequence_class! {

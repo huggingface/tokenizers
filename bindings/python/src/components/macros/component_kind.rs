@@ -5,9 +5,10 @@
 //! and a [`ComponentKind`](crate::components::ComponentKind) impl. The kinds differ only in the
 //! arguments of the macro.
 
-/// Writes the class `kind` and its [`ComponentKind`](crate::components::ComponentKind) impl. The kind's spec
-/// is the `tokenizer_field` field of [`TokenizerSpec`](crate::tokenizer::TokenizerSpec), and a
-/// `Sequence` of the kind lists its items under `sequence_item_key`. The kind's
+/// Writes the class `kind` and its [`ComponentKind`](crate::components::ComponentKind) impl.
+/// The kind's spec is the `tokenizer_field` field of
+/// [`TokenizerSpec`](crate::tokenizer::TokenizerSpec), and a `Sequence` of the kind lists its
+/// items under `sequence_item_key`. The kind's
 /// [`ConcreteClasses`](crate::components::ConcreteClasses) impl is written with its classes.
 macro_rules! component_kind {
     (
