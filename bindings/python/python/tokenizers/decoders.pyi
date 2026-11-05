@@ -20,16 +20,16 @@ class BPEDecoder(Decoder):
 @final
 class ByteFallback(Decoder):
     """
-    Turns each run of `<0xNN>` byte tokens into the text those bytes encode in UTF-8. A run
-    that is not valid UTF-8 becomes one `U+FFFD` per byte.
+    Turns each run of `<0xNN>` byte tokens into the text those bytes encode in UTF-8. A
+    run that is not valid UTF-8 becomes one `U+FFFD` per byte.
     """
     def __new__(cls, /) -> ByteFallback: ...
 
 @final
 class ByteLevel(Decoder):
     """
-    Maps each character of the GPT-2 byte-to-unicode alphabet back to its byte, and decodes the
-    bytes as UTF-8.
+    Maps each character of the GPT-2 byte-to-unicode alphabet back to its byte, and
+    decodes the bytes as UTF-8.
     """
     def __new__(cls, /) -> ByteLevel: ...
 
@@ -73,8 +73,8 @@ class Fuse(Decoder):
 @final
 class Metaspace(Decoder):
     """
-    Turns each `replacement` character back into a space. Unless `prepend_scheme` is `"never"`,
-    the first token's `replacement` characters are dropped instead.
+    Turns each `replacement` character back into a space. Unless `prepend_scheme` is
+    `"never"`, the first token's `replacement` characters are dropped instead.
     """
     def __new__(cls, /, replacement: str = "▁", prepend_scheme: str = "always") -> Metaspace: ...
     @property
@@ -115,7 +115,8 @@ class Sequence(Decoder):
 @final
 class Strip(Decoder):
     """
-    Removes up to `start` leading and `stop` trailing `content` characters from each token.
+    Removes up to `start` leading and `stop` trailing `content` characters from each
+    token.
     """
     def __new__(cls, /, content: str = " ", start: int = 0, stop: int = 0) -> Strip: ...
     @property
@@ -134,8 +135,8 @@ class Strip(Decoder):
 @final
 class WordPiece(Decoder):
     """
-    Joins WordPiece tokens, gluing each token that starts with `prefix` to the one before it.
-    `cleanup` also removes the spaces English tokenization puts before punctuation and
+    Joins WordPiece tokens, gluing each token that starts with `prefix` to the one before
+    it. `cleanup` also removes the spaces English tokenization puts before punctuation and
     contractions.
     """
     def __new__(cls, /, prefix: str = "##", cleanup: bool = True) -> WordPiece: ...

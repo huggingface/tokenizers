@@ -341,72 +341,159 @@ fn a_unigram_score_is_serdes_f64_one_ulp_off_the_correctly_rounded_one() {
     );
 }
 
-/// The JSON the bindings write for `schema` with its defaults, with a sample value for each field
-/// that has none.
-#[cfg(all(
-    feature = "schemas",
-    feature = "normalizers",
-    feature = "unicode-scripts"
-))]
-fn schema_json(schema: &crate::schemas::ComponentSchema) -> String {
-    use std::fmt::Write as _;
-
-    use crate::schemas::{FieldType, FieldValue};
-
-    let mut json = format!(r#"{{"type": "{}""#, schema.json_type);
-    for field in schema.fields {
-        let value = match (&field.default, &field.field_type) {
-            (Some(FieldValue::Bool(value)), _) => value.to_string(),
-            (Some(FieldValue::Str(value)), _) => format!("{value:?}"),
-            (Some(FieldValue::Char(value)), _) => format!(r#""{value}""#),
-            (Some(FieldValue::Usize(value)), _) => value.to_string(),
-            (Some(FieldValue::Null), _) => "null".to_owned(),
-            (None, FieldType::Bool) => "true".to_owned(),
-            (None, FieldType::String) => r#""a""#.to_owned(),
-            (None, FieldType::Char) => r#""▁""#.to_owned(),
-            (None, FieldType::Usize) => "1".to_owned(),
-            (None, FieldType::OptionalBool) => "null".to_owned(),
-            (None, FieldType::Choice(choices)) => format!("{:?}", choices[0]),
-            (None, FieldType::Pattern) => r#"{"String": "a"}"#.to_owned(),
-            // A charsmap with an empty trie and no normalized text.
-            (None, FieldType::Base64Bytes) => r#""AAAAAA==""#.to_owned(),
-        };
-        write!(json, r#", "{}": {value}"#, field.key).unwrap();
-    }
-    json.push('}');
-    json
+/// The JSON each entry of a `*_schemas!` list writes with its defaults, with a sample value for
+/// each field that has none.
+#[cfg(all(feature = "normalizers", feature = "unicode-scripts"))]
+macro_rules! schema_jsons {
+    ({} $(
+        $(#[doc = $doc:literal])+
+        $json_type:ident $({
+            $($key:ident: $field_type:ident $(($choices:expr))? $(= $default:tt)?),* $(,)?
+        })?
+    ),* $(,)?) => {
+        [$({
+            #[allow(unused_mut)]
+            let mut json = format!(r#"{{"type": "{}""#, stringify!($json_type));
+            $($(
+                let value = schema_value!($field_type $(($choices))? $(= $default)?);
+                json.push_str(&format!(r#", "{}": {value}"#, stringify!($key)));
+            )*)?
+            json.push('}');
+            json
+        }),*]
+    };
 }
 
-// The bindings write each component's JSON from its schema, with the schema's defaults. The
-// schema is a list apart from the reader, so this catches a key or a value the reader refuses.
-#[cfg(all(
-    feature = "schemas",
-    feature = "normalizers",
-    feature = "unicode-scripts"
-))]
+#[cfg(all(feature = "normalizers", feature = "unicode-scripts"))]
+macro_rules! schema_value {
+    (OptionalBool = None) => {
+        "null".to_owned()
+    };
+    (Char = $default:tt) => {
+        format!(r#""{}""#, $default)
+    };
+    // Every other default is a bool, a number or a plain string, which JSON spells as Rust does.
+    ($field_type:ident $(($choices:expr))? = $default:tt) => {
+        stringify!($default).to_owned()
+    };
+    (Bool) => {
+        "true".to_owned()
+    };
+    (String) => {
+        r#""a""#.to_owned()
+    };
+    (Char) => {
+        r#""▁""#.to_owned()
+    };
+    (Usize) => {
+        "1".to_owned()
+    };
+    (OptionalBool) => {
+        "null".to_owned()
+    };
+    (Choice($choices:expr)) => {
+        format!("{:?}", $choices[0])
+    };
+    (Pattern) => {
+        r#"{"String": "a"}"#.to_owned()
+    };
+    // A charsmap with an empty trie and no normalized text.
+    (Base64Bytes) => {
+        r#""AAAAAA==""#.to_owned()
+    };
+}
+
+// The bindings write each component's JSON from its `*_schemas!` entry, with the entry's defaults.
+// The lists sit apart from the reader, so this catches a key or a value the reader refuses.
+#[cfg(all(feature = "normalizers", feature = "unicode-scripts"))]
 #[test]
 fn reads_every_component_as_its_schema_writes_it() {
-    use crate::schemas::{DECODERS, NORMALIZERS, PRE_TOKENIZERS};
-
-    for schema in NORMALIZERS.components {
-        let json = schema_json(schema);
+    for json in crate::normalizer_schemas!(schema_jsons! {}) {
         let doc = Json::parse(&json).unwrap();
         if let Err(e) = read_normalizers(Some(&doc)) {
             panic!("{json}: {e}");
         }
     }
-    for schema in PRE_TOKENIZERS.components {
-        let json = schema_json(schema);
+    for json in crate::pre_tokenizer_schemas!(schema_jsons! {}) {
         let doc = Json::parse(&json).unwrap();
         if let Err(e) = pre_tokenizers::read_pre_tokenizer(Some(&doc)) {
             panic!("{json}: {e}");
         }
     }
-    for schema in DECODERS.components {
-        let json = schema_json(schema);
+    for json in crate::decoder_schemas!(schema_jsons! {}) {
         let doc = Json::parse(&json).unwrap();
         if let Err(e) = read_one_decoder(&doc) {
             panic!("{json}: {e}");
+        }
+    }
+}
+
+/// The `"type"`s of a `*_schemas!` list.
+#[cfg(all(feature = "normalizers", feature = "unicode-scripts"))]
+macro_rules! schema_types {
+    ({} $($(#[doc = $doc:literal])+ $json_type:ident $({ $($fields:tt)* })?),* $(,)?) => {
+        [$(stringify!($json_type)),*]
+    };
+}
+
+/// The string patterns of the `match` arms in `source`, such as `Strip` for `"Strip" => ...`.
+#[cfg(all(feature = "normalizers", feature = "unicode-scripts"))]
+fn string_arms(source: &str) -> Vec<&str> {
+    let mut arms = Vec::new();
+    for line in source.lines() {
+        let Some((pattern, _)) = line.trim().split_once(" =>") else {
+            continue;
+        };
+        for alternative in pattern.split(" | ") {
+            if let Some(arm) = alternative
+                .strip_prefix('"')
+                .and_then(|a| a.strip_suffix('"'))
+            {
+                arms.push(arm);
+            }
+        }
+    }
+    arms
+}
+
+// The other direction: a component the reader takes but no list has gets no class in the bindings.
+// The reader's string arms are its `"type"`s and the strings of its choices, the `Choice` lists.
+#[cfg(all(feature = "normalizers", feature = "unicode-scripts"))]
+#[test]
+fn every_component_the_reader_takes_has_a_schema() {
+    use crate::schemas::{PREPEND_SCHEMES, SPLIT_BEHAVIORS};
+
+    // `Sequence` is every kind's, with a class of its own. The pre-tokenizer reader refuses
+    // `Metaspace` and `ByteLevel`.
+    let kinds: [(&str, &str, &[&str], &[&str]); 3] = [
+        (
+            "normalizers.rs",
+            include_str!("normalizers.rs"),
+            &crate::normalizer_schemas!(schema_types! {}),
+            &["Sequence"],
+        ),
+        (
+            "pre_tokenizers.rs",
+            include_str!("pre_tokenizers.rs"),
+            &crate::pre_tokenizer_schemas!(schema_types! {}),
+            &["Sequence", "Metaspace", "ByteLevel"],
+        ),
+        (
+            "decoders.rs",
+            include_str!("decoders.rs"),
+            &crate::decoder_schemas!(schema_types! {}),
+            &["Sequence"],
+        ),
+    ];
+    for (file, source, types, not_listed) in kinds {
+        let arms = string_arms(source);
+        assert!(arms.len() > types.len(), "{file}: found only {arms:?}");
+        for arm in arms {
+            let listed = types.contains(&arm)
+                || SPLIT_BEHAVIORS.contains(&arm)
+                || PREPEND_SCHEMES.contains(&arm)
+                || not_listed.contains(&arm);
+            assert!(listed, "{file} reads `{arm}`, which no schema lists");
         }
     }
 }
