@@ -303,3 +303,11 @@ macro_rules! decoder_schemas {
         }
     };
 }
+
+#[cfg(all(
+    test,
+    feature = "deserialize",
+    feature = "normalizers",
+    feature = "unicode-scripts"
+))]
+mod tests;
