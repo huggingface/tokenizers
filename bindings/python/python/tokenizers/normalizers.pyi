@@ -9,9 +9,9 @@ from . import Component, Regex
 @final
 class BertNormalizer(Normalizer):
     """
-    BERT's normalization: control characters removed, spaces around CJK characters, accents
-    stripped and the text lowercased, each optional. `strip_accents` unset strips accents when
-    `lowercase` is set.
+    BERT's normalization: control characters removed, spaces around CJK characters,
+    accents stripped and the text lowercased, each optional. `strip_accents` unset strips
+    accents when `lowercase` is set.
     """
     def __new__(
         cls,
@@ -41,7 +41,8 @@ class BertNormalizer(Normalizer):
 @final
 class ByteLevel(Normalizer):
     """
-    Replaces each byte of the text with its character in the GPT-2 byte-to-unicode mapping.
+    Replaces each byte of the text with its character in the GPT-2 byte-to-unicode
+    mapping.
     """
     def __new__(cls, /) -> ByteLevel: ...
 
@@ -56,9 +57,9 @@ class Lowercase(Normalizer):
 class MetaspaceNormalizer(Normalizer):
     """
     SentencePiece's whitespace handling: replaces spaces with `replacement`. `prepend` says
-    when `replacement` also goes in front of the text: `"always"`, `"first"` (only at the start
-    of the input) or `"never"`. `drop_whitespace` drops runs of whitespace instead of replacing
-    them.
+    when `replacement` also goes in front of the text: `"always"`, `"first"` (only at the
+    start of the input) or `"never"`. `drop_whitespace` drops runs of whitespace instead
+    of replacing them.
     """
     def __new__(
         cls, /, replacement: str = "▁", prepend: str = "always", drop_whitespace: bool = False
@@ -107,8 +108,8 @@ class NFKD(Normalizer):
 @final
 class Nmt(Normalizer):
     """
-    Removes control characters and replaces line breaks, tabs and some invisible characters
-    with a space, like the Google NMT pipeline.
+    Removes control characters and replaces line breaks, tabs and some invisible
+    characters with a space, like the Google NMT pipeline.
     """
     def __new__(cls, /) -> Nmt: ...
 

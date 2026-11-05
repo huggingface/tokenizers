@@ -70,7 +70,6 @@ normalizers = ["tk-serialize/normalizers"]
 unicode-scripts = ["tk-serialize/unicode-scripts"]
 parallelism = ["tk-serialize/parallelism"]
 serialize = ["tk-serialize/serialize"]
-schemas = ["tk-serialize/schemas"]
 progressbar = ["tk-train?/progressbar"]
 train = ["dep:tk-train"]
 # The C++ suffix array for Unigram training. Without it, `UnigramTrainer` uses esaxx-rs's pure-Rust one.

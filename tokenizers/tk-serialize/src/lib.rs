@@ -6,14 +6,13 @@
 #![doc = include_str!("../SPEC.md")]
 
 pub mod json;
-#[cfg(feature = "schemas")]
 pub mod schemas;
 mod vendored;
 
 /// Standard alphabet, padded on the way out and padding-*indifferent* on the way in, as `base64`
 /// 0.13 was under `spm_precompiled`'s serde.
 #[cfg(any(feature = "normalizers", all(test, feature = "deserialize")))]
-pub(crate) const BASE64: base64::engine::GeneralPurpose = base64::engine::GeneralPurpose::new(
+pub const BASE64: base64::engine::GeneralPurpose = base64::engine::GeneralPurpose::new(
     &base64::alphabet::STANDARD,
     base64::engine::GeneralPurposeConfig::new()
         .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),

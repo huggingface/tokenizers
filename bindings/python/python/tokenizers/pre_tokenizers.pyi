@@ -81,8 +81,8 @@ class Sequence(PreTokenizer):
 @final
 class Split(PreTokenizer):
     """
-    Splits the text on every match of `pattern`, the matches being the delimiters. A string
-    pattern is a literal. `invert` splits on what does not match instead.
+    Splits the text on every match of `pattern`, the matches being the delimiters. A
+    string pattern is a literal. `invert` splits on what does not match instead.
     """
     def __new__(cls, /, pattern: str | Regex, behavior: str = "Isolated", invert: bool = False) -> Split: ...
     @property
@@ -101,8 +101,8 @@ class Split(PreTokenizer):
 @final
 class UnicodeScripts(PreTokenizer):
     """
-    Splits the text where the Unicode script changes, like SentencePiece. Hiragana and Katakana
-    count as Han.
+    Splits the text where the Unicode script changes, like SentencePiece. Hiragana and
+    Katakana count as Han.
     """
     def __new__(cls, /) -> UnicodeScripts: ...
 

@@ -65,7 +65,7 @@
 
 pub(crate) mod component_spec;
 pub(crate) mod decoders;
-pub(crate) mod generated;
+pub(crate) mod fields;
 pub(crate) mod models;
 pub(crate) mod normalizers;
 pub(crate) mod pre_tokenizers;
