@@ -55,7 +55,7 @@ class CTC(Decoder):
 
 class Decoder(Component):
     """
-    Base class for all decoders
+    Base class of the classes in `tokenizers.decoders`.
     """
     @staticmethod
     def _unpickle(state: bytes) -> Decoder:
@@ -105,7 +105,7 @@ class Replace(Decoder):
 @final
 class Sequence(Decoder):
     """
-    Applies each decoder in turn.
+    Applies each `Decoder` in turn.
     """
     def __getitem__(self, index: int, /) -> Decoder: ...
     def __len__(self, /) -> int: ...

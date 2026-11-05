@@ -115,7 +115,7 @@ class Nmt(Normalizer):
 
 class Normalizer(Component):
     """
-    Base class for all normalizers
+    Base class of the classes in `tokenizers.normalizers`.
     """
     @staticmethod
     def _unpickle(state: bytes) -> Normalizer:
@@ -163,7 +163,7 @@ class Replace(Normalizer):
 @final
 class Sequence(Normalizer):
     """
-    Applies each normalizer in turn.
+    Applies each `Normalizer` in turn.
     """
     def __getitem__(self, index: int, /) -> Normalizer: ...
     def __len__(self, /) -> int: ...

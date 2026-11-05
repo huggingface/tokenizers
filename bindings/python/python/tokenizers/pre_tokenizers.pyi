@@ -49,7 +49,7 @@ class FixedLength(PreTokenizer):
 
 class PreTokenizer(Component):
     """
-    Base class for all pre-tokenizers
+    Base class of the classes in `tokenizers.pre_tokenizers`.
     """
     @staticmethod
     def _unpickle(state: bytes) -> PreTokenizer:
@@ -71,7 +71,7 @@ class Punctuation(PreTokenizer):
 @final
 class Sequence(PreTokenizer):
     """
-    Applies each pre-tokenizer in turn, each one splitting the pieces the previous one made.
+    Applies each `PreTokenizer` in turn.
     """
     def __getitem__(self, index: int, /) -> PreTokenizer: ...
     def __len__(self, /) -> int: ...
