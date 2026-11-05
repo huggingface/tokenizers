@@ -1,8 +1,15 @@
-//! The `Sequence` class of a component kind, such as `normalizers.Sequence`.
+//! [`ComponentSequence`], the logic of each kind's `Sequence` class, such as
+//! `normalizers.Sequence`.
 //!
-//! pyo3 can't make a generic class, so each kind needs its own `Sequence`.
-//! [`sequence_class!`](super::macros::sequence_class) writes that class, and its methods call
-//! [`ComponentSequence`], where the logic lives.
+//! pyo3 can't make a generic class, so each kind needs its own `Sequence` class.
+//! [`sequence_class!`](macro@super::macros::sequence_class) writes these classes.
+//! pyo3 methods defer logic to this trait. Logic is written once for each kind.
+//!
+//! The trait does three things:
+//!
+//! - It builds a sequence from a list of items. Nested Sequence get flattened.
+//! - Indexes the sequence, with support for python negative indices.
+//! - Getters and setters for an index.
 
 use std::sync::Arc;
 
@@ -14,7 +21,7 @@ use crate::components::ComponentKind;
 use crate::components::component_spec::{ComponentSpec, SequenceSpec};
 use crate::error::err;
 
-/// The methods of the `Sequence` class of the kind `K`.
+/// The logic of the `Sequence` class of the kind `K`.
 pub(crate) trait ComponentSequence<K: ComponentKind>:
     PyClass<BaseType = K> + Default
 {
