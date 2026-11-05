@@ -1,17 +1,73 @@
-//! The Python module of a component kind with a schema list, such as `tokenizers.normalizers`,
-//! written by [`component_module!`] from the core's list.
+//! Macro to generate the pyo3 definitions of a whole Python module of components, such as
+//! `tokenizers.normalizers`.
 //!
-//! `tk::normalizer_schemas!(component_module! { ... })` hands each normalizer's entry (its doc,
-//! its JSON `"type"` and its fields) to [`component_module!`], which writes:
+//! Normalizers, pre-tokenizers and decoders python objects are plain data views:
+//! Each of their python classes only reads and writes the keys of a small JSON object.
+//! `tk::schemas` lists these components, with their JSON fields.
+//! This macro turns such a list into Python classes.
 //!
-//! 1. the kind's class, with [`component_kind!`](macro@super::component_kind), and its
-//!    `Sequence`, with [`sequence_class!`](macro@super::sequence_class),
-//! 2. one class per component, with a constructor, and a getter and a setter per field,
-//! 3. the kind's `#[pymodule]`.
+//! The macro calls [`component_kind!`](macro@super::component_kind) to write the base class, and
+//! [`sequence_class!`](macro@super::sequence_class) to write the `Sequence` class.
+//! Then it writes one class per definition in the list, and the `#[pymodule]` that exports them.
+//! [`fields`](super::fields) gives the Rust type of each field shape, such as `Bool`.
 //!
-//! A field's shape, such as `Bool`, names its types in [`fields`](super::fields).
+//! For example, `tk::schemas` has this definition:
+//!
+//! ```text
+//! /// Removes whitespace from the start and the end of the text.
+//! Strip { strip_left: Bool = true, strip_right: Bool = true },
+//! ```
+//!
+//! From it, the macro generates this Python class:
+//!
+//! ```python
+//! class Strip(Normalizer):
+//!     """
+//!     Removes whitespace from the start and the end of the text.
+//!     """
+//!     def __new__(cls, /, strip_left: bool = True, strip_right: bool = True) -> Strip: ...
+//!     @property
+//!     def strip_left(self, /) -> bool: ...
+//!     @strip_left.setter
+//!     def strip_left(self, /, strip_left: bool) -> None: ...
+//!     @property
+//!     def strip_right(self, /) -> bool: ...
+//!     @strip_right.setter
+//!     def strip_right(self, /, strip_right: bool) -> None: ...
+//! ```
 
-/// Writes a kind's Python module from its `tk::*_schemas!` entries.
+/// Writes a whole Python module of components, such as `tokenizers.normalizers`, from a list in
+/// `tk::schemas`.
+///
+/// The list calls this macro with its definitions:
+///
+/// ```rust,ignore
+/// tk::normalizer_schemas!(component_module! {
+///     kind: Normalizer,
+///     module: normalizers,
+///     python_module: "tokenizers.normalizers",
+///     tokenizer_field: normalizer,
+///     items_key: "normalizers",
+/// });
+/// ```
+///
+/// It writes:
+///
+/// - `Normalizer`, the base class, with [`component_kind!`](macro@super::component_kind).
+/// - `Sequence`, with [`sequence_class!`](macro@super::sequence_class).
+/// - One class per definition, such as `Strip`.
+///   Each class has a constructor, and a getter and a setter per field.
+///   A getter returns the field's default when the JSON leaves the field out.
+/// - `normalizers`, the `#[pymodule]` that exports all these classes.
+///
+/// The arguments:
+///
+/// - `kind` names the base class.
+/// - `module` names the `#[pymodule]`, and `python_module` is its path in Python.
+/// - `tokenizer_field` names the field of `TokenizerSpec` that stores the normalizer.
+/// - `items_key` is the JSON key that holds the items of a normalizer `Sequence`.
+///
+/// The classes are then in scope where the macro is called.
 macro_rules! component_module {
     ({
         kind: $kind:ident,
