@@ -32,7 +32,7 @@
 //! Most of the logic is extracted to traits:  [`ComponentKind`], [`ComponentSequence`] and [`JsonFieldsExt`].
 //!
 //! # Three macros
-//! 
+//!
 //! This module defines three macros to write the pyo3 code:
 //!
 //! - [`component_kind!`](macro@component_kind) writes the base class of a kind, such as `Normalizer`.
@@ -40,7 +40,6 @@
 //! - [`component_module!`](macro@component_module) writes a whole Python module, such as
 //!   `tokenizers.normalizers`, from a list in `tk::schemas`.
 //!   It calls the two macros above, then writes one class per definition in the list.
-//!   It also writes the kind's [`FromSpec`] impl, which picks one of these classes by `"type"`.
 //!   [`fields`] holds the Rust type of each field shape.
 //!
 //! # Where they are called
@@ -60,15 +59,10 @@
 //! ```
 //!
 //! Models and post-processors have no list in `tk::schemas`.
-//! Their classes and their [`FromSpec`] impl are written by hand.
-//!
-//! [`FromSpec`] is a separate trait from [`ComponentKind`] for this reason:
-//! `component_kind!` writes the kind's class, but doesn't know its concrete classes.
 //!
 //! [`ComponentKind`]: crate::components::ComponentKind
 //! [`ComponentSequence`]: crate::components::component_sequence::ComponentSequence
 //! [`JsonFieldsExt`]: crate::components::JsonFieldsExt
-//! [`FromSpec`]: crate::components::FromSpec
 
 mod component_kind;
 mod component_module;

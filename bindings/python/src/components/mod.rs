@@ -2,10 +2,19 @@
 //!
 //! The [`tokenizer`](crate::tokenizer) docs explain the tokenizer as a whole.
 //!
-//! The [`component_spec`] docs explain how a component's JSON is stored, shared and copied,
-//! in a [`ComponentSpec`].
-//!
 //! [`Tokenizer`]: crate::tokenizer::Tokenizer
+//!
+//! # Modules
+//!
+//! | Module | Content |
+//! |---|---|
+//! | `mod.rs` | The `Component` base class and common traits |
+//! | [`component_spec`] | How a component's JSON is stored, shared and copied |
+//! | [`normalizers`], [`pre_tokenizers`], [`decoders`] | Component concrete classes, generated from `tk::schemas` |
+//! | [`models`] | Model component classes, written by hand |
+//! | [`processors`] | The `PostProcessor` class. |
+//! | [`component_sequence`] | `ComponentSequence` trait for component sequences. |
+//! | [`macros`] | The macros that write the pyo3 classes |
 //!
 //! # Specs
 //!
@@ -131,24 +140,11 @@ impl Component {
     }
 }
 
-/// Implemented on concrete classes, for example `Split` normalizer
-/// 
-/// Instantiates the correct pyclass from the `"type"` JSON field, defaulting
-/// to the base class if the type is unknown.
-///
-/// See [`macros`] module doc for more information.
-pub(crate) trait FromSpec: Sized {
-    fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>>;
-}
-
 /// The shared methods of a component kind (for example, `Model` or `Normalizer`).
 ///
 /// A kind holds no data. Its [`Component`] base holds the spec.
 pub(crate) trait ComponentKind:
-    PyClass<BaseType = Component>
-    + PyClassBaseType<Initializer = PyClassInitializer<Self>>
-    + Default
-    + FromSpec
+    PyClass<BaseType = Component> + PyClassBaseType<Initializer = PyClassInitializer<Self>> + Default
 {
     /// The key a `Sequence` of this kind lists its items under, such as `"normalizers"`.
     /// `None` for a kind with no `Sequence`.
@@ -156,6 +152,10 @@ pub(crate) trait ComponentKind:
 
     /// The [`TokenizerSpec`] field holding this kind's spec.
     fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec>;
+
+    /// Creates the Python object of `spec`, with the class its `"type"` names, such as `Strip`.
+    /// A `"type"` with no class gets the plain kind class, such as `Normalizer`.
+    fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>>;
 
     /// Returns the pyo3 initializer of the plain kind over `spec`.
     /// [`Self::initializer`] adds a concrete class on top of it.

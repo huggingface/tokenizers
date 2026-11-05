@@ -3,32 +3,25 @@ use std::fs;
 use std::path::PathBuf;
 
 use pyo3::prelude::*;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::components::component_spec::ComponentSpec;
 use crate::error::err;
 
 use super::macros::component_kind;
-use super::{ComponentKind, FromSpec, JsonFieldsExt};
+use super::{ComponentKind, JsonFieldsExt};
 
 component_kind! {
     kind: Model,
     python_module: "tokenizers.models",
     tokenizer_field: model,
     items_key: None,
-}
-
-impl FromSpec for Model {
-    fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
-        let json = spec.json();
-        match json.get("type").and_then(Value::as_str) {
-            Some("BPE") => Self::concrete_component(py, spec, Bpe),
-            Some("WordPiece") => Self::concrete_component(py, spec, WordPiece),
-            Some("Unigram") => Self::concrete_component(py, spec, Unigram),
-            Some("WordLevel") => Self::concrete_component(py, spec, WordLevel),
-            _ => Self::default_component(py, spec),
-        }
-    }
+    classes: {
+        "BPE" => Bpe,
+        "WordPiece" => WordPiece,
+        "Unigram" => Unigram,
+        "WordLevel" => WordLevel,
+    },
 }
 
 /// A vocabulary: `{token: id}`, or the path of a file holding one.

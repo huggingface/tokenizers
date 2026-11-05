@@ -4,12 +4,10 @@
 //! `tk::normalizer_schemas!(component_module! { ... })` hands each normalizer's entry (its doc,
 //! its JSON `"type"` and its fields) to [`component_module!`], which writes:
 //!
-//! 1. the kind's class, with [`component_kind!`](super::component_kind), and its `Sequence`, with
-//!    [`sequence_class!`](super::sequence_class),
+//! 1. the kind's class, with [`component_kind!`](macro@super::component_kind), and its
+//!    `Sequence`, with [`sequence_class!`](macro@super::sequence_class),
 //! 2. one class per component, with a constructor, and a getter and a setter per field,
-//! 3. the kind's [`FromSpec`](crate::components::FromSpec) impl, which picks the class of a
-//!    component from its `"type"`,
-//! 4. the kind's `#[pymodule]`.
+//! 3. the kind's `#[pymodule]`.
 //!
 //! A field's shape, such as `Bool`, names its types in [`fields`](super::fields).
 
@@ -33,13 +31,14 @@ macro_rules! component_module {
 
             use $crate::components::component_spec::ComponentSpec;
             use $crate::components::macros::fields::{arg, choice_json, choice_name, value};
-            use $crate::components::{ComponentKind, FromSpec, JsonFieldsExt};
+            use $crate::components::{ComponentKind, JsonFieldsExt};
 
             $crate::components::macros::component_kind! {
                 kind: $kind,
                 python_module: $python_module,
                 tokenizer_field: $tokenizer_field,
                 items_key: Some($items_key),
+                classes: { "Sequence" => Sequence, $(stringify!($class) => $class),* },
             }
 
             $crate::components::macros::sequence_class! {
@@ -94,18 +93,6 @@ macro_rules! component_module {
                     }
                 }
             )*
-
-            impl FromSpec for $kind {
-                fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<$kind>> {
-                    match &spec {
-                        ComponentSpec::Sequence(_) => $kind::concrete_component(py, spec, Sequence),
-                        ComponentSpec::Single(single) => match single.json_type().as_deref() {
-                            $(Some(stringify!($class)) => $kind::concrete_component(py, spec, $class),)*
-                            _ => $kind::default_component(py, spec),
-                        },
-                    }
-                }
-            }
         }
 
         pub use classes::{$kind, Sequence, $($class),*};
