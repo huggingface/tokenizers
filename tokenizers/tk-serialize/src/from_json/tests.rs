@@ -427,3 +427,73 @@ fn reads_every_component_as_its_schema_writes_it() {
         }
     }
 }
+
+/// The `"type"`s of a `*_schemas!` list.
+#[cfg(all(feature = "normalizers", feature = "unicode-scripts"))]
+macro_rules! schema_types {
+    ({} $($(#[doc = $doc:literal])+ $json_type:ident $({ $($fields:tt)* })?),* $(,)?) => {
+        [$(stringify!($json_type)),*]
+    };
+}
+
+/// The string patterns of the `match` arms in `source`, such as `Strip` for `"Strip" => ...`.
+#[cfg(all(feature = "normalizers", feature = "unicode-scripts"))]
+fn string_arms(source: &str) -> Vec<&str> {
+    let mut arms = Vec::new();
+    for line in source.lines() {
+        let Some((pattern, _)) = line.trim().split_once(" =>") else {
+            continue;
+        };
+        for alternative in pattern.split(" | ") {
+            if let Some(arm) = alternative
+                .strip_prefix('"')
+                .and_then(|a| a.strip_suffix('"'))
+            {
+                arms.push(arm);
+            }
+        }
+    }
+    arms
+}
+
+// The other direction: a component the reader takes but no list has gets no class in the bindings.
+// The reader's string arms are its `"type"`s and the strings of its choices, the `Choice` lists.
+#[cfg(all(feature = "normalizers", feature = "unicode-scripts"))]
+#[test]
+fn every_component_the_reader_takes_has_a_schema() {
+    use crate::schemas::{PREPEND_SCHEMES, SPLIT_BEHAVIORS};
+
+    // `Sequence` is every kind's, with a class of its own. The pre-tokenizer reader refuses
+    // `Metaspace` and `ByteLevel`.
+    let kinds: [(&str, &str, &[&str], &[&str]); 3] = [
+        (
+            "normalizers.rs",
+            include_str!("normalizers.rs"),
+            &crate::normalizer_schemas!(schema_types! {}),
+            &["Sequence"],
+        ),
+        (
+            "pre_tokenizers.rs",
+            include_str!("pre_tokenizers.rs"),
+            &crate::pre_tokenizer_schemas!(schema_types! {}),
+            &["Sequence", "Metaspace", "ByteLevel"],
+        ),
+        (
+            "decoders.rs",
+            include_str!("decoders.rs"),
+            &crate::decoder_schemas!(schema_types! {}),
+            &["Sequence"],
+        ),
+    ];
+    for (file, source, types, not_listed) in kinds {
+        let arms = string_arms(source);
+        assert!(arms.len() > types.len(), "{file}: found only {arms:?}");
+        for arm in arms {
+            let listed = types.contains(&arm)
+                || SPLIT_BEHAVIORS.contains(&arm)
+                || PREPEND_SCHEMES.contains(&arm)
+                || not_listed.contains(&arm);
+            assert!(listed, "{file} reads `{arm}`, which no schema lists");
+        }
+    }
+}
