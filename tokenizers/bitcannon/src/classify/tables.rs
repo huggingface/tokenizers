@@ -42,6 +42,14 @@ pub struct Tables {
 
     // ── Cold fallback (astral 4-byte, CJK-letter holes): run-length-encoded BMP tag table,
     //    (run_start_cp, tag), binary-searched. ~1-3 KB vs a dense 64 KB LUT.
+    #[cfg_attr(
+        not(any(
+            target_arch = "aarch64",
+            target_arch = "x86_64",
+            all(target_arch = "wasm32", target_feature = "simd128")
+        )),
+        expect(dead_code, reason = "only the SIMD kernels take the cold BMP path")
+    )]
     pub bmp_rle: &'static [(u16, u8)],
 
     // 4-byte astral (cp ≥ 0x10000): run-length-encoded (start_cp, atom), binary-searched.
@@ -97,6 +105,14 @@ impl Tables {
     }
 
     /// Cold-path BMP fallback: last run whose start ≤ cp (`bmp_rle[0].0 == 0`, so the index ≥ 1).
+    #[cfg_attr(
+        not(any(
+            target_arch = "aarch64",
+            target_arch = "x86_64",
+            all(target_arch = "wasm32", target_feature = "simd128")
+        )),
+        expect(dead_code, reason = "only the SIMD kernels take the cold BMP path")
+    )]
     #[inline]
     pub fn bmp_tag(&self, cp: u16) -> u8 {
         self.bmp_rle[self.bmp_rle.partition_point(|&(s, _)| s <= cp) - 1].1

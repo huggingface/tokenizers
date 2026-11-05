@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::iter::Enumerate;
 use std::sync::Arc;
 use std::vec::IntoIter;
@@ -60,6 +60,11 @@ impl PipelineToken {
     /// The vocabulary id this token stands for.
     pub const fn id(self) -> u32 {
         self.0
+    }
+
+    pub const fn cast_slice(slice: &[Self]) -> &[u32] {
+        // SAFETY: `PipelineToken` is `repr(transparent)` over u32
+        unsafe { std::slice::from_raw_parts(slice.as_ptr().cast::<u32>(), slice.len()) }
     }
 }
 
@@ -223,6 +228,8 @@ struct TokenizerInner {
     /// Lowest id owned by the added vocabulary, or `u32::MAX` when there is none.
     /// Allows to skip the added vocabulary lookup if the token id is lower than this value.
     added_id_min: u32,
+    /// The model + added tokens vocab size
+    total_vocab_size: usize,
     /// Which token plays which role (`"eos_token"` -> `"</s>"`), so a `tokenizer.json` can carry
     /// the special-token metadata that used to need a separate `tokenizer_config.json`. Empty
     /// when the config declares none. `BTreeMap` so the writer emits a stable key order.
@@ -272,6 +279,12 @@ impl PipelineTokenizer {
             .copied()
             .min()
             .unwrap_or(u32::MAX);
+        let added_outside_model = added_vocabulary
+            .get_vocab()
+            .keys()
+            .filter(|token| model.token_to_id(token).is_none())
+            .count();
+        let total_vocab_size = model.get_vocab_size() + added_outside_model;
         Self {
             inner: Arc::new(TokenizerInner {
                 added_vocabulary,
@@ -281,6 +294,7 @@ impl PipelineTokenizer {
                 post_processor,
                 decoder,
                 added_id_min,
+                total_vocab_size,
                 role_to_token,
                 padding,
                 truncation,
@@ -489,12 +503,16 @@ impl Encoding {
         }
     }
 
-    fn new(ids: Vec<PipelineToken>, type_ids: Option<Vec<u8>>) -> Self {
+    pub fn new(
+        ids: Vec<PipelineToken>,
+        type_ids: Option<Vec<u8>>,
+        attention_mask: Option<Vec<u8>>,
+    ) -> Self {
         debug_assert!(type_ids.as_ref().is_none_or(|t| t.len() == ids.len()));
         Self {
             ids,
             type_ids,
-            attention_mask: None,
+            attention_mask,
         }
     }
 }
@@ -595,6 +613,46 @@ impl PipelineTokenizer {
         self.inner.truncation.as_ref()
     }
 
+    /// The id of `token`, spelled as [`Self::get_vocab`] returns it.
+    ///
+    /// A token in both the added vocabulary and the model gets the added vocabulary's id.
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        self.inner
+            .added_vocabulary
+            .token_to_id(token)
+            .or_else(|| self.inner.model.token_to_id(token))
+    }
+
+    /// The token for `id`.
+    ///
+    /// An id in both the added vocabulary and the model gets the added vocabulary's token.
+    pub fn id_to_token(&self, id: u32) -> Option<String> {
+        match self.inner.added_vocabulary.id_to_token_bytes(id) {
+            Some((bytes, _)) => Some(String::from_utf8_lossy(bytes).into_owned()),
+            None => self.inner.model.id_to_token(id),
+        }
+    }
+
+    /// Each token of the model with its id, plus the added vocabulary when `with_added_tokens`.
+    ///
+    /// A token in both the added vocabulary and the model gets the added vocabulary's id.
+    pub fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
+        let mut vocab = self.inner.model.get_vocab();
+        if with_added_tokens {
+            vocab.extend(self.inner.added_vocabulary.get_vocab());
+        }
+        vocab
+    }
+
+    /// The length of [`Self::get_vocab`], without building the model's vocabulary.
+    pub fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
+        if with_added_tokens {
+            self.inner.total_vocab_size
+        } else {
+            self.inner.model.get_vocab_size()
+        }
+    }
+
     /// Encode `input` into token ids.
     ///
     /// Special tokens are matched in two passes:
@@ -659,18 +717,13 @@ impl PipelineTokenizer {
     pub fn decode_tokens(&self, ids: &[u32], skip_special_tokens: bool) -> Vec<String> {
         ids.iter()
             .filter_map(|&id| {
-                if id >= self.inner.added_id_min {
-                    self.inner
-                        .added_vocabulary
-                        .simple_id_to_token(id)
-                        .or_else(|| self.inner.model.id_to_token(id))
-                        .filter(|token| {
-                            !skip_special_tokens
-                                || !self.inner.added_vocabulary.is_special_token(token)
-                        })
-                } else {
-                    self.inner.model.id_to_token(id)
+                if id >= self.inner.added_id_min
+                    && let Some((bytes, flags)) = self.inner.added_vocabulary.id_to_token_bytes(id)
+                {
+                    return (!skip_special_tokens || !flags.special)
+                        .then(|| String::from_utf8_lossy(bytes).into_owned());
                 }
+                self.inner.model.id_to_token(id)
             })
             .collect()
     }
@@ -882,10 +935,10 @@ impl PipelineTokenizer {
         let mut out: Vec<u8> = Vec::with_capacity(ids.len() * 4);
         for &id in ids {
             if id >= self.inner.added_id_min
-                && let Some(token) = self.inner.added_vocabulary.simple_id_to_token(id)
+                && let Some((bytes, flags)) = self.inner.added_vocabulary.id_to_token_bytes(id)
             {
-                if !skip_special_tokens || !self.inner.added_vocabulary.is_special_token(&token) {
-                    out.extend_from_slice(token.as_bytes());
+                if !skip_special_tokens || !flags.special {
+                    out.extend_from_slice(bytes);
                 }
                 continue;
             }
@@ -1031,6 +1084,42 @@ impl PipelineModel {
             Self::WordLevel(model) => model.id_to_token(id),
             #[cfg(feature = "wordpiece")]
             Self::WordPiece(model) => model.id_to_token(id),
+        }
+    }
+
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        match self {
+            Self::BPE(model) => model.token_to_id(token),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.token_to_id(token),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.token_to_id(token),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.token_to_id(token),
+        }
+    }
+
+    pub fn get_vocab(&self) -> HashMap<String, u32> {
+        match self {
+            Self::BPE(model) => model.get_vocab(),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.get_vocab(),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.get_vocab(),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.get_vocab(),
+        }
+    }
+
+    pub fn get_vocab_size(&self) -> usize {
+        match self {
+            Self::BPE(model) => model.get_vocab_size(),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.get_vocab_size(),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.get_vocab_size(),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.get_vocab_size(),
         }
     }
 }
@@ -1782,6 +1871,78 @@ mod tests {
 
         assert_eq!(pipeline.decode_tokens(&[8, 7], false), ["<s>", "hello"]);
         assert_eq!(pipeline.decode_tokens(&[8, 7], true), ["hello"]);
+    }
+
+    // 0.23 looks a token up in the added vocabulary first.
+    #[test]
+    fn vocab_lookups_prefer_the_added_vocabulary() {
+        let pipeline = hello_pipeline_with_special("hello");
+
+        assert_eq!(pipeline.token_to_id("hello"), Some(8));
+        assert_eq!(pipeline.token_to_id("he"), Some(4));
+        assert_eq!(pipeline.token_to_id("hey"), None);
+        assert_eq!(pipeline.id_to_token(8).as_deref(), Some("hello"));
+        assert_eq!(pipeline.id_to_token(7).as_deref(), Some("hello"));
+        assert_eq!(pipeline.id_to_token(9), None);
+        assert_eq!(pipeline.get_vocab(true)["hello"], 8);
+        assert_eq!(pipeline.get_vocab(false)["hello"], 7);
+    }
+
+    // 0.23 counts a token found in both vocabularies once.
+    #[test]
+    fn vocab_size_counts_each_token_once() {
+        let overlapping = hello_pipeline_with_special("hello");
+        let distinct = hello_pipeline_with_special("lol");
+
+        assert_eq!(overlapping.get_vocab_size(false), 8);
+        assert_eq!(overlapping.get_vocab_size(true), 8);
+        assert_eq!(distinct.get_vocab_size(false), 8);
+        assert_eq!(distinct.get_vocab_size(true), 9);
+        assert_eq!(distinct.get_vocab(true).len(), 9);
+        assert!(!distinct.get_vocab(false).contains_key("lol"));
+    }
+
+    #[test]
+    fn byte_level_decode_skips_only_special_tokens_on_request() {
+        use crate::models::bpe::{BpeConfig, Vocab};
+        use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+
+        let byte_atoms: Vocab = (0..=255u8)
+            .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
+            .collect();
+        let bpe = PipelineBPE::from_config(BpeConfig {
+            vocab: byte_atoms,
+            byte_level: true,
+            ..BpeConfig::default()
+        })
+        .unwrap();
+        let mut added = BucketAddedVocabulary::new();
+        added
+            .add_tokens(
+                [
+                    AddedToken::from("<s>", true),
+                    AddedToken::from("<x>", false),
+                ],
+                256,
+                |_| None,
+                None::<&PipelineNormalizer>,
+            )
+            .unwrap();
+        let pipeline = PipelineTokenizer::from_parts(
+            added,
+            Vec::new(),
+            PipelinePreTokenizer::None,
+            PipelineModel::BPE(bpe),
+            PipelinePostProcessor::default(),
+            None,
+            Default::default(),
+            None,
+            None,
+        );
+
+        let ids = [256, u32::from(b'h'), u32::from(b'i'), 257];
+        assert_eq!(pipeline.decode(&ids, false).unwrap(), "<s>hi<x>");
+        assert_eq!(pipeline.decode(&ids, true).unwrap(), "hi<x>");
     }
 
     #[test]

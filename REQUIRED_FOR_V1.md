@@ -23,9 +23,9 @@ Test count across `cargo test --workspace`: **544 → 373 passing**, 32 → 19 s
 | `tk-convert` integration tests | 54 | §9: `lowering` 26, `lowering_pre_tokenizers` 18, `bpe_pipeline_oracle` 6, `slim_vs_config` 5 → 1 |
 | `tokenizers` umbrella tests | 33 | §1: out of the build, source kept |
 | `tokenizers` umbrella doc test | 1 | its example authored a `BPE` |
-| `tk-train` unit + doc | 11 | §2: out of the workspace, source kept |
+| `tk-train` unit + doc | 11 | §2: out of the workspace at rc0, back since |
 
-§9 lists what was deleted outright; §1 and §2 list what is out of the build but still in the tree.
+§9 lists what was deleted outright; §1 lists what is out of the build but still in the tree.
 
 ---
 
@@ -74,27 +74,14 @@ build a `PipelineTokenizer`. Nothing about them waits on the builder.
 
 ## 2. Trainers
 
-**What breaks:** `tk-train` does not compile. It builds *config* models, importing from `tk_convert`
-across 8 files:
+**Done.** `tk-train` is a workspace member again, and its trainers build pipeline models directly
+(`PipelineBPE`, `Unigram`, `WordPiece`, `WordLevel`). The `tokenizers` crate re-exports it behind
+the `train` feature, which is off by default. The model features (`bpe`, `unigram`, `wordpiece`,
+`wordlevel`) pick which trainers compile, and the opt-in `esaxx_fast` switches Unigram training to
+the C++ suffix array.
 
-    tk_convert::TokenizerImpl
-    tk_convert::ModelWrapper
-    tk_convert::AddedToken
-    tk_convert::models::bpe::{BPE, WithFirstLastIterator, Word}
-    tk_convert::models::wordpiece::from_bpe
-
-**What v1 needs:** trainers that emit pipeline models directly. Until then training is unavailable.
-This was an explicit rc0 call — inference first.
-
-**How it is wired now:** `tk-train` is out of the workspace — `exclude = ["tk-train"]` in
-`tokenizers/Cargo.toml`, not merely absent from `members`, and the umbrella's optional `tk-train`
-dependency is gone with it (the default-on `train` feature would otherwise have kept building it).
-The crate's source is untouched in the tree. Three umbrella features went with it: `train`,
-`esaxx_fast` and `parity-aware-bpe`, so `tokenizers`'s default set is now `["progressbar", "onig"]`.
-The `tokenizers::models::*::trainer` legacy module paths and `TokenizerTrainExt` no longer resolve.
-CI's readme loop still runs `cargo readme --project-root tk-train`, which works on an excluded crate
-and still matches `tk-train/README.md` byte for byte — verified, not assumed. `tk-train`'s own 10
-unit tests and 1 doc test stop running.
+There is still no tokenizer-level `train` / `train_from_files`. Drive a trainer directly instead:
+`feed`, then `train`.
 
 ## 3. Writing a `tokenizer.json`
 

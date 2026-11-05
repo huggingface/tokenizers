@@ -27,6 +27,18 @@ pub enum ConvertError {
     #[error("`model` must be a JSON object, found {found}")]
     ModelNotObject { found: &'static str },
 
+    #[error("`{key}` must be a JSON object or null, found {found}")]
+    ComponentNotObject {
+        key: &'static str,
+        found: &'static str,
+    },
+
+    #[error("unknown tokenizer.json version {version}")]
+    UnknownVersion { version: String },
+
+    #[error("unknown keys in the tokenizer.json: {}", in_backticks(.keys))]
+    UnknownKeys { keys: Vec<String> },
+
     #[error("legacy merge {merge:?} does not split into exactly two tokens on a space")]
     BadMerge { merge: String },
 
@@ -84,6 +96,11 @@ pub enum ConvertError {
     UnknownTemplateSpecial { name: String },
 }
 
+fn in_backticks(keys: &[String]) -> String {
+    let keys: Vec<String> = keys.iter().map(|key| format!("`{key}`")).collect();
+    keys.join(", ")
+}
+
 /// Canonicalise a `tokenizer.json` held as a string. Pretty-printed, because a human usually reads
 /// the result next.
 pub fn canonicalize_str(json: &str) -> Result<String, ConvertError> {
@@ -114,6 +131,7 @@ pub fn canonicalize_value(value: &mut Value) -> Result<(), ConvertError> {
         .as_object_mut()
         .ok_or(ConvertError::NotAnObject { found })?;
 
+    check_top_level(root)?;
     root.insert("version".to_string(), Value::String(VERSION.to_string()));
 
     {
@@ -134,9 +152,9 @@ pub fn canonicalize_value(value: &mut Value) -> Result<(), ConvertError> {
 
     fill_model_defaults(root)?;
 
-    // `Metaspace` survives as a *decoder*, so all four slots are still walked.
-    for slot in ["normalizer", "pre_tokenizer", "post_processor", "decoder"] {
-        if let Some(node) = root.get_mut(slot) {
+    // `Metaspace` survives as a *decoder*, so all four components are still walked.
+    for key in COMPONENT_KEYS {
+        if let Some(node) = root.get_mut(key) {
             canonicalize_component(node)?;
         }
     }
@@ -145,6 +163,52 @@ pub fn canonicalize_value(value: &mut Value) -> Result<(), ConvertError> {
 
 /// The canonical format this pass emits.
 const VERSION: &str = "2.0";
+
+const KNOWN_VERSIONS: [&str; 2] = ["1.0", VERSION];
+
+const COMPONENT_KEYS: [&str; 4] = ["normalizer", "pre_tokenizer", "post_processor", "decoder"];
+
+/// The top-level keys besides [`COMPONENT_KEYS`].
+const OTHER_TOP_LEVEL_KEYS: [&str; 5] =
+    ["version", "truncation", "padding", "added_tokens", "model"];
+
+/// Refuses an unknown `version`, an unknown key, and a component that is neither an object nor
+/// null. A file without `"version"` is a `"1.0"` one, and only `"2.0"` has `role_to_token`.
+fn check_top_level(root: &Map<String, Value>) -> Result<(), ConvertError> {
+    let version = match root.get("version") {
+        None => "1.0",
+        Some(Value::String(v)) if KNOWN_VERSIONS.contains(&v.as_str()) => v.as_str(),
+        Some(v) => {
+            return Err(ConvertError::UnknownVersion {
+                version: v.to_string(),
+            });
+        }
+    };
+    let keys: Vec<String> = root
+        .keys()
+        .filter(|key| {
+            !COMPONENT_KEYS.contains(&key.as_str())
+                && !OTHER_TOP_LEVEL_KEYS.contains(&key.as_str())
+                && !(key.as_str() == "role_to_token" && version == "2.0")
+        })
+        .cloned()
+        .collect();
+    if !keys.is_empty() {
+        return Err(ConvertError::UnknownKeys { keys });
+    }
+    for key in COMPONENT_KEYS {
+        match root.get(key) {
+            None | Some(Value::Null | Value::Object(_)) => {}
+            Some(other) => {
+                return Err(ConvertError::ComponentNotObject {
+                    key,
+                    found: kind_of(other),
+                });
+            }
+        }
+    }
+    Ok(())
+}
 
 /// `{"type": tag, ...fields}`.
 fn tagged(tag: &str, fields: &[(&str, Value)]) -> Value {

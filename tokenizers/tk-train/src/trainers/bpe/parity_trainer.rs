@@ -1,4 +1,5 @@
-use super::{BPE, Pair, WithFirstLastIterator, Word};
+use super::{Pair, WithFirstLastIterator, Word};
+use crate::progress::{ProgressBar, ProgressStyle};
 use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
@@ -6,11 +7,10 @@ use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{HashSet, VecDeque};
-use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 use tk_encode::Result;
+use tk_encode::models::bpe::{Merges, Vocab};
 use tk_encode::parallelism::*;
-use tk_encode::utils::progress::{ProgressBar, ProgressStyle};
-use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
+use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 
 #[derive(Debug, Eq)]
 struct PairMerge {
@@ -298,7 +298,7 @@ impl ParityBpeTrainerBuilder {
 ///
 /// # Why this does not implement the `Trainer` trait
 ///
-/// The [`Trainer`](crate::tokenizer::Trainer) trait's `feed()` method
+/// The [`Trainer`](crate::Trainer) trait's `feed()` method
 /// assumes a single-corpus workflow: it takes one iterator of sequences
 /// and accumulates word counts into a single internal map. Parity-aware
 /// BPE fundamentally requires **separate, labeled per-language corpora**
@@ -309,7 +309,7 @@ impl ParityBpeTrainerBuilder {
 /// Instead, this trainer exposes
 /// [`feed_language_from_iter`](Self::feed_language_from_iter) and
 /// [`feed_dev_language_from_iter`](Self::feed_dev_language_from_iter),
-/// which mirror [`Trainer::feed`](crate::tokenizer::Trainer::feed)'s
+/// which mirror [`Trainer::feed`](crate::Trainer::feed)'s
 /// `<I, S, F>` shape (including the `Send` / `Sync` bounds for parallel
 /// iteration via `maybe_par_bridge`) but take an explicit `lang_idx`
 /// parameter. The Python binding wraps these in a single
@@ -379,7 +379,7 @@ impl ParityBpeTrainer {
     /// exists only so the unit tests in this file can construct a populated
     /// trainer from a literal `AHashMap`.
     ///
-    /// [`Trainer::feed`]: crate::tokenizer::Trainer::feed
+    /// [`Trainer::feed`]: crate::Trainer::feed
     #[cfg(test)]
     fn feed_language(&mut self, lang_idx: usize, words: AHashMap<CompactString, u64>) {
         if self.language_words.len() <= lang_idx {
@@ -400,7 +400,7 @@ impl ParityBpeTrainer {
     }
 
     /// Feed training data for a specific language as an iterator of sequences,
-    /// mirroring the [`Trainer::feed`](crate::tokenizer::Trainer::feed) pattern used
+    /// mirroring the [`Trainer::feed`](crate::Trainer::feed) pattern used
     /// by [`BpeTrainer`](super::BpeTrainer). The `process` closure is expected to
     /// apply the user's normalizer + pre-tokenizer to each sequence and return the
     /// resulting word strings; the trainer accumulates counts into its per-language
@@ -1167,10 +1167,10 @@ impl ParityBpeTrainer {
         }
     }
 
-    /// Main training method. Returns (special_tokens, ordered_merge_strings).
-    /// Each merge string is "token_a token_b" matching the Python output format.
+    /// Runs the training and returns the vocabulary and merge list it produced, plus the special
+    /// tokens the caller has to add alongside them, like [`super::BpeTrainer::do_train`].
     #[allow(clippy::map_entry)]
-    pub fn do_train(&self, model: &mut BPE) -> Result<(Vec<AddedToken>, Vec<String>)> {
+    pub fn do_train(&self) -> Result<(Vocab, Merges, Vec<AddedToken>)> {
         let num_langs = self.language_words.len();
         if num_langs == 0 {
             return Err("No language data has been fed".into());
@@ -1450,33 +1450,21 @@ impl ParityBpeTrainer {
             );
         }
 
-        // Build ordered merge strings for output
-        let merge_strings: Vec<String> = merges
-            .iter()
-            .map(|(pair, _)| {
-                let a = &id_to_word[pair.0 as usize];
-                let b = &id_to_word[pair.1 as usize];
-                format!("{} {}", a, b)
+        let vocab: Vocab = word_to_id
+            .into_iter()
+            .map(|(_key, val)| (id_to_word[val as usize].to_string(), val))
+            .collect();
+        let merges: Merges = merges
+            .into_iter()
+            .map(|(pair, _new_token_id)| {
+                (
+                    id_to_word[pair.0 as usize].to_string(),
+                    id_to_word[pair.1 as usize].to_string(),
+                )
             })
             .collect();
 
-        // Transfer to model
-        model.vocab = BucketVocabStore::build(
-            word_to_id
-                .into_iter()
-                .map(|(_key, val)| (id_to_word[val as usize].to_string().into_bytes(), val))
-                .collect(),
-        );
-        model.merges = merges
-            .into_iter()
-            .enumerate()
-            .map(|(i, (pair, new_token_id))| (pair, (i as u32, new_token_id)))
-            .collect();
-
-        model.continuing_subword_prefix = self.continuing_subword_prefix.clone();
-        model.end_of_word_suffix = self.end_of_word_suffix.clone();
-
-        Ok((self.special_tokens.clone(), merge_strings))
+        Ok((vocab, merges, self.special_tokens.clone()))
     }
 
     /// Apply a merge to one language's words, update pair counts.
@@ -1548,6 +1536,17 @@ impl ParityBpeTrainer {
 mod tests {
     use super::*;
     use std::assert_matches;
+    use tk_encode::models::bpe::{BpeConfig, PipelineBPE};
+
+    /// The trained vocabulary, and each merge written as `"a b"`.
+    fn train(trainer: &ParityBpeTrainer) -> (Vocab, Vec<String>) {
+        let (vocab, merges, _) = trainer.do_train().unwrap();
+        let merges = merges
+            .into_iter()
+            .map(|(a, b)| format!("{a} {b}"))
+            .collect();
+        (vocab, merges)
+    }
 
     #[test]
     fn test_parity_base_exact_merges() {
@@ -1568,8 +1567,7 @@ mod tests {
         trainer.feed_language(0, lang0);
         trainer.feed_language(1, lang1);
 
-        let mut model = BPE::default();
-        let (_special, merge_strings) = trainer.do_train(&mut model).unwrap();
+        let (vocab, merge_strings) = train(&trainer);
 
         // Languages are tied in length, so lang 0 goes first (lower index wins ties).
         // String-based tie-breaking: pairs compared as string tuples.
@@ -1582,12 +1580,12 @@ mod tests {
             merge_strings
         );
         assert_matches!(
-            model.vocab.token_to_id("aabb"),
+            vocab.get("aabb"),
             Some(_),
             "final token 'aabb' should be in vocab"
         );
         assert_matches!(
-            model.vocab.token_to_id("ccdd"),
+            vocab.get("ccdd"),
             Some(_),
             "final token 'ccdd' should be in vocab"
         );
@@ -1635,9 +1633,8 @@ mod tests {
             .build();
         t_ref.feed_language(0, l0);
         t_ref.feed_language(1, l1);
-        let mut m_ref = BPE::default();
-        let (_s, ref_merges) = t_ref.do_train(&mut m_ref).unwrap();
-        let ref_vocab = m_ref.vocab.len();
+        let (vocab_ref, ref_merges) = train(&t_ref);
+        let ref_vocab = vocab_ref.len();
 
         // total_symbols run: target = ref_vocab + N_SPECIALS, with that many
         // special tokens added. Final vocab must equal the target exactly.
@@ -1657,14 +1654,13 @@ mod tests {
             .build();
         t_ts.feed_language(0, l0);
         t_ts.feed_language(1, l1);
-        let mut m_ts = BPE::default();
-        let (_s2, ts_merges) = t_ts.do_train(&mut m_ts).unwrap();
+        let (vocab_ts, ts_merges) = train(&t_ts);
 
         assert_eq!(
-            m_ts.vocab.len(),
+            vocab_ts.len(),
             target,
             "total_symbols=true should make final vocab == target {target}, got {}",
-            m_ts.vocab.len()
+            vocab_ts.len()
         );
         assert_eq!(
             ts_merges.len(),
@@ -1697,8 +1693,7 @@ mod tests {
         trainer.feed_dev_language(0, dev0);
         trainer.feed_dev_language(1, dev1);
 
-        let mut model = BPE::default();
-        let (_special, merge_strings) = trainer.do_train(&mut model).unwrap();
+        let (_, merge_strings) = train(&trainer);
 
         // Dev lengths: lang 0 = 2 chars, lang 1 = 20 chars
         // Lang 1 selected first despite smaller training data
@@ -1732,8 +1727,7 @@ mod tests {
             .build();
         trainer.feed_language(0, lang0.clone());
         trainer.feed_language(1, lang1.clone());
-        let mut model = BPE::default();
-        let (_special, base_merges) = trainer.do_train(&mut model).unwrap();
+        let (_, base_merges) = train(&trainer);
         // Base: lang 0 always longest, takes all 3 merges before lang 1 gets any.
         // String-based tie-breaking: "b b" > "a a", so "b b" first.
         assert_eq!(
@@ -1753,8 +1747,7 @@ mod tests {
             .build();
         trainer.feed_language(0, lang0);
         trainer.feed_language(1, lang1);
-        let mut model = BPE::default();
-        let (_special, window_merges) = trainer.do_train(&mut model).unwrap();
+        let (_, window_merges) = train(&trainer);
         // Window: after 2 consecutive lang 0 picks, ratio=2/2=1.0 > 0.5 threshold,
         // so lang 0 is masked and lang 1 gets a turn at step 3 instead of step 4.
         assert_eq!(
@@ -1788,8 +1781,7 @@ mod tests {
         trainer.feed_language(0, lang0);
         trainer.feed_language(1, lang1);
 
-        let mut model = BPE::default();
-        let (_special, merge_strings) = trainer.do_train(&mut model).unwrap();
+        let (_, merge_strings) = train(&trainer);
 
         // Lang 1 selected first (longer: 4*10=40 vs 2*10=20)
         // String-based tie-breaking: "e f" > "d e" > "c d" alphabetically
@@ -1836,8 +1828,7 @@ mod tests {
             .build();
         trainer.feed_language(0, lang0);
         trainer.feed_language(1, lang1);
-        let mut model = BPE::default();
-        let (_special, merge_strings) = trainer.do_train(&mut model).unwrap();
+        let (_, merge_strings) = train(&trainer);
         assert_eq!(
             merge_strings,
             vec!["c d", "a b"],
@@ -1857,8 +1848,7 @@ mod tests {
             .build();
         trainer.feed_language(0, lang0);
         trainer.feed_language(1, lang1);
-        let mut model = BPE::default();
-        let (_special, merge_strings) = trainer.do_train(&mut model).unwrap();
+        let (_, merge_strings) = train(&trainer);
         assert_eq!(
             merge_strings,
             vec!["a b", "c d"],
@@ -1906,8 +1896,7 @@ mod tests {
             .build();
         trainer.feed_language(0, lang0.clone());
         trainer.feed_language(1, lang1.clone());
-        let mut model = BPE::default();
-        let (_special, merges) = trainer.do_train(&mut model).unwrap();
+        let (vocab, merges) = train(&trainer);
 
         // The setup is fully deterministic, so assert the entire merge
         // sequence — the incremental global-heap update is exactly the
@@ -1928,7 +1917,7 @@ mod tests {
         // Sanity-check the resulting vocabulary contains every merged token.
         for tok in ["xy", "ab", "xyxy", "abab"] {
             assert_matches!(
-                model.vocab.token_to_id(tok),
+                vocab.get(tok),
                 Some(_),
                 "final vocab should contain merged token {:?}",
                 tok
@@ -1960,8 +1949,7 @@ mod tests {
         trainer.feed_language(0, lang0);
         trainer.feed_language(1, lang1);
 
-        let mut model = BPE::default();
-        let (_special, merge_strings) = trainer.do_train(&mut model).unwrap();
+        let (vocab, merge_strings) = train(&trainer);
 
         // Lang 1 total length: 10*2 + 10*2 = 40, Lang 0: 10*2 + 3*2 = 26
         // Lang 1 first: 'g'+'h' -> 'gh' (freq 10, tied with 'ef'; 'g'>'e' — actually
@@ -1987,7 +1975,7 @@ mod tests {
             "'g h' merge should be present"
         );
         assert_matches!(
-            model.vocab.token_to_id("cd"),
+            vocab.get("cd"),
             None,
             "'cd' should NOT be in vocab (pair freq 3 < min_frequency 5)"
         );
@@ -2016,8 +2004,7 @@ mod tests {
         trainer.feed_language(0, lang0);
         trainer.feed_language(1, lang1);
 
-        let mut model = BPE::default();
-        let (_special, merge_strings) = trainer.do_train(&mut model).unwrap();
+        let (_, merge_strings) = train(&trainer);
 
         assert_eq!(
             merge_strings,
@@ -2049,8 +2036,7 @@ mod tests {
             .build();
         trainer.feed_language(0, lang0);
         trainer.feed_language(1, lang1);
-        let mut model = BPE::default();
-        let (_special, no_ratio_merges) = trainer.do_train(&mut model).unwrap();
+        let (_, no_ratio_merges) = train(&trainer);
 
         // Ratio mode with equal ratios
         let (lang0, lang1) = make_data();
@@ -2063,8 +2049,7 @@ mod tests {
             .build();
         trainer.feed_language(0, lang0);
         trainer.feed_language(1, lang1);
-        let mut model = BPE::default();
-        let (_special, ratio_merges) = trainer.do_train(&mut model).unwrap();
+        let (_, ratio_merges) = train(&trainer);
 
         assert_eq!(
             no_ratio_merges, ratio_merges,
@@ -2092,8 +2077,7 @@ mod tests {
         trainer.feed_language(0, lang0);
         trainer.feed_language(1, lang1);
 
-        let mut model = BPE::default();
-        let (_special, merge_strings) = trainer.do_train(&mut model).unwrap();
+        let (_, merge_strings) = train(&trainer);
 
         assert_eq!(
             merge_strings,
@@ -2126,8 +2110,7 @@ mod tests {
         trainer.feed_language(0, lang0);
         trainer.feed_language(1, lang1);
 
-        let mut model = BPE::default();
-        let (_special, merge_strings) = trainer.do_train(&mut model).unwrap();
+        let (_, merge_strings) = train(&trainer);
 
         // Merge 1-2: lang 1 (lower adjusted). Merge 3: window masks lang 1, forces lang 0.
         // Merge 4: lang 1 unmasked, finishes with "c cdd".
@@ -2168,8 +2151,7 @@ mod tests {
         trainer.feed_dev_language(0, dev0);
         trainer.feed_dev_language(2, dev2);
 
-        let mut model = BPE::default();
-        let (_special, merge_strings) = trainer.do_train(&mut model).unwrap();
+        let (_, merge_strings) = train(&trainer);
 
         // Lang 2 has most dev data (20 chars), selected first: e+f -> ef
         // Lang 0 has some dev data (2 chars), lang 1 has none (0 chars)
@@ -2182,7 +2164,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serialization_roundtrip() {
+    fn test_trained_model_builds_a_pipeline_bpe() {
         let lang0: AHashMap<CompactString, u64> = [("ab".into(), 10u64)].iter().cloned().collect();
         let lang1: AHashMap<CompactString, u64> = [("cd".into(), 10u64)].iter().cloned().collect();
 
@@ -2196,15 +2178,17 @@ mod tests {
         trainer.feed_language(0, lang0);
         trainer.feed_language(1, lang1);
 
-        let mut model = BPE::default();
-        trainer.do_train(&mut model).unwrap();
+        let (vocab, merges, _) = trainer.do_train().unwrap();
+        let config = BpeConfig {
+            vocab: vocab.clone(),
+            merges: merges.clone(),
+            ..Default::default()
+        };
+        let model = PipelineBPE::from_config(config).unwrap();
 
-        // Serialize and deserialize the trained BPE model
-        let json = serde_json::to_string(&model).expect("serialize failed");
-        let restored: BPE = serde_json::from_str(&json).expect("deserialize failed");
-
-        assert_eq!(model.get_vocab(), restored.get_vocab());
-        assert_eq!(model, restored);
+        let config = model.to_config().unwrap();
+        assert_eq!(config.vocab, vocab);
+        assert_eq!(config.merges, merges);
     }
 
     #[test]
@@ -2219,8 +2203,7 @@ mod tests {
 
         trainer.feed_language(0, lang0);
 
-        let mut model = BPE::default();
-        let result = trainer.do_train(&mut model);
+        let result = trainer.do_train();
         assert!(
             result.is_err(),
             "should fail when ratio length != num_langs"

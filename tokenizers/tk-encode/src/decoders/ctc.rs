@@ -1,8 +1,6 @@
 use crate::decoders::wordpiece;
 use crate::tokenizer::{Decoder, Result};
 
-use itertools::Itertools;
-
 #[derive(Debug, Clone)]
 /// The CTC (Connectionist Temporal Classification) decoder takes care
 /// of sanitizing a list of inputs token.
@@ -40,10 +38,10 @@ impl Default for CTC {
 }
 
 impl Decoder for CTC {
-    fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
+    fn decode_chain(&self, mut tokens: Vec<String>) -> Result<Vec<String>> {
+        tokens.dedup();
         Ok(tokens
             .into_iter()
-            .dedup()
             .filter_map(|token| {
                 let mut replaced = token.replace(&self.pad_token, "");
                 if self.cleanup {

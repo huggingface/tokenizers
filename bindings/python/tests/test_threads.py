@@ -5,7 +5,6 @@ import threading
 import pytest
 
 from conftest import GPT2
-from tokenizers import Padding
 
 
 def test_concurrent_encode(gpt2):
@@ -27,25 +26,19 @@ def test_concurrent_encode(gpt2):
     assert all(run == expected for run in results)
 
 
-def test_set_padding_while_encoding(gpt2):
-    texts = [GPT2.read_text()[:4000]] * 50
-    failures = []
+def test_read_array_while_decoding_it(gpt2):
+    encoding = gpt2.encode(GPT2.read_text()[:4000])
+    ids = encoding.ids_array
 
-    def encode_repeatedly():
-        try:
-            for _ in range(10):
-                gpt2.encode_batch(texts)
-        except Exception as e:
-            failures.append(e)
+    def decode():
+        for _ in range(100):
+            gpt2.decode(ids)
 
-    encoder = threading.Thread(target=encode_repeatedly)
-    encoder.start()
-    while encoder.is_alive():
-        gpt2.padding = Padding(pad_id=50256)
-        gpt2.padding = None
-    encoder.join()
-
-    assert failures == []
+    decoder = threading.Thread(target=decode)
+    decoder.start()
+    while decoder.is_alive():
+        encoding.ids_array
+    decoder.join()
 
 
 # `sys._is_gil_enabled` exists on every build from 3.13 on, so only the config var tells the two apart.

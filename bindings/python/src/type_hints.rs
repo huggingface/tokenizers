@@ -2,7 +2,7 @@
 
 use std::convert::Infallible;
 
-use numpy::{PyArray1, PyReadonlyArray1};
+use numpy::{Element, PyArray1, PyReadonlyArray1};
 use pyo3::exceptions::PyTypeError;
 use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
@@ -11,17 +11,30 @@ use pyo3::{Borrowed, PyTypeInfo, type_hint_identifier, type_hint_subscript, type
 
 use crate::encoding::Encoding;
 
-/// New type to implement PyO3 introspection traits on
-pub struct U32Array<'py>(pub Bound<'py, PyArray1<u32>>);
+/// A 1-D numpy array, typed `NDArray[numpy.<dtype>]`.
+///
+/// rust-numpy has no pyo3 introspection, so a bare [`PyArray1`] in a signature is typed `Incomplete`.
+pub struct NDArray<'py, T: Dtype>(pub Bound<'py, PyArray1<T>>);
 
-impl<'py> IntoPyObject<'py> for U32Array<'py> {
-    type Target = PyArray1<u32>;
-    type Output = Bound<'py, PyArray1<u32>>;
+pub type U32Array<'py> = NDArray<'py, u32>;
+
+/// An element type of [`NDArray`], with the numpy scalar type that names it in the type hints.
+pub trait Dtype: Element {
+    const TYPE_HINT: PyStaticExpr;
+}
+
+impl Dtype for u32 {
+    const TYPE_HINT: PyStaticExpr = type_hint_identifier!("numpy", "uint32");
+}
+
+impl<'py, T: Dtype> IntoPyObject<'py> for NDArray<'py, T> {
+    type Target = PyArray1<T>;
+    type Output = Bound<'py, PyArray1<T>>;
     type Error = Infallible;
 
     const OUTPUT_TYPE: PyStaticExpr = type_hint_subscript!(
         type_hint_identifier!("numpy.typing", "NDArray"),
-        type_hint_identifier!("numpy", "uint32")
+        T::TYPE_HINT
     );
 
     fn into_pyobject(self, _py: Python<'py>) -> Result<Self::Output, Self::Error> {

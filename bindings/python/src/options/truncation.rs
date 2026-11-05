@@ -7,7 +7,7 @@ use pyo3::{
     types::{PyString, PyType},
 };
 
-use tk_encode::{TruncationDirection, TruncationParams, TruncationStrategy};
+use tk::{TruncationDirection, TruncationParams, TruncationStrategy};
 
 use crate::error::err;
 
@@ -23,6 +23,15 @@ impl Truncation {
 
     pub(crate) fn from(params: TruncationParams) -> Self {
         Self(params)
+    }
+
+    pub(crate) fn repr(params: &TruncationParams) -> String {
+        format!(
+            "Truncation(max_length={}, strategy={:?}, direction={:?})",
+            params.max_length,
+            params.strategy.as_ref(),
+            params.direction.as_ref(),
+        )
     }
 }
 
@@ -159,12 +168,7 @@ impl Truncation {
         (py.get_type::<Self>(), arguments)
     }
 
-    pub(crate) fn __repr__(&self) -> String {
-        format!(
-            "Truncation(max_length={}, strategy={:?}, direction={:?})",
-            self.max_length(),
-            self.0.strategy.as_ref(),
-            self.0.direction.as_ref(),
-        )
+    fn __repr__(&self) -> String {
+        Self::repr(&self.0)
     }
 }

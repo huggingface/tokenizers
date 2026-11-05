@@ -100,7 +100,7 @@ impl Template {
                 ids
             }
         };
-        Encoding::new(ids, type_ids)
+        Encoding::new(ids, type_ids, None)
     }
 
     #[inline(never)]
