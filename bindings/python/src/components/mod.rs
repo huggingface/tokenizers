@@ -132,7 +132,7 @@ pub(crate) trait ComponentKind:
 {
     /// The key a `Sequence` of this kind lists its items under, such as `"normalizers"`.
     /// `None` for a kind with no `Sequence`.
-    const ITEMS_KEY: Option<&'static str>;
+    const SEQUENCE_ITEM_KEY: Option<&'static str>;
 
     /// The [`TokenizerSpec`] field holding this kind's spec.
     fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec>;
@@ -202,7 +202,7 @@ pub(crate) trait ComponentKind:
     /// Unpickling calls it through the kind's `_unpickle`.
     fn from_state(py: Python<'_>, state: &[u8]) -> PyResult<Py<Self>> {
         let json: JsonObject = serde_json::from_slice(state).map_err(err)?;
-        Self::from_spec(py, ComponentSpec::from_json(Self::ITEMS_KEY, json))
+        Self::from_spec(py, ComponentSpec::from_json(Self::SEQUENCE_ITEM_KEY, json))
     }
 }
 

@@ -25,7 +25,7 @@ impl PreTokenizer {
 }
 
 impl ComponentKind for PreTokenizer {
-    const ITEMS_KEY: Option<&'static str> = Some("pretokenizers");
+    const SEQUENCE_ITEM_KEY: Option<&'static str> = Some("pretokenizers");
 
     fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec> {
         &mut spec.pre_tokenizer

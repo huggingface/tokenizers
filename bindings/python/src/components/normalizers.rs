@@ -25,7 +25,7 @@ impl Normalizer {
 }
 
 impl ComponentKind for Normalizer {
-    const ITEMS_KEY: Option<&'static str> = Some("normalizers");
+    const SEQUENCE_ITEM_KEY: Option<&'static str> = Some("normalizers");
 
     fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec> {
         &mut spec.normalizer

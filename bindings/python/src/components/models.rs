@@ -26,7 +26,7 @@ impl Model {
 }
 
 impl ComponentKind for Model {
-    const ITEMS_KEY: Option<&'static str> = None;
+    const SEQUENCE_ITEM_KEY: Option<&'static str> = None;
 
     fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec> {
         &mut spec.model

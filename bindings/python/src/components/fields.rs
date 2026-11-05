@@ -119,8 +119,8 @@ macro_rules! py_classes {
                             ComponentSpec::Sequence(sequence) => flat.extend(sequence.items()),
                         }
                     }
-                    let items_key = $kind::ITEMS_KEY.expect("a kind with a Sequence has an items key");
-                    let sequence = crate::components::component_spec::SequenceSpec::new(items_key, flat);
+                    let sequence_item_key = $kind::SEQUENCE_ITEM_KEY.expect("a kind with a Sequence has a sequence item key");
+                    let sequence = crate::components::component_spec::SequenceSpec::new(sequence_item_key, flat);
                     $kind::initializer(ComponentSpec::Sequence(std::sync::Arc::new(sequence)), Self)
                 }
 

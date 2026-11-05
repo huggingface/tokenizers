@@ -20,7 +20,7 @@ impl PostProcessor {
 }
 
 impl ComponentKind for PostProcessor {
-    const ITEMS_KEY: Option<&'static str> = Some("processors");
+    const SEQUENCE_ITEM_KEY: Option<&'static str> = Some("processors");
 
     fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec> {
         &mut spec.post_processor

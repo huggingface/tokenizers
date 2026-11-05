@@ -25,7 +25,7 @@ impl Decoder {
 }
 
 impl ComponentKind for Decoder {
-    const ITEMS_KEY: Option<&'static str> = Some("decoders");
+    const SEQUENCE_ITEM_KEY: Option<&'static str> = Some("decoders");
 
     fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec> {
         &mut spec.decoder
