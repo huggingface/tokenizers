@@ -1,3 +1,6 @@
+//! Python classes definitions for normalizer components.
+//! Generated from the definitions in `tk::schemas`.
+
 use super::macros::component_module;
 
 tk::normalizer_schemas!(component_module! {
