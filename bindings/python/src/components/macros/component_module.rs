@@ -9,7 +9,7 @@
 //! The macro calls [`component_kind!`](macro@super::component_kind) to write the base class, and
 //! [`sequence_class!`](macro@super::sequence_class) to write the `Sequence` class.
 //! Then it writes one class per definition in the list, and the `#[pymodule]` that exports them.
-//! [`fields`](super::fields) gives the Rust type of each field shape, such as `Bool`.
+//! [`field_types`](super::field_types) gives the Rust type of each field type, such as `Bool`.
 //!
 //! For example, `tk::schemas` has this definition:
 //!
@@ -86,7 +86,7 @@ macro_rules! component_module {
             use pyo3::prelude::*;
 
             use $crate::components::component_spec::ComponentSpec;
-            use $crate::components::macros::fields::{arg, choice_json, choice_name, value};
+            use $crate::components::macros::field_types::{arg, choice_json, choice_name, value};
             use $crate::components::{ComponentKind, JsonFieldsExt};
 
             $crate::components::macros::component_kind! {

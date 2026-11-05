@@ -10,7 +10,7 @@
 //! Models and post-processors are different: their fields are vocabularies and templates,
 //! with logic around them. Model and post-processor classes are written by hand.
 //!
-//! This module defines lists of components with their JSON shape. Those lists are
+//! This module defines lists of components with their JSON fields. Those lists are
 //! used by the Python bindings macros to generate code systematically.
 //!
 //! # Component definitions
@@ -57,9 +57,9 @@
 //! - **The `"type"`**, here `Strip`, is also the class name.
 //! - **The fields**, in braces, if the component has any.
 //!
-//! Each field has a key, a shape and an optional default.
+//! Each field has a key, a field type and an optional default.
 //! The key names the field in the JSON, in the constructor and on the class.
-//! The shape says which JSON value the field holds:
+//! The field type says which JSON value the field holds:
 //!
 //! - `Bool`: a bool.
 //! - `OptionalBool`: a bool or `null`.

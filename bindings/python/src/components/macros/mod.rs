@@ -40,7 +40,7 @@
 //! - [`component_module!`](macro@component_module) writes a whole Python module, such as
 //!   `tokenizers.normalizers`, from a list in `tk::schemas`.
 //!   It calls the two macros above, then writes one class per definition in the list.
-//!   [`fields`] holds the Rust type of each field shape.
+//!   [`field_types`] holds the Rust types of each field type.
 //!
 //! # Where they are called
 //!
@@ -66,7 +66,7 @@
 
 mod component_kind;
 mod component_module;
-pub(crate) mod fields;
+pub(crate) mod field_types;
 mod sequence_class;
 
 pub(crate) use component_kind::component_kind;
