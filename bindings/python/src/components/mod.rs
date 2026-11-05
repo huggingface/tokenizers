@@ -60,6 +60,13 @@
 //!   constructor builds the JSON, and its properties read and write the JSON keys, such as
 //!   `Prepend.prepend`.
 //!
+//! The concrete classes are written in two ways:
+//!
+//! - Normalizers, pre-tokenizers and decoders are plain data.
+//!   The [`macros`] generate their classes from the lists in `tk::schemas`.
+//! - Models are written by hand, in [`models`].
+//!   Post-processors have no concrete class yet.
+//!
 //! Each read builds a new Python object, so `tokenizer.normalizer is tokenizer.normalizer` is
 //! `False`. Both objects still edit the same spec.
 
@@ -126,8 +133,9 @@ impl Component {
 
 /// Builds a handle of the concrete class, such as `Strip`, that a spec's `"type"` names.
 ///
-/// It is apart from [`ComponentKind`] because another place writes it: `component_module!` for
-/// the kinds with a schema list, and the kind's own file for the others.
+/// It is a separate trait from [`ComponentKind`] because it needs the list of concrete classes.
+/// `component_module!` writes it for the kinds with a list in `tk::schemas`.
+/// `models.rs` and `processors.rs` write their own.
 pub(crate) trait FromSpec: Sized {
     /// Builds a handle on `spec`, of the concrete class its `"type"` names.
     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>>;
