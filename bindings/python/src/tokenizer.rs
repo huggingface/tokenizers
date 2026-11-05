@@ -28,13 +28,13 @@
 //! - `truncation` and `padding` are default settings
 //! - `added_tokens` and `role_to_token`
 //! - `normalizer`, `pre_tokenizer`, `post_processor`, `decoder` and `model`
-//! 
+//!
 //! `normalizer`, `pre_tokenizer`, `post_processor`, `decoder` and `model` are [`ComponentSpec`].
 //! See [`components`](crate::components) module docs for more details about components.
 //!
 //! Copying a [`Tokenizer`] or its components is cheap:
 //! see the section about [copy on write](crate::components::component_spec#arc-pointers-make-copies-cheap).
-//! 
+//!
 //! # Loading from JSON
 //!
 //! `from_str`, `from_file` and `from_pretrained` accept a `tokenizer.json` of any version.
@@ -52,7 +52,7 @@
 //! edits never reach the compiled tokenizer.
 //!
 //! # Validation
-//! 
+//!
 //! The JSON spec is validated at compilation time by `tk::from_json`, `.compile()` can fail if the
 //! JSON spec stored in [`Tokenizer`] is not valid.
 

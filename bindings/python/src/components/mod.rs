@@ -1,7 +1,7 @@
 //! The Python classes behind `tokenizer.model`, `tokenizer.normalizer` and the other components.
 //!
 //! The [`tokenizer`](crate::tokenizer) docs explain the tokenizer as a whole.
-//! 
+//!
 //! The [`component_spec`] docs explain how a component's JSON is stored, shared and copied,
 //! in a [`ComponentSpec`].
 //!
