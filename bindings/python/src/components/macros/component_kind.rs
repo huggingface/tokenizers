@@ -8,33 +8,45 @@
 /// Writes the class `kind` and its [`ComponentKind`](crate::components::ComponentKind) impl.
 /// The kind's spec is the `tokenizer_field` field of
 /// [`TokenizerSpec`](crate::tokenizer::TokenizerSpec), and a `Sequence` of the kind lists its
-/// items under `sequence_item_key`. The kind's
-/// [`ConcreteClasses`](crate::components::ConcreteClasses) impl is written with its classes.
+/// items under `items_key`. The kind's [`FromSpec`](crate::components::FromSpec) impl is written
+/// with its classes.
+// rustfmt indents the multi-line `pyclass` attribute deeper on each run.
+#[rustfmt::skip]
 macro_rules! component_kind {
     (
         kind: $kind:ident,
         python_module: $python_module:literal,
         tokenizer_field: $tokenizer_field:ident,
-        sequence_item_key: $sequence_item_key:expr,
+        items_key: $items_key:expr $(,)?
     ) => {
         #[doc = concat!("Base class of the classes in `", $python_module, "`.")]
-        #[pyclass(frozen, subclass, extends = Component, module = $python_module)]
+        #[::pyo3::pyclass(
+            frozen,
+            subclass,
+            extends = $crate::components::Component,
+            module = $python_module
+        )]
         #[derive(Default)]
         pub struct $kind;
 
-        #[pymethods]
+        #[::pyo3::pymethods]
         impl $kind {
             /// Rebuilds a component from its `__getstate__`
             #[staticmethod]
-            fn _unpickle(py: Python<'_>, state: &[u8]) -> PyResult<Py<Self>> {
-                Self::from_state(py, state)
+            fn _unpickle(
+                py: ::pyo3::Python<'_>,
+                state: &[u8],
+            ) -> ::pyo3::PyResult<::pyo3::Py<Self>> {
+                <Self as $crate::components::ComponentKind>::from_state(py, state)
             }
         }
 
-        impl ComponentKind for $kind {
-            const ITEMS_KEY: Option<&'static str> = $sequence_item_key;
+        impl $crate::components::ComponentKind for $kind {
+            const ITEMS_KEY: Option<&'static str> = $items_key;
 
-            fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec> {
+            fn tokenizer_field_mut(
+                spec: &mut $crate::tokenizer::TokenizerSpec,
+            ) -> &mut Option<$crate::components::component_spec::ComponentSpec> {
                 &mut spec.$tokenizer_field
             }
         }

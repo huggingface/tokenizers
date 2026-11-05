@@ -55,6 +55,7 @@ def sample(name, default):
         return not default
     if isinstance(default, int):
         return default + 1
+    # Only an `OptionalBool` defaults to None.
     if default is None:
         return True
     return "x"
@@ -105,3 +106,11 @@ def test_refuses_a_choice_in_the_json_spelling():
         punctuation.behavior = "Isolated"
     assert punctuation.behavior == "isolated"
     assert json.loads(punctuation.__getstate__())["behavior"] == "Isolated"
+
+
+# The core reads a missing field with a default. Files that predate Punctuation's `behavior` leave it out.
+def test_a_missing_field_reads_as_its_default(wiki_spec):
+    file = json.loads(wiki_spec.to_str())
+    file["pre_tokenizer"] = {"type": "Punctuation"}
+    loaded = type(wiki_spec).from_str(json.dumps(file))
+    assert loaded.pre_tokenizer.behavior == "isolated"

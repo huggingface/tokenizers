@@ -3,7 +3,10 @@
 //! A field's shape, such as `Bool`, names a type in [`arg`] (what the constructor and the setter
 //! take) and in [`value`] (what the getter returns). Each type moves to and from the JSON with
 //! serde, so a new field shape is one type here, and
-//! [`component_classes!`](super::component_classes) does not change.
+//! [`component_module!`](super::component_module) does not change.
+//!
+//! The types are named after the shapes, so the macro can write `arg::$shape`. That is why
+//! `arg::String` is a `&str`.
 
 use std::convert::Infallible;
 

@@ -13,13 +13,15 @@
 //!     Strip { strip_left: Bool = true, strip_right: Bool = true }, ... }
 //! ```
 //!
-//! An entry is its doc, its JSON `"type"`, and its fields with their constructor defaults. A field
-//! names its JSON shape: `Bool`, `String`, `Char` (a one-character string), `Usize`,
+//! An entry is its doc, its JSON `"type"`, and its fields with their constructor defaults.
+//! The `"type"` is also the class name in the bindings, so renaming a class changes the file format.
+//! A field names its JSON shape: `Bool`, `String`, `Char` (a one-character string), `Usize`,
 //! `OptionalBool` (a `bool` or `null`), `Choice(choices)` (one of the [`Choice`]s), `Pattern`
 //! (`{"String": ...}` for a literal or `{"Regex": ...}`) or `Base64Bytes` (bytes, as a base64
-//! string). A default is a single token, and a `Choice`'s default is its name. A field with none
-//! is a required argument. A component
-//! with no fields is its `"type"` alone.
+//! string).
+//! A default is a single token, and a `Choice`'s default is its name.
+//! A field with none is a required argument.
+//! A component with no fields is its `"type"` alone.
 //!
 //! Registering a component is one entry here. Post-processors and models are not listed: their
 //! fields are templates and vocabularies, which no field shape describes.
@@ -125,6 +127,8 @@ macro_rules! pre_tokenizer_schemas {
             UnicodeScripts,
             /// Splits the text on every match of `pattern`, the matches being the delimiters. A
             /// string pattern is a literal. `invert` splits on what does not match instead.
+            /// `behavior` is `"removed"`, `"isolated"`, `"merged_with_previous"`,
+            /// `"merged_with_next"` or `"contiguous"`.
             Split {
                 pattern: Pattern,
                 behavior: Choice($crate::schemas::SPLIT_BEHAVIORS) = "isolated",

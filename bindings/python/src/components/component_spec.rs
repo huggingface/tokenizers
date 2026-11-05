@@ -214,6 +214,11 @@ impl SingleSpec {
         T::deserialize(value).map_err(|e| err(format!("`{key}`: {e}")))
     }
 
+    /// Returns whether the JSON has the `key` field.
+    pub(crate) fn has_field(&self, key: &str) -> bool {
+        self.lock_json().contains_key(key)
+    }
+
     /// Sets the `key` field, as [`JsonFieldsExt::set_field`](super::JsonFieldsExt::set_field)
     /// describes. It copies the JSON first if another [`SingleSpec`] shares it.
     pub(crate) fn set_field(&self, key: &str, value: impl Into<Value>) {

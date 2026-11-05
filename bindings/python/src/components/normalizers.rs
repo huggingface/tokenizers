@@ -1,26 +1,9 @@
-use pyo3::prelude::*;
+use super::macros::component_module;
 
-use crate::components::component_spec::ComponentSpec;
-use crate::tokenizer::TokenizerSpec;
-
-use super::component_sequence::ComponentSequence;
-use super::macros::{component_classes, component_kind, sequence_class};
-use super::{Component, ComponentKind, ConcreteClasses};
-
-component_kind! {
-    kind: Normalizer,
-    python_module: "tokenizers.normalizers",
-    tokenizer_field: normalizer,
-    sequence_item_key: Some("normalizers"),
-}
-
-sequence_class! {
-    kind: Normalizer,
-    python_module: "tokenizers.normalizers",
-}
-
-tk::normalizer_schemas!(component_classes! {
+tk::normalizer_schemas!(component_module! {
     kind: Normalizer,
     module: normalizers,
     python_module: "tokenizers.normalizers",
+    tokenizer_field: normalizer,
+    items_key: "normalizers",
 });

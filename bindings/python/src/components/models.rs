@@ -7,19 +7,18 @@ use serde_json::{Value, json};
 
 use crate::components::component_spec::ComponentSpec;
 use crate::error::err;
-use crate::tokenizer::TokenizerSpec;
 
 use super::macros::component_kind;
-use super::{Component, ComponentKind, ConcreteClasses, JsonFieldsExt};
+use super::{ComponentKind, FromSpec, JsonFieldsExt};
 
 component_kind! {
     kind: Model,
     python_module: "tokenizers.models",
     tokenizer_field: model,
-    sequence_item_key: None,
+    items_key: None,
 }
 
-impl ConcreteClasses for Model {
+impl FromSpec for Model {
     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
         let json = spec.json();
         match json.get("type").and_then(Value::as_str) {
@@ -181,8 +180,8 @@ impl Bpe {
     }
 
     #[setter]
-    fn set_ignore_merges(slf: &Bound<'_, Self>, ignore_merges: bool) -> PyResult<()> {
-        slf.set_field("ignore_merges", ignore_merges)
+    fn set_ignore_merges(slf: &Bound<'_, Self>, ignore_merges: bool) {
+        slf.set_field("ignore_merges", ignore_merges);
     }
 }
 

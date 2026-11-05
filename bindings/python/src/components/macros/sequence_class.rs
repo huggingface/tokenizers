@@ -1,14 +1,16 @@
 //! The `Sequence` class of a component kind, written by [`sequence_class!`].
 
 /// Writes the `Sequence` class of the kind `kind`, in the Python module `python_module`.
-/// The caller imports [`ComponentSequence`](crate::components::component_sequence::ComponentSequence).
 macro_rules! sequence_class {
     (kind: $kind:ident, python_module: $python_module:literal $(,)?) => {
         // pyo3 writes the `__setitem__` slot as an item next to the impl, calling an unsafe fn
         // through `Sequence`, whose span is this macro's. The allow has to sit on a module.
         #[allow(unsafe_op_in_unsafe_fn)]
         mod sequence {
-            use super::*;
+            use pyo3::prelude::*;
+
+            use super::$kind;
+            use $crate::components::component_sequence::ComponentSequence;
 
             #[doc = concat!("Applies each `", stringify!($kind), "` in turn.")]
             #[pyclass(frozen, extends = $kind, module = $python_module)]

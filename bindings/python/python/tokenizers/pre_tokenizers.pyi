@@ -83,6 +83,8 @@ class Split(PreTokenizer):
     """
     Splits the text on every match of `pattern`, the matches being the delimiters. A
     string pattern is a literal. `invert` splits on what does not match instead.
+    `behavior` is `"removed"`, `"isolated"`, `"merged_with_previous"`,
+    `"merged_with_next"` or `"contiguous"`.
     """
     def __new__(cls, /, pattern: str | Regex, behavior: str = "isolated", invert: bool = False) -> Split: ...
     @property

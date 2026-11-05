@@ -1,26 +1,9 @@
-use pyo3::prelude::*;
+use super::macros::component_module;
 
-use crate::components::component_spec::ComponentSpec;
-use crate::tokenizer::TokenizerSpec;
-
-use super::component_sequence::ComponentSequence;
-use super::macros::{component_classes, component_kind, sequence_class};
-use super::{Component, ComponentKind, ConcreteClasses};
-
-component_kind! {
-    kind: Decoder,
-    python_module: "tokenizers.decoders",
-    tokenizer_field: decoder,
-    sequence_item_key: Some("decoders"),
-}
-
-sequence_class! {
-    kind: Decoder,
-    python_module: "tokenizers.decoders",
-}
-
-tk::decoder_schemas!(component_classes! {
+tk::decoder_schemas!(component_module! {
     kind: Decoder,
     module: decoders,
     python_module: "tokenizers.decoders",
+    tokenizer_field: decoder,
+    items_key: "decoders",
 });

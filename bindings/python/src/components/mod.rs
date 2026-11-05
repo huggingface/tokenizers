@@ -124,11 +124,11 @@ impl Component {
     }
 }
 
-/// The concrete classes of a component kind, such as `Strip` for `Normalizer`.
+/// Builds a handle of the concrete class, such as `Strip`, that a spec's `"type"` names.
 ///
-/// The code that defines a kind's classes implements it: `component_classes!` for the kinds with a
-/// schema list, and the kind's own file for the others.
-pub(crate) trait ConcreteClasses: Sized {
+/// It is apart from [`ComponentKind`] because another place writes it: `component_module!` for
+/// the kinds with a schema list, and the kind's own file for the others.
+pub(crate) trait FromSpec: Sized {
     /// Builds a handle on `spec`, of the concrete class its `"type"` names.
     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>>;
 }
@@ -140,7 +140,7 @@ pub(crate) trait ComponentKind:
     PyClass<BaseType = Component>
     + PyClassBaseType<Initializer = PyClassInitializer<Self>>
     + Default
-    + ConcreteClasses
+    + FromSpec
 {
     /// The key a `Sequence` of this kind lists its items under, such as `"normalizers"`.
     /// `None` for a kind with no `Sequence`.
@@ -210,8 +210,10 @@ pub(crate) trait JsonFieldsExt {
     /// Reads the `key` field as a `T`. A missing key reads as `null`, so an `Option<T>` gets
     /// `None`.
     fn field<T: DeserializeOwned>(&self, key: &str) -> PyResult<T>;
+    /// Returns whether the JSON has the `key` field.
+    fn has_field(&self, key: &str) -> bool;
     /// Sets the `key` field. Every handle on this spec sees the new value.
-    fn set_field(&self, key: &str, value: impl Serialize) -> PyResult<()>;
+    fn set_field(&self, key: &str, value: impl Serialize);
 }
 
 impl<K, C> JsonFieldsExt for Bound<'_, C>
@@ -223,9 +225,13 @@ where
         K::single_spec(self).field(key)
     }
 
-    fn set_field(&self, key: &str, value: impl Serialize) -> PyResult<()> {
-        let value = serde_json::to_value(value).map_err(err)?;
+    fn has_field(&self, key: &str) -> bool {
+        K::single_spec(self).has_field(key)
+    }
+
+    fn set_field(&self, key: &str, value: impl Serialize) {
+        let value = serde_json::to_value(value)
+            .expect("the field types serialize to JSON: bools, numbers, strings and their options");
         K::single_spec(self).set_field(key, value);
-        Ok(())
     }
 }
