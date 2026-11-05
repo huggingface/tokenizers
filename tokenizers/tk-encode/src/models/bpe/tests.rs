@@ -218,8 +218,7 @@ fn ignore_merges_prefers_whole_word() {
 
 #[test]
 fn rejects_unsupported_configs() {
-    // no merges: the merge-map derivation underflows on merges whose right token
-    // is shorter than continuing_subword_prefix (pre-existing, unrelated)
+    // no merges: they do not matter for these checks
     let build = |options: BpeConfig| {
         PipelineBPE::from_config(BpeConfig {
             vocab: v(HELLO_VOCAB),
@@ -366,6 +365,25 @@ fn merged_token_longer_than_the_longest_vocab_entry() {
     .unwrap();
     match err.downcast_ref::<Error>() {
         Some(Error::MergeTokenOutOfVocabulary(token)) => assert_eq!(token, "x\u{65e5}"),
+        other => panic!("expected MergeTokenOutOfVocabulary, got {other:?}"),
+    }
+}
+
+#[test]
+fn merge_without_the_prefix_is_not_collapsed_to_its_left_side() {
+    // When the right side is exactly `prefix.len()` bytes and does not carry the prefix, slicing
+    // used to leave nothing of it, so the merge silently produced the left token ("a" + "xy" ->
+    // "a"). Now nothing is stripped, and the real merged token "axy" is missing from the vocab.
+    let err = PipelineBPE::from_config(BpeConfig {
+        vocab: v(&[("a", 0), ("xy", 1)]),
+        merges: m(&[("a", "xy")]),
+        continuing_subword_prefix: Some("##".into()),
+        ..BpeConfig::default()
+    })
+    .err()
+    .unwrap();
+    match err.downcast_ref::<Error>() {
+        Some(Error::MergeTokenOutOfVocabulary(token)) => assert_eq!(token, "axy"),
         other => panic!("expected MergeTokenOutOfVocabulary, got {other:?}"),
     }
 }
