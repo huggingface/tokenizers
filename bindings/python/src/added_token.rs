@@ -161,21 +161,14 @@ impl AddedToken {
     /// Rebuilds an `AddedToken` from its `__getstate__`.
     #[staticmethod]
     fn _unpickle(state: &Bound<'_, PyDict>) -> PyResult<Self> {
-        let State {
-            content,
-            single_word,
-            lstrip,
-            rstrip,
-            normalized,
-            special,
-        } = state.extract()?;
+        let s: State = state.extract()?;
         Ok(Self::new(
-            content,
-            single_word,
-            lstrip,
-            rstrip,
-            Some(normalized),
-            special,
+            s.content,
+            s.single_word,
+            s.lstrip,
+            s.rstrip,
+            Some(s.normalized),
+            s.special,
         ))
     }
 
