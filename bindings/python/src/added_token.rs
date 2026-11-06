@@ -2,6 +2,8 @@ use std::hash::{Hash, Hasher};
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use serde::Serialize;
+use serde_json::Value;
 use tk::vocab::bucket_added_vocabulary::AddedToken as CoreAddedToken;
 
 use crate::repr;
@@ -39,8 +41,9 @@ impl From<CoreAddedToken> for AddedToken {
     }
 }
 
-/// The state of an [`AddedToken`]: its `added_tokens` entry without the `id`, as a Python dict.
-#[derive(FromPyObject, IntoPyObject)]
+/// The `added_tokens` entry of an [`AddedToken`] without the `id`. As a Python dict, it is the
+/// token's state for pickle.
+#[derive(FromPyObject, IntoPyObject, Serialize)]
 #[pyo3(from_item_all)]
 struct State {
     content: String,
@@ -49,6 +52,40 @@ struct State {
     rstrip: bool,
     normalized: bool,
     special: bool,
+}
+
+impl From<CoreAddedToken> for State {
+    fn from(token: CoreAddedToken) -> Self {
+        Self {
+            content: token.content,
+            single_word: token.single_word,
+            lstrip: token.lstrip,
+            rstrip: token.rstrip,
+            normalized: token.normalized,
+            special: token.special,
+        }
+    }
+}
+
+impl From<State> for CoreAddedToken {
+    fn from(state: State) -> Self {
+        Self {
+            content: state.content,
+            single_word: state.single_word,
+            lstrip: state.lstrip,
+            rstrip: state.rstrip,
+            normalized: state.normalized,
+            special: state.special,
+        }
+    }
+}
+
+/// The `added_tokens` entry of `token`, with `id`.
+pub fn json_entry(token: CoreAddedToken, id: Value) -> Value {
+    let mut entry = serde_json::to_value(State::from(token))
+        .expect("a State holds a string and bools, which always serialize");
+    entry["id"] = id;
+    entry
 }
 
 /// A token passed to `Tokenizer.add_tokens` or `Tokenizer.add_special_tokens`: its content, or
@@ -136,15 +173,7 @@ impl AddedToken {
     // Components return JSON `bytes`, and this returns a dict. transformers' `save_pretrained`
     // adds a `__type` key to this dict and writes it to `tokenizer_config.json`.
     fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let token = &self.0;
-        let state = State {
-            content: token.content.clone(),
-            single_word: token.single_word,
-            lstrip: token.lstrip,
-            rstrip: token.rstrip,
-            normalized: token.normalized,
-            special: token.special,
-        };
+        let state = State::from(self.0.clone());
         Ok(state.into_pyobject(py)?.cast_into()?)
     }
 
@@ -162,15 +191,8 @@ impl AddedToken {
     /// Rebuilds an `AddedToken` from its `__getstate__`.
     #[staticmethod]
     fn _unpickle(state: &Bound<'_, PyDict>) -> PyResult<Self> {
-        let s: State = state.extract()?;
-        Ok(Self::new(
-            s.content,
-            s.single_word,
-            s.lstrip,
-            s.rstrip,
-            Some(s.normalized),
-            s.special,
-        ))
+        let state: State = state.extract()?;
+        Ok(Self(state.into()))
     }
 
     fn __str__(&self) -> &str {

@@ -57,12 +57,13 @@
 //! JSON spec stored in [`Tokenizer`] is not valid.
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use tk::pipeline::PipelineTokenizer;
 use tk::vocab::bucket_added_vocabulary::AddedToken;
@@ -72,6 +73,7 @@ use tk::{
 };
 
 use crate::JsonObject;
+use crate::added_token;
 use crate::added_token::TokenToAdd;
 use crate::compiled::CompiledTokenizer;
 use crate::components::ComponentKind;
@@ -541,51 +543,52 @@ impl TokenizerSpec {
         from_json(&self.to_json())
     }
 
-    /// Adds `tokens` to `added_tokens`, or updates the flags of those with the same content, and
-    /// returns how many it added or updated.
+    /// Upsert `tokens` to `added_tokens`, returns how many it added or updated.
     fn add_tokens(&mut self, tokens: impl IntoIterator<Item = AddedToken>) -> usize {
-        let Value::Array(entries) = Arc::make_mut(&mut self.added_tokens) else {
+        let Value::Array(previous_added_tokens) = Arc::make_mut(&mut self.added_tokens) else {
             unreachable!("from_json and from_model only store an array");
         };
-        // Loading assigns the ids again, in id order, so a new token only needs the highest id.
-        let highest_id = entries
+        // The highest value for the `id` field of added tokens JSON
+        let highest_id = previous_added_tokens
             .iter()
             .filter_map(|entry| entry["id"].as_u64())
             .max();
         let mut next_id = highest_id.map_or(0, |id| id + 1);
-        let mut changed = 0;
+
+        // Lookup to update already added tokens' values
+        let mut existing_tokens_position: HashMap<String, usize> = HashMap::new();
+        for (index, entry) in previous_added_tokens.iter().enumerate() {
+            if let Some(content) = entry["content"].as_str() {
+                existing_tokens_position
+                    .entry(content.to_owned())
+                    .or_insert(index);
+            }
+        }
+
+        let mut added_or_updated = 0;
         for token in tokens {
             if token.content.is_empty() {
                 continue;
             }
-            let mut entry = json!({
-                "content": token.content,
-                "single_word": token.single_word,
-                "lstrip": token.lstrip,
-                "rstrip": token.rstrip,
-                "normalized": token.normalized,
-                "special": token.special,
-            });
-            let same_content = entries
-                .iter_mut()
-                .find(|existing| existing["content"] == token.content.as_str());
-            match same_content {
-                Some(existing) => {
-                    entry["id"] = existing["id"].clone();
-                    if *existing == entry {
+            match existing_tokens_position.get(&token.content) {
+                Some(&index) => {
+                    let existing = &mut previous_added_tokens[index];
+                    let updated = added_token::json_entry(token, existing["id"].clone());
+                    if *existing == updated {
                         continue;
                     }
-                    *existing = entry;
+                    *existing = updated;
                 }
                 None => {
-                    entry["id"] = next_id.into();
+                    existing_tokens_position
+                        .insert(token.content.clone(), previous_added_tokens.len());
+                    previous_added_tokens.push(added_token::json_entry(token, next_id.into()));
                     next_id += 1;
-                    entries.push(entry);
                 }
             }
-            changed += 1;
+            added_or_updated += 1;
         }
-        changed
+        added_or_updated
     }
 
     /// A deep copy: the resulting object is independent.

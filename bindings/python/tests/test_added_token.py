@@ -71,6 +71,12 @@ def test_add_special_tokens(spec):
     }
 
 
+def test_added_tokens_edits_leave_the_compiled_tokenizer_unchanged(spec):
+    compiled = spec.compile()
+    compiled.added_tokens.clear()
+    assert 50256 in compiled.added_tokens
+
+
 def test_add_tokens_leaves_copies_unchanged(spec):
     copied = copy.copy(spec)
     spec.add_tokens(["<new>"])
