@@ -50,8 +50,8 @@
 //! one remaining job (`canonicalize_file`, re-exported by the `tokenizers` umbrella crate). What an
 //! authoring surface would have to add back is `REQUIRED_FOR_V1.md` at the repository root.
 //!
-//! Training is not part of the shipped crate either. `tk-train` is in the tree and builds on its
-//! own, but it is `exclude`d from the workspace and nothing in `tokenizers` depends on it.
+//! Training is not part of this crate either: it lives in `tk-train`, which the `tokenizers`
+//! umbrella crate re-exports behind its `train` feature.
 //!
 //! # Additional information
 //!
@@ -61,10 +61,6 @@
 //!   **_Please note this behavior may evolve in the future_**
 //!
 //! # Features
-//!
-//! - **progressbar**: The progress bar visualization is enabled by default. It might be disabled if
-//!   compilation for certain targets is not supported by the [termios](https://crates.io/crates/termios)
-//!   dependency of the [indicatif](https://crates.io/crates/indicatif) progress bar.
 //!
 //! - **http**: This feature enables downloading the tokenizer via HTTP. It is disabled by default.
 //!   It compiles `utils::from_pretrained`, the download half; the `from_pretrained` *constructor*
@@ -130,9 +126,6 @@ pub use tokenizer::*;
 // Re-export also parallelism utils
 #[cfg(feature = "parallelism")]
 pub use utils::parallelism;
-
-// Re-export ProgressFormat for trainer configuration
-pub use utils::ProgressFormat;
 
 // Re-export for from_pretrained
 #[cfg(feature = "http")]

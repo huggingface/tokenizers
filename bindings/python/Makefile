@@ -5,14 +5,14 @@ HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
 HF ?= hf
 TESTS_RESOURCES = $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/gpt2.json $(DATA_DIR)/bert-wiki.json $(DATA_DIR)/llama-3-tokenizer.json
 
-# Debug build of the extension, installed editable into the active Python environment.
+# Release build of the extension, installed editable into the active Python environment.
 develop: stubs
-	maturin develop
+	maturin develop --release
 
 stubs:
 	cargo run --manifest-path ./tools/stub-gen/Cargo.toml
-	ruff check --fix --select I python/tokenizers/tokenizers.pyi
-	ruff format python/tokenizers/tokenizers.pyi
+	ruff check --fix --select I python/tokenizers/*.pyi
+	ruff format python/tokenizers/*.pyi
 
 test-data: $(TESTS_RESOURCES)
 

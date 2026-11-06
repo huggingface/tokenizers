@@ -44,6 +44,24 @@ pub fn post_processor_to_json(
     Ok(out.finish())
 }
 
+/// Write a lone `padding`, the value of that one key. `None` comes back as `null`.
+///
+/// The counterpart of [`padding_from_json`](crate::padding_from_json).
+pub fn padding_to_json(padding: Option<&tk_encode::tokenizer::PaddingParams>) -> String {
+    let mut out = Out::new();
+    write_padding(&mut out, padding);
+    out.finish()
+}
+
+/// Write a lone `truncation`, the value of that one key. `None` comes back as `null`.
+///
+/// The counterpart of [`truncation_from_json`](crate::truncation_from_json).
+pub fn truncation_to_json(truncation: Option<&tk_encode::tokenizer::TruncationParams>) -> String {
+    let mut out = Out::new();
+    write_truncation(&mut out, truncation);
+    out.finish()
+}
+
 /// Write one string as the JSON literal `to_json` writes, quotes and escapes included.
 pub fn str_to_json(value: &str) -> String {
     let mut out = String::new();

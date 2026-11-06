@@ -1,0 +1,12 @@
+[build]
+target = "wasm32-unknown-unknown"
+
+[target.wasm32-unknown-unknown]
+rustflags = [
+	# Required to compile getrandom for a browser target
+	'--cfg',
+	'getrandom_backend="wasm_js"',
+	# Enable SIMD. The wasm module won't load if SIMD is not supported on the platform.
+	'-C',
+	'target-feature=+simd128',
+]

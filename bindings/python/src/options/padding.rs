@@ -9,7 +9,7 @@ use pyo3::{
     type_hint_identifier, type_hint_subscript,
     types::PyString,
 };
-use tk_encode::{PaddingDirection, PaddingParams, PaddingStrategy};
+use tk::{PaddingDirection, PaddingParams, PaddingStrategy};
 
 use crate::error::err;
 
@@ -25,6 +25,24 @@ impl Padding {
 
     pub(crate) fn from(params: PaddingParams) -> Self {
         Self(params)
+    }
+
+    pub(crate) fn repr(params: &PaddingParams) -> String {
+        let length = match params.strategy {
+            PaddingStrategy::Fixed(length) => length.to_string(),
+            PaddingStrategy::BatchLongest => "None".to_string(),
+        };
+        format!(
+            "Padding(\n    direction={:?},\n    pad_id={},\n    pad_type_id={},\n    pad_token={:?},\n    length={},\n    pad_to_multiple_of={},\n)",
+            params.direction.as_ref(),
+            params.pad_id,
+            params.pad_type_id,
+            params.pad_token,
+            length,
+            params
+                .pad_to_multiple_of
+                .map_or("None".to_string(), |m| m.to_string()),
+        )
     }
 }
 
@@ -160,16 +178,7 @@ impl Padding {
         (py.get_type::<Self>(), arguments)
     }
 
-    pub(crate) fn __repr__(&self) -> String {
-        format!(
-            "Padding(\n    direction={:?},\n    pad_id={},\n    pad_type_id={},\n    pad_token={:?},\n    length={},\n    pad_to_multiple_of={},\n)",
-            self.0.direction.as_ref(),
-            self.pad_id(),
-            self.pad_type_id(),
-            self.pad_token(),
-            self.length().map_or("None".to_string(), |l| l.to_string()),
-            self.pad_to_multiple_of()
-                .map_or("None".to_string(), |m| m.to_string()),
-        )
+    fn __repr__(&self) -> String {
+        Self::repr(&self.0)
     }
 }

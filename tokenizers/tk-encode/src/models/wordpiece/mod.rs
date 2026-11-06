@@ -16,6 +16,8 @@ use yada::builder::DoubleArrayBuilder;
 pub enum Error {
     #[error("WordPiece error: Missing [UNK] token from the vocabulary")]
     MissingUnkToken,
+    #[error("WordPiece error: The vocabulary has no non-empty token")]
+    EmptyVocab,
 }
 
 type Vocab = AHashMap<String, u32>;
@@ -239,6 +241,7 @@ impl pipeline::ModelScratch for WordPieceScratch {}
 pub struct PipelineWordPiece {
     vocab_trie: yada::DoubleArray<Vec<u8>>,
     vocab_r: Box<[Option<Box<str>>]>,
+    vocab_size: usize,
     unk_token: Option<u32>,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
@@ -259,7 +262,14 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
         // yada requires the keyset sorted by key bytes.
         let mut keyset: Vec<_> = vocab.into_iter().collect();
         keyset.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-        let vocab_trie = DoubleArray::new(DoubleArrayBuilder::build(&keyset)?)?;
+        // yada rejects an empty trie
+        // no pre-token can be the empty string "", but some vocab stored them
+        let trie_keys = &keyset[keyset.partition_point(|(token, _)| token.is_empty())..];
+        if trie_keys.is_empty() {
+            return Err(Error::EmptyVocab.into());
+        }
+        let vocab_trie = DoubleArray::new(DoubleArrayBuilder::build(trie_keys)?)?;
+        let vocab_size = keyset.len();
         let max_id = keyset.iter().map(|&(_, id)| id).max().unwrap_or(0) as usize;
         let mut vocab_r = vec![None; max_id + 1];
         for (token, id) in keyset {
@@ -272,6 +282,7 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
             unk_token,
             vocab_trie,
             vocab_r: vocab_r.into_boxed_slice(),
+            vocab_size,
         })
     }
 }
@@ -330,6 +341,23 @@ impl PipelineWordPiece {
 
     pub fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(id as usize)?.as_deref().map(str::to_owned)
+    }
+
+    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+        // The trie leaves the empty token out, because yada cannot hold it.
+        if token.is_empty() {
+            let id = self.vocab_r.iter().position(|t| t.as_deref() == Some(""))?;
+            return Some(id as u32);
+        }
+        self.vocab_trie.exact_match_search(token)
+    }
+
+    pub fn get_vocab(&self) -> HashMap<String, u32> {
+        self.vocab().into_iter().collect()
+    }
+
+    pub fn get_vocab_size(&self) -> usize {
+        self.vocab_size
     }
 
     /// `{"token": id}`, in id order. For a writer; the reverse table is dense over the ids, so the
@@ -480,6 +508,47 @@ mod tests {
         });
 
         assert_eq!(warm, cold);
+    }
+
+    #[test]
+    fn accepts_an_empty_token_in_the_vocab() {
+        // aubmindlab/bert-base-arabert ships "" at id 0.
+        let vocab: Vocab = [("", 0u32), ("[UNK]", 1), ("hello", 2)]
+            .into_iter()
+            .map(|(token, id)| (token.to_string(), id))
+            .collect();
+        let model = WordPiece::builder().vocab(vocab).build().unwrap();
+        let model = PipelineWordPiece::try_from(model).unwrap();
+        let mut scratch = pipeline::Model::init_scratch(&model);
+
+        assert_eq!(pipeline_ids(&model, "hello", &mut scratch), [2]);
+        assert_eq!(pipeline_ids(&model, "world", &mut scratch), [1]);
+        assert_eq!(model.id_to_token(0).as_deref(), Some(""));
+        assert_eq!(model.token_to_id(""), Some(0));
+        assert_eq!(model.get_vocab_size(), 3);
+    }
+
+    #[test]
+    fn token_to_id_matches_whole_entries_only() {
+        let model = pipeline_wordpiece();
+
+        assert_eq!(model.token_to_id("hello"), Some(3));
+        assert_eq!(model.token_to_id("##o"), Some(2));
+        assert_eq!(model.token_to_id("hel"), None);
+        assert_eq!(model.token_to_id("helloo"), None);
+    }
+
+    #[test]
+    fn refuses_a_vocab_with_only_empty_token() {
+        for tokens in [&[][..], &[""]] {
+            let vocab: Vocab = tokens.iter().map(|token| (token.to_string(), 0)).collect();
+            let model = WordPiece::builder().vocab(vocab).build().unwrap();
+            let err = PipelineWordPiece::try_from(model).err().unwrap();
+            assert!(
+                matches!(err.downcast_ref(), Some(Error::EmptyVocab)),
+                "{err}"
+            );
+        }
     }
 
     #[test]
