@@ -282,6 +282,69 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
     assert_eq!(v["pre_tokenizer"], serde_json::Value::Null);
 }
 
+#[test]
+fn a_singleton_metaspace_sequence_matches_the_direct_pre_tokenizer() {
+    let model = serde_json::json!({
+        "type": "Unigram", "unk_id": 0, "byte_fallback": false,
+        "vocab": [["<unk>", 0.0], ["▁", -1.0], ["a", -1.0], ["▁a", 0.0]],
+    });
+    let encode = |value: &Value| {
+        let tokenizer = tk_serialize::from_json(&value.to_string()).unwrap();
+        let batch = tokenizer
+            .encode("a a", &tk_encode::pipeline::EncodeOptions::no_specials())
+            .wait()
+            .unwrap();
+        batch[0]
+            .ids()
+            .iter()
+            .map(|token| token.id())
+            .collect::<Vec<_>>()
+    };
+    for scheme in ["always", "first", "never"] {
+        for split in [true, false] {
+            for normalizer in [Value::Null, serde_json::json!({"type": "NFKC"})] {
+                let metaspace = serde_json::json!({
+                    "type": "Metaspace", "replacement": "▁",
+                    "prepend_scheme": scheme, "split": split,
+                });
+                let mut direct = serde_json::json!({
+                    "version": "1.0", "model": model, "normalizer": normalizer,
+                    "pre_tokenizer": metaspace,
+                });
+                let mut wrapped = direct.clone();
+                wrapped["pre_tokenizer"] = serde_json::json!({
+                    "type": "Sequence", "pretokenizers": [metaspace],
+                });
+                canonicalize_value(&mut direct).unwrap();
+                canonicalize_value(&mut wrapped).unwrap();
+                assert_eq!(wrapped, direct, "{scheme}, split={split}");
+                assert_no_legacy_residue(&wrapped, "singleton Metaspace");
+                let ids = encode(&wrapped);
+                assert_eq!(ids, encode(&direct));
+                if scheme == "always" && split {
+                    assert_eq!(ids, [3, 3]);
+                }
+                let mut twice = wrapped.clone();
+                canonicalize_value(&mut twice).unwrap();
+                assert_eq!(twice, wrapped);
+            }
+        }
+    }
+    // This does not lower Metaspace out of an arbitrary pipeline: order and other members matter.
+    for members in [
+        serde_json::json!([{"type": "Metaspace", "replacement": "▁"}, {"type": "WhitespaceSplit"}]),
+        serde_json::json!([{"type": "WhitespaceSplit"}, {"type": "Metaspace", "replacement": "▁"}, {"type": "WhitespaceSplit"}]),
+    ] {
+        let mut value = serde_json::json!({
+            "version": "1.0", "model": model,
+            "pre_tokenizer": {"type": "Sequence", "pretokenizers": members},
+        });
+        canonicalize_value(&mut value).unwrap();
+        assert_eq!(value["pre_tokenizer"]["type"], "Sequence");
+        assert!(tk_serialize::from_json(&value.to_string()).is_err());
+    }
+}
+
 // ---- ByteLevel ------------------------------------------------------------------------------
 
 #[test]

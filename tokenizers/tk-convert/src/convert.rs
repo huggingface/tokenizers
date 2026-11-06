@@ -411,8 +411,8 @@ fn kind_of(value: &Value) -> &'static str {
 ///
 /// It becomes a `MetaspaceNormalizer` in the `normalizer` slot (which rewrites the text) plus a
 /// `Split` on the delimiter here (which cuts it). `Sequence[WhitespaceSplit, Metaspace]` -- the
-/// shape t5 and albert ship -- is the same thing with `drop_whitespace`, and the whole `Sequence`
-/// collapses to the lone `Split`.
+/// shape t5 and albert ship -- is the same thing with `drop_whitespace`. A singleton
+/// `Sequence[Metaspace]` is the direct case; both sequence shapes collapse to the lone `Split`.
 ///
 /// `split: false` leaves this slot empty. The reader reads a null `pre_tokenizer` as one span
 /// covering the whole text, which is what not cutting means.
@@ -430,6 +430,14 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
                 .and_then(Value::as_array)
                 .map(|m| &m[..])
             {
+                Some([metaspace])
+                    if metaspace.get("type").and_then(Value::as_str) == Some("Metaspace") =>
+                {
+                    (
+                        metaspace.as_object().expect("matched as an object").clone(),
+                        false,
+                    )
+                }
                 Some([first, second])
                     if first.get("type").and_then(Value::as_str) == Some("WhitespaceSplit")
                         && second.get("type").and_then(Value::as_str) == Some("Metaspace") =>
