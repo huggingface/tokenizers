@@ -264,6 +264,32 @@ fn cl100k_parity() {
     check_fuzz("cl100k", bs_cl100k, &o);
 }
 
+#[test]
+fn cl100k_digit_caps_parity() {
+    let two: Split =
+        |t, g, s, f, _, o| bitcannon::bitcannon_cl100k_with_digit_cap(t, g, s, f, o, 2);
+    let unbounded: Split =
+        |t, g, s, f, _, o| bitcannon::bitcannon_cl100k_with_digit_cap(t, g, s, f, o, usize::MAX);
+    for (name, digits, split) in [
+        ("cl100k-two", r"\p{N}{1,2}", two),
+        ("cl100k-unbounded", r"\p{N}+", unbounded),
+    ] {
+        let pattern = CL100K.replace(r"\p{N}{1,3}", digits);
+        let oracle = Oracle::Whole(Regex::new(&pattern).unwrap());
+        check(name, split, &oracle);
+        check_fuzz(name, split, &oracle);
+        for phase in 0..64 {
+            let text = format!(
+                "{}{}{}\r\nend",
+                "x".repeat(phase),
+                "1234567890".repeat(20),
+                "１２３④⑤Ⅸ١٢٣〇".repeat(12),
+            );
+            assert_eq!(spans(split, &text), oracle.spans(&text), "{name}: {phase}");
+        }
+    }
+}
+
 /// Qwen2 / Qwen3: cl100k with a bare `\p{N}`.
 #[test]
 fn qwen_parity() {
