@@ -57,7 +57,6 @@
 //! JSON spec stored in [`Tokenizer`] is not valid.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -73,8 +72,8 @@ use tk::{
 };
 
 use crate::JsonObject;
-use crate::added_token;
 use crate::added_token::TokenToAdd;
+use crate::added_tokens_spec::AddedTokensSpec;
 use crate::compiled::CompiledTokenizer;
 use crate::components::ComponentKind;
 use crate::components::component_spec::ComponentSpec;
@@ -480,8 +479,7 @@ pub(crate) struct TokenizerSpec {
     /// The padding an encode applies when it doesn't override it.
     padding: Option<PaddingParams>,
     role_to_token: Arc<Value>,
-    /// Always an array. Its entries are checked at `compile()`.
-    added_tokens: Arc<Value>,
+    added_tokens: Arc<AddedTokensSpec>,
     pub(crate) normalizer: Option<ComponentSpec>,
     pub(crate) pre_tokenizer: Option<ComponentSpec>,
     pub(crate) post_processor: Option<ComponentSpec>,
@@ -503,8 +501,8 @@ impl TokenizerSpec {
             _ => None,
         };
         let added_tokens = match take("added_tokens") {
-            Value::Null => Value::Array(Vec::new()),
-            Value::Array(entries) => Value::Array(entries),
+            Value::Null => AddedTokensSpec::new(Vec::new()),
+            Value::Array(entries) => AddedTokensSpec::new(entries),
             _ => return Err("malformed tokenizer.json: `added_tokens` is not an array".into()),
         };
         Ok(Self {
@@ -529,7 +527,7 @@ impl TokenizerSpec {
             truncation: None,
             padding: None,
             role_to_token: Arc::new(Value::Null),
-            added_tokens: Arc::new(Value::Array(Vec::new())),
+            added_tokens: Arc::new(AddedTokensSpec::new(Vec::new())),
             normalizer: None,
             pre_tokenizer: None,
             post_processor: None,
@@ -543,52 +541,10 @@ impl TokenizerSpec {
         from_json(&self.to_json())
     }
 
-    /// Upsert `tokens` to `added_tokens`, returns how many it added or updated.
+    /// Adds `tokens`, or updates the flags of those with the same content, and returns how many
+    /// it added or updated.
     fn add_tokens(&mut self, tokens: impl IntoIterator<Item = AddedToken>) -> usize {
-        let Value::Array(previous_added_tokens) = Arc::make_mut(&mut self.added_tokens) else {
-            unreachable!("from_json and from_model only store an array");
-        };
-        // The highest value for the `id` field of added tokens JSON
-        let highest_id = previous_added_tokens
-            .iter()
-            .filter_map(|entry| entry["id"].as_u64())
-            .max();
-        let mut next_id = highest_id.map_or(0, |id| id + 1);
-
-        // Lookup to update already added tokens' values
-        let mut existing_tokens_position: HashMap<String, usize> = HashMap::new();
-        for (index, entry) in previous_added_tokens.iter().enumerate() {
-            if let Some(content) = entry["content"].as_str() {
-                existing_tokens_position
-                    .entry(content.to_owned())
-                    .or_insert(index);
-            }
-        }
-
-        let mut added_or_updated = 0;
-        for token in tokens {
-            if token.content.is_empty() {
-                continue;
-            }
-            match existing_tokens_position.get(&token.content) {
-                Some(&index) => {
-                    let existing = &mut previous_added_tokens[index];
-                    let updated = added_token::json_entry(token, existing["id"].clone());
-                    if *existing == updated {
-                        continue;
-                    }
-                    *existing = updated;
-                }
-                None => {
-                    existing_tokens_position
-                        .insert(token.content.clone(), previous_added_tokens.len());
-                    previous_added_tokens.push(added_token::json_entry(token, next_id.into()));
-                    next_id += 1;
-                }
-            }
-            added_or_updated += 1;
-        }
-        added_or_updated
+        Arc::make_mut(&mut self.added_tokens).add(tokens)
     }
 
     /// A deep copy: the resulting object is independent.
@@ -624,7 +580,7 @@ impl TokenizerSpec {
             ),
             (
                 "added_tokens",
-                Field::JsonValue(Cow::Borrowed(&self.added_tokens)),
+                Field::JsonValue(Cow::Borrowed(self.added_tokens.json())),
             ),
             ("normalizer", component(&self.normalizer)),
             ("pre_tokenizer", component(&self.pre_tokenizer)),
