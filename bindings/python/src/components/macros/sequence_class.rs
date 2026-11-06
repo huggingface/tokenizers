@@ -6,17 +6,36 @@
 //! The macro writes only the pyo3 code: the class and its Python methods.
 //! Each method defers logic to the [`ComponentSequence`] trait.
 //!
-//! For the `Normalizer` kind, the macro generates this Python class:
+//! For the `Normalizer` kind, the macro generates this pyo3 class:
 //!
-//! ```python
-//! class Sequence(Normalizer):
-//!     """
-//!     Applies each `Normalizer` in turn.
-//!     """
-//!     def __new__(cls, items: list[Normalizer], /) -> Sequence: ...
-//!     def __len__(self, /) -> int: ...
-//!     def __getitem__(self, index: int, /) -> Normalizer: ...
-//!     def __setitem__(self, index: int, item: Normalizer, /) -> None: ...
+//! ```rust,ignore
+//! /// Applies each `Normalizer` in turn.
+//! #[pyclass(frozen, extends = Normalizer, module = "tokenizers.normalizers")]
+//! #[derive(Default)]
+//! pub struct Sequence;
+//!
+//! impl ComponentSequence<Normalizer> for Sequence {}
+//!
+//! #[pymethods]
+//! impl Sequence {
+//!     #[new]
+//!     #[pyo3(signature = (items, /))]
+//!     fn new(items: Vec<Bound<'_, Normalizer>>) -> PyClassInitializer<Self> {
+//!         Self::initializer(&items)
+//!     }
+//!
+//!     fn __len__(slf: &Bound<'_, Self>) -> usize {
+//!         Self::spec(slf).len()
+//!     }
+//!
+//!     fn __getitem__(slf: &Bound<'_, Self>, index: isize) -> PyResult<Py<Normalizer>> {
+//!         Self::item(slf, index)
+//!     }
+//!
+//!     fn __setitem__(slf: &Bound<'_, Self>, index: isize, item: Bound<'_, Normalizer>) -> PyResult<()> {
+//!         Self::set_item(slf, index, &item)
+//!     }
+//! }
 //! ```
 //!
 //! [`ComponentSequence`]: crate::components::component_sequence::ComponentSequence

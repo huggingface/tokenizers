@@ -13,15 +13,43 @@
 //! The macro writes as little as it can: the pyo3 class and the [`ComponentKind`] impl.
 //! The default methods of the [`ComponentKind`] trait hold the shared logic.
 //!
-//! For the `Normalizer` kind, the macro generates this Python class:
+//! For the `Normalizer` kind, the macro generates this pyo3 class:
 //!
-//! ```python
-//! class Normalizer(Component):
-//!     """
-//!     Base class of the classes in `tokenizers.normalizers`.
-//!     """
-//!     @staticmethod
-//!     def _unpickle(state: bytes) -> Normalizer: ...
+//! ```rust,ignore
+//! /// Base class of the classes in `tokenizers.normalizers`.
+//! #[pyclass(frozen, subclass, extends = Component, module = "tokenizers.normalizers")]
+//! #[derive(Default)]
+//! pub struct Normalizer;
+//!
+//! #[pymethods]
+//! impl Normalizer {
+//!     /// Rebuilds a component from its `__getstate__`
+//!     #[staticmethod]
+//!     fn _unpickle(py: Python<'_>, state: &[u8]) -> PyResult<Py<Self>> {
+//!         <Self as ComponentKind>::from_state(py, state)
+//!     }
+//! }
+//!
+//! impl ComponentKind for Normalizer {
+//!     const ITEMS_KEY: Option<&'static str> = Some("normalizers");
+//!
+//!     fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec> {
+//!         &mut spec.normalizer
+//!     }
+//!
+//!     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
+//!         let json_type = match &spec {
+//!             ComponentSpec::Single(single) => single.json_type(),
+//!             ComponentSpec::Sequence(_) => Some("Sequence".to_owned()),
+//!         };
+//!         match json_type.as_deref() {
+//!             Some("Strip") => Self::concrete_component(py, spec, Strip),
+//!             Some("Sequence") => Self::concrete_component(py, spec, Sequence),
+//!             // One arm per class in `classes`.
+//!             _ => Self::default_component(py, spec),
+//!         }
+//!     }
+//! }
 //! ```
 //!
 //! [`ComponentKind`]: crate::components::ComponentKind

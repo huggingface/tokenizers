@@ -18,23 +18,44 @@
 //! Strip { strip_left: Bool = true, strip_right: Bool = true },
 //! ```
 //!
-//! From it, the macro generates this Python class:
+//! From it, the macro generates this pyo3 class, shown here with the field types resolved:
 //!
-//! ```python
-//! class Strip(Normalizer):
-//!     """
-//!     Removes whitespace from the start and the end of the text.
-//!     """
-//!     def __new__(cls, /, strip_left: bool = True, strip_right: bool = True) -> Strip: ...
-//!     @property
-//!     def strip_left(self, /) -> bool: ...
-//!     @strip_left.setter
-//!     def strip_left(self, /, strip_left: bool) -> None: ...
-//!     @property
-//!     def strip_right(self, /) -> bool: ...
-//!     @strip_right.setter
-//!     def strip_right(self, /, strip_right: bool) -> None: ...
+//! ```rust,ignore
+//! /// Removes whitespace from the start and the end of the text.
+//! #[pyclass(frozen, extends = Normalizer, module = "tokenizers.normalizers")]
+//! pub struct Strip;
+//!
+//! #[pymethods]
+//! impl Strip {
+//!     #[new]
+//!     #[pyo3(signature = (strip_left = true, strip_right = true))]
+//!     fn new(strip_left: bool, strip_right: bool) -> PyResult<PyClassInitializer<Self>> {
+//!         let spec = ComponentSpec::from_literal(serde_json::json!({
+//!             "type": "Strip",
+//!             "strip_left": strip_left,
+//!             "strip_right": strip_right,
+//!         }));
+//!         Ok(Normalizer::initializer(spec, Self))
+//!     }
+//!
+//!     #[getter]
+//!     fn strip_left(slf: &Bound<'_, Self>) -> PyResult<bool> {
+//!         if !slf.has_field("strip_left") {
+//!             return Ok(true);
+//!         }
+//!         slf.field("strip_left")
+//!     }
+//!
+//!     #[setter]
+//!     fn set_strip_left(slf: &Bound<'_, Self>, strip_left: bool) -> PyResult<()> {
+//!         slf.set_field("strip_left", strip_left);
+//!         Ok(())
+//!     }
+//!
+//!     // The same getter and setter for `strip_right`.
+//! }
 //! ```
+//!
 
 /// Writes a whole Python module of components, such as `tokenizers.normalizers`, from a list in
 /// `tk::schemas`.
