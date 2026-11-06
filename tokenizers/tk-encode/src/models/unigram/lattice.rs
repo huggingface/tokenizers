@@ -115,6 +115,19 @@ impl Node {
     }
 }
 
+impl Drop for Node {
+    fn drop(&mut self) {
+        let mut prev = self.prev.take();
+        // Detach uniquely owned predecessors so dropping a long path does not recurse.
+        while let Some(node) = prev {
+            let Ok(node) = Rc::try_unwrap(node) else {
+                break;
+            };
+            prev = node.into_inner().prev.take();
+        }
+    }
+}
+
 /// Returns log(exp(x) + exp(y)).
 /// if init_mode is true, returns log(exp(y)) == y.
 /// log(\sum_i exp(a[i])) can be computed as
@@ -614,6 +627,54 @@ mod tests {
 
         lattice.insert(0, 3, 10.0, 8);
         assert_eq!(lattice.tokens(), ["ABC"]);
+    }
+
+    #[test]
+    fn test_drop_long_viterbi_path() {
+        std::thread::Builder::new()
+            .name("drop_long_viterbi_path".into())
+            .stack_size(2 * 1024 * 1024)
+            .spawn(|| {
+                let sentence = "0".repeat(100_000);
+                let mut lattice = Lattice::from(&sentence, 1, 2);
+                for pos in 0..sentence.len() {
+                    lattice.insert(pos, 1, 0.0, 3);
+                }
+                assert_eq!(lattice.viterbi().len(), sentence.len());
+                let bos = Rc::downgrade(&lattice.bos_node());
+
+                drop(lattice);
+
+                assert!(bos.upgrade().is_none());
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn test_drop_shared_viterbi_path() {
+        let mut lattice = Lattice::from("ABC", 1, 2);
+        for pos in 0..3 {
+            lattice.insert(pos, 1, 0.0, pos + 3);
+        }
+        let path = lattice.viterbi();
+        let first = Rc::downgrade(&path[0]);
+        let last = Rc::downgrade(&path[2]);
+        let shared = Rc::clone(&path[1]);
+        let node = shared.borrow();
+
+        drop(path);
+        drop(lattice);
+
+        assert!(last.upgrade().is_none());
+        assert!(Rc::ptr_eq(
+            node.prev.as_ref().unwrap(),
+            &first.upgrade().unwrap()
+        ));
+        drop(node);
+        drop(shared);
+        assert!(first.upgrade().is_none());
     }
 
     #[test]
