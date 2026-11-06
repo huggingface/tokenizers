@@ -275,6 +275,22 @@ def test_sequence_setitem(gpt2_spec):
     assert gpt2_spec.normalizer[0].prepend == "b"  # ty: ignore[unresolved-attribute]
 
 
+# Each kind lists a Sequence's items under its own key, and "pretokenizers" has no underscore.
+@pytest.mark.parametrize(
+    ("field", "items_key", "item", "sequence_class"),
+    [
+        ("normalizer", "normalizers", {"type": "Lowercase"}, normalizers.Sequence),
+        ("pre_tokenizer", "pretokenizers", {"type": "Whitespace"}, pre_tokenizers.Sequence),
+        ("decoder", "decoders", {"type": "Fuse"}, decoders.Sequence),
+    ],
+)
+def test_loads_each_kinds_sequence(gpt2_spec, field, items_key, item, sequence_class):
+    file = json.loads(gpt2_spec.to_str())
+    file[field] = {"type": "Sequence", items_key: [item]}
+    loaded = type(gpt2_spec).from_str(json.dumps(file))
+    assert type(getattr(loaded, field)) is sequence_class
+
+
 def test_sequence_iter():
     sequence = normalizers.Sequence([normalizers.Prepend("a"), normalizers.Prepend("b")])
     assert len(sequence) == 2

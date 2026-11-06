@@ -3,45 +3,25 @@ use std::fs;
 use std::path::PathBuf;
 
 use pyo3::prelude::*;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::components::component_spec::ComponentSpec;
 use crate::error::err;
-use crate::tokenizer::TokenizerSpec;
 
-use super::{Component, ComponentKind, JsonFieldsExt};
+use super::macros::component_kind;
+use super::{ComponentKind, JsonFieldsExt};
 
-/// Base class for all tokenizer models
-#[pyclass(frozen, subclass, extends = Component, module = "tokenizers.models")]
-#[derive(Default)]
-pub struct Model;
-
-#[pymethods]
-impl Model {
-    /// Rebuilds a component from its `__getstate__`
-    #[staticmethod]
-    fn _unpickle(py: Python<'_>, state: &[u8]) -> PyResult<Py<Self>> {
-        Self::from_state(py, state)
-    }
-}
-
-impl ComponentKind for Model {
-    const ITEMS_KEY: Option<&'static str> = None;
-
-    fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec> {
-        &mut spec.model
-    }
-
-    fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
-        let json = spec.json();
-        match json.get("type").and_then(Value::as_str) {
-            Some("BPE") => Self::concrete_component(py, spec, Bpe),
-            Some("WordPiece") => Self::concrete_component(py, spec, WordPiece),
-            Some("Unigram") => Self::concrete_component(py, spec, Unigram),
-            Some("WordLevel") => Self::concrete_component(py, spec, WordLevel),
-            _ => Self::default_component(py, spec),
-        }
-    }
+component_kind! {
+    kind: Model,
+    python_module: "tokenizers.models",
+    tokenizer_field: model,
+    items_key: None,
+    classes: {
+        "BPE" => Bpe,
+        "WordPiece" => WordPiece,
+        "Unigram" => Unigram,
+        "WordLevel" => WordLevel,
+    },
 }
 
 /// A vocabulary: `{token: id}`, or the path of a file holding one.

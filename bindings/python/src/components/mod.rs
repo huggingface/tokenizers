@@ -2,10 +2,19 @@
 //!
 //! The [`tokenizer`](crate::tokenizer) docs explain the tokenizer as a whole.
 //!
-//! The [`component_spec`] docs explain how a component's JSON is stored, shared and copied,
-//! in a [`ComponentSpec`].
-//!
 //! [`Tokenizer`]: crate::tokenizer::Tokenizer
+//!
+//! # Modules
+//!
+//! | Module | Content |
+//! |---|---|
+//! | `mod.rs` | The `Component` base class and common traits |
+//! | [`component_spec`] | How a component's JSON is stored, shared and copied |
+//! | [`normalizers`], [`pre_tokenizers`], [`decoders`] | Component concrete classes, generated from `tk::schemas` |
+//! | [`models`] | Model component classes, written by hand |
+//! | [`processors`] | The `PostProcessor` class. |
+//! | [`component_sequence`] | `ComponentSequence` trait for component sequences. |
+//! | [`macros`] | The macros that write the pyo3 classes |
 //!
 //! # Specs
 //!
@@ -60,11 +69,20 @@
 //!   constructor builds the JSON, and its properties read and write the JSON keys, such as
 //!   `Prepend.prepend`.
 //!
+//! The concrete classes are written in two ways:
+//!
+//! - Normalizers, pre-tokenizers and decoders are plain data.
+//!   The [`macros`] generate their classes from the lists in `tk::schemas`.
+//! - Models are written by hand, in [`models`].
+//!   Post-processors have no concrete class yet.
+//!
 //! Each read builds a new Python object, so `tokenizer.normalizer is tokenizer.normalizer` is
 //! `False`. Both objects still edit the same spec.
 
+pub(crate) mod component_sequence;
 pub(crate) mod component_spec;
 pub(crate) mod decoders;
+mod macros;
 pub(crate) mod models;
 pub(crate) mod normalizers;
 pub(crate) mod pre_tokenizers;
@@ -75,11 +93,11 @@ use std::sync::Arc;
 use pyo3::PyClass;
 use pyo3::impl_::pyclass::PyClassBaseType;
 use pyo3::prelude::*;
+use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde_json::Value;
 
 use crate::JsonObject;
-use crate::components::component_spec::{ComponentSpec, SequenceSpec, SingleSpec};
+use crate::components::component_spec::{ComponentSpec, SingleSpec};
 use crate::error::err;
 use crate::repr;
 use crate::tokenizer::TokenizerSpec;
@@ -135,7 +153,8 @@ pub(crate) trait ComponentKind:
     /// The [`TokenizerSpec`] field holding this kind's spec.
     fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec>;
 
-    /// Builds a handle on `spec`, of the concrete class its `"type"` names.
+    /// Creates the Python object of `spec`, with the class its `"type"` names, such as `Strip`.
+    /// A `"type"` with no class gets the plain kind class, such as `Normalizer`.
     fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>>;
 
     /// Returns the pyo3 initializer of the plain kind over `spec`.
@@ -186,16 +205,6 @@ pub(crate) trait ComponentKind:
         single
     }
 
-    /// Returns the spec of `handle`, a handle of this kind's `Sequence` class.
-    fn sequence_spec<'a, C: PyClass<BaseType = Self>>(
-        handle: &'a Bound<'_, C>,
-    ) -> &'a Arc<SequenceSpec> {
-        let ComponentSpec::Sequence(sequence) = Self::spec(handle.as_super()) else {
-            unreachable!("a Sequence handle is built only on a SequenceSpec, by from_spec or new");
-        };
-        sequence
-    }
-
     /// Builds a handle from the bytes [`Component::__getstate__`] returns.
     /// Unpickling calls it through the kind's `_unpickle`.
     fn from_state(py: Python<'_>, state: &[u8]) -> PyResult<Py<Self>> {
@@ -209,16 +218,28 @@ pub(crate) trait JsonFieldsExt {
     /// Reads the `key` field as a `T`. A missing key reads as `null`, so an `Option<T>` gets
     /// `None`.
     fn field<T: DeserializeOwned>(&self, key: &str) -> PyResult<T>;
+    /// Returns whether the JSON has the `key` field.
+    fn has_field(&self, key: &str) -> bool;
     /// Sets the `key` field. Every handle on this spec sees the new value.
-    fn set_field(&self, key: &str, value: impl Into<Value>);
+    fn set_field(&self, key: &str, value: impl Serialize);
 }
 
-impl<K: ComponentKind, C: PyClass<BaseType = K>> JsonFieldsExt for Bound<'_, C> {
+impl<K, C> JsonFieldsExt for Bound<'_, C>
+where
+    K: ComponentKind,
+    C: PyClass<BaseType = K>,
+{
     fn field<T: DeserializeOwned>(&self, key: &str) -> PyResult<T> {
         K::single_spec(self).field(key)
     }
 
-    fn set_field(&self, key: &str, value: impl Into<Value>) {
+    fn has_field(&self, key: &str) -> bool {
+        K::single_spec(self).has_field(key)
+    }
+
+    fn set_field(&self, key: &str, value: impl Serialize) {
+        let value = serde_json::to_value(value)
+            .expect("the field types serialize to JSON: bools, numbers, strings and their options");
         K::single_spec(self).set_field(key, value);
     }
 }

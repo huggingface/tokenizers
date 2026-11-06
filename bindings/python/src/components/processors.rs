@@ -1,34 +1,14 @@
 use pyo3::prelude::*;
 
-use crate::components::component_spec::ComponentSpec;
-use crate::tokenizer::TokenizerSpec;
+use super::macros::component_kind;
 
-use super::{Component, ComponentKind};
-
-/// Base class for all post-processors
-#[pyclass(frozen, subclass, extends = Component, module = "tokenizers.processors")]
-#[derive(Default)]
-pub struct PostProcessor;
-
-#[pymethods]
-impl PostProcessor {
-    /// Rebuilds a component from its `__getstate__`
-    #[staticmethod]
-    fn _unpickle(py: Python<'_>, state: &[u8]) -> PyResult<Py<Self>> {
-        Self::from_state(py, state)
-    }
-}
-
-impl ComponentKind for PostProcessor {
-    const ITEMS_KEY: Option<&'static str> = Some("processors");
-
-    fn tokenizer_field_mut(spec: &mut TokenizerSpec) -> &mut Option<ComponentSpec> {
-        &mut spec.post_processor
-    }
-
-    fn from_spec(py: Python<'_>, spec: ComponentSpec) -> PyResult<Py<Self>> {
-        Self::default_component(py, spec)
-    }
+// A post-processor `Sequence` never reaches a spec: loading a file collapses it to one item.
+component_kind! {
+    kind: PostProcessor,
+    python_module: "tokenizers.processors",
+    tokenizer_field: post_processor,
+    items_key: None,
+    classes: {},
 }
 
 #[pymodule]

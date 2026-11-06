@@ -43,7 +43,7 @@ class BPE(Model):
 
 class Model(Component):
     """
-    Base class for all tokenizer models
+    Base class of the classes in `tokenizers.models`.
     """
     @staticmethod
     def _unpickle(state: bytes) -> Model:
