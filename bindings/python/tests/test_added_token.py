@@ -15,7 +15,7 @@ def test_normalized_default():
 
 
 def test_state_is_a_dict():
-    # transformers' `save_pretrained` adds a `__type` key to it, as with 0.23.
+    # transformers' `save_pretrained` adds a `__type` key to it.
     token = AddedToken("<x>", lstrip=True, special=True)
     assert token.__getstate__() == {
         "content": "<x>",
@@ -89,7 +89,7 @@ def test_add_tokens_ids(spec):
     hello = json.loads(GPT2.read_text())["model"]["vocab"]["hello"]
     endoftext = AddedToken("<|endoftext|>", normalized=True, special=True)
 
-    # "hello" is in the model vocab: it keeps its id but is still added, as in 0.23.
+    # "hello" is in the model vocab. It keeps its id there and still counts as added.
     assert spec.add_tokens(["<new>", "hello"]) == 2
     assert spec.compile().added_tokens == {
         hello: AddedToken("hello"),

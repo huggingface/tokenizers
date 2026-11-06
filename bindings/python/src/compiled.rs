@@ -244,8 +244,8 @@ impl CompiledTokenizer {
         Ok(py.detach(|| self.pipeline.decode_tokens(ids, skip_special_tokens)))
     }
 
-    /// The added tokens, indexed by their token id
-    // We use BTreeMap instead of HashMap to preserve key order
+    /// The added tokens, indexed by their token id, in ascending id order.
+    // The core returns a HashMap, which has no order. Collecting into a BTreeMap sorts it by id.
     #[getter]
     fn added_tokens(&self) -> BTreeMap<u32, AddedToken> {
         let decoder = self

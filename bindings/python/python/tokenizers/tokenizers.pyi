@@ -132,7 +132,7 @@ class CompiledTokenizer:
     @property
     def added_tokens(self, /) -> dict[int, AddedToken]:
         """
-        The added tokens, indexed by their token id
+        The added tokens, indexed by their token id, in ascending id order.
         """
     def decode(
         self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = True

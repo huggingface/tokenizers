@@ -39,8 +39,7 @@ impl From<CoreAddedToken> for AddedToken {
     }
 }
 
-/// 0.23's `AddedToken.__getstate__`: the token's `added_tokens` entry without its `id`, as a
-/// dict. transformers' `save_pretrained` writes it to `tokenizer_config.json`.
+/// The state of an [`AddedToken`]: its `added_tokens` entry without the `id`, as a Python dict.
 #[derive(FromPyObject, IntoPyObject)]
 #[pyo3(from_item_all)]
 struct State {
@@ -134,6 +133,8 @@ impl AddedToken {
     }
 
     /// The token's `added_tokens` entry without its `id`, as a dict.
+    // Components return JSON `bytes`, and this returns a dict. transformers' `save_pretrained`
+    // adds a `__type` key to this dict and writes it to `tokenizer_config.json`.
     fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let token = &self.0;
         let state = State {
