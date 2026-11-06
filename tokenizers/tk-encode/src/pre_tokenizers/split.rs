@@ -139,6 +139,18 @@ impl Split {
         self.fsm
     }
 
+    /// Proven cuts exist only for natively-routed grammars [`bitcannon::cuts::after_letter`] covers.
+    pub fn cut(&self) -> Option<pipeline::Cut> {
+        let grammar = self
+            .fsm
+            .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)?;
+        match grammar {
+            Grammar::Gpt2 | Grammar::Cl100k { .. } => Some(bitcannon::cuts::after_letter),
+            // contractions are word suffixes
+            Grammar::O200k | Grammar::Tekken | Grammar::Kimi => None,
+        }
+    }
+
     /// Pipeline canonicalization. A recognized whole-covering GPT regex shipped
     /// as `(invert=true, behavior=Removed)` — the tiktoken-conversion convention
     /// used by cl100k/o200k — is byte-exactly equivalent to `(invert=false,
