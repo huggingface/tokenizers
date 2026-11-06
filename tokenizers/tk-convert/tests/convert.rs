@@ -201,6 +201,24 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
                            "behavior": "MergedWithNext", "invert": false})
     );
 
+    // A singleton `Sequence[Metaspace]` is equivalent to a lone Metaspace (issue #2589).
+    let v = done(
+        BPE,
+        r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
+             {"type": "Metaspace", "replacement": "▁", "add_prefix_space": true,
+              "prepend_scheme": "always", "split": true}]}"#,
+    );
+    assert_eq!(
+        v["normalizer"],
+        serde_json::json!({"type": "MetaspaceNormalizer", "replacement": "▁",
+                           "prepend": "always", "drop_whitespace": false})
+    );
+    assert_eq!(
+        v["pre_tokenizer"],
+        serde_json::json!({"type": "Split", "pattern": {"String": "▁"},
+                           "behavior": "MergedWithNext", "invert": false})
+    );
+
     // All three schemes carry through by name.
     for scheme in ["always", "first", "never"] {
         let v = done(
@@ -489,6 +507,40 @@ fn is_idempotent() {
         "the pass is not idempotent"
     );
     assert_no_legacy_residue(&serde_json::from_str(&once).unwrap(), "the legacy literal");
+}
+
+// ---- encode after convert --------------------------------------------------------------------
+
+#[test]
+fn singleton_sequence_metaspace_encodes_like_direct_metaspace() {
+    use tk_encode::pipeline::EncodeOptions;
+
+    let metaspace = r#"{"type":"Metaspace","replacement":"▁","add_prefix_space":true,"prepend_scheme":"always","split":true}"#;
+    let model = r#"{"type":"Unigram","unk_id":0,"byte_fallback":false,"vocab":[["<unk>",0.0],["▁",-1.0],["a",-1.0],["▁a",0.0]]}"#;
+    let ids = |pretok: &str| {
+        let config = format!(
+            r#"{{"version":"1.0","truncation":null,"padding":null,"added_tokens":[],"normalizer":null,"pre_tokenizer":{pretok},"post_processor":null,"decoder":null,"model":{model}}}"#
+        );
+        let canonical = canonicalize_str(&config).expect("canonicalise");
+        tk_serialize::from_json(&canonical)
+            .expect("read")
+            .encode("a a", &EncodeOptions::no_specials())
+            .wait()
+            .unwrap()
+            .remove(0)
+            .ids()
+            .iter()
+            .map(|t| t.id())
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(ids(metaspace), vec![3, 3]);
+    assert_eq!(
+        ids(&format!(
+            r#"{{"type":"Sequence","pretokenizers":[{metaspace}]}}"#
+        )),
+        vec![3, 3]
+    );
 }
 
 // ---- end to end ------------------------------------------------------------------------------
