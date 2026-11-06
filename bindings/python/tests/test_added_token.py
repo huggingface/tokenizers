@@ -123,3 +123,13 @@ def test_add_tokens_leaves_copies_unchanged(spec):
 
     assert copied.compile().added_tokens == before
     assert compiled.added_tokens == before
+
+
+def test_from_file_refuses_added_tokens_not_an_array(tmp_path):
+    # `add_tokens` appends to the array, so the spec must not hold anything else.
+    declared = json.loads(GPT2.read_text())
+    declared["added_tokens"] = {}
+    path = tmp_path / "tokenizer.json"
+    path.write_text(json.dumps(declared))
+    with pytest.raises(ValueError, match="added_tokens"):
+        Tokenizer.from_file(path)

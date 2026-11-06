@@ -62,14 +62,13 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use tk::pipeline::PipelineTokenizer;
 use tk::vocab::bucket_added_vocabulary::AddedToken;
 use tk::{
-    PaddingParams, Result, TruncationParams, added_tokens_from_json, added_tokens_to_json,
-    canonicalize_value, from_json, padding_from_json, padding_to_json, truncation_from_json,
-    truncation_to_json,
+    PaddingParams, Result, TruncationParams, canonicalize_value, from_json, padding_from_json,
+    padding_to_json, truncation_from_json, truncation_to_json,
 };
 
 use crate::JsonObject;
@@ -479,9 +478,8 @@ pub(crate) struct TokenizerSpec {
     /// The padding an encode applies when it doesn't override it.
     padding: Option<PaddingParams>,
     role_to_token: Arc<Value>,
-    /// In the order loading assigns their ids. The ids depend on the model's vocabulary, so the
-    /// spec doesn't store them.
-    added_tokens: Arc<Vec<AddedToken>>,
+    /// Always an array. Its entries are checked at `compile()`.
+    added_tokens: Arc<Value>,
     pub(crate) normalizer: Option<ComponentSpec>,
     pub(crate) pre_tokenizer: Option<ComponentSpec>,
     pub(crate) post_processor: Option<ComponentSpec>,
@@ -502,11 +500,16 @@ impl TokenizerSpec {
             Value::Object(json) => Some(ComponentSpec::from_json(items_key, json)),
             _ => None,
         };
+        let added_tokens = match take("added_tokens") {
+            Value::Null => Value::Array(Vec::new()),
+            Value::Array(entries) => Value::Array(entries),
+            _ => return Err("malformed tokenizer.json: `added_tokens` is not an array".into()),
+        };
         Ok(Self {
             truncation: truncation_from_json(&take("truncation").to_string())?,
             padding: padding_from_json(&take("padding").to_string())?,
             role_to_token: Arc::new(take("role_to_token")),
-            added_tokens: Arc::new(added_tokens_from_json(&take("added_tokens").to_string())?),
+            added_tokens: Arc::new(added_tokens),
             normalizer: component(Normalizer::ITEMS_KEY, take("normalizer")),
             pre_tokenizer: component(PreTokenizer::ITEMS_KEY, take("pre_tokenizer")),
             post_processor: component(PostProcessor::ITEMS_KEY, take("post_processor")),
@@ -524,7 +527,7 @@ impl TokenizerSpec {
             truncation: None,
             padding: None,
             role_to_token: Arc::new(Value::Null),
-            added_tokens: Arc::new(Vec::new()),
+            added_tokens: Arc::new(Value::Array(Vec::new())),
             normalizer: None,
             pre_tokenizer: None,
             post_processor: None,
@@ -541,19 +544,44 @@ impl TokenizerSpec {
     /// Adds `tokens` to `added_tokens`, or updates the flags of those with the same content, and
     /// returns how many it added or updated.
     fn add_tokens(&mut self, tokens: impl IntoIterator<Item = AddedToken>) -> usize {
-        let added_tokens = Arc::make_mut(&mut self.added_tokens);
+        let Value::Array(entries) = Arc::make_mut(&mut self.added_tokens) else {
+            unreachable!("from_json and from_model only store an array");
+        };
+        // Loading assigns the ids again, in id order, so a new token only needs the highest id.
+        let highest_id = entries
+            .iter()
+            .filter_map(|entry| entry["id"].as_u64())
+            .max();
+        let mut next_id = highest_id.map_or(0, |id| id + 1);
         let mut changed = 0;
         for token in tokens {
             if token.content.is_empty() {
                 continue;
             }
-            match added_tokens
+            let mut entry = json!({
+                "content": token.content,
+                "single_word": token.single_word,
+                "lstrip": token.lstrip,
+                "rstrip": token.rstrip,
+                "normalized": token.normalized,
+                "special": token.special,
+            });
+            let same_content = entries
                 .iter_mut()
-                .find(|added| added.content == token.content)
-            {
-                Some(added) if *added == token => continue,
-                Some(added) => *added = token,
-                None => added_tokens.push(token),
+                .find(|existing| existing["content"] == token.content.as_str());
+            match same_content {
+                Some(existing) => {
+                    entry["id"] = existing["id"].clone();
+                    if *existing == entry {
+                        continue;
+                    }
+                    *existing = entry;
+                }
+                None => {
+                    entry["id"] = next_id.into();
+                    next_id += 1;
+                    entries.push(entry);
+                }
             }
             changed += 1;
         }
@@ -591,7 +619,10 @@ impl TokenizerSpec {
                 "role_to_token",
                 Field::JsonValue(Cow::Borrowed(&self.role_to_token)),
             ),
-            ("added_tokens", Field::AddedTokens(&self.added_tokens)),
+            (
+                "added_tokens",
+                Field::JsonValue(Cow::Borrowed(&self.added_tokens)),
+            ),
             ("normalizer", component(&self.normalizer)),
             ("pre_tokenizer", component(&self.pre_tokenizer)),
             ("post_processor", component(&self.post_processor)),
@@ -625,7 +656,6 @@ impl TokenizerSpec {
 pub(crate) enum Field<'spec> {
     JsonValue(Cow<'spec, Value>),
     JsonObject(Arc<JsonObject>),
-    AddedTokens(&'spec [AddedToken]),
     Padding(Option<&'spec PaddingParams>),
     Truncation(Option<&'spec TruncationParams>),
 }
@@ -636,7 +666,6 @@ impl Field<'_> {
             Field::JsonValue(value) => value.to_string(),
             Field::JsonObject(json) => serde_json::to_string(&**json)
                 .expect("a JSON object with string keys always writes"),
-            Field::AddedTokens(tokens) => added_tokens_to_json(tokens),
             Field::Padding(padding) => padding_to_json(*padding),
             Field::Truncation(truncation) => truncation_to_json(*truncation),
         }

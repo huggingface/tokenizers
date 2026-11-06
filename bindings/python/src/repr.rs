@@ -28,7 +28,6 @@ pub(crate) fn tokenizer<'spec>(
             Field::JsonValue(value) => write_value(key, &value, Some(1), &mut out),
             Field::JsonObject(fields) => write_object(key, &fields, Some(1), &mut out),
             Field::Padding(None) | Field::Truncation(None) => out.push_str("None"),
-            Field::AddedTokens(tokens) => write_added_tokens(tokens, &mut out),
             Field::Padding(Some(padding)) => push_indented(&Padding::repr(padding), &mut out),
             Field::Truncation(Some(truncation)) => {
                 push_indented(&Truncation::repr(truncation), &mut out)
@@ -157,24 +156,6 @@ fn write_entries_at(
             out.push(',');
         }
     }
-}
-
-/// One `AddedToken(...)` per line, the first [`MAX_LIST_ITEMS_SHOWN`] of them.
-fn write_added_tokens(tokens: &[AddedToken], out: &mut String) {
-    out.push('[');
-    for (i, token) in tokens.iter().enumerate() {
-        newline(2, out);
-        if i == MAX_LIST_ITEMS_SHOWN {
-            out.push_str("...,");
-            break;
-        }
-        out.push_str(&added_token(token));
-        out.push(',');
-    }
-    if !tokens.is_empty() {
-        newline(1, out);
-    }
-    out.push(']');
 }
 
 pub(crate) fn added_token(token: &AddedToken) -> String {
