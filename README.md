@@ -153,7 +153,7 @@ means a serving binary never links a trainer, a corpus reader, legacy converters
 
 Unicode tag classification plus pre-tokenization as a **bitstream program**. Follows *Interleaved Bitstream Execution for Multi-Pattern Regex Matching on GPUs*
 (MICRO'25, [10.1145/3725843.3756052](https://doi.org/10.1145/3725843.3756052)) but we added our own algorithm to make sure we don't need a parabix engine. 
-Characters are first classified into "tags", which use a sparse table generated when compiling `bitcannon`. This means there are 0 depencencies to the heavy unicode tables.
+Characters are first classified into "tags", which use a sparse table generated when compiling `bitcannon`. This means there are 0 dependencies to the heavy unicode tables.
 
 Ships byte-exact grammars for gpt2 / ByteLevel, cl100k, o200k, tekken, deepseek and kimi-k2.
 The classes or tags each have a high and low nibble (encoded on a u8), and carry refinement when needed. Using u8 tags allows us to leverage less bitsream, meaning have a simpler / faster pre tokenization.
