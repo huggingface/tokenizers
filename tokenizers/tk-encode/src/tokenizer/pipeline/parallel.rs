@@ -205,11 +205,18 @@ impl EncodeBatch {
     fn reconstruct(&self, seq: usize) -> Result<Encoding> {
         let chunk_results = &self.outputs[seq];
         let a_len = self.side_a_len[seq];
-        let a = drain(&chunk_results[..a_len])?;
+        let a = take_all(&chunk_results[..a_len])?;
         let b = (a_len < chunk_results.len())
-            .then(|| drain(&chunk_results[a_len..]))
+            .then(|| take_all(&chunk_results[a_len..]))
             .transpose()?;
-        self.tokenizer.post_process(a, b, &self.options)
+        // one chunk per side: wrap in place
+        if a.len() == 1 && b.as_ref().is_none_or(|b| b.len() == 1) {
+            let one = |mut parts: Vec<Vec<PipelineToken>>| parts.pop().expect("one part");
+            return self
+                .tokenizer
+                .post_process(one(a), b.map(one), &self.options);
+        }
+        self.tokenizer.post_process_parts(a, b, &self.options)
     }
 
     fn take_encoding(&self, seq: usize) -> Result<Encoding> {
@@ -273,25 +280,15 @@ impl Drop for StreamingIter {
     }
 }
 
-fn drain(results: &[ChunkResult]) -> Result<Vec<PipelineToken>> {
-    if let [only] = results {
-        return only
-            .take()
-            .expect("[BUG] failed to take the chunk's result when we expect it to be present");
-    }
-    let mut out = Vec::with_capacity(results.len());
-    for res in results {
-        match res.take() {
-            Some(Ok(tokens)) => out.push(tokens),
-            Some(Err(e)) => return Err(e),
-            None => {
-                unreachable!(
-                    "[BUG] failed to take the chunk's result when we expect it to be present"
-                )
-            }
-        }
-    }
-    Ok(out.concat())
+/// Every chunk's tokens, in order, or the first chunk's error.
+fn take_all(results: &[ChunkResult]) -> Result<Vec<Vec<PipelineToken>>> {
+    results
+        .iter()
+        .map(|res| {
+            res.take()
+                .expect("[BUG] failed to take the chunk's result when we expect it to be present")
+        })
+        .collect()
 }
 
 impl PipelineTokenizer {
