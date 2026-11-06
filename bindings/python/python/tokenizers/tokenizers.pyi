@@ -42,11 +42,9 @@ class AddedToken:
             Skip the token when decoding with `skip_special_tokens`.
     """
     def __eq__(self, value: object, /) -> bool: ...
-    def __getstate__(self, /) -> dict:
+    def __getstate__(self, /) -> bytes:
         """
-        The token as an `added_tokens` entry without its `id`.
-
-        transformers writes this dict to `tokenizer_config.json`.
+        The token's `added_tokens` entry without its `id`, as JSON `bytes`.
         """
     def __hash__(self, /) -> int: ...
     def __ne__(self, value: object, /) -> bool: ...
@@ -61,16 +59,16 @@ class AddedToken:
         normalized: bool | None = None,
         special: bool = False,
     ) -> AddedToken: ...
-    def __reduce__(self, /) -> tuple[Any, tuple[dict]]:
+    def __reduce__(self, /) -> tuple[Any, tuple[bytes]]:
         """
         Pickle rebuilds an `AddedToken` by calling `_unpickle` with `__getstate__()`.
         """
     def __repr__(self, /) -> str: ...
     def __str__(self, /) -> str: ...
     @staticmethod
-    def _unpickle(state: dict) -> AddedToken:
+    def _unpickle(state: bytes) -> AddedToken:
         """
-        Calls the constructor with `state` as keyword arguments.
+        Rebuilds an `AddedToken` from its `__getstate__`.
         """
     @property
     def content(self, /) -> str:

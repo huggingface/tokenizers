@@ -95,12 +95,12 @@ pub use tk_encode::FromPretrainedParameters;
 pub use tk_serialize::BASE64;
 pub use tk_serialize::{decoder_schemas, normalizer_schemas, pre_tokenizer_schemas, schemas};
 pub use tk_serialize::{
-    from_json, from_json_file, json, padding_from_json, post_processor_from_json,
+    added_token_from_json, from_json, from_json_file, json, padding_from_json, post_processor_from_json,
     truncation_from_json,
 };
 #[cfg(feature = "serialize")]
 pub use tk_serialize::{
-    padding_to_json, post_processor_to_json, str_to_json, to_json, truncation_to_json,
+    added_token_to_json, padding_to_json, post_processor_to_json, str_to_json, to_json, truncation_to_json,
 };
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,11 @@
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyString};
-use tk::vocab::bucket_added_vocabulary::AddedToken as CoreAddedToken;
+use std::hash::{Hash, Hasher};
 
+use pyo3::prelude::*;
+use pyo3::types::PyString;
+use tk::vocab::bucket_added_vocabulary::AddedToken as CoreAddedToken;
+use tk::{added_token_from_json, added_token_to_json};
+
+use crate::error::err;
 use crate::repr;
 
 /// A token matched in the text before the model runs, such as `[CLS]` or `<|endoftext|>`.
@@ -21,38 +25,19 @@ use crate::repr;
 ///     special:
 ///         Skip the token when decoding with `skip_special_tokens`.
 #[pyclass(frozen, eq, hash, module = "tokenizers")]
-#[derive(PartialEq, Eq, Hash)]
-pub struct AddedToken {
-    /// The text of the token.
-    #[pyo3(get)]
-    content: String,
-    /// Whether the token only matches a whole word.
-    #[pyo3(get)]
-    single_word: bool,
-    /// Whether a match includes the whitespace to its left.
-    #[pyo3(get)]
-    lstrip: bool,
-    /// Whether a match includes the whitespace to its right.
-    #[pyo3(get)]
-    rstrip: bool,
-    /// Whether the token text is normalized.
-    #[pyo3(get)]
-    normalized: bool,
-    /// Whether decoding with `skip_special_tokens` skips the token.
-    #[pyo3(get)]
-    special: bool,
+#[derive(PartialEq, Eq)]
+pub struct AddedToken(CoreAddedToken);
+
+// Equal tokens have equal content, so hashing the content alone agrees with `==`.
+impl Hash for AddedToken {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.content.hash(state);
+    }
 }
 
 impl From<CoreAddedToken> for AddedToken {
     fn from(token: CoreAddedToken) -> Self {
-        Self {
-            content: token.content,
-            single_word: token.single_word,
-            lstrip: token.lstrip,
-            rstrip: token.rstrip,
-            normalized: token.normalized,
-            special: token.special,
-        }
+        Self(token)
     }
 }
 
@@ -68,7 +53,7 @@ impl AddedToken {
         normalized: Option<bool>,
         special: bool,
     ) -> Self {
-        Self {
+        CoreAddedToken {
             content,
             single_word,
             lstrip,
@@ -76,51 +61,78 @@ impl AddedToken {
             normalized: normalized.unwrap_or(!special),
             special,
         }
+        .into()
     }
 
-    /// The token as an `added_tokens` entry without its `id`.
-    ///
-    /// transformers writes this dict to `tokenizer_config.json`.
-    fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let state = PyDict::new(py);
-        state.set_item("content", &self.content)?;
-        state.set_item("single_word", self.single_word)?;
-        state.set_item("lstrip", self.lstrip)?;
-        state.set_item("rstrip", self.rstrip)?;
-        state.set_item("normalized", self.normalized)?;
-        state.set_item("special", self.special)?;
-        Ok(state)
+    /// The text of the token.
+    #[getter]
+    fn content(&self) -> &str {
+        &self.0.content
+    }
+
+    /// Whether the token only matches a whole word.
+    #[getter]
+    fn single_word(&self) -> bool {
+        self.0.single_word
+    }
+
+    /// Whether a match includes the whitespace to its left.
+    #[getter]
+    fn lstrip(&self) -> bool {
+        self.0.lstrip
+    }
+
+    /// Whether a match includes the whitespace to its right.
+    #[getter]
+    fn rstrip(&self) -> bool {
+        self.0.rstrip
+    }
+
+    /// Whether the token text is normalized.
+    #[getter]
+    fn normalized(&self) -> bool {
+        self.0.normalized
+    }
+
+    /// Whether decoding with `skip_special_tokens` skips the token.
+    #[getter]
+    fn special(&self) -> bool {
+        self.0.special
+    }
+
+    /// The token's `added_tokens` entry without its `id`, as JSON `bytes`.
+    fn __getstate__(&self) -> Vec<u8> {
+        added_token_to_json(&self.0).into_bytes()
     }
 
     /// Pickle rebuilds an `AddedToken` by calling `_unpickle` with `__getstate__()`.
-    fn __reduce__<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> PyResult<(Bound<'py, PyAny>, (Bound<'py, PyDict>,))> {
-        let state = self.__getstate__(py)?;
-        Ok((py.get_type::<Self>().getattr("_unpickle")?, (state,)))
+    fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<(Bound<'py, PyAny>, (Vec<u8>,))> {
+        Ok((
+            py.get_type::<Self>().getattr("_unpickle")?,
+            (self.__getstate__(),),
+        ))
     }
 
-    /// Calls the constructor with `state` as keyword arguments.
+    /// Rebuilds an `AddedToken` from its `__getstate__`.
     #[staticmethod]
-    fn _unpickle<'py>(state: &Bound<'py, PyDict>) -> PyResult<Bound<'py, Self>> {
-        let token = state.py().get_type::<Self>().call((), Some(state))?;
-        Ok(token.cast_into()?)
+    fn _unpickle(state: &[u8]) -> PyResult<Self> {
+        let text = std::str::from_utf8(state).map_err(err)?;
+        Ok(added_token_from_json(text).map_err(err)?.into())
     }
 
     fn __str__(&self) -> &str {
-        &self.content
+        self.content()
     }
 
     fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
         Ok(format!(
             "AddedToken({}, single_word={}, lstrip={}, rstrip={}, normalized={}, special={})",
-            PyString::new(py, &self.content).repr()?,
-            repr::python_bool(self.single_word),
-            repr::python_bool(self.lstrip),
-            repr::python_bool(self.rstrip),
-            repr::python_bool(self.normalized),
-            repr::python_bool(self.special),
+            PyString::new(py, self.content()).repr()?,
+            repr::python_bool(self.single_word()),
+            repr::python_bool(self.lstrip()),
+            repr::python_bool(self.rstrip()),
+            repr::python_bool(self.normalized()),
+            repr::python_bool(self.special()),
         ))
     }
 }

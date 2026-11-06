@@ -13,6 +13,19 @@ def test_normalized_default():
     assert AddedToken("<x>", normalized=True, special=True).normalized is True
 
 
+def test_state_is_the_json_entry():
+    # Same state as a component: the token's `tokenizer.json` entry, as JSON bytes.
+    token = AddedToken("<x>", lstrip=True, special=True)
+    assert json.loads(token.__getstate__()) == {
+        "content": "<x>",
+        "single_word": False,
+        "lstrip": True,
+        "rstrip": False,
+        "normalized": False,
+        "special": True,
+    }
+
+
 @pytest.mark.parametrize("protocol", [0, pickle.HIGHEST_PROTOCOL])
 def test_pickle(protocol):
     # normalized=True differs from its default for a special token, so it must travel in the pickle.
@@ -23,7 +36,7 @@ def test_pickle(protocol):
 def compile_gpt2_with(added_tokens, tmp_path):
     """Compiles GPT-2 with `added_tokens`, a `{id: AddedToken}` dict, in place of its own."""
     declared = json.loads(GPT2.read_text())
-    declared["added_tokens"] = [{"id": id, **token.__getstate__()} for id, token in added_tokens.items()]
+    declared["added_tokens"] = [{"id": id, **json.loads(token.__getstate__())} for id, token in added_tokens.items()]
     path = tmp_path / "tokenizer.json"
     path.write_text(json.dumps(declared))
     # TODO: to re-write when we land Tokenizer.from_str to avoid round-trip to the filesystem
@@ -41,3 +54,16 @@ def test_compiled_flags(tmp_path):
     }
 
     assert compile_gpt2_with(added_tokens, tmp_path).added_tokens == added_tokens
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        {"content": "<x>"},
+        {"content": "<x>", "single_word": False, "lstrip": False, "rstrip": False, "normalized": 1, "special": False},
+    ],
+    ids=["missing-flags", "flag-not-bool"],
+)
+def test_unpickle_refuses_malformed_state(state):
+    with pytest.raises(ValueError):
+        AddedToken._unpickle(json.dumps(state).encode())

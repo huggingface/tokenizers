@@ -19,7 +19,7 @@ mod writer;
 #[cfg(all(test, feature = "deserialize"))]
 mod tests;
 
-use self::added_tokens::write_added_tokens;
+use self::added_tokens::{write_added_token_fields, write_added_tokens};
 use self::decoders::write_decoder;
 use self::model::write_model;
 use self::normalizers::write_normalizer;
@@ -42,6 +42,19 @@ pub fn post_processor_to_json(
     let mut out = Out::new();
     write_post_processor(&mut out, post_processor)?;
     Ok(out.finish())
+}
+
+/// Write a lone `added_tokens` entry, without an `id`.
+///
+/// The counterpart of [`added_token_from_json`](crate::added_token_from_json).
+pub fn added_token_to_json(
+    token: &tk_encode::vocab::bucket_added_vocabulary::AddedToken,
+) -> String {
+    let mut out = Out::new();
+    out.obj_open();
+    write_added_token_fields(&mut out, token);
+    out.obj_close();
+    out.finish()
 }
 
 /// Write a lone `padding`, the value of that one key. `None` comes back as `null`.

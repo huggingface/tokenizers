@@ -22,21 +22,25 @@ pub(super) fn read_added_tokens(cfg: Option<&Json<'_>>) -> Result<Vec<BucketAdde
 
     let mut out: Vec<BucketAddedToken> = Vec::with_capacity(arr.len());
     for key in &order {
-        let entry = &arr[(*key & 0xFFFF_FFFF) as usize];
-        let content = entry
-            .get("content")
-            .and_then(Json::as_str)
-            .ok_or_else(|| -> tk_encode::Error { "an added token has no `content`".into() })?;
-        // `AddedToken` has no serde defaults on the config path either: all six flags are required.
-        let owner = format!("added token {content:?}");
-        out.push(BucketAddedToken {
-            content: content.to_string(),
-            single_word: entry.need(&owner, "single_word", Json::as_bool)?,
-            lstrip: entry.need(&owner, "lstrip", Json::as_bool)?,
-            rstrip: entry.need(&owner, "rstrip", Json::as_bool)?,
-            normalized: entry.need(&owner, "normalized", Json::as_bool)?,
-            special: entry.need(&owner, "special", Json::as_bool)?,
-        });
+        out.push(read_added_token(&arr[(*key & 0xFFFF_FFFF) as usize])?);
     }
     Ok(out)
+}
+
+/// One `added_tokens` entry. Its `id` is not read.
+pub(super) fn read_added_token(entry: &Json<'_>) -> Result<BucketAddedToken> {
+    let content = entry
+        .get("content")
+        .and_then(Json::as_str)
+        .ok_or_else(|| -> tk_encode::Error { "an added token has no `content`".into() })?;
+    // `AddedToken` has no serde defaults on the config path either: all six flags are required.
+    let owner = format!("added token {content:?}");
+    Ok(BucketAddedToken {
+        content: content.to_string(),
+        single_word: entry.need(&owner, "single_word", Json::as_bool)?,
+        lstrip: entry.need(&owner, "lstrip", Json::as_bool)?,
+        rstrip: entry.need(&owner, "rstrip", Json::as_bool)?,
+        normalized: entry.need(&owner, "normalized", Json::as_bool)?,
+        special: entry.need(&owner, "special", Json::as_bool)?,
+    })
 }
