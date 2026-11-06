@@ -57,7 +57,9 @@ use tk_encode::pipeline::{
     NormalizerChain, PipelineModel, PipelineNormalizer, PipelinePreTokenizer, PipelineTokenizer,
 };
 use tk_encode::tokenizer::Result;
-use tk_encode::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
+use tk_encode::vocab::bucket_added_vocabulary::{
+    AddedToken, AddedVocabulary as BucketAddedVocabulary,
+};
 
 fn unsupported(what: &str) -> tk_encode::Error {
     format!(
@@ -122,6 +124,14 @@ pub fn added_token_from_json(
 ) -> Result<tk_encode::vocab::bucket_added_vocabulary::AddedToken> {
     let doc = Json::parse(text).map_err(|e| -> tk_encode::Error { e.to_string().into() })?;
     read_added_token(&doc)
+}
+
+/// Read a lone `added_tokens`, the value of that one key, in ascending id order. `null` means none.
+///
+/// Loading a tokenizer assigns the ids again, so this keeps only the order the ids give.
+pub fn added_tokens_from_json(text: &str) -> Result<Vec<AddedToken>> {
+    let doc = Json::parse(text).map_err(|e| -> tk_encode::Error { e.to_string().into() })?;
+    read_added_tokens(Some(&doc))
 }
 
 fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {

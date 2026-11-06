@@ -1,7 +1,6 @@
 use std::hash::{Hash, Hasher};
 
 use pyo3::prelude::*;
-use pyo3::types::PyString;
 use tk::vocab::bucket_added_vocabulary::AddedToken as CoreAddedToken;
 use tk::{added_token_from_json, added_token_to_json};
 
@@ -38,6 +37,28 @@ impl Hash for AddedToken {
 impl From<CoreAddedToken> for AddedToken {
     fn from(token: CoreAddedToken) -> Self {
         Self(token)
+    }
+}
+
+/// A token passed to `Tokenizer.add_tokens` or `Tokenizer.add_special_tokens`: its content, or
+/// an `AddedToken`.
+#[derive(FromPyObject)]
+pub enum TokenToAdd<'py> {
+    Content(String),
+    Token(PyRef<'py, AddedToken>),
+}
+
+impl TokenToAdd<'_> {
+    /// The token to add. `special` marks it special, and a bare content gets the default flags of
+    /// `AddedToken(content, special=special)`.
+    pub fn into_added_token(self, special: bool) -> CoreAddedToken {
+        match self {
+            Self::Content(content) => CoreAddedToken::from(content, special),
+            Self::Token(token) => CoreAddedToken {
+                special: token.0.special || special,
+                ..token.0.clone()
+            },
+        }
     }
 }
 
@@ -124,15 +145,7 @@ impl AddedToken {
         self.content()
     }
 
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        Ok(format!(
-            "AddedToken({}, single_word={}, lstrip={}, rstrip={}, normalized={}, special={})",
-            PyString::new(py, self.content()).repr()?,
-            repr::python_bool(self.single_word()),
-            repr::python_bool(self.lstrip()),
-            repr::python_bool(self.rstrip()),
-            repr::python_bool(self.normalized()),
-            repr::python_bool(self.special()),
-        ))
+    fn __repr__(&self) -> String {
+        repr::added_token(&self.0)
     }
 }
