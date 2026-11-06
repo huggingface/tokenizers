@@ -1,7 +1,6 @@
 use std::hash::{Hash, Hasher};
 
 use pyo3::prelude::*;
-use pyo3::types::PyString;
 use tk::vocab::bucket_added_vocabulary::AddedToken as CoreAddedToken;
 use tk::{added_token_from_json, added_token_to_json};
 
@@ -146,15 +145,7 @@ impl AddedToken {
         self.content()
     }
 
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        Ok(format!(
-            "AddedToken({}, single_word={}, lstrip={}, rstrip={}, normalized={}, special={})",
-            PyString::new(py, self.content()).repr()?,
-            repr::python_bool(self.single_word()),
-            repr::python_bool(self.lstrip()),
-            repr::python_bool(self.rstrip()),
-            repr::python_bool(self.normalized()),
-            repr::python_bool(self.special()),
-        ))
+    fn __repr__(&self) -> String {
+        repr::added_token(&self.0)
     }
 }

@@ -168,21 +168,25 @@ fn write_added_tokens(tokens: &[AddedToken], out: &mut String) {
             out.push_str("...,");
             break;
         }
-        out.push_str("AddedToken(");
-        write_str(&token.content, out);
-        out.push_str(&format!(
-            ", single_word={}, lstrip={}, rstrip={}, normalized={}, special={}),",
-            python_bool(token.single_word),
-            python_bool(token.lstrip),
-            python_bool(token.rstrip),
-            python_bool(token.normalized),
-            python_bool(token.special),
-        ));
+        out.push_str(&added_token(token));
+        out.push(',');
     }
     if !tokens.is_empty() {
         newline(1, out);
     }
     out.push(']');
+}
+
+pub(crate) fn added_token(token: &AddedToken) -> String {
+    format!(
+        "AddedToken({}, single_word={}, lstrip={}, rstrip={}, normalized={}, special={})",
+        tk::str_to_json(&token.content),
+        python_bool(token.single_word),
+        python_bool(token.lstrip),
+        python_bool(token.rstrip),
+        python_bool(token.normalized),
+        python_bool(token.special),
+    )
 }
 
 fn push_indented(rendered: &str, out: &mut String) {
