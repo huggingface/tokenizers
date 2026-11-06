@@ -3161,6 +3161,7 @@ dependencies = [
  "ahash",
  "assert_approx_eq",
  "bitcannon",
+ "criterion 0.8.2",
  "daachorse 5.0.0",
  "dary_heap",
  "fancy-regex",
@@ -3796,9 +3797,9 @@ dependencies = [
 
 [[package]]
 name = "wide"
-version = "1.6.1"
+version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de2aaf408e58689c2096682331b1f42bb2d9f2ed6b11560407d023cd0a6c634e"
+checksum = "d920ac99c3c8edce110cb8d07dbb324d6d026011dce85b1e9355b70f0adacc4f"
 dependencies = [
  "bytemuck",
  "safe_arch",
