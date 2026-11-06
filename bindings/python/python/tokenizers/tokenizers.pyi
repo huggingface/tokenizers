@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from os import PathLike
 from typing import Any, Final, Literal, final
 
+from _typeshed import Incomplete
 from numpy import integer, uint32
 from numpy.typing import NDArray
 
@@ -88,6 +89,7 @@ class CompiledTokenizer:
         encode_special_tokens: bool = False,
         padding: Padding | None = ...,
         truncation: Truncation | None = ...,
+        max_threads: int | None = None,
     ) -> Encoding:
         """
         Encodes the given text, or pair of texts, to token ids.
@@ -107,6 +109,9 @@ class CompiledTokenizer:
             truncation: `Truncation` or `None`
                 Truncation options. Pass `None` to disable truncation.
                 When omitted, uses the truncation the tokenizer had when compiled.
+            max_threads: int or None
+                Most threads this call uses, the caller included, capped by `get_max_threads()`.
+                `None` or `0`: no per-call cap.
 
         Returns:
             Encoding
@@ -120,6 +125,7 @@ class CompiledTokenizer:
         encode_special_tokens: bool = False,
         padding: Padding | None = ...,
         truncation: Truncation | None = ...,
+        max_threads: int | None = None,
     ) -> list[Encoding]:
         """
         Encodes a batch of texts, or pairs of texts.
@@ -140,6 +146,9 @@ class CompiledTokenizer:
             truncation: `Truncation` or `None`
                 Truncation options. Pass `None` to disable truncation.
                 When omitted, uses the truncation the tokenizer had when compiled.
+            max_threads: int or None
+                Most threads this call uses, the caller included, capped by `get_max_threads()`.
+                `None` or `0`: no per-call cap.
 
         Returns:
             List[Encoding]
@@ -199,6 +208,7 @@ class CompiledTokenizer:
         encode_special_tokens: bool = False,
         padding: Padding | None = ...,
         truncation: Truncation | None = ...,
+        max_threads: int | None = None,
     ) -> list[str]:
         """
         Encodes the given text, or pair of texts, and returns the string representation of each token.
@@ -221,6 +231,9 @@ class CompiledTokenizer:
             truncation: `Truncation` or `None`
                 Truncation options. Pass `None` to disable truncation.
                 When omitted, uses the truncation the tokenizer had when compiled.
+            max_threads: int or None
+                Most threads this call uses, the caller included, capped by `get_max_threads()`.
+                `None` or `0`: no per-call cap.
 
         Returns:
             list[str]
@@ -656,3 +669,29 @@ class Truncation:
         """
         Which sequence of a pair is truncated.
         """
+
+def get_max_threads() -> int:
+    """
+    The most threads one encode uses, the calling thread included: the value set with
+    `set_max_threads`, else the default.
+
+    Returns:
+        int
+    """
+
+def set_max_threads(max_threads: int) -> None:
+    """
+    Sets the most threads one encode uses, the calling thread included, for the whole process.
+
+    `1` encodes serially; `0` restores the default, every available core.
+
+    A value set here always wins. Without one, a multiprocessing worker runs serially, since it
+    can't know how many siblings share the cores. Forked workers inherit a value set in the parent;
+    spawn and forkserver workers start fresh, so set it in each worker, e.g.
+    `multiprocessing.Pool(initializer=tokenizers.set_max_threads, initargs=(4,))`.
+
+    Args:
+        max_threads: int
+    """
+
+def __getattr__(name: str) -> Incomplete: ...
