@@ -8,6 +8,8 @@ use rayon_cond::CondIterator;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use std::sync::OnceLock;
+use std::sync::PoisonError;
 use std::sync::TryLockError;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU8;
@@ -26,8 +28,8 @@ static USED_PARALLELISM: AtomicBool = AtomicBool::new(false);
 /// TODO: deprecate
 static PARALLELISM: AtomicU8 = AtomicU8::new(0);
 
-/// 0 means deafult value
-static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
+/// See [`max_threads`]. 0 means the default.
+static MAX_THREADS: AtomicUsize = AtomicUsize::new(0);
 /// Counter to track the current version of the pool
 /// After forking or changing the number of threads, we need to invalidate and recreate a new pool
 /// Old pools will be dropped when they go out of scope (arc refcount goes to 0)
@@ -44,11 +46,28 @@ fn register_fork_handler() {
     use std::sync::Once;
     static REGISTERED: Once = Once::new();
     REGISTERED.call_once(|| {
+        use std::cell::Cell;
+        thread_local! {
+            /// [`CELL`], held by the forking thread across `fork()`: a lock held by another thread
+            /// at fork time would stay locked in the child forever.
+            static HELD: Cell<MaybeLockGuard> = const { Cell::new(None) };
+        }
+        unsafe extern "C" fn before_fork() {
+            // never held across a build: this waits out an `Arc` clone at most
+            let _ = HELD.try_with(|held| held.set(Some(lock_blocking())));
+        }
+        unsafe extern "C" fn after_fork() {
+            let _ = HELD.try_with(|held| drop(held.take()));
+        }
         unsafe extern "C" fn child_after_fork() {
+            unsafe { after_fork() };
             POOL_GEN.fetch_add(1, Ordering::SeqCst);
+            // a build in flight at fork time has no thread here to finish it
+            BUILDING.store(false, Ordering::SeqCst);
         }
         unsafe {
-            let _ = libc::pthread_atfork(None, None, Some(child_after_fork));
+            let _ =
+                libc::pthread_atfork(Some(before_fork), Some(after_fork), Some(child_after_fork));
         }
     });
 }
@@ -58,20 +77,34 @@ fn register_fork_handler() {}
 
 #[derive(Clone)]
 struct Slot {
-    pool: Arc<rayon::ThreadPool>,
+    /// `None` when `max_threads()` is 1: cached too, so a serial process skips the rebuild path.
+    pool: Option<Arc<rayon::ThreadPool>>,
     version: usize,
     pid: u32,
 }
 
 static CELL: Mutex<Option<Slot>> = Mutex::new(None);
 
+/// Set while one caller builds the pool. A flag rather than `CELL` held across the build: the fork
+/// handler would wait the build out, and a forked child clears it.
+static BUILDING: AtomicBool = AtomicBool::new(false);
+
+/// Clears [`BUILDING`], on every exit of the build.
+struct Building;
+
+impl Drop for Building {
+    fn drop(&mut self) {
+        BUILDING.store(false, Ordering::Release);
+    }
+}
+
 type MaybeLockGuard = Option<MutexGuard<'static, Option<Slot>>>;
 
 /// How many times [`lock`] retries a held lock before giving up.
 const LOCK_ATTEMPTS: u32 = 64;
 
-/// Take the pool lock, briefly waiting out a holder (it only guards an `Arc` clone or swap).
-/// Bounded: a child forked while the lock was held inherits it locked forever.
+/// Take the pool lock, briefly waiting out a holder: it only guards an `Arc` clone or swap. Bounded,
+/// as the forking thread holds it across `fork()`.
 fn lock() -> MaybeLockGuard {
     for attempt in 0..LOCK_ATTEMPTS {
         match CELL.try_lock() {
@@ -84,41 +117,58 @@ fn lock() -> MaybeLockGuard {
     None
 }
 
+/// For the paths that must not skip the lock: the fork handler, and storing a freshly built pool.
+fn lock_blocking() -> MutexGuard<'static, Option<Slot>> {
+    CELL.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The cached pool for `generation`, or `Err` if it must be (re)built.
+fn cached(generation: usize) -> Result<Option<Arc<rayon::ThreadPool>>, ()> {
+    // no lock (a fork in progress): encode serially rather than wait it out
+    let Some(guard) = lock() else {
+        return Ok(None);
+    };
+    match guard.as_ref() {
+        Some(slot) if slot.version == generation => Ok(slot.pool.clone()),
+        _ => Err(()),
+    }
+}
+
 pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     register_fork_handler();
 
     let generation = POOL_GEN.load(Ordering::Acquire);
-    // no lock: encode serially rather than build a throwaway pool
-    let mut guard = lock()?;
-    if let Some(slot) = guard.as_ref()
-        && generation == slot.version
-    {
-        return Some(slot.pool.clone());
+    if let Ok(pool) = cached(generation) {
+        return pool;
     }
-    // build under the lock: callers that find it held go serial instead of building their own
+    // another caller is building: encode serially instead of building our own
+    if BUILDING.swap(true, Ordering::Acquire) {
+        return None;
+    }
+    let _building = Building;
+    // it may have finished between our check and the flag
+    if let Ok(pool) = cached(generation) {
+        return pool;
+    }
 
-    let num_threads = num_threads();
-    // We don't create a thread pool when thread == 1
-    let slot = if num_threads == 1 {
+    // the caller is one of the `max_threads`
+    let workers = max_threads() - 1;
+    let pool = if workers == 0 {
         None
     } else {
         let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(num_threads)
+            .num_threads(workers)
             .thread_name(|i| format!("tk-encode-{i}"))
             .build()
             .ok()?;
-        let slot = Slot {
-            pool: Arc::new(pool),
-            version: generation,
-            pid: std::process::id(),
-        };
-        Some(slot)
+        Some(Arc::new(pool))
     };
-
-    let old = match &slot {
-        Some(slot) => guard.replace(slot.clone()),
-        None => guard.take(),
-    };
+    let mut guard = lock_blocking();
+    let old = guard.replace(Slot {
+        pool: pool.clone(),
+        version: generation,
+        pid: std::process::id(),
+    });
     drop(guard);
 
     if let Some(old) = old
@@ -128,26 +178,31 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
         std::mem::forget(old.pool);
     }
 
-    slot.map(|slot| slot.pool.clone())
+    pool
 }
 
-pub fn num_threads() -> usize {
-    match NUM_THREADS.load(Ordering::Acquire) {
-        // 0 == default value
-        0 => std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1),
+/// Max threads per encode, caller included: the shared pool holds `max_threads() - 1`, so 1 means
+/// serial. Defaults to `available_parallelism()` (affinity mask, cgroup quota).
+pub fn max_threads() -> usize {
+    match MAX_THREADS.load(Ordering::Acquire) {
+        0 => available_parallelism(),
         n => n,
     }
+}
+
+/// Cached: on Linux it reads the cgroup quota from files, too slow for every encode.
+fn available_parallelism() -> usize {
+    static CORES: OnceLock<usize> = OnceLock::new();
+    *CORES.get_or_init(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
 }
 
 fn invalidate() {
     POOL_GEN.fetch_add(1, Ordering::SeqCst);
 }
 
-/// Passing in 0 will reset to the default value
-pub fn set_num_threads(n: usize) {
-    NUM_THREADS.store(n, Ordering::Release);
+/// Set [`max_threads`] process-wide; `0` restores the default. Takes effect on the next encode.
+pub fn set_max_threads(n: usize) {
+    MAX_THREADS.store(n, Ordering::Release);
     invalidate();
 }
 
@@ -401,10 +456,31 @@ mod tests {
         assert_eq!(v.into_maybe_par_iter().sum::<u32>(), 42);
     }
 
+    /// Tests touching the process-wide pool run one at a time: a resize reads as a rebuild, and some
+    /// hold its lock or flag.
+    static POOL_TESTS: Mutex<()> = Mutex::new(());
+
+    /// The caller counts: the pool holds `max - 1` threads, none for a max of 1.
+    #[test]
+    fn max_threads_counts_the_caller() {
+        let _serial = POOL_TESTS.lock().unwrap_or_else(|p| p.into_inner());
+        set_max_threads(3);
+        assert_eq!(max_threads(), 3);
+        assert_eq!(pool().expect("a pool").current_num_threads(), 2);
+        set_max_threads(1);
+        assert!(pool().is_none(), "one thread is the caller alone");
+        set_max_threads(0);
+        assert_eq!(
+            max_threads(),
+            std::thread::available_parallelism().map_or(1, |n| n.get())
+        );
+    }
+
     /// Contended callers must reuse the cached pool, not build their own.
     #[test]
     fn concurrent_callers_share_one_pool() {
-        if num_threads() == 1 {
+        let _serial = POOL_TESTS.lock().unwrap_or_else(|p| p.into_inner());
+        if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
         // start stale, so the callers race the rebuild too
@@ -424,6 +500,55 @@ mod tests {
             .flat_map(|caller| caller.join().unwrap())
             .collect();
         assert_eq!(seen.len(), 1, "contended callers built pools of their own");
+    }
+
+    /// A child forked while another thread builds the pool must still get one.
+    #[cfg(unix)]
+    #[test]
+    fn child_forked_mid_build_gets_a_pool() {
+        let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        if max_threads() == 1 {
+            return; // no pool on a one-core machine
+        }
+        register_fork_handler();
+        // stand in for a build in flight on another thread
+        BUILDING.store(true, Ordering::SeqCst);
+        // SAFETY: the child only builds the pool and `_exit`s
+        let pid = unsafe { libc::fork() };
+        if pid == 0 {
+            unsafe { libc::_exit(i32::from(pool().is_none())) };
+        }
+        BUILDING.store(false, Ordering::SeqCst);
+        let mut status = 0;
+        assert_eq!(unsafe { libc::waitpid(pid, &mut status, 0) }, pid);
+        assert!(libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0);
+    }
+
+    /// A child forked while another thread holds the pool lock gets it unlocked.
+    #[cfg(unix)]
+    #[test]
+    fn child_forked_mid_lock_gets_a_pool() {
+        let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        if max_threads() == 1 {
+            return; // no pool on a one-core machine
+        }
+        register_fork_handler();
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            let _g = lock();
+            held_tx.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        });
+        held_rx.recv().unwrap();
+        // SAFETY: the child only builds the pool and `_exit`s
+        let pid = unsafe { libc::fork() };
+        if pid == 0 {
+            unsafe { libc::_exit(i32::from(pool().is_none())) };
+        }
+        holder.join().unwrap();
+        let mut status = 0;
+        assert_eq!(unsafe { libc::waitpid(pid, &mut status, 0) }, pid);
+        assert!(libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0);
     }
 
     #[test]
