@@ -5,7 +5,7 @@ import weakref
 
 import pytest
 
-from tokenizers import Padding, decoders, models, normalizers, pre_tokenizers, processors
+from tokenizers import Padding, Tokenizer, decoders, models, normalizers, pre_tokenizers, processors
 
 TEXT = "Hello world, how are you?"
 
@@ -34,7 +34,7 @@ def test_spec_dict_copy(gpt2_spec):
     assert gpt2_spec.__dict__ == {"custom": "original only"}
 
     for twin in (copy.copy(gpt2_spec), copy.deepcopy(gpt2_spec)):
-        assert twin.compile().encode(TEXT).ids == gpt2_spec.compile().encode(TEXT).ids
+        assert twin.to_str() == gpt2_spec.to_str()
         assert twin.__dict__ == {}
         twin.padding = Padding()
         assert gpt2_spec.padding is None
@@ -94,9 +94,142 @@ def test_deepcopy_is_independent(gpt2_spec):
         assert prepend.prepend == "a"
 
 
+def test_handle_keeps_its_component_after_reassignment(gpt2_spec, bert_spec):
+    model = gpt2_spec.model
+    gpt2_spec.model = bert_spec.model
+    model.ignore_merges = True
+    assert repr(model).startswith("BPE(")
+    assert "ignore_merges" not in json.loads(gpt2_spec.model.__getstate__())
+
+
+# transformers builds most tokenizers this way, then sets the other components.
+def test_tokenizer_from_parts(gpt2_spec):
+    tokenizer = Tokenizer(model=gpt2_spec.model)
+    tokenizer.pre_tokenizer = gpt2_spec.pre_tokenizer
+    tokenizer.post_processor = gpt2_spec.post_processor
+    tokenizer.decoder = gpt2_spec.decoder
+    written, declared = json.loads(tokenizer.to_str()), json.loads(gpt2_spec.to_str())
+    for key in ("model", "pre_tokenizer", "post_processor", "decoder"):
+        assert written[key] == declared[key]
+
+
+def test_tokenizer_json_from_a_model():
+    tokenizer = Tokenizer(models.BPE())
+    written = json.loads(tokenizer.to_str())
+    assert written["version"] == "2.0"
+    assert written["added_tokens"] == []
+
+
+# The keys 0.23 writes, plus 2.0's `byte_level`.
+@pytest.mark.parametrize(
+    ("model", "state"),
+    [
+        (
+            models.BPE(
+                {"a": 0, "b": 1, "ab": 2},
+                [("a", "b")],
+                dropout=0.5,
+                unk_token="a",
+                continuing_subword_prefix="",
+                end_of_word_suffix="</w>",
+                fuse_unk=True,
+                byte_fallback=True,
+                ignore_merges=True,
+                byte_level=True,
+            ),
+            {
+                "type": "BPE",
+                "dropout": 0.5,
+                "unk_token": "a",
+                "continuing_subword_prefix": "",
+                "end_of_word_suffix": "</w>",
+                "fuse_unk": True,
+                "byte_fallback": True,
+                "ignore_merges": True,
+                "byte_level": True,
+                "vocab": {"a": 0, "b": 1, "ab": 2},
+                "merges": [["a", "b"]],
+            },
+        ),
+        (
+            models.WordPiece({"a": 0}, unk_token="a", continuing_subword_prefix="@@", max_input_chars_per_word=5),
+            {
+                "type": "WordPiece",
+                "unk_token": "a",
+                "continuing_subword_prefix": "@@",
+                "max_input_chars_per_word": 5,
+                "vocab": {"a": 0},
+            },
+        ),
+        (
+            models.Unigram([("<unk>", 0.0), ("a", -1.0)], unk_id=0, byte_fallback=True),
+            {"type": "Unigram", "unk_id": 0, "vocab": [["<unk>", 0.0], ["a", -1.0]], "byte_fallback": True},
+        ),
+        (
+            models.WordLevel({"a": 0}, unk_token="a"),
+            {"type": "WordLevel", "vocab": {"a": 0}, "unk_token": "a"},
+        ),
+    ],
+    ids=lambda param: type(param).__name__ if isinstance(param, models.Model) else None,
+)
+def test_model_writes_its_arguments(model, state):
+    assert json.loads(model.__getstate__()) == state
+    assert type(pickle.loads(pickle.dumps(model))) is type(model)
+
+
+def test_bpe_from_files(gpt2_spec, tmp_path):
+    declared = json.loads(gpt2_spec.to_str())["model"]
+    vocab = tmp_path / "vocab.json"
+    vocab.write_text(json.dumps(declared["vocab"]))
+    merges = tmp_path / "merges.txt"
+    merges.write_text("#version: 0.2\n" + "\n".join(" ".join(merge) for merge in declared["merges"]) + "\n")
+    state = json.loads(models.BPE(vocab=str(vocab), merges=str(merges)).__getstate__())
+    assert (state["vocab"], state["merges"]) == (declared["vocab"], declared["merges"])
+
+
+def test_bpe_refuses_a_bad_merges_file(tmp_path):
+    merges = tmp_path / "merges.txt"
+    merges.write_text("#version: 0.2\na b\na b c\n")
+    with pytest.raises(ValueError, match="line 3"):
+        models.BPE({}, str(merges))
+
+
+def test_bpe_getters():
+    bpe = models.BPE(unk_token="a", continuing_subword_prefix="", end_of_word_suffix="</w>")
+    assert (bpe.unk_token, bpe.continuing_subword_prefix, bpe.end_of_word_suffix) == ("a", "", "</w>")
+    assert models.BPE().unk_token is None
+
+
+def test_wordpiece_from_a_vocab_txt(bert_spec, tmp_path):
+    declared = json.loads(bert_spec.to_str())["model"]
+    vocab = tmp_path / "vocab.txt"
+    vocab.write_text("".join(f"{token}\n" for token in sorted(declared["vocab"], key=declared["vocab"].get)))
+    assert json.loads(models.WordPiece(str(vocab)).__getstate__())["vocab"] == declared["vocab"]
+
+
 # --------------------------------------------------------------------------------------------------
 # transformers
 # --------------------------------------------------------------------------------------------------
+
+
+# transformers checks `type(tok.model).__name__`.
+def test_model_type(gpt2_spec):
+    assert type(gpt2_spec.model) is models.BPE
+    assert type(gpt2_spec.model).__name__ == "BPE"
+
+
+# transformers sets it on tekken and tiktoken models at every load.
+def test_write_through_reference(gpt2_spec):
+    gpt2_spec.model.ignore_merges = True
+    assert gpt2_spec.model.ignore_merges is True
+    assert json.loads(gpt2_spec.to_str())["model"]["ignore_merges"] is True
+
+
+def test_field_of_the_wrong_json_type():
+    bpe = models.Model._unpickle(b'{"type": "BPE", "ignore_merges": "yes"}')
+    assert isinstance(bpe, models.BPE)
+    with pytest.raises(ValueError, match="`ignore_merges`: invalid type"):
+        bpe.ignore_merges
 
 
 # Stop strings parse a decoder's `__getstate__` as JSON bytes.
@@ -104,6 +237,11 @@ def test_getstate(gpt2_spec):
     state = gpt2_spec.decoder.__getstate__()
     assert isinstance(state, bytes)
     assert json.loads(state)["type"] == "ByteLevel"
+
+
+# --------------------------------------------------------------------------------------------------
+# vLLM
+# --------------------------------------------------------------------------------------------------
 
 
 # --------------------------------------------------------------------------------------------------
