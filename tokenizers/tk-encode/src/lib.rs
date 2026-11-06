@@ -55,10 +55,8 @@
 //!
 //! # Additional information
 //!
-//! - tokenizers is designed to leverage CPU parallelism when possible. The level of parallelism is determined
-//!   by the total number of core/threads your CPU provides but this can be tuned by setting the `RAYON_RS_NUM_THREADS`
-//!   environment variable. As an example setting `RAYON_RS_NUM_THREADS=4` will allocate a maximum of 4 threads.
-//!   **_Please note this behavior may evolve in the future_**
+//! - Large inputs and batches encode in parallel, on at most `parallelism::max_threads()` threads
+//!   (caller included; set with `parallelism::set_max_threads`).
 //!
 //! # Features
 //!
