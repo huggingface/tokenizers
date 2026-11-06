@@ -41,6 +41,8 @@ memchr = "2.8.3"
 wide = "1.6.1"
 ########### Optional dependencies ############################
 rayon = { version = "1.12", optional = true }
+# Lock-free reads of the cached encode pool.
+arc-swap = { version = "1.7", optional = true }
 # Only `normalizers/precompiled.rs` reaches it, which is `normalizers`-gated.
 unicode-segmentation = { version = "1.13", optional = true }
 spm_precompiled = { version = "0.1.4", optional = true }
@@ -67,7 +69,7 @@ normalizers = [
 ]
 unicode-scripts = []
 http = ["hf-hub"]
-parallelism = ["dep:rayon", "dep:libc"]
+parallelism = ["dep:rayon", "dep:libc", "dep:arc-swap"]
 
 [dev-dependencies]
 # Test-only: one `#[cfg(test)]` cross-check in `vocab/buckets.rs`.
