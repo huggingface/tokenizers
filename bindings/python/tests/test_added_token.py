@@ -14,10 +14,10 @@ def test_normalized_default():
     assert AddedToken("<x>", normalized=True, special=True).normalized is True
 
 
-def test_state_is_the_json_entry():
-    # Same state as a component: the token's `tokenizer.json` entry, as JSON bytes.
+def test_state_is_a_dict():
+    # transformers' `save_pretrained` adds a `__type` key to it, as with 0.23.
     token = AddedToken("<x>", lstrip=True, special=True)
-    assert json.loads(token.__getstate__()) == {
+    assert token.__getstate__() == {
         "content": "<x>",
         "single_word": False,
         "lstrip": True,
@@ -37,7 +37,7 @@ def test_pickle(protocol):
 def compile_gpt2_with(added_tokens, tmp_path):
     """Compiles GPT-2 with `added_tokens`, a `{id: AddedToken}` dict, in place of its own."""
     declared = json.loads(GPT2.read_text())
-    declared["added_tokens"] = [{"id": id, **json.loads(token.__getstate__())} for id, token in added_tokens.items()]
+    declared["added_tokens"] = [{"id": id, **token.__getstate__()} for id, token in added_tokens.items()]
     path = tmp_path / "tokenizer.json"
     path.write_text(json.dumps(declared))
     # TODO: to re-write when we land Tokenizer.from_str to avoid round-trip to the filesystem
@@ -58,16 +58,26 @@ def test_compiled_flags(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "state",
+    ("state", "error"),
     [
-        {"content": "<x>"},
-        {"content": "<x>", "single_word": False, "lstrip": False, "rstrip": False, "normalized": 1, "special": False},
+        ({"content": "<x>"}, KeyError),
+        (
+            {
+                "content": "<x>",
+                "single_word": False,
+                "lstrip": False,
+                "rstrip": False,
+                "normalized": 1,
+                "special": False,
+            },
+            TypeError,
+        ),
     ],
     ids=["missing-flags", "flag-not-bool"],
 )
-def test_unpickle_refuses_malformed_state(state):
-    with pytest.raises(ValueError):
-        AddedToken._unpickle(json.dumps(state).encode())
+def test_unpickle_refuses_malformed_state(state, error):
+    with pytest.raises(error):
+        AddedToken._unpickle(state)
 
 
 @pytest.fixture

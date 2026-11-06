@@ -294,15 +294,6 @@ fn padding_round_trips() {
     }
 }
 
-/// A lone added token has no `id`: the bindings hold one outside any `added_tokens` array.
-#[test]
-fn a_lone_added_token_round_trips_without_an_id() {
-    let spelling = r#"{"content": "<x>", "single_word": true, "lstrip": false,
-        "rstrip": true, "normalized": false, "special": true}"#;
-    let token = crate::added_token_from_json(spelling).unwrap();
-    assert_eq!(json(&added_token_to_json(&token)), json(spelling));
-}
-
 #[test]
 fn the_canonical_shape_is_tagged_versioned_and_null_where_absent() {
     let text = rewrite(&config(&[

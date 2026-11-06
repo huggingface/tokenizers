@@ -36,7 +36,7 @@ mod truncation;
 #[cfg(test)]
 mod tests;
 
-use self::added_tokens::{read_added_token, read_added_tokens};
+use self::added_tokens::read_added_tokens;
 use self::decoders::read_decoder;
 use self::model::read_bpe;
 #[cfg(feature = "unigram")]
@@ -116,14 +116,6 @@ pub fn padding_from_json(text: &str) -> Result<Option<tk_encode::tokenizer::Padd
 pub fn truncation_from_json(text: &str) -> Result<Option<tk_encode::tokenizer::TruncationParams>> {
     let doc = Json::parse(text).map_err(|e| -> tk_encode::Error { e.to_string().into() })?;
     read_truncation(Some(&doc).filter(|doc| !doc.is_null()))
-}
-
-/// Read a lone `added_tokens` entry. Its `id` is not read.
-pub fn added_token_from_json(
-    text: &str,
-) -> Result<tk_encode::vocab::bucket_added_vocabulary::AddedToken> {
-    let doc = Json::parse(text).map_err(|e| -> tk_encode::Error { e.to_string().into() })?;
-    read_added_token(&doc)
 }
 
 /// Read a lone `added_tokens`, the value of that one key, in ascending id order. `null` means none.

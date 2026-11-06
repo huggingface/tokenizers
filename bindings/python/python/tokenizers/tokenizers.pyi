@@ -42,9 +42,9 @@ class AddedToken:
             Skip the token when decoding with `skip_special_tokens`.
     """
     def __eq__(self, value: object, /) -> bool: ...
-    def __getstate__(self, /) -> bytes:
+    def __getstate__(self, /) -> dict:
         """
-        The token's `added_tokens` entry without its `id`, as JSON `bytes`.
+        The token's `added_tokens` entry without its `id`, as a dict.
         """
     def __hash__(self, /) -> int: ...
     def __ne__(self, value: object, /) -> bool: ...
@@ -59,14 +59,14 @@ class AddedToken:
         normalized: bool | None = None,
         special: bool = False,
     ) -> AddedToken: ...
-    def __reduce__(self, /) -> tuple[Any, tuple[bytes]]:
+    def __reduce__(self, /) -> tuple[Any, tuple[dict]]:
         """
         Pickle rebuilds an `AddedToken` by calling `_unpickle` with `__getstate__()`.
         """
     def __repr__(self, /) -> str: ...
     def __str__(self, /) -> str: ...
     @staticmethod
-    def _unpickle(state: bytes) -> AddedToken:
+    def _unpickle(state: dict) -> AddedToken:
         """
         Rebuilds an `AddedToken` from its `__getstate__`.
         """

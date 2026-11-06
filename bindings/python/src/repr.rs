@@ -198,7 +198,7 @@ fn newline(indent: usize, out: &mut String) {
     out.push_str(&INDENT.repeat(indent));
 }
 
-pub(crate) fn python_bool(value: bool) -> &'static str {
+fn python_bool(value: bool) -> &'static str {
     if value { "True" } else { "False" }
 }
 

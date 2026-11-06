@@ -1,10 +1,9 @@
 use std::hash::{Hash, Hasher};
 
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use tk::vocab::bucket_added_vocabulary::AddedToken as CoreAddedToken;
-use tk::{added_token_from_json, added_token_to_json};
 
-use crate::error::err;
 use crate::repr;
 
 /// A token matched in the text before the model runs, such as `[CLS]` or `<|endoftext|>`.
@@ -38,6 +37,19 @@ impl From<CoreAddedToken> for AddedToken {
     fn from(token: CoreAddedToken) -> Self {
         Self(token)
     }
+}
+
+/// 0.23's `AddedToken.__getstate__`: the token's `added_tokens` entry without its `id`, as a
+/// dict. transformers' `save_pretrained` writes it to `tokenizer_config.json`.
+#[derive(FromPyObject, IntoPyObject)]
+#[pyo3(from_item_all)]
+struct State {
+    content: String,
+    single_word: bool,
+    lstrip: bool,
+    rstrip: bool,
+    normalized: bool,
+    special: bool,
 }
 
 /// A token passed to `Tokenizer.add_tokens` or `Tokenizer.add_special_tokens`: its content, or
@@ -121,24 +133,50 @@ impl AddedToken {
         self.0.special
     }
 
-    /// The token's `added_tokens` entry without its `id`, as JSON `bytes`.
-    fn __getstate__(&self) -> Vec<u8> {
-        added_token_to_json(&self.0).into_bytes()
+    /// The token's `added_tokens` entry without its `id`, as a dict.
+    fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let token = &self.0;
+        let state = State {
+            content: token.content.clone(),
+            single_word: token.single_word,
+            lstrip: token.lstrip,
+            rstrip: token.rstrip,
+            normalized: token.normalized,
+            special: token.special,
+        };
+        Ok(state.into_pyobject(py)?.cast_into()?)
     }
 
     /// Pickle rebuilds an `AddedToken` by calling `_unpickle` with `__getstate__()`.
-    fn __reduce__<'py>(&self, py: Python<'py>) -> PyResult<(Bound<'py, PyAny>, (Vec<u8>,))> {
+    fn __reduce__<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<(Bound<'py, PyAny>, (Bound<'py, PyDict>,))> {
         Ok((
             py.get_type::<Self>().getattr("_unpickle")?,
-            (self.__getstate__(),),
+            (self.__getstate__(py)?,),
         ))
     }
 
     /// Rebuilds an `AddedToken` from its `__getstate__`.
     #[staticmethod]
-    fn _unpickle(state: &[u8]) -> PyResult<Self> {
-        let text = std::str::from_utf8(state).map_err(err)?;
-        Ok(added_token_from_json(text).map_err(err)?.into())
+    fn _unpickle(state: &Bound<'_, PyDict>) -> PyResult<Self> {
+        let State {
+            content,
+            single_word,
+            lstrip,
+            rstrip,
+            normalized,
+            special,
+        } = state.extract()?;
+        Ok(Self::new(
+            content,
+            single_word,
+            lstrip,
+            rstrip,
+            Some(normalized),
+            special,
+        ))
     }
 
     fn __str__(&self) -> &str {
