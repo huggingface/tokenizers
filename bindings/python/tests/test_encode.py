@@ -1,6 +1,7 @@
 import pytest
 
-from tokenizers import Encoding
+from conftest import GPT2
+from tokenizers import Encoding, Tokenizer
 
 # Every id in this file comes from released tokenizers 0.23.1 on the same fixture
 
@@ -95,3 +96,29 @@ def test_encode_pair(bert, pair):
 def test_encode_pair_needs_two_texts(bert, pair):
     with pytest.raises(TypeError):
         bert.encode(pair)
+
+
+def test_encode_iter_yields_every_input_once(gpt2):
+    # large enough to go through the parallel path
+    corpus = GPT2.read_text()
+    texts = [corpus[n * 997 : n * 997 + 3000] for n in range(64)] + [("a pair", "of texts")]
+    expected = [e.ids for e in gpt2.encode_batch(texts, padding=None)]
+
+    got = dict(gpt2.encode_iter(texts))
+
+    assert sorted(got) == list(range(len(texts)))
+    assert [got[i].ids for i in range(len(texts))] == expected
+
+
+def test_encode_iter_empty(gpt2):
+    assert list(gpt2.encode_iter([])) == []
+
+
+def test_encode_iter_does_not_pad(padded_wiki):
+    tokenizer = Tokenizer.from_file(padded_wiki).compile()
+    texts = ["short", "a much longer sentence than the first one"]
+    expected = [e.ids for e in tokenizer.encode_batch(texts, padding=None)]
+
+    got = dict(tokenizer.encode_iter(texts))
+
+    assert [got[i].ids for i in range(len(texts))] == expected

@@ -3,6 +3,7 @@
 //! Encode text to token ids and decode token ids back to text
 mod compiled;
 mod components;
+mod encode_iter;
 mod encoding;
 mod error;
 mod input;
@@ -24,6 +25,8 @@ mod tokenizers {
     use crate::compiled::CompiledTokenizer;
     #[pymodule_export]
     use crate::components::Component;
+    #[pymodule_export]
+    use crate::encode_iter::EncodeIter;
     #[pymodule_export]
     use crate::encoding::Encoding;
     #[pymodule_export]
