@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use pyo3::prelude::*;
+use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyBytes, PyDict};
 use tk::PaddingParams;
 use tk::TruncationParams;
@@ -12,11 +13,13 @@ use tk::pipeline::PipelineToken;
 use tk::pipeline::PipelineTokenizer;
 use tk::{from_json, to_json};
 
+use crate::added_token::AddedToken;
 use crate::encoding::Encoding;
 use crate::error::err;
 use crate::input::PyInput;
 use crate::options::OverrideSentinel;
 use crate::tokenizer::TokenizerSpec;
+use crate::type_hints::AddedTokens;
 use crate::type_hints::TokenIds;
 
 /// A tokenizer built by `Tokenizer.compile()`. Encodes text into token ids, and decodes token
@@ -28,13 +31,18 @@ use crate::type_hints::TokenIds;
 #[pyclass(frozen, module = "tokenizers")]
 pub struct CompiledTokenizer {
     pipeline: PipelineTokenizer,
+    /// The `added_tokens` dict, built on first read.
+    added_tokens: PyOnceLock<Py<PyDict>>,
 }
 
 impl CompiledTokenizer {
     pub(crate) fn new(py: Python<'_>, spec: &TokenizerSpec) -> PyResult<Self> {
         // py.detach releases the GIL while the Rust code runs.
         let pipeline = py.detach(|| spec.compile()).map_err(err)?;
-        Ok(Self { pipeline })
+        Ok(Self {
+            pipeline,
+            added_tokens: PyOnceLock::new(),
+        })
     }
 
     fn encode_one(&self, input: PyInput, options: &EncodeOptions) -> tk::Result<PipelineEncoding> {
@@ -243,6 +251,26 @@ impl CompiledTokenizer {
         Ok(py.detach(|| self.pipeline.decode_tokens(ids, skip_special_tokens)))
     }
 
+    /// The added tokens, indexed by their token id, in ascending id order.
+    // The core rebuilds its tokens on every call, so the dict is built once and cached.
+    // Each read returns a shallow copy: a caller's edits never reach the cache.
+    #[getter]
+    fn added_tokens<'py>(&self, py: Python<'py>) -> PyResult<AddedTokens<'py>> {
+        let added_tokens = self.added_tokens.get_or_try_init(py, || {
+            let decoder = self
+                .pipeline
+                .get_added_vocabulary()
+                .get_added_tokens_decoder();
+            // The core returns a HashMap, which has no order. A BTreeMap sorts it by id.
+            let by_id: BTreeMap<u32, AddedToken> = decoder
+                .into_iter()
+                .map(|(id, token)| (id, token.into()))
+                .collect();
+            PyResult::Ok(by_id.into_pyobject(py)?.unbind())
+        })?;
+        Ok(AddedTokens(added_tokens.bind(py).copy()?))
+    }
+
     /// Returns the vocabulary, as a dict from token to id.
     ///
     /// Args:
@@ -327,7 +355,10 @@ impl CompiledTokenizer {
         let json = std::str::from_utf8(json).map_err(err)?;
         // py.detach releases the GIL while the Rust code runs.
         let pipeline = py.detach(|| from_json(json)).map_err(err)?;
-        Ok(Self { pipeline })
+        Ok(Self {
+            pipeline,
+            added_tokens: PyOnceLock::new(),
+        })
     }
 
     fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
