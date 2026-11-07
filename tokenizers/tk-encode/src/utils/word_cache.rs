@@ -53,7 +53,7 @@
 use std::fmt::Debug;
 
 use std::iter::Iterator;
-use wide::i8x16;
+use wide::u8x16;
 
 #[cfg(test)]
 use crate::vocab::bucket_vocab_store::INLINE_KEY_BYTES;
@@ -476,28 +476,61 @@ impl Window {
 
     /// Finds all candidates in the window that match the needle, and the leftmost 0x00 (empty slot)
     fn find_matches_and_first_empty(&self, needle: u8) -> (SlotSet, Option<usize>) {
-        let window = i8x16::from(self.window.map(|byte| byte as i8));
-        let matches_bitmask = window.simd_eq(i8x16::from([needle as i8; 16])).to_bitmask() as u16;
-        let empty_bitmask = window
-            .simd_eq(i8x16::from([WordCache::EMPTY as i8; 16]))
-            .to_bitmask() as u16;
-
+        let window = u8x16::from(self.window);
+        let matches_mask = slot_mask(window.simd_eq(u8x16::splat(needle)));
+        let empty_mask = slot_mask(window.simd_eq(u8x16::splat(WordCache::EMPTY)));
         // a trick to truncate matches to before the first empty
-        let before_first_empty = !empty_bitmask & empty_bitmask.wrapping_sub(1);
+        let before_first_empty = !empty_mask & empty_mask.wrapping_sub(1);
 
         let candidates = SlotSet {
-            mask: matches_bitmask & before_first_empty,
+            mask: matches_mask & before_first_empty,
             offset: self.offset,
         };
-        let first_empty =
-            (empty_bitmask != 0).then(|| self.offset + empty_bitmask.trailing_zeros() as usize);
+        let first_empty = (empty_mask != 0)
+            .then(|| self.offset + (empty_mask.trailing_zeros() / NUM_BITS_PER_SLOT) as usize);
         (candidates, first_empty)
     }
 }
 
+#[cfg(target_arch = "aarch64")]
+type SlotSetMask = u64;
+#[cfg(target_arch = "aarch64")]
+const NUM_BITS_PER_SLOT: u32 = 4;
+
+#[cfg(not(target_arch = "aarch64"))]
+type SlotSetMask = u16;
+#[cfg(not(target_arch = "aarch64"))]
+const NUM_BITS_PER_SLOT: u32 = 1;
+
+#[cfg(target_arch = "aarch64")]
+fn slot_mask(cmp: u8x16) -> SlotSetMask {
+    use std::arch::aarch64::*;
+    let cmp = cmp.as_array().as_ptr();
+    // SAFETY: The array is exactly 16 bytes
+    unsafe {
+        // Load in a SIMD register and reinterpret as 8xu16
+        let cmp = vreinterpretq_u16_u8(vld1q_u8(cmp));
+        // shrn (shift right and narrow)
+        // halves every byte: bytes of cmp are either 0xFF or 0x00 (it's a comparison),
+        // so 0xFF becomes 0xF and 0x00 becomes 0x0
+        let shift_narrow = vshrn_n_u16(cmp, 4);
+
+        // Reinterpret the result (16xu8 / 2 = 16xu4 = 64 bits) as a u64
+        vget_lane_u64(vreinterpret_u64_u8(shift_narrow), 0)
+        // Only keep one bit per 4-bits slot
+        & 0x1111_1111_1111_1111u64
+    }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+fn slot_mask(cmp: u8x16) -> SlotSetMask {
+    // wide uses the movemask SIMD operation when available on the target
+    cmp.to_bitmask() as u16
+}
+
 #[derive(Clone, Copy)]
 struct SlotSet {
-    mask: u16,
+    mask: SlotSetMask,
     offset: usize,
 }
 
@@ -508,7 +541,7 @@ impl Iterator for SlotSet {
         if self.mask == 0 {
             return None;
         }
-        let slot = self.mask.trailing_zeros() as usize;
+        let slot = (self.mask.trailing_zeros() / NUM_BITS_PER_SLOT) as usize;
         self.mask &= self.mask - 1;
         Some(slot + self.offset)
     }
