@@ -82,7 +82,13 @@ impl WordLevelTrainer {
         word_counts: &AHashMap<String, u64>,
         model: &mut WordLevel,
     ) -> Result<Vec<AddedToken>> {
-        let mut ordered_counts = word_counts.iter().collect::<Vec<_>>();
+        // Filtered before the ordering rather than after: the predicate is on the count, which is
+        // the ordering's primary key, so it commutes with the sort and shrinks what has to be
+        // ordered at all.
+        let mut ordered_counts = word_counts
+            .iter()
+            .filter(|(_, n)| **n >= self.min_frequency)
+            .collect::<Vec<_>>();
 
         //sort the word counts first by inverse counts and then by word, in order
         //to keep the sorting deterministic in case of equal counts
@@ -94,19 +100,27 @@ impl WordLevelTrainer {
             l.0.cmp(r.0)
         };
 
-        ordered_counts.sort_by(cmp);
+        // Only `vocab_size` entries are ever read, minus whatever the special tokens take, and
+        // `word_counts` holds every distinct word in the corpus -- commonly millions against a
+        // 30k vocabulary. Ordering all of them to keep 30k is O(n log n) to answer an O(n)
+        // question, so partition at the boundary first and order only the part that survives.
+        //
+        // `cmp` breaks count ties on the word, and the words are unique (they are `AHashMap`
+        // keys), so it is a total order: the selected set and its order are exactly what sorting
+        // everything produced.
+        let wanted = self.vocab_size.saturating_sub(self.special_tokens.len());
+        if wanted < ordered_counts.len() {
+            ordered_counts.select_nth_unstable_by(wanted, cmp);
+            ordered_counts.truncate(wanted);
+        }
+        ordered_counts.sort_unstable_by(cmp);
 
         let word_level = WordLevel::builder()
             .vocab(
                 self.special_tokens
                     .iter()
                     .map(|token| token.content.clone())
-                    .chain(
-                        ordered_counts
-                            .into_iter()
-                            .filter(|(_, n)| **n >= self.min_frequency)
-                            .map(|(w, _)| w.to_owned()),
-                    )
+                    .chain(ordered_counts.into_iter().map(|(w, _)| w.to_owned()))
                     .take(self.vocab_size)
                     .enumerate()
                     .map(|(i, w)| (w, i as u32))
@@ -220,5 +234,75 @@ mod tests {
         .collect();
 
         assert_eq!(model.vocab, expected_vocab);
+    }
+
+    /// The selection has to agree with ordering everything and taking the front, including at the
+    /// boundary where counts tie -- that is the whole reason `cmp` breaks ties on the word.
+    fn reference_vocab(
+        word_counts: &AHashMap<String, u64>,
+        vocab_size: usize,
+        min_frequency: u64,
+        specials: &[AddedToken],
+    ) -> Vec<String> {
+        let mut ordered = word_counts.iter().collect::<Vec<_>>();
+        ordered.sort_by(|l: &(&String, &u64), r: &(&String, &u64)| {
+            let count_comp = l.1.cmp(r.1);
+            if count_comp != Ordering::Equal {
+                return count_comp.reverse();
+            }
+            l.0.cmp(r.0)
+        });
+        specials
+            .iter()
+            .map(|t| t.content.clone())
+            .chain(
+                ordered
+                    .into_iter()
+                    .filter(|(_, n)| **n >= min_frequency)
+                    .map(|(w, _)| w.to_owned()),
+            )
+            .take(vocab_size)
+            .collect()
+    }
+
+    fn trained_vocab(
+        trainer: &WordLevelTrainer,
+        word_counts: &AHashMap<String, u64>,
+    ) -> Vec<String> {
+        let mut model = WordLevel::default();
+        trainer.do_train(word_counts, &mut model).unwrap();
+        let mut by_id: Vec<(u32, String)> =
+            model.vocab.iter().map(|(w, i)| (*i, w.clone())).collect();
+        by_id.sort_unstable();
+        by_id.into_iter().map(|(_, w)| w).collect()
+    }
+
+    #[test]
+    fn selection_agrees_with_sorting_everything() {
+        // Deliberately tie-heavy: many words share a count, so the boundary between kept and
+        // dropped falls inside a run of equal counts and only the word tie-break decides.
+        let word_counts: AHashMap<String, u64> = (0..200u64)
+            .map(|i| (format!("w{i:03}"), 5 + (i % 4)))
+            .collect();
+
+        for vocab_size in [0, 1, 3, 7, 50, 199, 200, 201, 500] {
+            for min_frequency in [0, 5, 6, 8, 99] {
+                for specials in [vec![], vec![AddedToken::from("[UNK]", true)]] {
+                    let trainer = WordLevelTrainer {
+                        vocab_size,
+                        min_frequency,
+                        special_tokens: specials.clone(),
+                        ..Default::default()
+                    };
+                    assert_eq!(
+                        trained_vocab(&trainer, &word_counts),
+                        reference_vocab(&word_counts, vocab_size, min_frequency, &specials),
+                        "vocab_size {vocab_size}, min_frequency {min_frequency}, \
+                         {} special(s)",
+                        specials.len(),
+                    );
+                }
+            }
+        }
     }
 }
