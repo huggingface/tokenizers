@@ -1,19 +1,5 @@
 //! RVV byte matching for the literal splitter's 64-byte blocks.
 use core::arch::asm;
-use std::sync::OnceLock;
-
-/// Linux HWCAP exposes the standard V extension as bit ('V' - 'A').
-#[inline]
-pub(crate) fn available() -> bool {
-    static AVAILABLE: OnceLock<bool> = OnceLock::new();
-    *AVAILABLE.get_or_init(|| {
-        unsafe extern "C" {
-            fn getauxval(kind: usize) -> usize;
-        }
-        // AT_HWCAP is process-wide; this does not assume a particular VLEN.
-        unsafe { getauxval(16) & (1 << (b'V' - b'A')) != 0 }
-    })
-}
 
 /// Compare 64 bytes with `b`, returning one bit per byte.
 ///

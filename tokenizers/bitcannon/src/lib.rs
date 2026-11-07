@@ -274,6 +274,25 @@ pub(crate) fn has_ssse3() -> bool {
     }
 }
 
+#[cfg(all(target_arch = "riscv64", target_os = "linux"))]
+pub(crate) fn has_rvv() -> bool {
+    use std::sync::atomic::{AtomicU8, Ordering};
+    static CACHED: AtomicU8 = AtomicU8::new(0);
+    match CACHED.load(Ordering::Relaxed) {
+        0 => {
+            unsafe extern "C" {
+                fn getauxval(kind: usize) -> usize;
+            }
+            const AT_HWCAP: usize = 16;
+            // Linux HWCAP exposes the standard V extension as bit ('V' - 'A').
+            let yes = unsafe { getauxval(AT_HWCAP) & (1 << (b'V' - b'A')) != 0 };
+            CACHED.store(1 + u8::from(yes), Ordering::Relaxed);
+            yes
+        }
+        n => n == 2,
+    }
+}
+
 pub(crate) const CONT: u8 = 15; // Atom::Cont
 pub(crate) const CODE_CONT: u8 = 7; // every grammar's dense code for a continuation byte
 
