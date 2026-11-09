@@ -229,6 +229,12 @@ class CompiledTokenizer:
         Returns:
             List[Encoding]
         """
+    def get_added_tokens_decoder(self, /) -> dict[int, AddedToken]:
+        """
+        Alias for `added_tokens`
+
+        Deprecated, prefer using `added_tokens`
+        """
     def get_vocab(self, /, with_added_tokens: bool = True) -> dict[str, int]:
         """
         Returns the vocabulary, as a dict from token to id.
