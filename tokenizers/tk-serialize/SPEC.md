@@ -23,12 +23,29 @@ A `1.0` file is a *legacy* file. tk-convert turns one into a `2.0` file; this cr
 ## Pipeline
 
 ```text
-             normalizer      pre_tokenizer        model       post_processor
-  text  ──▶  rewrite text ──▶ cut into words ──▶ words→ids ──▶ add specials  ──▶ ids
+  text
+    │
+    ├─▶ extract added/special tokens on the *raw* string
+    │
+    ├─▶ normalizer          rewrite each leftover segment
+    │
+    ├─▶ extract added/special tokens on the *normalized* segments
+    │     (`normalized: true` added tokens land here)
+    │
+    ├─▶ pre_tokenizer       cut leftover text into words
+    │
+    ├─▶ model               words → ids
+    │
+    └─▶ post_processor      add template specials  ──▶ ids
 
                                              decoder
   ids   ─────────────────────────────────────────────────────────────────────▶  text
 ```
+
+Added-token extraction before the pre-tokenizer is intentional: an `AddedToken`
+is a literal carve-out, so a `Split` / digit / RTL pre-tokenizer never sees those
+spans. Pieces that must go through the pre-tokenizer belong in the model vocab,
+not in `added_tokens`.
 
 ## Component
 
