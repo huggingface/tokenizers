@@ -1,5 +1,5 @@
-//! [`PipelineDecodeStream`] over real configs. Expected values are what released 0.23.3's
-//! `DecodeStream` returns for the same ids.
+//! Tests [`PipelineDecodeStream`] on real tokenizer configs. The expected values are what the
+//! released 0.23.3 `DecodeStream` returns for the same ids.
 
 use tk_encode::pipeline::{PipelineDecodeStream, PipelineTokenizer};
 
@@ -52,10 +52,12 @@ fn a_rewritten_prefix_is_an_invalid_prefix_error() {
     let llama2 = load("llama-2.json");
     let mut stream = PipelineDecodeStream::new(Vec::new(), false);
 
-    // <0x61> decodes to "a", then <0xD5> with no continuation byte turns both into U+FFFD
+    // <0x61> decodes to "a". <0xD5> starts a character, but the next token is not a byte.
+    // The ByteFallback decoder then turns both bytes into U+FFFD.
     assert_eq!(stream.step(&llama2, &[100]).unwrap(), Some("a".into()));
     assert_eq!(stream.step(&llama2, &[216]).unwrap(), None);
     let error = stream.step(&llama2, &[31479]).unwrap_err().to_string();
-    // vLLM matches this prefix to reset its stream (vllm/v1/engine/detokenizer.py)
+    // vLLM resets its stream when an error message starts with these words
+    // (vllm/v1/engine/detokenizer.py).
     assert!(error.starts_with("Invalid prefix encountered"), "{error}");
 }

@@ -275,9 +275,7 @@ impl CompiledTokenizer {
         Ok(AddedTokens(added_tokens.bind(py).copy()?))
     }
 
-    /// Alias for `added_tokens`
-    ///
-    /// Deprecated, prefer using `added_tokens`
+    /// Returns `added_tokens`. Deprecated: use the `added_tokens` property instead.
     #[pyo3(warn(
         message = "`get_added_tokens_decoder()` is deprecated, use the `added_tokens` property instead",
         category = pyo3::exceptions::PyDeprecationWarning

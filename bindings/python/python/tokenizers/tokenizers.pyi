@@ -231,9 +231,7 @@ class CompiledTokenizer:
         """
     def get_added_tokens_decoder(self, /) -> dict[int, AddedToken]:
         """
-        Alias for `added_tokens`
-
-        Deprecated, prefer using `added_tokens`
+        Returns `added_tokens`. Deprecated: use the `added_tokens` property instead.
         """
     def get_vocab(self, /, with_added_tokens: bool = True) -> dict[str, int]:
         """

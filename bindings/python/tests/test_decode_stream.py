@@ -35,7 +35,7 @@ def test_keeps_special_tokens_by_default(llama3):
     assert stream(llama3, DecodeStream(skip_special_tokens=True), ids) == llama3.decode(ids)
 
 
-# vLLM catches TypeError and OverflowError to skip an invalid id
+# vLLM catches TypeError and OverflowError, and skips the invalid id.
 @pytest.mark.parametrize("id", [-1, 2**32, "1"])
 def test_an_invalid_id_is_a_type_error(gpt2, id):
     with pytest.raises(TypeError):

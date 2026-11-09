@@ -9,7 +9,7 @@
 //! The macro calls [`component_kind!`](macro@super::component_kind) to write the base class, and
 //! [`sequence_class!`](macro@super::sequence_class) to write the `Sequence` class.
 //! Then it writes one class per definition in the list, and the `#[pymodule]` that exports them.
-//! `also_exports` lists other classes that module exports, such as `DecodeStream` in
+//! `also_exports` adds other classes to the module, such as `DecodeStream` to
 //! `tokenizers.decoders`.
 //! [`field_types`](super::field_types) gives the Rust type of each field type, such as `Bool`.
 //!

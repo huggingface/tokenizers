@@ -967,24 +967,30 @@ impl PipelineTokenizer {
     }
 }
 
-/// Decodes token ids one step at a time, and returns text only once it is complete.
+/// Decodes a stream of token ids, such as a model's output, into text as the ids arrive.
 ///
-/// Each step decodes the window `ids` and returns the text after `prefix`. The window keeps
-/// the ids behind the returned text, because decoders such as byte-level or WordPiece join
-/// text across tokens.
+/// Decoding each id on its own gives wrong text, for two reasons. One character can span
+/// several tokens: a byte-level tokenizer splits "é" into two byte tokens. And some decoders
+/// join neighbouring tokens: WordPiece glues a `##` token to the token before it.
+///
+/// So each step decodes the recent ids together and returns only the new text at the end.
+/// An incomplete character decodes to U+FFFD (`�`), so a step returns `None` while the text
+/// ends with one.
 #[derive(Clone)]
 pub struct PipelineDecodeStream {
     skip_special_tokens: bool,
     ids: Vec<u32>,
-    /// The decode of `ids[..prefix_index]`, which the next decode has to start with
+    /// The text of `ids[..prefix_index]`. Each decode of `ids` must start with it, and the
+    /// text after it is new.
     prefix: String,
-    /// The number of ids at the front of `ids` whose decode is `prefix`
+    /// How many ids at the front of `ids` make up `prefix`
     prefix_index: usize,
 }
 
 impl PipelineDecodeStream {
-    /// A stream whose first decode is preceded by `prompt`. The prompt gives context to the
-    /// first steps and is never returned.
+    /// Creates a stream that continues `prompt`.
+    ///
+    /// The first steps decode the prompt ids as context, but never return their text.
     pub fn new(prompt: Vec<u32>, skip_special_tokens: bool) -> Self {
         Self {
             skip_special_tokens,
@@ -994,10 +1000,12 @@ impl PipelineDecodeStream {
         }
     }
 
-    /// Push `ids` and return the text they complete, or `None` while a character is still
-    /// incomplete.
+    /// Adds `ids` to the stream and returns the new text.
+    ///
+    /// Returns `None` while the text ends with an incomplete character. Fails when the decode
+    /// changes text that an earlier step already returned.
     pub fn step(&mut self, tokenizer: &PipelineTokenizer, ids: &[u32]) -> Result<Option<String>> {
-        // `new` has no tokenizer, so the prompt is decoded on the first step.
+        // `new` has no tokenizer, so the first step decodes the prompt.
         if self.prefix.is_empty() && !self.ids.is_empty() {
             let new_prefix = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
             if !new_prefix.ends_with(char::REPLACEMENT_CHARACTER) {
@@ -1012,7 +1020,7 @@ impl PipelineDecodeStream {
             Ok(None)
         } else {
             let Some(new_text) = decoded.strip_prefix(self.prefix.as_str()) else {
-                // vLLM resets its stream on this error, matching the message's first words
+                // vLLM resets its stream when an error message starts with these words.
                 return Err(format!(
                     "Invalid prefix encountered while decoding stream. Token ID: {}, Expected prefix: '{}', Actual string: '{decoded}'",
                     self.ids.last().expect("a non-empty decode has at least one id"),

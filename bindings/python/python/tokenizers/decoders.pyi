@@ -59,16 +59,17 @@ class CTC(Decoder):
 @final
 class DecodeStream:
     """
-    Decodes a stream of token ids, for example a model generation.
+    Decodes a stream of token ids, such as a model's output, into text as the ids arrive.
 
-    A character can take several tokens, so `step` returns `None` if it needs more tokens to build a valid output.
+    One character can span several tokens, so `step` returns `None` until the character is
+    complete.
 
     Args:
         ids: list[int] | None
-            Prompt ids that come before the first generated id. They give context to the first
-            steps and are never returned.
+            The prompt ids that come before the stream. `step` decodes them as context, but
+            never returns their text.
         skip_special_tokens: bool
-            Whether special tokens should be omitted from the decoded text.
+            Whether to leave special tokens out of the text.
 
     Example::
 
@@ -84,17 +85,17 @@ class DecodeStream:
     ) -> DecodeStream: ...
     def step(self, /, tokenizer: CompiledTokenizer, id: int | Sequence2[int]) -> str | None:
         """
-        Decodes the next id, or several ids.
+        Adds the next id, or several ids, to the stream and returns the new text.
 
         Args:
             tokenizer: CompiledTokenizer
                 The tokenizer that decodes the ids.
             id: int | list[int]
-                The next id, or several ids.
+                The next id, or a list of the next ids.
 
         Returns:
             str | None
-                The new text, or `None` while a character is still incomplete.
+                The new text, or `None` while the text ends with an incomplete character.
         """
 
 class Decoder(Component):
