@@ -180,11 +180,11 @@ pub enum PipelinePreTokenizer {
 }
 
 /// First safe cut in `text[from..to)` (see [`bitcannon::cuts`]).
-pub type Cut = fn(text: &[u8], from: usize, to: usize) -> Option<usize>;
+pub(crate) type Cut = fn(text: &[u8], from: usize, to: usize) -> Option<usize>;
 
 impl PipelinePreTokenizer {
     /// This pre-tokenizer's safe cuts, if any are proven. `None` keeps inputs whole.
-    pub fn cut(&self) -> Option<Cut> {
+    pub(crate) fn cut(&self) -> Option<Cut> {
         match self {
             Self::Split(split) => split.cut(),
             Self::Sequence(sequence) => sequence.cut(),

@@ -47,11 +47,8 @@ impl PipelineSequence {
 }
 
 impl PipelineSequence {
-    /// The lone non-identity child's cuts; none for deepseek or several real children.
-    pub fn cut(&self) -> Option<pipeline::Cut> {
-        if self.is_deepseek() {
-            return None;
-        }
+    /// The lone non-identity child's cuts; none for several real children (deepseek has three).
+    pub(crate) fn cut(&self) -> Option<pipeline::Cut> {
         let mut work = self
             .pre_tokenizers
             .iter()

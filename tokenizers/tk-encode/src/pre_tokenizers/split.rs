@@ -140,7 +140,7 @@ impl Split {
     }
 
     /// Proven cuts exist only for natively-routed grammars [`bitcannon::cuts::after_letter`] covers.
-    pub fn cut(&self) -> Option<pipeline::Cut> {
+    pub(crate) fn cut(&self) -> Option<pipeline::Cut> {
         let grammar = self
             .fsm
             .filter(|_| !self.invert && self.behavior == SplitDelimiterBehavior::Isolated)?;
