@@ -47,9 +47,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        # The extension is built with `abi3-py310`, so one binary covers 3.10 through 3.14: test
+        # The extension is built with `abi3-py311`, so one binary covers 3.11 through 3.14: test
         # the oldest and the newest. 3.14t has no stable ABI yet, so pyo3 builds it version-specific.
-        python: ["3.10", "3.14", "3.14t"]
+        python: ["3.11", "3.14", "3.14t"]
     defaults:
       run:
         working-directory: bindings/python

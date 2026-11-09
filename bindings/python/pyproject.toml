@@ -1,7 +1,7 @@
 [project]
 name = "tokenizers"
 dynamic = ["version"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 readme = "README.md"
 description = "Reworked tokenizers Python bindings, over the pipeline encode path (not for release yet)"
 dependencies = ["huggingface_hub>=0.16.4,<3.0", "numpy"]
