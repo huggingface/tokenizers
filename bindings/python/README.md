@@ -59,6 +59,39 @@ padded = tokenizer.compile()
 padded.encode("Hello", padding=None)
 ```
 
+### Edit and save a tokenizer
+
+```python
+from tokenizers import AddedToken, normalizers
+
+# Set or replace a component. Reading `tokenizer.normalizer` returns a live view, not a copy.
+tokenizer.normalizer = normalizers.Sequence([normalizers.NFC(), normalizers.Lowercase()])
+
+# Added tokens are matched in the text before the model runs.
+tokenizer.add_special_tokens(["<|im_end|>"])
+tokenizer.add_tokens([AddedToken("<think>", single_word=True)])
+
+tokenizer.save("tokenizer.json")
+compiled = tokenizer.compile()  # compile again to encode with the edits
+compiled.token_to_id("<think>")  # a new token gets the next free id
+compiled.get_vocab_size()        # counts the added tokens too
+```
+
+`examples/composition.py` builds a tokenizer from a model, then edits the model after the tokenizer holds it.
+
+### Decode a stream of ids
+
+`DecodeStream` turns ids into text as they arrive, such as a model's generated tokens.
+`step` returns `None` while the text ends with an incomplete character.
+
+```python
+from tokenizers.decoders import DecodeStream
+
+stream = DecodeStream(skip_special_tokens=True)
+for id in generated_ids:
+    print(stream.step(compiled, id) or "", end="")
+```
+
 `examples/` holds a runnable script for each of these; `make examples` runs them all.
 
 ## multiprocessing and Worker processes
@@ -92,8 +125,9 @@ and nothing is pickled.
   in editable mode.
 - `make test` does the above, then runs `tests/` with pytest.
 - `make examples` does the above, then runs every script in `examples/`.
-- `make stubs` regenerates `python/tokenizers/tokenizers.pyi`, including the members
-  `python/tokenizers/__init__.py` attaches to the Rust classes.
+- `make stubs` regenerates the `.pyi` stubs in `python/tokenizers/` (`tokenizers.pyi`,
+  `models.pyi`, `normalizers.pyi`, ...), including the members `python/tokenizers/__init__.py`
+  attaches to the Rust classes.
 - `make style` / `make check-style` regenerate the stub, then format/lint the Rust and
   Python sides and type-check with `ty`. CI runs `make check-style` and fails if the
   regenerated stub differs from the committed one.

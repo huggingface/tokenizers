@@ -95,9 +95,6 @@ As we work toward v1, we are gonna bring back the entire python API that allows 
 - Bring training back: this should be easy, but we want the perfs gains to come as well.
 - Batch encoding API with zero-copy views on encoded ids
 - dlpack API for torch / JAX / numpy interop.
-- Composition: edit components of the pipeline (`tokenizer.normalizer = [...]`). The editable
-  `Tokenizer` spec and `compile()` have landed; per-component handles are next.
-- `tokenizer.save` to persist a modified or trained tokenizer on disk.
 - `role_to_token` override.
 - Bring back offset output: this should be useful for people training.
 - Windowing / stride in encode.
