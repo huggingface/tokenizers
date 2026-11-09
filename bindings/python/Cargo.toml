@@ -17,7 +17,6 @@ pyo3 = { version = "=0.30", default-features = false, features = [
   "macros",
   "extension-module",
   "abi3-py310",
-  "abi3t-py315",
   "experimental-inspect",
 ] }
 #TODO: this will be a soft dependency later on IMO.

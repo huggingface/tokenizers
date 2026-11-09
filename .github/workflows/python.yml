@@ -47,12 +47,12 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        # The extension is built with both of the `abi3-py310` and `abi3t-py315` features,
-        # so one binary covers GIL-enabled 3.10+ and another covers free-threaded 3.15+:
-        # test the oldest and newest.
+        # The extension is built with `abi3-py310`, plus `abi3t-py315` on free-threaded
+        # Python, so one binary covers GIL-enabled 3.10+ and another covers
+        # free-threaded 3.15+: test the oldest and newest.
         # 3.14t has no stable ABI, so PyO3 ignores both features on 3.14t and we also build
         # a version-specific wheel for it.
-        python: ["3.10", "3.14", "3.14t", "3.15t"]  # GIL-enabled 3.15 uses the abi3 wheel tested in python-release.yml.
+        python: ["3.10", "3.15", "3.14t", "3.15t"]
     defaults:
       run:
         working-directory: bindings/python
@@ -98,6 +98,7 @@ jobs:
       - name: Run tests
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MATURIN_ARGS: ${{ endsWith(matrix.python, 't') && '--features pyo3/abi3t-py315' || '' }}
         run: |
           source .venv/bin/activate
           make test HF="uvx --from huggingface_hub hf"

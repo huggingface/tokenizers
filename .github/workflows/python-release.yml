@@ -169,6 +169,7 @@ jobs:
             --compatibility pypi
             --out dist
             -i ${{ matrix.config.python }}
+            ${{ endsWith(matrix.config.python, 't') && '--features pyo3/abi3t-py315' || '' }}
         env:
           RUSTFLAGS: ${{ runner.os == 'macOS' && '-C link-arg=-undefined -C link-arg=dynamic_lookup' || '' }}
       - name: restrict abi3t wheels to free-threaded Python
