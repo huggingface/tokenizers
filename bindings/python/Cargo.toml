@@ -15,6 +15,7 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "=0.29", default-features = false, features = [
   "macros",
+  "multiple-pymethods",
   "extension-module",
   "abi3-py310",
   "experimental-inspect",

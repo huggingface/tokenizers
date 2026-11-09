@@ -45,6 +45,14 @@ class ByteLevel(Normalizer):
     mapping.
     """
     def __new__(cls, /) -> ByteLevel: ...
+    @staticmethod
+    def alphabet() -> list[str]:
+        """
+        Returns the 256 characters used to represent bytes by this normalizer.
+
+        Pass this alphabet as `initial_alphabet` when training a byte-level BPE
+        tokenizer so every byte remains representable, including unseen bytes.
+        """
 
 @final
 class Lowercase(Normalizer):
