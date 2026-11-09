@@ -1,3 +1,4 @@
+use ahash::AHashMap;
 use std::collections::{BTreeMap, HashMap};
 use std::iter::Enumerate;
 use std::sync::Arc;
@@ -18,7 +19,7 @@ use crate::{
     pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     tokenizer::Decode as _,
-    vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
+    vocab::bucket_added_vocabulary::{AddedToken, AddedVocabulary as BucketAddedVocabulary},
 };
 #[cfg(feature = "parallelism")]
 pub use parallel::PARALLEL_MIN_BYTES;
@@ -40,8 +41,8 @@ mod pre_tokenizer;
 
 pub use normalizer::{Normalize, Normalizer, NormalizerChain, normalize_all};
 pub use post_processor::{PostProcessor, Template};
-pub use pre_tokenizer::{Cut, PreTokenize, PreTokenizer, PreTokenizerScratch};
-pub(crate) use pre_tokenizer::{split_delimiter, split_matches};
+pub use pre_tokenizer::{PreTokenize, PreTokenizer, PreTokenizerScratch};
+pub(crate) use pre_tokenizer::{Cut, split_delimiter, split_matches};
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
@@ -268,19 +269,20 @@ impl Tokenizer {
         padding: Option<PaddingParams>,
         truncation: Option<TruncationParams>,
     ) -> Self {
-        let added_id_min = added_vocabulary
-            .get_added_tokens_decoder()
-            .keys()
-            .copied()
-            .min()
-            .unwrap_or(u32::MAX);
+        // rebuilt from the vocabulary, so built once
+        let added_tokens = added_vocabulary.get_added_tokens_decoder();
+        let added_id_min = added_tokens.keys().copied().min().unwrap_or(u32::MAX);
         let added_outside_model = added_vocabulary
             .get_vocab()
             .keys()
             .filter(|token| model.token_to_id(token).is_none())
             .count();
         let total_vocab_size = model.get_vocab_size() + added_outside_model;
-        let cut = safe_cut(&added_vocabulary, &normalizers, &pre_tokenizer);
+        let cut = if cfg!(feature = "parallelism") {
+            safe_cut(&added_tokens, &normalizers, &pre_tokenizer)
+        } else {
+            None
+        };
         Self {
             inner: Arc::new(TokenizerInner {
                 added_vocabulary,
@@ -329,7 +331,7 @@ impl Tokenizer {
 /// - a normalized added token a cut could split, or an `lstrip`/`rstrip` one (raw ones are peeled
 ///   off the whole input before cutting)
 fn safe_cut(
-    added_vocabulary: &BucketAddedVocabulary,
+    added_tokens: &AHashMap<u32, AddedToken>,
     normalizers: &[Normalizer],
     pre_tokenizer: &PreTokenizer,
 ) -> Option<Cut> {
@@ -337,8 +339,7 @@ fn safe_cut(
     if !normalizers.is_empty() {
         return None;
     }
-    let tokens = added_vocabulary.get_added_tokens_decoder();
-    let preserved = tokens.values().all(|token| {
+    let preserved = added_tokens.values().all(|token| {
         let content = token.content.as_bytes();
         !token.single_word
             && (!token.normalized
@@ -617,6 +618,13 @@ impl Tokenizer {
     /// The added vocabulary, whose `get_added_tokens_decoder` is the `added_tokens` array.
     pub fn get_added_vocabulary(&self) -> &BucketAddedVocabulary {
         &self.inner.added_vocabulary
+    }
+
+    /// Whether a large input may be cut and its chunks encoded in parallel (see [`safe_cut`]). For
+    /// tests: a cut silently turned off would still encode right.
+    #[doc(hidden)]
+    pub fn cuts_large_inputs(&self) -> bool {
+        self.inner.cut.is_some()
     }
 
     /// Which token plays which role, as the config declared it. Empty when it declared none.
@@ -2067,12 +2075,12 @@ mod tests {
         ]))
     }
 
-    fn added(tokens: impl IntoIterator<Item = AddedToken>) -> BucketAddedVocabulary {
+    fn added(tokens: impl IntoIterator<Item = AddedToken>) -> AHashMap<u32, AddedToken> {
         let mut added = BucketAddedVocabulary::new();
         added
             .add_tokens(tokens, 8, |_| None, None::<&Normalizer>)
             .unwrap();
-        added
+        added.get_added_tokens_decoder()
     }
 
     #[test]

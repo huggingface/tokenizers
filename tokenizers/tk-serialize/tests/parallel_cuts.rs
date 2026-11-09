@@ -36,11 +36,32 @@ fn base64(len: usize) -> String {
         .collect()
 }
 
+/// Code: indentation runs, punctuation, string literals, comments, digits.
+const CODE: &str = r#"
+/// Sum the `n` first squares, skipping multiples of `skip`.
+pub fn squares(n: u64, skip: u64) -> Result<u64, String> {
+    if skip == 0 {
+        return Err(format!("skip must be > 0, got {skip}"));
+    }
+    let mut total = 0u64;
+    for i in 1..=n {
+        // i * i overflows past 2^32
+        if i % skip != 0 { total = total.checked_add(i * i).ok_or("overflow")?; }
+    }
+    Ok(total)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn small() { assert_eq!(super::squares(4, 3), Ok(1 + 4 + 16)); }
+}
+"#;
+
 fn texts(special: &str) -> Vec<(&'static str, String)> {
     let len = 16 * PARALLEL_MIN_BYTES;
     let english = std::fs::read_to_string(format!("{DATA}/big.txt")).unwrap();
     let cjk = std::fs::read_to_string(format!("{DATA}/unigram_wagahaiwa_nekodearu.txt")).unwrap();
-    let code = include_str!("../../tk-encode/src/tokenizer/pipeline/parallel.rs");
     let mut with_specials = sized(&english[..len], len);
     for at in (0..8).map(|i| i * len / 8) {
         let mut at = at;
@@ -52,7 +73,7 @@ fn texts(special: &str) -> Vec<(&'static str, String)> {
     vec![
         ("english", sized(&english, len)),
         ("cjk", sized(&cjk, len)),
-        ("code", sized(code, len)),
+        ("code", sized(CODE, len)),
         ("base64", base64(len)),
         (
             "whitespace runs",
@@ -67,8 +88,9 @@ fn texts(special: &str) -> Vec<(&'static str, String)> {
     ]
 }
 
-fn assert_cut_encode_matches_serial(file: &str, special: &str) {
+fn assert_cut_encode_matches_serial(file: &str, special: &str, cuts: bool) {
     let tokenizer = load(file);
+    assert_eq!(tokenizer.cuts_large_inputs(), cuts, "{file} cuts");
     let options = EncodeOptions::no_specials();
     for (name, text) in texts(special) {
         let mut serial = Vec::new();
@@ -85,24 +107,29 @@ fn assert_cut_encode_matches_serial(file: &str, special: &str) {
 
 #[test]
 fn llama3_cut_encode_matches_serial() {
-    assert_cut_encode_matches_serial("llama-3-tokenizer.json", "<|reserved_special_token_0|>");
+    assert_cut_encode_matches_serial(
+        "llama-3-tokenizer.json",
+        "<|reserved_special_token_0|>",
+        true,
+    );
 }
 
+/// Control: not cut (normalized added tokens).
 #[test]
-fn roberta_cut_encode_matches_serial() {
-    assert_cut_encode_matches_serial("roberta.json", "<|endoftext|>");
+fn roberta_encode_matches_serial() {
+    assert_cut_encode_matches_serial("roberta.json", "<|endoftext|>", false);
 }
 
 /// Control: not cut (normalized `<|endoftext|>`).
 #[test]
 fn gpt2_encode_matches_serial() {
-    assert_cut_encode_matches_serial("gpt2.json", "<|endoftext|>");
+    assert_cut_encode_matches_serial("gpt2.json", "<|endoftext|>", false);
 }
 
 /// Control: not cut (`Whitespace` has no proven cut).
 #[test]
 fn wiki_encode_matches_serial() {
-    assert_cut_encode_matches_serial("tokenizer-wiki.json", "[SEP]");
+    assert_cut_encode_matches_serial("tokenizer-wiki.json", "[SEP]", false);
 }
 
 /// With `encode_special_tokens`, specials stay in the text: a cut inside one must not expose a
