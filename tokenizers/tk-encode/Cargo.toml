@@ -41,7 +41,6 @@ memchr = "2.8.3"
 wide = "1.6.1"
 ########### Optional dependencies ############################
 rayon = { version = "1.12", optional = true }
-rayon-cond = { version = "0.4", optional = true }
 # Only `normalizers/precompiled.rs` reaches it, which is `normalizers`-gated.
 unicode-segmentation = { version = "1.13", optional = true }
 spm_precompiled = { version = "0.1.4", optional = true }
@@ -68,7 +67,7 @@ normalizers = [
 ]
 unicode-scripts = []
 http = ["hf-hub"]
-parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
+parallelism = ["dep:rayon", "dep:libc"]
 
 [dev-dependencies]
 # Test-only: one `#[cfg(test)]` cross-check in `vocab/buckets.rs`.
