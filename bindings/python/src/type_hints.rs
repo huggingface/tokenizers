@@ -1,14 +1,16 @@
 //! Argument and return types whose type hints pyo3 cannot derive
 
+use std::collections::BTreeMap;
 use std::convert::Infallible;
 
 use numpy::{Element, PyArray1, PyReadonlyArray1};
 use pyo3::exceptions::PyTypeError;
 use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyString};
+use pyo3::types::{PyBool, PyDict, PyString};
 use pyo3::{Borrowed, PyTypeInfo, type_hint_identifier, type_hint_subscript, type_hint_union};
 
+use crate::added_token::AddedToken;
 use crate::encoding::Encoding;
 
 /// A 1-D numpy array, typed `NDArray[numpy.<dtype>]`.
@@ -113,5 +115,23 @@ impl<'py> FromPyObject<'_, 'py> for Token<'py> {
             "token must be a str or a bool, not {}",
             obj.get_type().name()?
         )))
+    }
+}
+
+/// The dict `CompiledTokenizer.added_tokens` returns, typed `dict[int, AddedToken]`.
+///
+/// A bare [`PyDict`] in a signature is typed `dict`.
+pub struct AddedTokens<'py>(pub Bound<'py, PyDict>);
+
+impl<'py> IntoPyObject<'py> for AddedTokens<'py> {
+    type Target = PyDict;
+    type Output = Bound<'py, PyDict>;
+    type Error = Infallible;
+
+    const OUTPUT_TYPE: PyStaticExpr =
+        <BTreeMap<u32, AddedToken> as IntoPyObject<'static>>::OUTPUT_TYPE;
+
+    fn into_pyobject(self, _py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        Ok(self.0)
     }
 }

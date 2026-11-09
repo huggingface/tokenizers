@@ -1,6 +1,8 @@
 //! Python bindings for Hugging Face's Tokenizers rust library
 //!
 //! Encode text to token ids and decode token ids back to text
+mod added_token;
+mod added_tokens_spec;
 mod compiled;
 mod components;
 mod encoding;
@@ -20,6 +22,8 @@ mod tokenizers {
     #[pymodule_export]
     const __version__: &str = env!("CARGO_PKG_VERSION");
 
+    #[pymodule_export]
+    use crate::added_token::AddedToken;
     #[pymodule_export]
     use crate::compiled::CompiledTokenizer;
     #[pymodule_export]
