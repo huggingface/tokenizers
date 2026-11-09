@@ -529,6 +529,53 @@ mod tests {
     }
 
     #[test]
+    fn encodes_a_vocab_holding_every_utf8_byte() {
+        let chars = crate::models::chars_covering_every_utf8_byte();
+        let mut vocab: Vocab = chars
+            .iter()
+            .zip(1u32..)
+            .map(|(c, id)| (c.to_string(), id))
+            .collect();
+        vocab.insert("[UNK]".to_string(), 0);
+        let model = WordPiece::builder().vocab(vocab).build().unwrap();
+        let model = PipelineWordPiece::try_from(model).unwrap();
+        let mut scratch = pipeline::Model::init_scratch(&model);
+
+        for (c, id) in chars.iter().zip(1u32..) {
+            let token = c.to_string();
+            assert_eq!(pipeline_ids(&model, &token, &mut scratch), [id], "{c:?}");
+            assert_eq!(model.token_to_id(&token), Some(id), "{c:?}");
+        }
+    }
+
+    #[test]
+    fn encodes_nul_like_any_other_character() {
+        let vocab: Vocab = [
+            ("[UNK]", 0u32),
+            ("a", 1),
+            ("\0", 2),
+            ("##\0", 3),
+            ("##a", 4),
+        ]
+        .into_iter()
+        .map(|(token, id)| (token.to_string(), id))
+        .collect();
+        let model = WordPiece::builder().vocab(vocab).build().unwrap();
+        let model = PipelineWordPiece::try_from(model).unwrap();
+        let mut scratch = pipeline::Model::init_scratch(&model);
+
+        assert_eq!(pipeline_ids(&model, "a\0a", &mut scratch), [1, 3, 4]);
+        assert_eq!(pipeline_ids(&model, "\0", &mut scratch), [2]);
+        assert_eq!(model.token_to_id("##\0"), Some(3));
+        assert_eq!(model.id_to_token(3).as_deref(), Some("##\0"));
+    }
+
+    #[test]
+    fn token_to_id_looks_up_a_nul_the_vocab_lacks() {
+        assert_eq!(pipeline_wordpiece().token_to_id("hello\0"), None);
+    }
+
+    #[test]
     fn token_to_id_matches_whole_entries_only() {
         let model = pipeline_wordpiece();
 

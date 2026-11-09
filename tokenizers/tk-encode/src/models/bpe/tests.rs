@@ -46,6 +46,27 @@ fn pipeline_ids(model: &PipelineBPE, sequence: &str) -> Vec<u32> {
 }
 
 #[test]
+fn encodes_a_vocab_holding_every_utf8_byte() {
+    let chars = crate::models::chars_covering_every_utf8_byte();
+    let vocab: Vocab = chars
+        .iter()
+        .zip(0u32..)
+        .map(|(c, id)| (c.to_string(), id))
+        .collect();
+    let pipeline = PipelineBPE::from_config(BpeConfig {
+        vocab,
+        ..BpeConfig::default()
+    })
+    .unwrap();
+
+    for (c, id) in chars.iter().zip(0u32..) {
+        let token = c.to_string();
+        assert_eq!(pipeline_ids(&pipeline, &token), [id], "{c:?}");
+        assert_eq!(pipeline.token_to_id(&token), Some(id), "{c:?}");
+    }
+}
+
+#[test]
 fn applies_merges() {
     let pipeline = hello(BpeConfig::default()).unwrap();
     for (input, want) in [
