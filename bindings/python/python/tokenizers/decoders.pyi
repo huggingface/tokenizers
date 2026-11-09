@@ -64,7 +64,7 @@ class DecodeStream:
     A character can take several tokens, so `step` returns `None` if it needs more tokens to build a valid output.
 
     Args:
-        ids:
+        ids: list[int] | None
             Prompt ids that come before the first generated id. They give context to the first
             steps and are never returned.
         skip_special_tokens: bool
@@ -84,8 +84,7 @@ class DecodeStream:
     ) -> DecodeStream: ...
     def step(self, /, tokenizer: CompiledTokenizer, id: int | Sequence2[int]) -> str | None:
         """
-        Process the next id(s) and returns the decoded text, or None if more tokens are required
-        to decode to valid text.
+        Decodes the next id, or several ids.
 
         Args:
             tokenizer: CompiledTokenizer
