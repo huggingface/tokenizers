@@ -77,7 +77,8 @@ fn register_fork_handler() {}
 
 #[derive(Clone)]
 struct Slot {
-    /// `None` when `max_threads()` is 1: cached too, so a serial process skips the rebuild path.
+    /// `None` when `max_threads()` is 1 or the build failed: cached too, so a serial process skips
+    /// the rebuild path.
     pool: Option<Arc<rayon::ThreadPool>>,
     version: usize,
     pid: u32,
@@ -156,12 +157,13 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     let pool = if workers == 0 {
         None
     } else {
-        let pool = rayon::ThreadPoolBuilder::new()
+        // a failed build (thread limit) is cached as serial too, rather than retried every encode
+        rayon::ThreadPoolBuilder::new()
             .num_threads(workers)
             .thread_name(|i| format!("tk-encode-{i}"))
             .build()
-            .ok()?;
-        Some(Arc::new(pool))
+            .ok()
+            .map(Arc::new)
     };
     let mut guard = lock_blocking();
     let old = guard.replace(Slot {
