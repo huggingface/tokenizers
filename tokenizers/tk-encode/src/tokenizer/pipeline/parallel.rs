@@ -293,28 +293,21 @@ impl Iterator for StreamingIter {
             self.orphaned = Some(self.salvage().into_iter());
             return self.next();
         }
-        {
-            let mut scratch = None;
-            loop {
-                if let Some(seq) = self.batch.completed_seq(self.next) {
-                    self.next += 1;
-                    self.completed += 1;
-                    return Some((seq, self.batch.take_encoding(seq)));
-                }
-                let scratch = scratch.get_or_insert_with(|| self.batch.tokenizer.get_scratch());
-                // The caller has to wait for results regardless: instead of parking or empty
-                // spinning, we do useful work
-                if !self.batch.encode_task(scratch) {
-                    // the missing work is held by workers that didn't survive a fork
-                    if fork_generation() != self.batch.fork_gen {
-                        break;
-                    }
-                    std::hint::spin_loop();
-                }
+        // No fork check in here: only the forking thread survives a fork, and it isn't in this loop.
+        let mut scratch = None;
+        loop {
+            if let Some(seq) = self.batch.completed_seq(self.next) {
+                self.next += 1;
+                self.completed += 1;
+                return Some((seq, self.batch.take_encoding(seq)));
+            }
+            let scratch = scratch.get_or_insert_with(|| self.batch.tokenizer.get_scratch());
+            // The caller has to wait for results regardless: instead of parking or empty
+            // spinning, we do useful work
+            if !self.batch.encode_task(scratch) {
+                std::hint::spin_loop();
             }
         }
-        self.orphaned = Some(self.salvage().into_iter());
-        self.next()
     }
 }
 
