@@ -83,6 +83,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ad8689a486416c401ea15715a4694de30054248ec627edbf31f49cb64ee4086"
 
 [[package]]
+name = "arc-swap"
+version = "1.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "380962b3d93b99642e50b9febf72c071e97e8b32d86eae9cf4ef582bb960ae6e"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3159,6 +3168,7 @@ name = "tk-encode"
 version = "0.1.0-dev.2"
 dependencies = [
  "ahash",
+ "arc-swap",
  "assert_approx_eq",
  "bitcannon",
  "daachorse 5.0.0",
