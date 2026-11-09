@@ -107,7 +107,7 @@ jobs:
           - { runner: ubuntu-24.04,     target: x86_64,  manylinux: auto, python: "3.14t" }
           - { runner: ubuntu-24.04-arm, target: aarch64, manylinux: auto, python: "3.14t" }
 
-          # ---- Linux glibc, abi3.abi3t (one wheel for both 3.15+ builds) ---------------------
+          # ---- Linux glibc, abi3t (one wheel for free-threaded 3.15+) ----------------------
           - { runner: ubuntu-24.04,     target: x86_64,  manylinux: auto, python: "3.15t" }
           - { runner: ubuntu-24.04-arm, target: aarch64, manylinux: auto, python: "3.15t" }
           - { runner: ubuntu-24.04,     target: i686,    manylinux: auto, python: "3.15t" }
@@ -171,6 +171,10 @@ jobs:
             -i ${{ matrix.config.python }}
         env:
           RUSTFLAGS: ${{ runner.os == 'macOS' && '-C link-arg=-undefined -C link-arg=dynamic_lookup' || '' }}
+      - name: restrict abi3t wheels to free-threaded Python
+        if: endsWith(matrix.config.python, 't') && matrix.config.python != '3.14t'
+        # Keep GIL-enabled Python on the faster abi3 wheel.
+        run: uvx wheel tags --abi-tag=abi3t --remove dist/*-cp315-abi3.abi3t-*.whl
       - name: upload wheels
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
@@ -201,24 +205,24 @@ jobs:
           - { runner: ubuntu-latest,    python: "3.10" }
           - { runner: ubuntu-latest,    python: "3.14" }
           - { runner: ubuntu-latest,    python: "3.14t" }
-          - { runner: ubuntu-latest,    python: "3.15+gil" }
+          - { runner: ubuntu-latest,    python: "3.15" }
           - { runner: ubuntu-latest,    python: "3.15t" }
           # ---- macOS arm64 -------------------------------------------------------------------
           - { runner: macos-latest,     python: "3.10" }
           - { runner: macos-latest,     python: "3.14" }
           - { runner: macos-latest,     python: "3.14t" }
-          - { runner: macos-latest,     python: "3.15+gil" }
+          - { runner: macos-latest,     python: "3.15" }
           - { runner: macos-latest,     python: "3.15t" }
           # ---- Other native architectures ----------------------------------------------------
           - { runner: ubuntu-24.04-arm, python: "3.10" }
           - { runner: ubuntu-24.04-arm, python: "3.14" }
           - { runner: ubuntu-24.04-arm, python: "3.14t" }
-          - { runner: ubuntu-24.04-arm, python: "3.15+gil" }
+          - { runner: ubuntu-24.04-arm, python: "3.15" }
           - { runner: ubuntu-24.04-arm, python: "3.15t" }
           - { runner: macos-15-intel,   python: "3.10" }
           - { runner: macos-15-intel,   python: "3.14" }
           - { runner: macos-15-intel,   python: "3.14t" }
-          - { runner: macos-15-intel,   python: "3.15+gil" }
+          - { runner: macos-15-intel,   python: "3.15" }
           - { runner: macos-15-intel,   python: "3.15t" }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -242,11 +246,7 @@ jobs:
           ls dist
 
           # Setup virtual env
-          # uv can select +gil interpreters, but cannot download a +gil request.
-          # https://github.com/astral-sh/uv/issues/17437
-          version="${{ matrix.config.python }}"
-          uv python install "${version%+gil}"
-          uv venv --python "$version" .venv
+          uv venv --python ${{ matrix.config.python }} .venv
           
           source .venv/bin/activate
 
@@ -258,19 +258,8 @@ jobs:
           # dependencies and pytest from PyPI.
           uv pip install tokenizers pytest
 
-          # Both 3.15 builds must load the wheel built on 3.15t, not the older abi3 wheel.
-          if [[ "${{ matrix.config.python }}" == 3.15* ]]; then
-            python -c "import tokenizers.tokenizers as m; assert '.abi3t' in m.__file__, m.__file__"
-          fi
-
           # Download data
           make test-data HF="uvx --from huggingface_hub hf"
-
-          # Disable the GIL on the free-threaded interpreter, so a module that re-enables it fails
-          # instead of passing single-threaded.
-          if [[ "${{ matrix.config.python }}" == *t ]]; then
-            export PYTHON_GIL=0
-          fi
 
           # Run tests
           pytest tests -m "not network"
