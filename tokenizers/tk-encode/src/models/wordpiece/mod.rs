@@ -231,12 +231,28 @@ impl WordPiece {
 }
 
 pub struct WordPieceScratch {
-    candidate_str: String,
+    candidate: Vec<u8>,
     /// Outlives the encode call that fills it, or it would never see a word twice.
     word_cache: WordCache,
 }
 
 impl pipeline::ModelScratch for WordPieceScratch {}
+
+/// yada cannot store the NUL byte as a token, the trie holds NUL as 0xFF instead.
+/// 0xFF is not a valid UTF-8 byte.
+const NUL_IN_TRIE: u8 = 0xFF;
+
+fn trie_byte(byte: u8) -> u8 {
+    if byte == 0 { NUL_IN_TRIE } else { byte }
+}
+
+fn trie_key(bytes: &[u8]) -> Cow<'_, [u8]> {
+    if !bytes.contains(&0) {
+        return Cow::Borrowed(bytes);
+    }
+    let key: Vec<u8> = bytes.iter().copied().map(trie_byte).collect();
+    Cow::Owned(key)
+}
 
 pub struct PipelineWordPiece {
     vocab_trie: yada::DoubleArray<Vec<u8>>,
@@ -259,16 +275,21 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
         } = value;
         let unk_token = vocab.get(&unk_token).copied();
 
-        // yada requires the keyset sorted by key bytes.
-        let mut keyset: Vec<_> = vocab.into_iter().collect();
-        keyset.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-        // yada rejects an empty trie
-        // no pre-token can be the empty string "", but some vocab stored them
-        let trie_keys = &keyset[keyset.partition_point(|(token, _)| token.is_empty())..];
-        if trie_keys.is_empty() {
-            return Err(Error::EmptyVocab.into());
-        }
-        let vocab_trie = DoubleArray::new(DoubleArrayBuilder::build(trie_keys)?)?;
+        let keyset: Vec<(String, u32)> = vocab.into_iter().collect();
+        let vocab_trie = {
+            // yada cannot hold the empty token, and no pre-token can be "".
+            // Some vocabs store it anyway.
+            let mut trie_keys: Vec<(Cow<[u8]>, u32)> = keyset
+                .iter()
+                .filter(|(token, _)| !token.is_empty())
+                .map(|(token, id)| (trie_key(token.as_bytes()), *id))
+                .collect();
+            if trie_keys.is_empty() {
+                return Err(Error::EmptyVocab.into());
+            }
+            trie_keys.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+            DoubleArray::new(DoubleArrayBuilder::build(&trie_keys)?)?
+        };
         let vocab_size = keyset.len();
         let max_id = keyset.iter().map(|&(_, id)| id).max().unwrap_or(0) as usize;
         let mut vocab_r = vec![None; max_id + 1];
@@ -295,7 +316,7 @@ impl PipelineWordPiece {
     fn tokenize_word(
         &self,
         sequence: &str,
-        candidate: &mut String,
+        candidate: &mut Vec<u8>,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
         let checkpoint = output.len();
@@ -312,12 +333,13 @@ impl PipelineWordPiece {
         while start < sequence.len() {
             candidate.clear();
             let prefix_len = if start > 0 {
-                candidate.push_str(&self.continuing_subword_prefix);
-                self.continuing_subword_prefix.len()
+                let prefix = self.continuing_subword_prefix.as_bytes();
+                candidate.extend(prefix.iter().copied().map(trie_byte));
+                prefix.len()
             } else {
                 0
             };
-            candidate.push_str(&sequence[start..]);
+            candidate.extend(sequence[start..].bytes().map(trie_byte));
 
             // Matches must extend past the continuing-subword prefix: the
             // prefix alone (or a fragment of it) is not a valid subword here,
@@ -325,7 +347,7 @@ impl PipelineWordPiece {
             let Some((token_id, match_len)) = self
                 .vocab_trie
                 .common_prefix_search(&candidate)
-                .filter(|(_, len)| *len > prefix_len)
+                .filter(|&(_, len)| len > prefix_len)
                 .last()
             else {
                 let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
@@ -349,7 +371,8 @@ impl PipelineWordPiece {
             let id = self.vocab_r.iter().position(|t| t.as_deref() == Some(""))?;
             return Some(id as u32);
         }
-        self.vocab_trie.exact_match_search(token)
+        self.vocab_trie
+            .exact_match_search(trie_key(token.as_bytes()))
     }
 
     pub fn get_vocab(&self) -> HashMap<String, u32> {
@@ -390,7 +413,7 @@ impl pipeline::Model for PipelineWordPiece {
 
     fn init_scratch(&self) -> Self::Scratch {
         Self::Scratch {
-            candidate_str: String::with_capacity(self.max_input_chars_per_word),
+            candidate: Vec::with_capacity(self.max_input_chars_per_word),
             word_cache: WordCache::new(DEFAULT_CACHE_CAPACITY),
         }
     }
@@ -407,7 +430,7 @@ impl pipeline::Model for PipelineWordPiece {
             return Ok(());
         }
         let WordPieceScratch {
-            candidate_str,
+            candidate,
             word_cache,
         } = scratch;
 
@@ -420,7 +443,7 @@ impl pipeline::Model for PipelineWordPiece {
         };
 
         let start = output.len();
-        self.tokenize_word(sequence, candidate_str, output)?;
+        self.tokenize_word(sequence, candidate, output)?;
 
         word_cache.insert(placement, output[start..].iter().map(|token| token.id()));
         Ok(())
