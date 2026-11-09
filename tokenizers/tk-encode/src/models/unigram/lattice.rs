@@ -115,6 +115,19 @@ impl Node {
     }
 }
 
+impl Drop for Node {
+    fn drop(&mut self) {
+        let mut prev = self.prev.take();
+        // Detach uniquely owned predecessors so dropping a long path does not recurse.
+        while let Some(node) = prev {
+            let Ok(node) = Rc::try_unwrap(node) else {
+                break;
+            };
+            prev = node.into_inner().prev.take();
+        }
+    }
+}
+
 /// Returns log(exp(x) + exp(y)).
 /// if init_mode is true, returns log(exp(y)) == y.
 /// log(\sum_i exp(a[i])) can be computed as
@@ -614,6 +627,25 @@ mod tests {
 
         lattice.insert(0, 3, 10.0, 8);
         assert_eq!(lattice.tokens(), ["ABC"]);
+    }
+
+    #[test]
+    fn drops_long_path_without_recursing() {
+        // Pins the default test-thread stack, so a large RUST_MIN_STACK cannot hide a regression.
+        std::thread::Builder::new()
+            .name("drops_long_path_without_recursing".into())
+            .stack_size(2 * 1024 * 1024)
+            .spawn(|| {
+                let sentence = "0".repeat(100_000);
+                let mut lattice = Lattice::from(&sentence, 1, 2);
+                for pos in 0..sentence.len() {
+                    lattice.insert(pos, 1, 0.0, 3);
+                }
+                assert_eq!(lattice.viterbi().len(), sentence.len());
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 
     #[test]
