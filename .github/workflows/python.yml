@@ -109,7 +109,7 @@ jobs:
           maturin build --release --locked -i python --out dist
           make test-data HF="uvx --from huggingface_hub hf"
 
-          # uv 0.13.1 can select +gil interpreters, but cannot download a +gil request.
+          # uv can select +gil interpreters, but cannot download a +gil request.
           # https://github.com/astral-sh/uv/issues/17437
           uv python install 3.15
           for version in 3.15+gil 3.15t; do
