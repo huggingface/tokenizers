@@ -363,8 +363,8 @@ impl PipelineTokenizer {
         }
     }
 
-    /// Cuts only a sequence longer than `cut_above`, its share of the batch: a shorter one can't
-    /// hold the batch up, so cutting it would be overhead. Never with `encode_special_tokens`:
+    /// Cuts only a sequence longer than `cut_above`, half a thread's share of the batch: a shorter
+    /// one can't hold the batch up, so cutting it would be overhead. Never with `encode_special_tokens`:
     /// specials stay in the text, and a cut inside one could expose a shorter added token the
     /// serial scan skips over.
     #[allow(clippy::too_many_arguments)]
@@ -422,10 +422,11 @@ impl PipelineTokenizer {
         }
     }
 
-    /// `threads` encode the batch. A sequence over half its share of the batch gets cut: under
-    /// list scheduling the batch then finishes within 1.5x of an even split.
+    /// `threads` (at least 1, the caller) encode the batch. A sequence over half a thread's share of
+    /// the batch gets cut: under list scheduling the batch then finishes within 1.5x of an even
+    /// split.
     fn plan_work(&self, inputs: &Inputs, options: &EncodeOptions, threads: usize) -> Plan {
-        let cut_above = inputs.size_bytes() / (2 * threads.max(1));
+        let cut_above = inputs.size_bytes() / (2 * threads);
         let mut chunks = Vec::with_capacity(inputs.len());
         let mut side_a_len = Vec::with_capacity(inputs.len());
         let mut outputs = Vec::with_capacity(inputs.len());
