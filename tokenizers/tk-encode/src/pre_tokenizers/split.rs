@@ -148,7 +148,8 @@ impl Split {
 // `Search::find_matches` through `pipeline::split_matches`, and every `Pattern` here reports
 // boundaries: a regex matches on a `&str`, and `Literal` holds the bytes of a `&str` pattern, which
 // well-formed UTF-8 can only contain starting and ending on a boundary. No span is reversed because
-// `Pattern` is private to `tokenizer::pattern`, whose `matches` errors on an overlap.
+// `Pattern` is private to `tokenizer::pattern`, whose `matches` errors on a backwards match and
+// on an overlap.
 unsafe impl pipeline::PreTokenizer for Split {
     fn pre_tokenize(
         &self,

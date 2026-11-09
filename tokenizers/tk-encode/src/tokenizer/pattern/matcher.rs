@@ -63,6 +63,14 @@ impl<I: Iterator<Item = Result<Offsets>>> Iterator for Ordered<I> {
             Ok(found) => found,
             Err(error) => return Some(Err(error)),
         };
+        // No pattern we tried makes fancy-regex return a backwards match, but it does not promise
+        // that. Split's `unsafe impl PreTokenizer` relies on it, so it is checked here.
+        if end < start {
+            return Some(Err(format!(
+                "the pattern returned a backwards match, from byte {start} to byte {end}"
+            )
+            .into()));
+        }
         if start < self.previous_end {
             return Some(Err(format!(
                 "the pattern matched at byte {start}, inside the previous match that ended at byte {}. \
