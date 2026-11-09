@@ -1,7 +1,7 @@
 use std::{
     mem,
     sync::{
-        Mutex, PoisonError,
+        Mutex, MutexGuard, TryLockError,
         atomic::{AtomicUsize, Ordering},
     },
 };
@@ -29,6 +29,23 @@ fn scratch_shard() -> usize {
         static SHARD: usize = NEXT_SHARD.fetch_add(1, Ordering::Relaxed) % SCRATCH_SHARDS;
     }
     SHARD.with(|shard| *shard)
+}
+
+/// How many times [`lock_shard`] retries a held sub-pool before giving up on it.
+const LOCK_ATTEMPTS: u32 = 64;
+
+/// Lock a sub-pool, briefly waiting out a holder: it only guards a `pop` or `push`. Bounded: in a
+/// forked child, the holder may be a thread that didn't survive the fork, and never unlocks it.
+fn lock_shard(shard: &Mutex<Vec<EncodeScratch>>) -> Option<MutexGuard<'_, Vec<EncodeScratch>>> {
+    for attempt in 0..LOCK_ATTEMPTS {
+        match shard.try_lock() {
+            Ok(guard) => return Some(guard),
+            Err(TryLockError::Poisoned(poisoned)) => return Some(poisoned.into_inner()),
+            Err(TryLockError::WouldBlock) if attempt < LOCK_ATTEMPTS / 2 => std::hint::spin_loop(),
+            Err(TryLockError::WouldBlock) => std::thread::yield_now(),
+        }
+    }
+    None
 }
 
 /// A pool of [`PipelineModelScratch`], split into [`SCRATCH_SHARDS`] independent sub-pools.
@@ -65,10 +82,7 @@ impl ScratchPool {
     pub(crate) fn get_with<'a>(&'a self, init: impl FnOnce() -> EncodeScratch) -> ScratchGuard<'a> {
         let shard = scratch_shard();
         // The Mutex lock is held just long enough to pop the scratch out of the sub-pool
-        let mut taken = self.0[shard]
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop();
+        let mut taken = lock_shard(&self.0[shard]).and_then(|mut scratches| scratches.pop());
         if taken.is_none() {
             taken = self.take_from_another(shard);
         }
@@ -92,7 +106,7 @@ impl ScratchPool {
     pub(crate) fn len(&self) -> usize {
         self.0
             .iter()
-            .map(|shard| shard.lock().unwrap_or_else(PoisonError::into_inner).len())
+            .map(|shard| lock_shard(shard).map_or(0, |scratches| scratches.len()))
             .sum()
     }
 }
@@ -114,11 +128,10 @@ impl Drop for ScratchGuard<'_> {
     fn drop(&mut self) {
         // Steals the scratch buffer from self, replaces it with PipelineModelScratch::default()
         let scratch = mem::take(&mut self.scratch);
-        // Push the scratch back in the pool
-        self.pool.0[self.shard]
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(scratch);
+        // Push the scratch back in the pool; if a thread lost to a fork holds the sub-pool, drop it
+        if let Some(mut scratches) = lock_shard(&self.pool.0[self.shard]) {
+            scratches.push(scratch);
+        }
     }
 }
 
@@ -479,5 +492,39 @@ mod tests {
         };
         let cache = bpe.word_cache.as_mut().expect("BPE encodes with a cache");
         assert_eq!(cache.lookup(b"helo").hit(), Some(&[5u32, 3][..]));
+    }
+
+    /// A child forked while another thread held its sub-pool's lock must still encode: that thread
+    /// is gone and never unlocks it.
+    #[cfg(all(unix, feature = "parallelism"))]
+    #[test]
+    fn a_sub_pool_locked_at_fork_time_does_not_hang_the_child() {
+        let pool = ScratchPool::new();
+        let shard = scratch_shard();
+        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        std::thread::scope(|scope| {
+            let pool = &pool;
+            scope.spawn(move || {
+                let _held = pool.0[shard].lock().unwrap();
+                locked_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            });
+            locked_rx.recv().unwrap();
+            // SAFETY: the child only takes and returns a scratch, then `_exit`s
+            let pid = unsafe { libc::fork() };
+            if pid == 0 {
+                unsafe { libc::alarm(10) };
+                drop(pool.get_with(EncodeScratch::default));
+                unsafe { libc::_exit(0) };
+            }
+            release_tx.send(()).unwrap();
+            let mut status = 0;
+            assert_eq!(unsafe { libc::waitpid(pid, &mut status, 0) }, pid);
+            assert!(
+                libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0,
+                "the child hung on the sub-pool lock"
+            );
+        });
     }
 }
