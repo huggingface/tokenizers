@@ -311,18 +311,17 @@ impl PipelineTokenizer {
     /// [`PARALLEL_MIN_BYTES`] stride point, probing at most [`MAX_PROBE`] bytes (a point with no
     /// cut that close is skipped, which bounds the serial scan).
     ///
-    /// None with `encode_special_tokens`: specials stay in the text, and a cut inside one could
-    /// expose a shorter added token the serial scan skips over.
+    /// None unless `may_cut` (see [`Self::plan_sequence`]).
     fn cut_points<'a>(
         &'a self,
         segment: &'a str,
-        encode_special_tokens: bool,
+        may_cut: bool,
     ) -> impl Iterator<Item = usize> + 'a {
         let cut = self
             .inner
             .cut
             .as_ref()
-            .filter(|_| !encode_special_tokens && segment.len() >= 2 * PARALLEL_MIN_BYTES);
+            .filter(|_| may_cut && segment.len() >= 2 * PARALLEL_MIN_BYTES);
         let last = segment.len().saturating_sub(PARALLEL_MIN_BYTES);
         let mut next = PARALLEL_MIN_BYTES;
         std::iter::from_fn(move || {
@@ -347,15 +346,12 @@ impl PipelineTokenizer {
         side: Seq,
         segment: &str,
         offset: usize,
-        encode_special_tokens: bool,
+        may_cut: bool,
         chunks: &mut Vec<SequenceChunk>,
         seq_outputs: &mut Vec<ChunkResult>,
     ) {
         let mut start = 0;
-        for end in self
-            .cut_points(segment, encode_special_tokens)
-            .chain([segment.len()])
-        {
+        for end in self.cut_points(segment, may_cut).chain([segment.len()]) {
             chunks.push(SequenceChunk {
                 seq,
                 idx: seq_outputs.len(),
@@ -367,12 +363,18 @@ impl PipelineTokenizer {
         }
     }
 
+    /// Cuts only a sequence longer than `cut_above`, half a thread's share of the batch: a shorter
+    /// one can't hold the batch up, so cutting it would be overhead. Never with `encode_special_tokens`:
+    /// specials stay in the text, and a cut inside one could expose a shorter added token the
+    /// serial scan skips over.
+    #[allow(clippy::too_many_arguments)]
     fn plan_sequence(
         &self,
         seq_idx: usize,
         side: Seq,
         input: &str,
         encode_special_tokens: bool,
+        cut_above: usize,
         chunks: &mut Vec<SequenceChunk>,
         seq_outputs: &mut Vec<ChunkResult>,
     ) {
@@ -388,6 +390,7 @@ impl PipelineTokenizer {
             seq_outputs.push(ChunkResult::new(None));
             return;
         }
+        let may_cut = !encode_special_tokens && input.len() > cut_above;
         let current_chunks_len = chunks.len();
         for segment in SpecialSegmentIterator::new(
             input,
@@ -402,15 +405,7 @@ impl PipelineTokenizer {
                 }
                 Segment::Text { text, input_offset } => (text, input_offset),
             };
-            self.push_chunks(
-                seq_idx,
-                side,
-                segment,
-                offset,
-                encode_special_tokens,
-                chunks,
-                seq_outputs,
-            );
+            self.push_chunks(seq_idx, side, segment, offset, may_cut, chunks, seq_outputs);
         }
         // make sure we have at least one chunk per sequence, otherwise we'll wait indefinitely
         // for a completion event
@@ -427,7 +422,11 @@ impl PipelineTokenizer {
         }
     }
 
-    fn plan_work(&self, inputs: &Inputs, options: &EncodeOptions) -> Plan {
+    /// `threads` (at least 1, the caller) encode the batch. A sequence over half a thread's share of
+    /// the batch gets cut: under list scheduling the batch then finishes within 1.5x of an even
+    /// split.
+    fn plan_work(&self, inputs: &Inputs, options: &EncodeOptions, threads: usize) -> Plan {
+        let cut_above = inputs.size_bytes() / (2 * threads);
         let mut chunks = Vec::with_capacity(inputs.len());
         let mut side_a_len = Vec::with_capacity(inputs.len());
         let mut outputs = Vec::with_capacity(inputs.len());
@@ -440,6 +439,7 @@ impl PipelineTokenizer {
                         Seq::A,
                         s,
                         options.encode_special_tokens,
+                        cut_above,
                         &mut chunks,
                         &mut seq_outputs,
                     );
@@ -451,6 +451,7 @@ impl PipelineTokenizer {
                         Seq::A,
                         s1,
                         options.encode_special_tokens,
+                        cut_above,
                         &mut chunks,
                         &mut seq_outputs,
                     );
@@ -460,6 +461,7 @@ impl PipelineTokenizer {
                         Seq::B,
                         s2,
                         options.encode_special_tokens,
+                        cut_above,
                         &mut chunks,
                         &mut seq_outputs,
                     );
@@ -539,7 +541,7 @@ pub(crate) fn encode(
         side_a_len,
         outputs,
         chunk_count,
-    } = tok.plan_work(&inputs, options);
+    } = tok.plan_work(&inputs, options, pool.current_num_threads() + 1);
     if tasks.len() < 2 {
         return EncodeHandle::blocking(
             tok.encode_serial(inputs, options),
