@@ -460,13 +460,23 @@ mod tests {
     /// hold its lock or flag.
     static POOL_TESTS: Mutex<()> = Mutex::new(());
 
+    /// [`pool`], waiting out a build by another test's encode: meanwhile, `pool()` says serial.
+    fn built_pool() -> Option<Arc<rayon::ThreadPool>> {
+        (0..1_000).find_map(|_| {
+            pool().or_else(|| {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                None
+            })
+        })
+    }
+
     /// The caller counts: the pool holds `max - 1` threads, none for a max of 1.
     #[test]
     fn max_threads_counts_the_caller() {
         let _serial = POOL_TESTS.lock().unwrap_or_else(|p| p.into_inner());
         set_max_threads(3);
         assert_eq!(max_threads(), 3);
-        assert_eq!(pool().expect("a pool").current_num_threads(), 2);
+        assert_eq!(built_pool().expect("a pool").current_num_threads(), 2);
         set_max_threads(1);
         assert!(pool().is_none(), "one thread is the caller alone");
         set_max_threads(0);
