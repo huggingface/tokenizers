@@ -18,7 +18,7 @@ class BPE(Model):
     def __new__(
         cls,
         /,
-        vocab: dict[str, SupportsIndex] | str | PathLike[str] | None = None,
+        vocab: dict[str, int] | str | PathLike[str] | None = None,
         merges: SupportsGetItem[int, tuple[str, str]] | str | PathLike[str] | None = None,
         *,
         dropout: SupportsFloat | SupportsIndex | None = None,
@@ -74,7 +74,7 @@ class WordLevel(Model):
     Maps each word to its id, or to `unk_token`.
     """
     def __new__(
-        cls, /, vocab: dict[str, SupportsIndex] | str | PathLike[str] | None = None, unk_token: str | None = None
+        cls, /, vocab: dict[str, int] | str | PathLike[str] | None = None, unk_token: str | None = None
     ) -> WordLevel: ...
 
 @final
@@ -86,7 +86,7 @@ class WordPiece(Model):
     def __new__(
         cls,
         /,
-        vocab: dict[str, SupportsIndex] | str | PathLike[str] | None = None,
+        vocab: dict[str, int] | str | PathLike[str] | None = None,
         *,
         unk_token: str = "[UNK]",
         continuing_subword_prefix: str = "##",
