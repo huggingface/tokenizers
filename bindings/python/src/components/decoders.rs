@@ -9,4 +9,5 @@ tk::decoder_schemas!(component_module! {
     python_module: "tokenizers.decoders",
     tokenizer_field: decoder,
     items_key: "decoders",
+    also_exports: [crate::decode_stream::DecodeStream],
 });

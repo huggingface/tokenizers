@@ -71,3 +71,18 @@ def test_repr_nested(llama3):
     assert "        ...,\n    ],\n    normalizer=None," in rendered
     assert "    pre_tokenizer=Sequence(\n        pretokenizers=[\n            Split(\n" in rendered
     assert '                behavior="Isolated",\n                invert=False,\n' in rendered
+
+
+# vLLM's streaming detokenizer calls this method.
+def test_get_added_tokens_decoder(gpt2):
+    with pytest.warns(DeprecationWarning, match="added_tokens"):
+        assert gpt2.get_added_tokens_decoder() == gpt2.added_tokens
+
+
+# vLLM caches `added_token_ids` as an attribute on the tokenizer.
+def test_accepts_new_attributes(gpt2_spec):
+    compiled = gpt2_spec.compile()
+
+    compiled.added_token_ids = {EOT: "<|endoftext|>"}
+
+    assert compiled.added_token_ids == {EOT: "<|endoftext|>"}

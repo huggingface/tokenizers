@@ -2,9 +2,12 @@
 # Regenerate with `make stubs` in bindings/python.
 
 from collections.abc import Sequence as Sequence2
-from typing import final
+from typing import Any, final
 
-from . import Component, Regex
+from numpy import integer
+from numpy.typing import NDArray
+
+from . import CompiledTokenizer, Component, Encoding, Regex
 
 @final
 class BPEDecoder(Decoder):
@@ -52,6 +55,48 @@ class CTC(Decoder):
     def word_delimiter_token(self, /) -> str: ...
     @word_delimiter_token.setter
     def word_delimiter_token(self, /, word_delimiter_token: str) -> None: ...
+
+@final
+class DecodeStream:
+    """
+    Decodes a stream of token ids, such as a model's output, into text as the ids arrive.
+
+    One character can span several tokens, so `step` returns `None` until the character is
+    complete.
+
+    Args:
+        ids: list[int] | None
+            The prompt ids that come before the stream. `step` decodes them as context, but
+            never returns their text.
+        skip_special_tokens: bool
+            Whether to leave special tokens out of the text.
+
+    Example::
+
+        >>> from tokenizers import Tokenizer
+        >>> from tokenizers.decoders import DecodeStream
+        >>> tokenizer = Tokenizer.from_pretrained("gpt2").compile()
+        >>> stream = DecodeStream()
+        >>> for id in tokenizer.encode("Hello, streaming world!").ids:
+        ...     print(stream.step(tokenizer, id) or "", end="")
+    """
+    def __new__(
+        cls, /, ids: Encoding | Sequence2[int] | NDArray[integer[Any]] | None = None, skip_special_tokens: bool = False
+    ) -> DecodeStream: ...
+    def step(self, /, tokenizer: CompiledTokenizer, id: int | Sequence2[int]) -> str | None:
+        """
+        Adds the next id, or several ids, to the stream and returns the new text.
+
+        Args:
+            tokenizer: CompiledTokenizer
+                The tokenizer that decodes the ids.
+            id: int | list[int]
+                The next id, or a list of the next ids.
+
+        Returns:
+            str | None
+                The new text, or `None` while the text ends with an incomplete character.
+        """
 
 class Decoder(Component):
     """

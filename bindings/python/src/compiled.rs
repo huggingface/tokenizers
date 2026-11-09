@@ -28,7 +28,7 @@ use crate::type_hints::TokenIds;
 /// A compiled tokenizer is immutable and can be shared across threads.
 /// Pickling serializes to the JSON config, and unpickling compiles the CompiledTokenizer
 /// again from that JSON config.
-#[pyclass(frozen, module = "tokenizers")]
+#[pyclass(frozen, dict, module = "tokenizers")]
 pub struct CompiledTokenizer {
     pipeline: PipelineTokenizer,
     /// The `added_tokens` dict, built on first read.
@@ -36,6 +36,10 @@ pub struct CompiledTokenizer {
 }
 
 impl CompiledTokenizer {
+    pub(crate) fn pipeline(&self) -> &PipelineTokenizer {
+        &self.pipeline
+    }
+
     pub(crate) fn new(py: Python<'_>, spec: &TokenizerSpec) -> PyResult<Self> {
         // py.detach releases the GIL while the Rust code runs.
         let pipeline = py.detach(|| spec.compile()).map_err(err)?;
@@ -269,6 +273,15 @@ impl CompiledTokenizer {
             PyResult::Ok(by_id.into_pyobject(py)?.unbind())
         })?;
         Ok(AddedTokens(added_tokens.bind(py).copy()?))
+    }
+
+    /// Returns `added_tokens`. Deprecated: use the `added_tokens` property instead.
+    #[pyo3(warn(
+        message = "`get_added_tokens_decoder()` is deprecated, use the `added_tokens` property instead",
+        category = pyo3::exceptions::PyDeprecationWarning
+    ))]
+    fn get_added_tokens_decoder<'py>(&self, py: Python<'py>) -> PyResult<AddedTokens<'py>> {
+        self.added_tokens(py)
     }
 
     /// Returns the vocabulary, as a dict from token to id.

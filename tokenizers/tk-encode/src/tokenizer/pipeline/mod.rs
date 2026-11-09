@@ -965,62 +965,74 @@ impl PipelineTokenizer {
             .map(|ids| self.decode(ids, skip_special_tokens))
             .collect()
     }
+}
 
-    /// Incremental decode: feed ids one at a time via [`PipelineDecodeStream::step`].
-    /// Same prefix-tracking scheme as the released `DecodeStream`, built on
-    /// [`decode`](Self::decode), so it is correct exactly where `decode` is.
-    pub fn decode_stream(&self, skip_special_tokens: bool) -> PipelineDecodeStream<'_> {
-        PipelineDecodeStream {
-            tokenizer: self,
-            ids: Vec::new(),
+/// Decodes a stream of token ids, such as a model's output, into text as the ids arrive.
+///
+/// Decoding each id on its own gives wrong text, for two reasons. One character can span
+/// several tokens: a byte-level tokenizer splits "é" into two byte tokens. And some decoders
+/// join neighbouring tokens: WordPiece glues a `##` token to the token before it.
+///
+/// So each step decodes the recent ids together and returns only the new text at the end.
+/// An incomplete character decodes to U+FFFD (`�`), so a step returns `None` while the text
+/// ends with one.
+#[derive(Clone)]
+pub struct PipelineDecodeStream {
+    skip_special_tokens: bool,
+    ids: Vec<u32>,
+    /// The text of `ids[..prefix_index]`. Each decode of `ids` must start with it, and the
+    /// text after it is new.
+    prefix: String,
+    /// How many ids at the front of `ids` make up `prefix`
+    prefix_index: usize,
+}
+
+impl PipelineDecodeStream {
+    /// Creates a stream that continues `prompt`.
+    ///
+    /// The first steps decode the prompt ids as context, but never return their text.
+    pub fn new(prompt: Vec<u32>, skip_special_tokens: bool) -> Self {
+        Self {
             skip_special_tokens,
+            ids: prompt,
             prefix: String::new(),
             prefix_index: 0,
         }
     }
-}
 
-/// Streaming decoder over a [`PipelineTokenizer`]; see [`PipelineTokenizer::decode_stream`].
-pub struct PipelineDecodeStream<'tok> {
-    tokenizer: &'tok PipelineTokenizer,
-    ids: Vec<u32>,
-    skip_special_tokens: bool,
-    prefix: String,
-    prefix_index: usize,
-}
-
-impl PipelineDecodeStream<'_> {
-    /// Push one id and return the text it completes, or `None` while a multi-token
-    /// (or multi-byte) unit is still forming. Ids past the emitted prefix are kept
-    /// as decode context so cross-token decoders (byte-level, WordPiece `##`, …)
-    /// see the same input a one-shot [`decode`](PipelineTokenizer::decode) would.
-    pub fn step(&mut self, id: u32) -> Result<Option<String>> {
+    /// Adds `ids` to the stream and returns the new text.
+    ///
+    /// Returns `None` while the text ends with an incomplete character. Fails when the decode
+    /// changes text that an earlier step already returned.
+    pub fn step(&mut self, tokenizer: &PipelineTokenizer, ids: &[u32]) -> Result<Option<String>> {
+        // `new` has no tokenizer, so the first step decodes the prompt.
         if self.prefix.is_empty() && !self.ids.is_empty() {
-            let new_prefix = self.tokenizer.decode(&self.ids, self.skip_special_tokens)?;
-            if !new_prefix.ends_with('\u{fffd}') {
+            let new_prefix = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+            if !new_prefix.ends_with(char::REPLACEMENT_CHARACTER) {
                 self.prefix = new_prefix;
                 self.prefix_index = self.ids.len();
             }
         }
 
-        self.ids.push(id);
-        let string = self.tokenizer.decode(&self.ids, self.skip_special_tokens)?;
-        if string.len() > self.prefix.len() && !string.ends_with('\u{fffd}') {
-            if !string.starts_with(&self.prefix) {
+        self.ids.extend_from_slice(ids);
+        let decoded = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+        if decoded.len() <= self.prefix.len() || decoded.ends_with(char::REPLACEMENT_CHARACTER) {
+            Ok(None)
+        } else {
+            let Some(new_text) = decoded.strip_prefix(self.prefix.as_str()) else {
+                // vLLM resets its stream when an error message starts with these words.
                 return Err(format!(
-                    "decode stream: {string:?} does not extend prefix {:?}",
-                    self.prefix
+                    "Invalid prefix encountered while decoding stream. Token ID: {}, Expected prefix: '{}', Actual string: '{decoded}'",
+                    self.ids.last().expect("a non-empty decode has at least one id"),
+                    self.prefix,
                 )
                 .into());
-            }
-            let new_text = string[self.prefix.len()..].to_string();
-            let new_prefix_index = self.ids.len() - self.prefix_index;
-            self.ids = self.ids.split_off(self.prefix_index);
-            self.prefix = self.tokenizer.decode(&self.ids, self.skip_special_tokens)?;
-            self.prefix_index = new_prefix_index;
+            };
+            let new_text = new_text.to_owned();
+            self.ids.drain(..self.prefix_index);
+            self.prefix = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+            self.prefix_index = self.ids.len();
             Ok(Some(new_text))
-        } else {
-            Ok(None)
         }
     }
 }

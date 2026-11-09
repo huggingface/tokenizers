@@ -101,7 +101,6 @@ As we work toward v1, we are gonna bring back the entire python API that allows 
 - `role_to_token` override.
 - Bring back offset output: this should be useful for people training.
 - Windowing / stride in encode.
-- `decode_stream`.
 
 ### Rust core
 

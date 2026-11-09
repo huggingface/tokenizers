@@ -9,6 +9,8 @@
 //! The macro calls [`component_kind!`](macro@super::component_kind) to write the base class, and
 //! [`sequence_class!`](macro@super::sequence_class) to write the `Sequence` class.
 //! Then it writes one class per definition in the list, and the `#[pymodule]` that exports them.
+//! `also_exports` adds other classes to the module, such as `DecodeStream` to
+//! `tokenizers.decoders`.
 //! [`field_types`](super::field_types) gives the Rust type of each field type, such as `Bool`.
 //!
 //! For example, `tk::schemas` has this definition:
@@ -95,7 +97,8 @@ macro_rules! component_module {
         module: $module:ident,
         python_module: $python_module:literal,
         tokenizer_field: $tokenizer_field:ident,
-        items_key: $items_key:literal $(,)?
+        items_key: $items_key:literal
+        $(, also_exports: [$($export:path),* $(,)?])? $(,)?
     } $(
         $(#[doc = $doc:literal])+
         $class:ident $({
@@ -178,6 +181,10 @@ macro_rules! component_module {
         pub mod $module {
             #[pymodule_export]
             use super::{$kind, Sequence, $($class),*};
+            $($(
+                #[pymodule_export]
+                use $export;
+            )*)?
         }
     };
 }

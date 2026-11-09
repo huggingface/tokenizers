@@ -5,6 +5,7 @@ mod added_token;
 mod added_tokens_spec;
 mod compiled;
 mod components;
+mod decode_stream;
 mod encoding;
 mod error;
 mod input;
