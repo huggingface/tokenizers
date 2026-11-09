@@ -336,7 +336,7 @@ pub fn split_delimiter(
 ///
 /// `matches` is the `(offsets, is_match)` sequence covering the whole input,
 /// so regex matches interleaved with the gaps between them (exactly what
-/// `Pattern::find_matches` produces). This is the pipeline-side equivalent of
+/// `Search::find_matches` produces). This is the pipeline-side equivalent of
 /// the fold in `NormalizedString::split`; the arms mirror it exactly. Empty and
 /// removed pieces are dropped.
 pub fn split_matches(

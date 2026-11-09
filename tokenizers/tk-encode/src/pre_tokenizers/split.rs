@@ -2,10 +2,8 @@ use crate::pipeline;
 use crate::utils::{Grammar, SysRegex, recognize};
 use bitcannon::literal::Literal;
 
-use crate::tokenizer::{
-    Result, SplitDelimiterBehavior,
-    pattern::{Invert, Pattern},
-};
+use crate::tokenizer::pattern::Search;
+use crate::tokenizer::{Result, SplitDelimiterBehavior};
 
 /// Represents the different patterns that `Split` can use
 ///
@@ -28,18 +26,6 @@ impl From<&str> for SplitPattern {
     }
 }
 
-/// How a [`Split`] looks for its pattern.
-#[derive(Debug)]
-pub enum Search {
-    /// A plain string, scanned for directly — no regex engine involved, so this works in every build.
-    Literal(Literal),
-    /// A real regex, which needs the system backend (the `fancy-regex` feature).
-    Regex(SysRegex),
-    /// No way to search: no backend is compiled and the pattern is a regex. Splitting then only works
-    /// through the native FSM below, and errors otherwise.
-    Unavailable,
-}
-
 /// Only `pattern`, `behavior` and `invert` are ever written down: `search` and `fsm` are both
 /// *derived* from `pattern` by [`Split::new`], so a config carrying them would be a config that can
 /// disagree with itself. That is also why the serde in [`super::serialization`] goes through the
@@ -48,9 +34,9 @@ pub enum Search {
 #[derive(Debug)]
 pub struct Split {
     pub pattern: SplitPattern,
-    /// How the pattern is found. A plain string never needs a backend; a regex does, unless it is one
-    /// of the GPT patterns the native FSM below covers.
-    pub search: Search,
+    /// How the pattern is found. `None` when the pattern is a regex and no backend is compiled:
+    /// splitting then only works through the native FSM below, and errors otherwise.
+    search: Option<Search>,
     pub behavior: SplitDelimiterBehavior,
     pub invert: bool,
     /// Native `bitcannon` FSM for a recognized GPT regex (gpt2 / cl100k-Llama-3 / o200k), used on the
@@ -85,13 +71,13 @@ impl Split {
             SplitPattern::Regex(r) => recognize(r),
         };
         let search = match &pattern {
-            SplitPattern::String(s) => Search::Literal(Literal::new(s.as_bytes())?),
+            SplitPattern::String(s) => Some(Search::Literal(Literal::new(s.as_bytes())?)),
             // A regex needs the system backend. Missing it is only fatal when the native FSM cannot
             // cover this pattern either — which `pre_tokenize` reports, since a recognized GPT
             // pattern in its usual form splits without any backend.
             SplitPattern::Regex(r) => match SysRegex::new(r) {
-                Ok(regex) => Search::Regex(regex),
-                Err(_) if fsm.is_some() => Search::Unavailable,
+                Ok(regex) => Some(Search::Regex(regex)),
+                Err(_) if fsm.is_some() => None,
                 Err(e) => return Err(e),
             },
         };
@@ -122,8 +108,8 @@ impl Split {
             SplitPattern::Regex(r) => recognize(r),
         };
         let search = match &pattern {
-            SplitPattern::String(s) => Search::Literal(Literal::new(s.as_bytes())?),
-            SplitPattern::Regex(_) => Search::Unavailable,
+            SplitPattern::String(s) => Some(Search::Literal(Literal::new(s.as_bytes())?)),
+            SplitPattern::Regex(_) => None,
         };
         Ok(Self {
             pattern,
@@ -159,9 +145,10 @@ impl Split {
 
 // SAFETY: both routes cut only at character boundaries of `text`. The native route is a `bitcannon`
 // grammar, see "What the spans guarantee" in its docs. The search route forwards the offsets of
-// `Pattern::find_matches` through `pipeline::split_matches`, and every `Pattern` here reports
+// `Search::find_matches` through `pipeline::split_matches`, and every `Pattern` here reports
 // boundaries: a regex matches on a `&str`, and `Literal` holds the bytes of a `&str` pattern, which
-// well-formed UTF-8 can only contain starting and ending on a boundary.
+// well-formed UTF-8 can only contain starting and ending on a boundary. No span is reversed because
+// `Pattern` is private to `tokenizer::pattern`, whose `matches` errors on an overlap.
 unsafe impl pipeline::PreTokenizer for Split {
     fn pre_tokenize(
         &self,
@@ -186,18 +173,18 @@ unsafe impl pipeline::PreTokenizer for Split {
             return Ok(());
         }
         // Not a natively-routed GPT regex: fall-back to Literal or Regex search
-        let matches = match (&self.search, self.invert) {
-            (Search::Literal(literal), false) => literal.find_matches(text)?,
-            (Search::Literal(literal), true) => Invert(literal).find_matches(text)?,
-            (Search::Regex(regex), false) => regex.find_matches(text)?,
-            (Search::Regex(regex), true) => Invert(regex).find_matches(text)?,
-            (Search::Unavailable, _) => {
-                return Err(
-                    "this `Split` pattern needs a system-regex backend; enable the `fancy-regex` feature"
-                        .into(),
-                );
-            }
+        let Some(search) = &self.search else {
+            return Err(
+                "this `Split` pattern needs a system-regex backend; enable the `fancy-regex` feature"
+                    .into(),
+            );
         };
+        let mut matches = search.find_matches(text)?;
+        if self.invert {
+            for (_, is_match) in &mut matches {
+                *is_match = !*is_match;
+            }
+        }
         pipeline::split_matches(out, matches, self.behavior);
         Ok(())
     }

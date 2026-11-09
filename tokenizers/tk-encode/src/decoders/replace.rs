@@ -1,8 +1,10 @@
 //! The `Replace` **decoder**.
 //! It is convenient to do the inverse operation of a Replace normalizer.
 
+use std::borrow::Cow;
+
+use crate::tokenizer::pattern::{ReplacePattern, Search};
 use crate::tokenizer::{Decoder, Result};
-use crate::utils::search::{ReplacePattern, Search};
 
 /// Replaces every occurrence of `pattern` with `content` in each token being decoded.
 #[derive(Debug)]
@@ -51,16 +53,10 @@ impl Decoder for ReplaceDecoder {
         tokens
             .into_iter()
             .map(|token| -> Result<String> {
-                let mut new_token = "".to_string();
-
-                for ((start, stop), is_match) in self.search.find_matches(&token)? {
-                    if is_match {
-                        new_token.push_str(&self.content);
-                    } else {
-                        new_token.push_str(&token[start..stop]);
-                    }
+                if let Cow::Owned(replaced) = self.search.replace(&token, &self.content)? {
+                    return Ok(replaced);
                 }
-                Ok(new_token)
+                Ok(token)
             })
             .collect()
     }

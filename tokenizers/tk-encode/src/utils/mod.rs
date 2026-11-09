@@ -4,22 +4,11 @@ pub(crate) mod cache;
 pub mod from_pretrained;
 pub(crate) mod word_cache;
 
-// Optional system-regex backend, needed only for a *regex* pattern that bitcannon does not cover.
-// With `fancy-regex` off a stub compiles and those patterns error at load. Everything else works
-// regardless: the bitcannon-native pre-tokenizers, and any `Split` or `Replace` whose pattern is a
-// plain string (searched for directly, see `bitcannon::literal`).
-#[cfg(feature = "fancy-regex")]
-mod fancy;
-#[cfg(feature = "fancy-regex")]
-pub use fancy::SysRegex;
-#[cfg(not(feature = "fancy-regex"))]
-mod no_regex;
-#[cfg(not(feature = "fancy-regex"))]
-pub use no_regex::SysRegex;
+pub use crate::tokenizer::pattern::SysRegex;
 
 // Recognize known GPT pre-tokenization regexes and route them to bitcannon's native (unrolled) FSM.
 mod unrolled_regex;
-pub use unrolled_regex::{DEEPSEEK_PATTERNS, Grammar, GrammarPattern, is_deepseek, recognize};
+pub use unrolled_regex::{DEEPSEEK_PATTERNS, Grammar, is_deepseek, recognize};
 
 pub mod byte_level;
 pub mod iter;
@@ -27,7 +16,6 @@ pub mod padding;
 #[cfg(feature = "parallelism")]
 pub mod parallelism;
 pub(crate) mod perfect_hash;
-pub mod search;
 pub mod truncation;
 
 #[cfg(feature = "normalizers")]

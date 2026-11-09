@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 
 use crate::pipeline;
-use crate::utils::search::Search;
+use crate::tokenizer::pattern::Search;
 
-// `ReplacePattern` moved to `utils::search` with the matcher it configures; re-exported so the
-// historical path keeps working.
 use crate::tokenizer::Result;
-pub use crate::utils::search::ReplacePattern;
+// `ReplacePattern` lives in `tokenizer::pattern` with the `Search` it configures. This keeps its
+// public path.
+pub use crate::tokenizer::pattern::ReplacePattern;
 
 /// This normalizer will take a `pattern` (for now only a String)
 /// and replace every occurrence with `content`.
@@ -53,44 +53,9 @@ impl Replace {
     }
 }
 
-/// Builds the text with every match swapped for `content`. Borrows the input back untouched when
-/// nothing matched, which is what keeps the common case free of allocation.
-fn replace_matches<'a>(
-    input: &'a str,
-    content: &str,
-    matches: impl Iterator<Item = (usize, usize)>,
-) -> Cow<'a, str> {
-    let mut replaced: Option<String> = None;
-    let mut last_end = 0;
-    for (start, end) in matches {
-        let replaced: &mut String =
-            replaced.get_or_insert_with(|| String::with_capacity(input.len()));
-        replaced.push_str(&input[last_end..start]);
-        replaced.push_str(content);
-        last_end = end;
-    }
-    match replaced {
-        Some(mut replaced) => {
-            replaced.push_str(&input[last_end..]);
-            Cow::Owned(replaced)
-        }
-        None => Cow::Borrowed(input),
-    }
-}
-
 impl pipeline::Normalizer for Replace {
     fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
-        Ok(match &self.search {
-            Search::Literal(literal) => {
-                let width = literal.pattern().len();
-                let matches = literal
-                    .matches(input.as_bytes())
-                    .map(|start| (start, start + width));
-                replace_matches(input, &self.content, matches)
-            }
-            Search::Regex(regex) => replace_matches(input, &self.content, regex.find_iter(input)),
-            Search::Nothing => Cow::Borrowed(input),
-        })
+        self.search.replace(input, &self.content)
     }
 }
 
@@ -134,5 +99,12 @@ mod tests {
             &n,
             &[("a   b   c", "a b c"), ("single", "single"), ("", "")],
         );
+    }
+
+    #[test]
+    #[cfg(feature = "fancy-regex")] // a regex pattern needs a system-regex backend
+    fn refuses_a_regex_match_overlapping_the_previous_one() {
+        let n = Replace::new(ReplacePattern::Regex(r"(?<=\K.).|.".into()), "-").unwrap();
+        assert!(pipeline::Normalizer::normalize(&n, "Hello", 0).is_err());
     }
 }

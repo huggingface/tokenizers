@@ -308,8 +308,9 @@ impl pipeline::Model for PipelineBPE {
         let mut cache_slot = word_cache.as_mut();
 
         for span in spans {
-            // SAFETY: the pre-tokenizer cuts on char boundaries, so a span is always a valid slice
-            // of this chunk. Bounds- and UTF-8-checking it again per word measured worth removing.
+            // SAFETY: the spans come from a `PreTokenizer`.
+            // `PreTokenizer` `# Safety` contract guarantees each span is a range inside of `chunk`,
+            // not reversed, that sits on char boundaries.
             let sequence = unsafe { chunk.get_unchecked(span.range()) };
             if sequence.is_empty() {
                 continue;
