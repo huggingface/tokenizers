@@ -75,6 +75,9 @@ def test_multiprocessing_workers_start_serial(method):
         pytest.skip(f"no {method}")
     with multiprocessing.get_context(method).Pool(1) as pool:
         assert pool.apply(tokenizers.get_max_threads) == 1
+        # 0 restores that default, whatever the start method
+        pool.apply(tokenizers.set_max_threads, (0,))
+        assert pool.apply(tokenizers.get_max_threads) == 1
 
 
 def test_spawn_workers_take_an_explicit_value_from_their_initializer():

@@ -29,6 +29,8 @@ static PARALLELISM: AtomicU8 = AtomicU8::new(0);
 static MAX_THREADS: AtomicUsize = AtomicUsize::new(0);
 /// Bumped in a forked child, which has none of the parent's pool threads.
 static FORK_GEN: AtomicUsize = AtomicUsize::new(0);
+/// Set by [`default_to_serial`].
+static SERIAL_DEFAULT: AtomicBool = AtomicBool::new(false);
 
 /// Lets an in-flight encode tell it crossed a fork.
 pub(crate) fn fork_generation() -> usize {
@@ -41,8 +43,12 @@ pub(crate) fn fork_generation() -> usize {
 /// cf the POSIX spec: https://pubs.opengroup.org/onlinepubs/9699919799/functions/fork.html
 ///
 /// `Once`: no caller proceeds before the handler is registered.
+///
+/// Every encode and [`max_threads`] / [`set_max_threads`] call registers it. A process that may fork
+/// before any of those (a binding, at import) calls this first, so its children still default to
+/// serial.
 #[cfg(unix)]
-fn register_fork_handler() {
+pub fn register_fork_handler() {
     use std::sync::Once;
     static REGISTERED: Once = Once::new();
     REGISTERED.call_once(|| {
@@ -73,7 +79,7 @@ fn register_fork_handler() {
 }
 
 #[cfg(not(unix))]
-fn register_fork_handler() {}
+pub fn register_fork_handler() {}
 
 /// The cached pool, keyed by what it was built from: a change to either rebuilds it.
 struct Slot {
@@ -189,16 +195,24 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
 /// means serial.
 ///
 /// A value set with [`set_max_threads`] always wins, and forked children inherit it. Unset, it is
-/// `available_parallelism()` (affinity mask, cgroup quota), except in a forked child, which can't
-/// know how many siblings share the cores and runs serially. A fork is only detected if this module
-/// was used before it (an encode, `max_threads` or `set_max_threads`).
+/// `available_parallelism()` (affinity mask, cgroup quota), except in a forked child or after
+/// [`default_to_serial`]: those can't know how many siblings share the cores and run serially. A
+/// fork is only detected if [`register_fork_handler`] ran before it (an encode, `max_threads` or
+/// `set_max_threads` does).
 pub fn max_threads() -> usize {
     register_fork_handler();
     match MAX_THREADS.load(Ordering::Acquire) {
-        0 if fork_generation() > 0 => 1,
+        0 if fork_generation() > 0 || SERIAL_DEFAULT.load(Ordering::Relaxed) => 1,
         0 => available_parallelism(),
         n => n,
     }
+}
+
+/// Make the default [`max_threads`] 1, as in a forked child: for a process that, like a
+/// multiprocessing worker started by spawn, can't know how many siblings share the cores. A value
+/// set with [`set_max_threads`] still wins.
+pub fn default_to_serial() {
+    SERIAL_DEFAULT.store(true, Ordering::Relaxed);
 }
 
 /// Cached: on Linux it reads the cgroup quota from files, too slow for every encode.

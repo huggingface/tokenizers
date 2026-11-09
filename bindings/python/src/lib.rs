@@ -32,7 +32,7 @@ mod tokenizers {
     #[pymodule_export]
     use crate::options::Truncation;
     #[pymodule_export]
-    use crate::parallelism::{get_max_threads, set_max_threads};
+    use crate::parallelism::{get_max_threads, init_threads, set_max_threads};
     #[pymodule_export]
     use crate::regex::Regex;
     #[pymodule_export]
@@ -50,12 +50,4 @@ mod tokenizers {
     use crate::components::processors::processors;
 
     // TODO: bind trainers
-
-    #[pymodule_init]
-    fn init(_m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> {
-        // registers the fork handler: forked children start serial even if this process never
-        // encodes before forking
-        tk::parallelism::max_threads();
-        Ok(())
-    }
 }

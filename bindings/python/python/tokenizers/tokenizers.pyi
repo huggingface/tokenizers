@@ -5,7 +5,6 @@ from collections.abc import Sequence
 from os import PathLike
 from typing import Any, Final, Literal, final
 
-from _typeshed import Incomplete
 from numpy import integer, uint32
 from numpy.typing import NDArray
 
@@ -670,6 +669,15 @@ class Truncation:
         Which sequence of a pair is truncated.
         """
 
+def _init_threads(multiprocessing_worker: bool) -> None:
+    """
+    Called once by `tokenizers/__init__.py`. Registers the fork handler, so children forked before
+    any encode still default to serial, and makes a multiprocessing worker default to serial too.
+
+    Args:
+        multiprocessing_worker: bool
+    """
+
 def get_max_threads() -> int:
     """
     The most threads one encode uses, the calling thread included: the value set with
@@ -683,7 +691,8 @@ def set_max_threads(max_threads: int) -> None:
     """
     Sets the most threads one encode uses, the calling thread included, for the whole process.
 
-    `1` encodes serially; `0` restores the default, every available core.
+    `1` encodes serially; `0` restores the default: every available core, or 1 in a multiprocessing
+    worker.
 
     A value set here always wins. Without one, a multiprocessing worker runs serially, since it
     can't know how many siblings share the cores. Forked workers inherit a value set in the parent;
@@ -693,5 +702,3 @@ def set_max_threads(max_threads: int) -> None:
     Args:
         max_threads: int
     """
-
-def __getattr__(name: str) -> Incomplete: ...

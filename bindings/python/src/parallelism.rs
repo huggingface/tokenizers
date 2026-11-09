@@ -5,7 +5,8 @@ use tk::parallelism;
 
 /// Sets the most threads one encode uses, the calling thread included, for the whole process.
 ///
-/// `1` encodes serially; `0` restores the default, every available core.
+/// `1` encodes serially; `0` restores the default: every available core, or 1 in a multiprocessing
+/// worker.
 ///
 /// A value set here always wins. Without one, a multiprocessing worker runs serially, since it
 /// can't know how many siblings share the cores. Forked workers inherit a value set in the parent;
@@ -27,4 +28,17 @@ pub fn set_max_threads(max_threads: usize) {
 #[pyfunction]
 pub fn get_max_threads() -> usize {
     parallelism::max_threads()
+}
+
+/// Called once by `tokenizers/__init__.py`. Registers the fork handler, so children forked before
+/// any encode still default to serial, and makes a multiprocessing worker default to serial too.
+///
+/// Args:
+///     multiprocessing_worker: bool
+#[pyfunction(name = "_init_threads")]
+pub fn init_threads(multiprocessing_worker: bool) {
+    parallelism::register_fork_handler();
+    if multiprocessing_worker {
+        parallelism::default_to_serial();
+    }
 }
