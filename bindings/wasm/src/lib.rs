@@ -1,16 +1,20 @@
 use tokenizers::canonicalize_str;
 use tokenizers::from_json;
-use tokenizers::pipeline::PipelineTokenizer;
+use tokenizers::pipeline::{Inputs, PipelineToken, PipelineTokenizer};
 use tsify::Ts;
 
 use wasm_bindgen::prelude::*;
 
+mod encoding;
 mod hub;
+mod input;
 mod options;
 
 use options::convert_encode_options;
 
+pub use encoding::Encoding;
 pub use hub::PretrainedOptions;
+pub use input::TextInput;
 pub use options::EncodeOptions;
 
 #[wasm_bindgen]
@@ -22,7 +26,7 @@ pub use options::EncodeOptions;
 /// @example
 /// ```ts
 /// using tokenizer = Tokenizer.from_json(json);
-/// const ids = tokenizer.encode("Hello world");
+/// const { ids } = tokenizer.encode("Hello world");
 /// ```
 pub struct Tokenizer(PipelineTokenizer);
 
@@ -60,30 +64,76 @@ impl Tokenizer {
         Ok(Self::from_json(&json)?)
     }
 
-    /// Encodes the given text to token ids.
+    /// Encodes the given text, or pair of texts, to token ids.
     ///
-    /// @param text - The text to encode into tokens.
+    /// @param input - A text, or a pair of texts given as a two-item array. The post-processor
+    /// joins a pair, for example as `[CLS] A [SEP] B [SEP]`.
     /// @param options - Settings for this call: whether to add special tokens, padding or
     /// truncation. Defaults to the tokenizer's config. See {@link EncodeOptions}.
-    /// @returns The token ids.
-    /// @throws If the options do not match {@link EncodeOptions}.
+    /// @returns The {@link Encoding}.
+    /// @throws If the input is not a text or a pair, or the options do not match {@link EncodeOptions}.
     pub fn encode(
         &self,
-        text: &str,
+        input: Ts<TextInput>,
         options: Option<Ts<EncodeOptions>>,
-    ) -> Result<Vec<u32>, JsError> {
+    ) -> Result<Encoding, JsError> {
+        let input = input.to_rust()?;
         let options = convert_encode_options(options)?;
-        let encodings = self.0.encode(text, &options).wait().map_err(js_err)?;
-        let ids = encodings
-            .first()
-            .map(|e| e.ids().iter().map(|t| t.id()).collect())
-            .unwrap_or_default();
-        Ok(ids)
+        let encoding = self
+            .0
+            .encode(input, &options)
+            .wait()
+            .map_err(js_err)?
+            .pop()
+            .expect("encoding a single input gives exactly one encoding");
+        Ok(Encoding(encoding))
+    }
+
+    /// Encodes the given text, or pair of texts, and returns the token of each id.
+    ///
+    /// Shorthand for `decode_tokens(encode(input, options).ids)`.
+    ///
+    /// @param input - A text, or a pair of texts given as a two-item array.
+    /// @param options - Settings for this call. See {@link EncodeOptions}.
+    /// @returns The token of each id, special tokens included.
+    /// @throws If the input is not a text or a pair, or the options do not match {@link EncodeOptions}.
+    pub fn tokenize(
+        &self,
+        input: Ts<TextInput>,
+        options: Option<Ts<EncodeOptions>>,
+    ) -> Result<Vec<String>, JsError> {
+        let encoding = self.encode(input, options)?;
+        Ok(self.decode_tokens(PipelineToken::cast_slice(encoding.0.ids()), None))
+    }
+
+    /// Encodes a batch of texts, or pairs of texts.
+    ///
+    /// @param inputs - The batch to encode. Each item is a text, or a pair of texts given as a
+    /// two-item array. A batch can mix both.
+    /// @param options - Settings for this call, applied to every item. See {@link EncodeOptions}.
+    /// @returns The {@link Encoding} of each item, in input order.
+    /// @throws If an item is not a text or a pair, or the options do not match {@link EncodeOptions}.
+    pub fn encode_batch(
+        &self,
+        inputs: Vec<Ts<TextInput>>,
+        options: Option<Ts<EncodeOptions>>,
+    ) -> Result<Vec<Encoding>, JsError> {
+        let inputs = inputs
+            .into_iter()
+            .map(|input| Ok(input.to_rust()?.into()))
+            .collect::<Result<_, JsError>>()?;
+        let options = convert_encode_options(options)?;
+        let encodings = self
+            .0
+            .encode(Inputs::Batch(inputs), &options)
+            .wait()
+            .map_err(js_err)?;
+        Ok(encodings.into_iter().map(Encoding).collect())
     }
 
     /// Decodes token ids back into text.
     ///
-    /// @param ids - The ids to convert. Can be the result of {@link Tokenizer.encode}.
+    /// @param ids - The ids to convert, such as {@link Encoding.ids}.
     /// @param skip_special_tokens - Whether special tokens are ignored. `true` when not specified.
     /// @returns The decoded text.
     pub fn decode(
@@ -99,7 +149,7 @@ impl Tokenizer {
     /// Converts token ids to their tokens. This does not run the decoder, so each token keeps its
     /// spelling in the vocabulary: a byte-level BPE token reads `Ġworld`, not ` world`.
     ///
-    /// @param ids - The ids to convert. Can be the result of {@link Tokenizer.encode}.
+    /// @param ids - The ids to convert, such as {@link Encoding.ids}.
     /// @param skip_special_tokens - Whether special tokens are ignored. `false` when not specified.
     /// @returns The token of each id found in the vocabulary. Ids not in the vocabulary are dropped.
     pub fn decode_tokens(&self, ids: &[u32], skip_special_tokens: Option<bool>) -> Vec<String> {
