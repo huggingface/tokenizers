@@ -893,17 +893,15 @@ mod tests {
             )
             .unwrap();
 
-        // The first `ü` is rejected, and the scan resumes inside its two UTF-8 bytes.
         assert_eq!(
             segments(&vocab, "üü ü", false, false),
             vec![(Some("üü ".to_string()), None), (None, Some(0))]
         );
-        // `zz` at 0..2 is rejected; `zz` at 1..3 still follows a `z`.
         assert_eq!(
             segments(&vocab, "zzz zz", false, false),
             vec![(Some("zzz ".to_string()), None), (None, Some(1))]
         );
-        // `foo` follows the added token `x`, whose last char is a word char.
+        // `x` has `single_word=false` so it matches even inside a word
         assert_eq!(
             segments(&vocab, "xfoo", false, false),
             vec![(None, Some(3)), (Some("foo".to_string()), None)]
