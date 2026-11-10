@@ -870,7 +870,7 @@ mod tests {
     }
 
     #[test]
-    fn single_word_looks_before_where_the_scan_resumed() {
+    fn single_word_rejects_a_match_after_a_word_char() {
         let model = ModelMock::new(&[]);
         let mut vocab = AddedVocabulary::new();
         let normalizer: Option<&Lowercase> = None;
