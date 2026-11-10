@@ -67,6 +67,7 @@ pub(super) enum Atoms {
     /// The atoms are the 256 bytes; the symbol for each lives in `BpeTables::byte_internal`.
     Bytes,
     Chars {
+        /// Missing fallback tokens are `NO_SYMBOL`; a character needs all its bytes to fall back.
         byte_fallback: Option<[u32; 256]>,
         unk_token: Option<u32>,
         fuse_unk: bool,

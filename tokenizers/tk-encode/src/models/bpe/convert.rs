@@ -128,6 +128,28 @@ impl<M: SinkMode> SymbolSink<M> {
             self.push(tables, byte_symbols.at(byte as usize));
         }
     }
+
+    /// A byte fallback is all-or-nothing: never emit only part of a character.
+    #[inline(always)]
+    fn try_push_char_bytes(
+        &mut self,
+        tables: &BpeTables,
+        byte_symbols: &[u32; 256],
+        character: char,
+    ) -> bool {
+        let mut buf = [0u8; 4];
+        let bytes = character.encode_utf8(&mut buf).as_bytes();
+        if bytes
+            .iter()
+            .any(|&byte| byte_symbols.at(byte as usize) == NO_SYMBOL)
+        {
+            return false;
+        }
+        for &byte in bytes {
+            self.push(tables, byte_symbols.at(byte as usize));
+        }
+        true
+    }
 }
 
 impl PipelineBPE {
@@ -256,8 +278,9 @@ fn convert_chars<M: SinkMode>(
             sink.push(tables, symbol);
             continue;
         }
-        if let Some(fallback) = byte_fallback {
-            sink.push_char_bytes(tables, fallback, character);
+        if let Some(fallback) = byte_fallback
+            && sink.try_push_char_bytes(tables, fallback, character)
+        {
             in_unk_run = false;
             continue;
         }
@@ -328,9 +351,12 @@ fn push_unknown<M: SinkMode>(
             unk_token,
             ..
         } => {
-            if let Some(fallback) = byte_fallback {
-                sink.push_char_bytes(tables, fallback, character);
-            } else if let Some(unk) = unk_token {
+            if let Some(fallback) = byte_fallback
+                && sink.try_push_char_bytes(tables, fallback, character)
+            {
+                return;
+            }
+            if let Some(unk) = unk_token {
                 sink.push(tables, *unk);
             }
         }

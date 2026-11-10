@@ -211,6 +211,22 @@ fn byte_fallback_encodes_missing_chars_as_byte_tokens() {
 }
 
 #[test]
+fn byte_fallback_allows_missing_codes_for_known_characters() {
+    let mut vocab = byte_fallback_vocab();
+    // Gemma has a regular tab token instead of <0x09>.
+    vocab.remove("<0x09>");
+    vocab.insert("\t".into(), 302);
+    let pipeline = PipelineBPE::from_config(BpeConfig {
+        vocab,
+        byte_fallback: true,
+        ..Default::default()
+    })
+    .unwrap();
+
+    assert_eq!(pipeline_ids(&pipeline, "h\té"), vec![300, 302, 0xC3, 0xA9]);
+}
+
+#[test]
 fn byte_fallback_wins_over_unk() {
     let pipeline = PipelineBPE::from_config(BpeConfig {
         vocab: byte_fallback_vocab(),
@@ -308,15 +324,48 @@ fn rejects_unk_token_missing_from_vocab() {
 }
 
 #[test]
-fn byte_fallback_with_missing_codes_errors() {
-    // Incomplete <0xNN> coverage must be a build error, not a panic.
-    assert!(
-        hello(BpeConfig {
-            byte_fallback: true,
-            ..Default::default()
-        })
-        .is_err()
-    );
+fn byte_fallback_with_missing_codes_uses_unk() {
+    // Neither the first nor the last byte of an incomplete fallback may be emitted.
+    for missing in ["<0xC3>", "<0xA9>"] {
+        for (unk_token, fuse_unk, want) in [
+            (None, false, vec![300]),
+            (Some("<unk>".to_string()), false, vec![300, 400, 400]),
+            (Some("<unk>".to_string()), true, vec![300, 400]),
+        ] {
+            let mut vocab = byte_fallback_vocab();
+            vocab.remove(missing);
+            let pipeline = PipelineBPE::from_config(BpeConfig {
+                vocab,
+                byte_fallback: true,
+                unk_token,
+                fuse_unk,
+                ..Default::default()
+            })
+            .unwrap();
+            for repeats in [1, 32] {
+                assert_eq!(
+                    pipeline_ids(&pipeline, &"héé".repeat(repeats)),
+                    want.repeat(repeats),
+                    "missing={missing}, fuse_unk={fuse_unk}, repeats={repeats}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn byte_fallback_with_missing_codes_and_affixes_uses_unk() {
+    let mut vocab = byte_fallback_vocab();
+    vocab.remove("<0xA9>");
+    let pipeline = PipelineBPE::from_config(BpeConfig {
+        vocab,
+        byte_fallback: true,
+        unk_token: Some("<unk>".into()),
+        end_of_word_suffix: Some("</w>".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(pipeline_ids(&pipeline, "hé"), vec![300, 400]);
 }
 
 #[test]

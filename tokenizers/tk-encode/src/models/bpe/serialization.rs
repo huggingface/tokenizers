@@ -31,8 +31,8 @@ pub struct BpeConfig {
     pub end_of_word_suffix: Option<String>,
     /// Whether a run of unknown characters collapses into one unk token.
     pub fuse_unk: bool,
-    /// SentencePiece's byte fallback: an unknown character becomes one `"<0xNN>"` token per byte,
-    /// which requires all 256 of them to be in the vocabulary.
+    /// SentencePiece's byte fallback: an unknown character becomes one `"<0xNN>"` token per byte
+    /// if all of its bytes have fallback tokens. Otherwise, the unknown-token policy applies.
     pub byte_fallback: bool,
     /// Emit any pretoken that is itself a vocabulary entry as that entry, without merging. The flag
     /// only *widens* what folds: entries that provably reduce to themselves fold either way, which
@@ -252,14 +252,13 @@ impl PipelineBPE {
             };
             let unk_token = unk_token.map(|external| to_internal(external).unwrap_or(NO_SYMBOL));
             let fallback_lookup = if byte_fallback {
-                let mut fallback_lookup = [0u32; 256];
+                let mut fallback_lookup = [NO_SYMBOL; 256];
                 for b in 0u8..=255 {
                     let code = format!("<{b:#04X}>");
-                    let external = vocab
+                    fallback_lookup[b as usize] = vocab
                         .token_to_id(&code)
-                        .ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
-                    fallback_lookup[b as usize] =
-                        to_internal(external).ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
+                        .and_then(to_internal)
+                        .unwrap_or(NO_SYMBOL);
                 }
                 Some(fallback_lookup)
             } else {
