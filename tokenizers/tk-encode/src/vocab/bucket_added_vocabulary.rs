@@ -3,7 +3,7 @@ use super::buckets::{AddedTokenFlags, Buckets};
 use crate::pipeline::Normalizer;
 use crate::pipeline::PipelinePatternMatcher;
 use crate::pre_tokenizers::whitespace::is_word_char;
-use crate::utils::perfect_hash::{Mphf, mix};
+use crate::utils::perfect_hash::{Mphf, splitmix64};
 use ahash::AHashMap;
 use ptr_hash::PtrHashParams;
 use std::collections::BTreeMap;
@@ -194,7 +194,10 @@ impl InternalIds {
             sorted_vocab_ids.is_sorted(),
             "add_tokens collects the vocab ids from a BTreeMap, which yields them in order"
         );
-        let keys: Vec<u64> = sorted_vocab_ids.iter().map(|&id| mix(id as u64)).collect();
+        let keys: Vec<u64> = sorted_vocab_ids
+            .iter()
+            .map(|&id| splitmix64(id as u64))
+            .collect();
         let mphf = Mphf::new(&keys, PtrHashParams::default_fast());
         // Unused slots hold 0 - `internal_id` rejects them by comparing the vocab id.
         let mut internal_ids = vec![0; mphf.max_index()].into_boxed_slice();
@@ -216,7 +219,7 @@ impl InternalIds {
         // An empty vocabulary has no slots.
         let internal_id = *self
             .internal_ids
-            .get(self.mphf.index(&mix(vocab_id as u64)))?;
+            .get(self.mphf.index(&splitmix64(vocab_id as u64)))?;
         (self.vocab_id(internal_id) == vocab_id).then_some(internal_id)
     }
 
@@ -565,6 +568,28 @@ mod tests {
             vocab.extract_next(text, 0, true, false),
             Some(((4, 9), 200_001))
         );
+    }
+
+    #[test]
+    fn dense_ids_build() {
+        // With `mix`, this almost always panicked:
+        // https://github.com/huggingface/tokenizers/issues/2665
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        vocab
+            .add_tokens(
+                (0..757).map(|i| AddedToken::from(format!("<{i}>"), true)),
+                0,
+                |t| model.token_to_id(t),
+                None::<&Lowercase>,
+            )
+            .unwrap();
+        for id in [0, 378, 756] {
+            assert_eq!(
+                vocab.id_to_token_bytes(id).unwrap().0,
+                format!("<{id}>").as_bytes()
+            );
+        }
     }
 
     #[test]
