@@ -1,25 +1,37 @@
 //! Utils to render Tokenizers.__repr__
 
-use tk::json::Json;
+use serde_json::Value;
+use tk::vocab::bucket_added_vocabulary::AddedToken;
+
+use crate::JsonObject;
+use crate::options::{Padding, Truncation};
+use crate::tokenizer::Field;
 
 /// How many items of a list are shown before `...`. A dict shows every field.
-const MAX_PROPERTIES_SHOWN: usize = 5;
+const MAX_LIST_ITEMS_SHOWN: usize = 5;
 
 const MAX_LINE_WIDTH: usize = 100;
 
 const INDENT: &str = "    ";
 
-/// `padding` and `truncation` can be overwritten
-pub(crate) fn tokenizer(file: &Json<'_>, padding: &str, truncation: &str) -> String {
-    let mut out = String::from("Tokenizer(");
-    for (key, value) in file.entries().unwrap() {
+/// Renders a `tokenizer.json` as `name(...)`, one line per key.
+pub(crate) fn tokenizer<'spec>(
+    name: &str,
+    fields: impl IntoIterator<Item = (&'spec str, Field<'spec>)>,
+) -> String {
+    let mut out = format!("{name}(");
+    for (key, field) in fields {
         newline(1, &mut out);
         out.push_str(key);
         out.push('=');
-        match key {
-            "padding" => push_indented(padding, &mut out),
-            "truncation" => push_indented(truncation, &mut out),
-            _ => write_value(key, value, Some(1), &mut out),
+        match field {
+            Field::JsonValue(value) => write_value(key, &value, Some(1), &mut out),
+            Field::JsonObject(fields) => write_object(key, &fields, Some(1), &mut out),
+            Field::Padding(None) | Field::Truncation(None) => out.push_str("None"),
+            Field::Padding(Some(padding)) => push_indented(&Padding::repr(padding), &mut out),
+            Field::Truncation(Some(truncation)) => {
+                push_indented(&Truncation::repr(truncation), &mut out)
+            }
         }
         out.push(',');
     }
@@ -28,33 +40,46 @@ pub(crate) fn tokenizer(file: &Json<'_>, padding: &str, truncation: &str) -> Str
     out
 }
 
+pub(crate) fn component(json: &JsonObject) -> String {
+    let mut out = String::new();
+    write_object("", json, Some(0), &mut out);
+    out
+}
+
 /// `key` is the one `value` sits under, `""` for a list item. `indent` is `None` while a
 /// container above tries to fit on one line, so nothing spreads.
-fn write_value(key: &str, value: &Json<'_>, indent: Option<usize>, out: &mut String) {
-    if value.is_null() {
-        out.push_str("None");
-    } else if let Some(b) = value.as_bool() {
-        out.push_str(if b { "True" } else { "False" });
-    } else if let Some(n) = value.number_literal() {
-        out.push_str(n);
-    } else if let Some(s) = value.as_str() {
-        write_str(s, out);
-    } else if let Some(items) = value.as_array() {
-        out.push('[');
-        write_entries(
-            items.iter().map(|item| ("", item)),
-            |_, _| {},
-            MAX_PROPERTIES_SHOWN,
-            indent,
-            out,
-        );
-        out.push(']');
-    } else if let Some(tag) = value.type_tag() {
+fn write_value(key: &str, value: &Value, indent: Option<usize>, out: &mut String) {
+    match value {
+        Value::Null => out.push_str("None"),
+        Value::Bool(b) => out.push_str(python_bool(*b)),
+        Value::Number(n) => out.push_str(&n.to_string()),
+        // A charsmap is a base64 blob of hundreds of KB.
+        Value::String(_) if key == "precompiled_charsmap" => out.push_str("..."),
+        Value::String(s) => write_str(s, out),
+        Value::Array(items) => {
+            out.push('[');
+            write_entries(
+                items.iter().map(|item| ("", item)),
+                |_, _| {},
+                MAX_LIST_ITEMS_SHOWN,
+                indent,
+                out,
+            );
+            out.push(']');
+        }
+        Value::Object(fields) => write_object(key, fields, indent, out),
+    }
+}
+
+fn write_object(key: &str, fields: &JsonObject, indent: Option<usize>, out: &mut String) {
+    if let Some(Value::String(tag)) = fields.get("type") {
         out.push_str(tag);
         out.push('(');
-        let fields = value.entries().unwrap().filter(|(key, _)| *key != "type");
         write_entries(
-            fields,
+            fields
+                .iter()
+                .filter(|(key, _)| *key != "type")
+                .map(|(key, value)| (key.as_str(), value)),
             |key, out| {
                 out.push_str(key);
                 out.push('=');
@@ -67,13 +92,13 @@ fn write_value(key: &str, value: &Json<'_>, indent: Option<usize>, out: &mut Str
     } else {
         // Truncate vocab to 5 entries
         let limit = if key == "vocab" {
-            MAX_PROPERTIES_SHOWN
+            MAX_LIST_ITEMS_SHOWN
         } else {
             usize::MAX
         };
         out.push('{');
         write_entries(
-            value.entries().unwrap(),
+            fields.iter().map(|(key, value)| (key.as_str(), value)),
             |key, out| {
                 write_str(key, out);
                 out.push_str(": ");
@@ -89,7 +114,7 @@ fn write_value(key: &str, value: &Json<'_>, indent: Option<usize>, out: &mut Str
 /// The entries stay on one line when it fits in [`MAX_LINE_WIDTH`] columns.
 /// Otherwise one per line.
 fn write_entries<'a>(
-    entries: impl Iterator<Item = (&'a str, &'a Json<'a>)>,
+    entries: impl Iterator<Item = (&'a str, &'a Value)>,
     write_key: fn(&str, &mut String),
     limit: usize,
     indent: Option<usize>,
@@ -109,7 +134,7 @@ fn write_entries<'a>(
 }
 
 fn write_entries_at(
-    entries: &[(&str, &Json<'_>)],
+    entries: &[(&str, &Value)],
     write_key: fn(&str, &mut String),
     limit: usize,
     indent: Option<usize>,
@@ -133,6 +158,18 @@ fn write_entries_at(
     }
 }
 
+pub(crate) fn added_token(token: &AddedToken) -> String {
+    format!(
+        "AddedToken({}, single_word={}, lstrip={}, rstrip={}, normalized={}, special={})",
+        tk::str_to_json(&token.content),
+        python_bool(token.single_word),
+        python_bool(token.lstrip),
+        python_bool(token.rstrip),
+        python_bool(token.normalized),
+        python_bool(token.special),
+    )
+}
+
 fn push_indented(rendered: &str, out: &mut String) {
     out.push_str(&rendered.replace('\n', &format!("\n{INDENT}")));
 }
@@ -140,6 +177,10 @@ fn push_indented(rendered: &str, out: &mut String) {
 fn newline(indent: usize, out: &mut String) {
     out.push('\n');
     out.push_str(&INDENT.repeat(indent));
+}
+
+fn python_bool(value: bool) -> &'static str {
+    if value { "True" } else { "False" }
 }
 
 fn write_str(s: &str, out: &mut String) {

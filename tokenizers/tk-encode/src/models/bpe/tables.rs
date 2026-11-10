@@ -37,7 +37,7 @@ use std::cmp;
 
 use crate::models::bpe::fold::{self, SparseFold};
 use crate::models::bpe::pair_map::MphfMap;
-use crate::models::bpe::{At, MergeMap};
+use crate::models::bpe::{At, MergeMap, Vocab};
 
 /// The rank half of a packed merge value, for reusing a rank as the high half of a queue key.
 /// It keeps the rank alone: everything below bit 32 is dropped, flags and product id together, and
@@ -47,6 +47,9 @@ pub(super) const RANK_MASK: u64 = 0xFFFF_FFFF_0000_0000;
 /// The product-id half, which is the low 30 bits: bits 30 and 31 are the flag field, so every read
 /// of a product id masks rather than truncating to `u32`. 2^30 ids is ~1.07 B, far past any vocab.
 pub(super) const ID_MASK: u64 = (1 << 30) - 1;
+
+/// Sentinel value marking the absence of symbol
+pub(super) const NO_SYMBOL: u32 = u32::MAX;
 
 /// Bit 30: batching every occurrence of this pair in one multipass sweep is exact. It is only so
 /// when the product cannot reach a merge cheaper than the one being applied,
@@ -73,11 +76,7 @@ pub(crate) struct BpeTables {
 impl BpeTables {
     /// Returns the tables plus the dense `external id -> internal id` map built along the way.
     /// Callers that do not need the map just drop it; it is ~4 bytes per vocab entry.
-    pub(crate) fn build(
-        vocab: AHashMap<String, u32>,
-        merges: MergeMap,
-        byte_level: bool,
-    ) -> (Self, Vec<u32>) {
+    pub(crate) fn build(vocab: &Vocab, merges: MergeMap, byte_level: bool) -> (Self, Vec<u32>) {
         // 1. We build the internal id map. This sorts the merges by their ranks so frequent pairs
         //    get a smaller rank.
         let rev_merge = merges
@@ -117,7 +116,7 @@ impl BpeTables {
 
         // this one is destroyed afterwards, does not matter if its big.
         let mut internal_id_map =
-            vec![u32::MAX; *vocab.values().max().unwrap_or(&0u32) as usize + 1];
+            vec![NO_SYMBOL; *vocab.values().max().unwrap_or(&0u32) as usize + 1];
         let mut unmap = vec![u32::MAX; base + products.len()];
         // fill the first 0->base with the alphabet sorted by rank.
         for (internal, external) in alphabet.iter().enumerate() {
@@ -133,7 +132,7 @@ impl BpeTables {
             internal_id_map[product as usize] = internal;
         }
         let (fold, byte_internal) =
-            fold::build(&vocab, &merges, &internal_id_map, &unmap, byte_level);
+            fold::build(vocab, &merges, &internal_id_map, &unmap, byte_level);
 
         // For the SAFE flag: the cheapest rank at which a token appears as the left member of some
         // merge, and as the right member. A merge is safe to batch when its product cannot reach a
@@ -162,12 +161,12 @@ impl BpeTables {
             let ia = internal_id_map
                 .get(*a as usize)
                 .copied()
-                .unwrap_or(u32::MAX);
+                .unwrap_or(NO_SYMBOL);
             let ib = internal_id_map
                 .get(*b as usize)
                 .copied()
-                .unwrap_or(u32::MAX);
-            if ia == u32::MAX || ib == u32::MAX {
+                .unwrap_or(NO_SYMBOL);
+            if ia == NO_SYMBOL || ib == NO_SYMBOL {
                 dropped += 1; // merge over a token that is not in the vocab: malformed file
                 continue;
             }
@@ -295,7 +294,7 @@ mod test {
         let mut merges = MergeMap::new();
         merges.insert((0, 1), (0, 2));
         merges.insert((3, 0), (1, 3));
-        let (tables, _) = BpeTables::build(vocab, merges, true);
+        let (tables, _) = BpeTables::build(&vocab, merges, true);
         // there are only 4 elements because ab and aba are part of the vocab
         // so the alphabet is a,b and the ranks are ab and aba.
         // Both operands are < 512, so the merge lives in the dense grid, not the MPHF.

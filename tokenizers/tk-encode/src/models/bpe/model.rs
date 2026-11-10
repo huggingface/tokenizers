@@ -2,6 +2,8 @@
 //! Building it from a vocabulary and a merge list, and recovering the config back out of it, live
 //! in `serialization`. Conversion to symbols lives in `convert`; the merge engines are
 //! `merge_multipass` and `merge_hot_cold_queue`.
+use std::collections::HashMap;
+
 use crate::models::bpe::At;
 use crate::models::bpe::convert::Affixes;
 use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_with_queue};
@@ -9,7 +11,7 @@ use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PipelineToken, Span};
 use crate::tokenizer::Result;
-use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
+use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, char_to_byte};
 use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
 use crate::vocab::bucket_vocab_store::{BucketVocabStore, key_and_hash, key_and_hash_readable};
 
@@ -99,6 +101,26 @@ impl PipelineBPE {
                 .map(|&b| BYTES_CHAR_LOOKUP[b as usize])
                 .collect(),
         )
+    }
+
+    /// The id of a token as [`Self::id_to_token`] spells it.
+    pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
+        if !self.is_byte_level() {
+            return self.vocab.token_to_id(token);
+        }
+        let bytes: Vec<u8> = token.chars().map(char_to_byte).collect::<Option<_>>()?;
+        self.vocab.get_bytes(&bytes)
+    }
+
+    /// `{token: id}`, with each token as [`Self::id_to_token`] spells it.
+    pub(crate) fn get_vocab(&self) -> HashMap<String, u32> {
+        let ids = 0..self.vocab.id_space() as u32;
+        ids.filter_map(|id| Some((self.id_to_token(id)?, id)))
+            .collect()
+    }
+
+    pub(crate) fn get_vocab_size(&self) -> usize {
+        self.vocab.len()
     }
 
     /// One bit per vocabulary id: can a pretoken equal to this entry be emitted as this entry,

@@ -23,7 +23,7 @@ def recorded_download(monkeypatch):
 
 
 def test_downloads_tokenizer_json_from_the_model_repo(recorded_download, wiki):
-    tokenizer = Tokenizer.from_pretrained("some-org/some-model")
+    tokenizer = Tokenizer.from_pretrained("some-org/some-model").compile()
 
     assert tokenizer.encode(TEXT).ids == wiki.encode(TEXT).ids
     assert recorded_download == {
@@ -75,7 +75,7 @@ def test_reads_the_hub_cache_without_network(tmp_path, wiki):
     (repo / "snapshots" / commit).mkdir(parents=True)
     shutil.copy(WIKI, repo / "snapshots" / commit / "tokenizer.json")
 
-    tokenizer = Tokenizer.from_pretrained("some-org/some-model", cache_dir=tmp_path, local_files_only=True)
+    tokenizer = Tokenizer.from_pretrained("some-org/some-model", cache_dir=tmp_path, local_files_only=True).compile()
 
     assert tokenizer.encode(TEXT).ids == wiki.encode(TEXT).ids
 
@@ -89,8 +89,8 @@ def test_reports_a_repo_missing_from_the_cache(tmp_path):
 def test_honours_the_revision():
     text = "Hey there dear friend!"
     # `main` is a lowercasing WordPiece tokenizer, the `gpt-2` branch a byte-level BPE.
-    lowercasing = Tokenizer.from_pretrained("anthony/tokenizers-test")
-    byte_level = Tokenizer.from_pretrained("anthony/tokenizers-test", revision="gpt-2")
+    lowercasing = Tokenizer.from_pretrained("anthony/tokenizers-test").compile()
+    byte_level = Tokenizer.from_pretrained("anthony/tokenizers-test", revision="gpt-2").compile()
 
     assert lowercasing.decode(lowercasing.encode(text).ids) == "hey there dear friend!"
     assert byte_level.decode(byte_level.encode(text).ids) == "Hey there dear friend!"

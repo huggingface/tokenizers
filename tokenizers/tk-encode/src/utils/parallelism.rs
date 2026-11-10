@@ -37,20 +37,20 @@ static POOL_GEN: AtomicUsize = AtomicUsize::new(0);
 /// this is required because when forking only the parent thread is copied to the child process so
 /// you lose access to the previously built thread pool -> rebuild needed
 /// cf the POSIX spec: https://pubs.opengroup.org/onlinepubs/9699919799/functions/fork.html
+///
+/// `Once`: no caller proceeds before the handler is registered.
 #[cfg(unix)]
 fn register_fork_handler() {
-    static REGISTERED: AtomicBool = AtomicBool::new(false);
-    if REGISTERED
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_ok()
-    {
+    use std::sync::Once;
+    static REGISTERED: Once = Once::new();
+    REGISTERED.call_once(|| {
         unsafe extern "C" fn child_after_fork() {
             POOL_GEN.fetch_add(1, Ordering::SeqCst);
         }
         unsafe {
             let _ = libc::pthread_atfork(None, None, Some(child_after_fork));
         }
-    }
+    });
 }
 
 #[cfg(not(unix))]
@@ -67,24 +67,35 @@ static CELL: Mutex<Option<Slot>> = Mutex::new(None);
 
 type MaybeLockGuard = Option<MutexGuard<'static, Option<Slot>>>;
 
+/// How many times [`lock`] retries a held lock before giving up.
+const LOCK_ATTEMPTS: u32 = 64;
+
+/// Take the pool lock, briefly waiting out a holder (it only guards an `Arc` clone or swap).
+/// Bounded: a child forked while the lock was held inherits it locked forever.
 fn lock() -> MaybeLockGuard {
-    match CELL.try_lock() {
-        Ok(g) => Some(g),
-        Err(TryLockError::Poisoned(p)) => Some(p.into_inner()),
-        Err(TryLockError::WouldBlock) => None,
+    for attempt in 0..LOCK_ATTEMPTS {
+        match CELL.try_lock() {
+            Ok(g) => return Some(g),
+            Err(TryLockError::Poisoned(p)) => return Some(p.into_inner()),
+            Err(TryLockError::WouldBlock) if attempt < LOCK_ATTEMPTS / 2 => std::hint::spin_loop(),
+            Err(TryLockError::WouldBlock) => std::thread::yield_now(),
+        }
     }
+    None
 }
 
 pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     register_fork_handler();
 
     let generation = POOL_GEN.load(Ordering::Acquire);
-    if let Some(guard) = lock()
-        && let Some(slot) = guard.as_ref()
+    // no lock: encode serially rather than build a throwaway pool
+    let mut guard = lock()?;
+    if let Some(slot) = guard.as_ref()
         && generation == slot.version
     {
         return Some(slot.pool.clone());
     }
+    // build under the lock: callers that find it held go serial instead of building their own
 
     let num_threads = num_threads();
     // We don't create a thread pool when thread == 1
@@ -104,10 +115,11 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
         Some(slot)
     };
 
-    let old = lock().and_then(|mut guard| match &slot {
+    let old = match &slot {
         Some(slot) => guard.replace(slot.clone()),
         None => guard.take(),
-    });
+    };
+    drop(guard);
 
     if let Some(old) = old
         && old.pid != std::process::id()
@@ -387,6 +399,31 @@ mod tests {
         );
         assert_eq!(v.maybe_par_iter().sum::<u32>(), 42);
         assert_eq!(v.into_maybe_par_iter().sum::<u32>(), 42);
+    }
+
+    /// Contended callers must reuse the cached pool, not build their own.
+    #[test]
+    fn concurrent_callers_share_one_pool() {
+        if num_threads() == 1 {
+            return; // no pool on a one-core machine
+        }
+        // start stale, so the callers race the rebuild too
+        invalidate();
+        let callers: Vec<_> = (0..32)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    (0..2_000)
+                        .filter_map(|_| pool())
+                        .map(|pool| Arc::as_ptr(&pool) as usize)
+                        .collect::<std::collections::HashSet<_>>()
+                })
+            })
+            .collect();
+        let seen: std::collections::HashSet<_> = callers
+            .into_iter()
+            .flat_map(|caller| caller.join().unwrap())
+            .collect();
+        assert_eq!(seen.len(), 1, "contended callers built pools of their own");
     }
 
     #[test]
