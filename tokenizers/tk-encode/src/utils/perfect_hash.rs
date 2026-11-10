@@ -4,8 +4,8 @@
 //! there are no collisions to resolve. A key outside the set still lands on some slot, so a table
 //! keeps the key (or something derived from it) in the slot and compares it on lookup.
 //!
-//! [`Mphf`] takes keys that are already hashed. Integer keys go through [`mix`] first, or through
-//! [`mix_dense`] when they are a dense run, such as token ids.
+//! [`Mphf`] takes keys that are already hashed. Integer keys go through [`mix`] first, or
+//! [`splitmix64`] for dense runs such as token ids.
 
 use ptr_hash::{FastPtrHash, hash::NoHash};
 
@@ -22,13 +22,10 @@ pub(crate) fn mix(z: u64) -> u64 {
     z ^ (z >> 29)
 }
 
-/// [`mix`] for a dense run of integers, such as the ids of the added tokens.
-///
-/// One multiply does not spread consecutive integers enough for [`Mphf`]: on the ids `0..757`, its
-/// construction fails, and panics, on almost every attempt. This is the splitmix64 finalizer, also
-/// a bijection. It costs two more multiplies, so the per-word vocabulary lookup keeps [`mix`].
+/// The splitmix64 finalizer, a bijection like [`mix`]. On dense runs of integers, [`Mphf`] can fail
+/// to build with [`mix`] keys (<https://github.com/huggingface/tokenizers/issues/2665>).
 #[inline(always)]
-pub(crate) fn mix_dense(z: u64) -> u64 {
+pub(crate) fn splitmix64(z: u64) -> u64 {
     let z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     let z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     z ^ (z >> 31)
