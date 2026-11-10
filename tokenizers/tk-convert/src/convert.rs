@@ -164,8 +164,8 @@ fn append_normalizer(root: &mut Map<String, Value>, normalizer: Value) {
     let existing = root.get("normalizer").cloned().unwrap_or(Value::Null);
     let chain = match existing {
         Value::Null => normalizer,
-        Value::Object(ref o) if o.get("type").and_then(Value::as_str) == Some("Sequence") => {
-            let mut members = o
+        ref sequence if component_type(sequence) == Some("Sequence") => {
+            let mut members = sequence
                 .get("normalizers")
                 .and_then(Value::as_array)
                 .cloned()
@@ -253,9 +253,10 @@ const SEQUENCE_CHILDREN: [&str; 4] = ["normalizers", "pretokenizers", "decoders"
 /// Only `Sequence` children are descended into: a blind walk would eventually meet a data object
 /// with a `"type"` key (a post-processor's `special_tokens`) and rewrite it.
 fn canonicalize_component(node: &mut Value) -> Result<(), ConvertError> {
+    let is_metaspace = component_type(node) == Some("Metaspace");
     match node {
         Value::Object(obj) => {
-            if obj.get("type").and_then(Value::as_str) == Some("Metaspace") {
+            if is_metaspace {
                 canonicalize_metaspace(obj)?;
             }
             for key in SEQUENCE_CHILDREN {
@@ -447,7 +448,7 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
     let Some(pretok) = root.get_mut("pre_tokenizer") else {
         return Ok(());
     };
-    let is_byte_level = |v: &Value| v.get("type").and_then(Value::as_str) == Some("ByteLevel");
+    let is_byte_level = |v: &Value| component_type(v) == Some("ByteLevel");
 
     // `use_regex` defaults to true, which is what gpt2 and roberta rely on.
     let split_for = |bl: &Value| -> Result<Option<Value>, ConvertError> {
@@ -470,7 +471,7 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
 
     let replacement = if is_byte_level(pretok) {
         Some(split_for(pretok)?)
-    } else if pretok.get("type").and_then(Value::as_str) == Some("Sequence") {
+    } else if component_type(pretok) == Some("Sequence") {
         let members = pretok
             .get_mut("pretokenizers")
             .and_then(Value::as_array_mut);
@@ -502,8 +503,7 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
 
     let kind = root
         .get("model")
-        .and_then(|m| m.get("type"))
-        .and_then(Value::as_str)
+        .and_then(component_type)
         .unwrap_or("an untyped model")
         .to_string();
     if kind != "BPE" {
@@ -539,10 +539,11 @@ fn set_model_flag(
 fn fill_model_defaults(root: &mut Map<String, Value>) -> Result<(), ConvertError> {
     let model = root.get_mut("model").ok_or(ConvertError::MissingModel)?;
     let found = kind_of(model);
+    let is_bpe = component_type(model) == Some("BPE");
     let model = model
         .as_object_mut()
         .ok_or(ConvertError::ModelNotObject { found })?;
-    if model.get("type").and_then(Value::as_str) == Some("BPE") {
+    if is_bpe {
         // Only set when the `ByteLevel` lowering did not already say otherwise.
         model.entry("byte_level").or_insert(Value::Bool(false));
     }
@@ -569,7 +570,7 @@ fn lower_template_processing(root: &mut Map<String, Value>) -> Result<(), Conver
 /// offsets, which the pipeline does not keep. A `TemplateProcessing` is one when its pieces are
 /// the default arrangement, `$A` and `$A $B` with type ids 0 then 1.
 fn adds_no_tokens(member: &Value) -> bool {
-    if member.get("type").and_then(Value::as_str) != Some("TemplateProcessing") {
+    if component_type(member) != Some("TemplateProcessing") {
         return true;
     }
     let default_seq = |piece: &Value, id: &str, type_id: u64| {
@@ -679,21 +680,17 @@ fn lower_template_node(node: &mut Value) -> Result<(), ConvertError> {
         }
         return Ok(());
     }
+    // Owned, so `node` stays free to be written through below.
+    let kind = component_type(node).unwrap_or_default().to_string();
     let Some(pp) = node.as_object_mut() else {
         return Ok(());
     };
-    if pp.get("type").and_then(Value::as_str) == Some("Sequence")
+    if kind == "Sequence"
         && let Some(children) = pp.get_mut("processors")
     {
         lower_template_node(children)?;
         return collapse_sequence(node);
     }
-    // Owned, so the borrow of `pp` ends before `node` is written through.
-    let kind = pp
-        .get("type")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
     match kind.as_str() {
         "BertProcessing" | "RobertaProcessing" => {
             let lowered = lower_bert_like(pp, &kind)?;
