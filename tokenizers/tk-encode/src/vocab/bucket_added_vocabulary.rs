@@ -42,9 +42,6 @@ fn is_single_word(bytes: &[u8], match_start: usize, match_end: usize) -> bool {
     // FIXME: we use chr conversion for now, this can be inproved by using bitmap.
     // This is the equivalent of `\w`, so its letters, numbers and underscore
     let s = unsafe { std::str::from_utf8_unchecked(bytes) };
-    // The char before the match is looked up in the whole text, not just from where the scan
-    // resumed: the scan can resume inside a word (after a rejected candidate) or right after an
-    // earlier added token, and neither is a word boundary.
     let before_ok = s[..match_start]
         .chars()
         .next_back()
