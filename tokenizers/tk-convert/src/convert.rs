@@ -331,6 +331,10 @@ fn canonicalize_metaspace(obj: &mut Map<String, Value>) -> Result<String, Conver
     Ok(scheme)
 }
 
+fn component_type(component: &Value) -> Option<&str> {
+    component.get("type").and_then(Value::as_str)
+}
+
 /// `serde_json` has no public name for a `Value`'s variant.
 fn kind_of(value: &Value) -> &'static str {
     match value {
@@ -346,48 +350,41 @@ fn kind_of(value: &Value) -> &'static str {
 /// A `Metaspace` pre-tokenizer is two components, so it does not survive as itself.
 ///
 /// It becomes a `MetaspaceNormalizer` in the `normalizer` slot (which rewrites the text) plus a
-/// `Split` on the delimiter here (which cuts it). `Sequence[WhitespaceSplit, Metaspace]` -- the
-/// shape t5 and albert ship -- is the same thing with `drop_whitespace`. A singleton
-/// `Sequence[Metaspace]` is the direct case; both sequence shapes collapse to the lone `Split`.
+/// `Split` on the delimiter here (which cuts it).
+///
+/// `Sequence[Metaspace]` is equivalent.
+///
+/// `Sequence[WhitespaceSplit, Metaspace]` (eg, t5 or albert) is the same thing with `drop_whitespace`.
 ///
 /// `split: false` leaves this slot empty. The reader reads a null `pre_tokenizer` as one span
 /// covering the whole text, which is what not cutting means.
 fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), ConvertError> {
-    let Some(pretok) = root.get("pre_tokenizer") else {
+    let Some(pretokenizer) = root.get("pre_tokenizer") else {
         return Ok(());
     };
-    let (metaspace, drop_whitespace) = match pretok {
-        Value::Object(o) if o.get("type").and_then(Value::as_str) == Some("Metaspace") => {
-            (o.clone(), false)
-        }
-        Value::Object(o) if o.get("type").and_then(Value::as_str) == Some("Sequence") => {
-            match o
-                .get("pretokenizers")
-                .and_then(Value::as_array)
-                .map(|m| &m[..])
-            {
-                Some([metaspace])
-                    if metaspace.get("type").and_then(Value::as_str) == Some("Metaspace") =>
-                {
-                    (
-                        metaspace.as_object().expect("matched as an object").clone(),
-                        false,
-                    )
-                }
-                Some([first, second])
-                    if first.get("type").and_then(Value::as_str) == Some("WhitespaceSplit")
-                        && second.get("type").and_then(Value::as_str) == Some("Metaspace") =>
-                {
-                    (
-                        second.as_object().expect("matched as an object").clone(),
-                        true,
-                    )
-                }
-                _ => return Ok(()),
-            }
+    let members = if component_type(pretokenizer) == Some("Sequence") {
+        let Some(items) = pretokenizer.get("pretokenizers").and_then(Value::as_array) else {
+            return Ok(());
+        };
+        items.as_slice()
+    } else {
+        std::slice::from_ref(pretokenizer)
+    };
+    let (metaspace, drop_whitespace) = match members {
+        [metaspace] if component_type(metaspace) == Some("Metaspace") => (metaspace, false),
+        [split, metaspace]
+            if component_type(split) == Some("WhitespaceSplit")
+                && component_type(metaspace) == Some("Metaspace") =>
+        {
+            (metaspace, true)
         }
         _ => return Ok(()),
     };
+
+    let mut metaspace = metaspace
+        .as_object()
+        .expect("a component with a `type` is an object")
+        .clone();
 
     // Read before `canonicalize_metaspace` drops the field.
     let split = metaspace
@@ -396,7 +393,6 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
         .unwrap_or(true);
     // Reuse the field normalisation written for the decoder case, so the `add_prefix_space` quirk
     // is applied in exactly one place.
-    let mut metaspace = metaspace;
     let prepend = canonicalize_metaspace(&mut metaspace)?;
 
     if drop_whitespace && prepend != "always" {
