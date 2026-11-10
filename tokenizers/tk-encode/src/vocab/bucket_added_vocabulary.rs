@@ -38,11 +38,11 @@ fn is_ws(cp: u32) -> bool {
         char::from_u32(cp).is_some_and(|c| c.is_whitespace())
     }
 }
-fn is_single_word(bytes: &[u8], search: usize, match_start: usize, match_end: usize) -> bool {
+fn is_single_word(bytes: &[u8], match_start: usize, match_end: usize) -> bool {
     // FIXME: we use chr conversion for now, this can be inproved by using bitmap.
     // This is the equivalent of `\w`, so its letters, numbers and underscore
     let s = unsafe { std::str::from_utf8_unchecked(bytes) };
-    let before_ok = s[search..match_start]
+    let before_ok = s[..match_start]
         .chars()
         .next_back()
         .is_none_or(|c| !is_word_char(c));
@@ -468,7 +468,7 @@ impl PipelinePatternMatcher for AddedVocabulary {
             }
             // single_word: reject unless the token is a standalone word (neither neighbour
             // char is a word char). Checked on the raw byte bounds, before any strip.
-            if metadata.single_word && !is_single_word(bytes, search, match_start, match_end) {
+            if metadata.single_word && !is_single_word(bytes, match_start, match_end) {
                 search = match_start + 1;
                 continue;
             }
@@ -891,6 +891,42 @@ mod tests {
                 (None, Some(0)),
                 (Some(" bitmask".to_string()), None),
             ]
+        );
+    }
+
+    #[test]
+    fn single_word_rejects_a_match_after_a_word_char() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer: Option<&Lowercase> = None;
+        vocab
+            .add_tokens(
+                ["ü", "zz", "foo"]
+                    .map(|t| {
+                        AddedToken::from(t, false)
+                            .normalized(false)
+                            .single_word(true)
+                    })
+                    .into_iter()
+                    .chain([AddedToken::from("x", false).normalized(false)]),
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
+                normalizer,
+            )
+            .unwrap();
+
+        assert_eq!(
+            segments(&vocab, "üü ü", false, false),
+            vec![(Some("üü ".to_string()), None), (None, Some(0))]
+        );
+        assert_eq!(
+            segments(&vocab, "zzz zz", false, false),
+            vec![(Some("zzz ".to_string()), None), (None, Some(1))]
+        );
+        // `x` has `single_word=false` so it matches even inside a word
+        assert_eq!(
+            segments(&vocab, "xfoo", false, false),
+            vec![(None, Some(3)), (Some("foo".to_string()), None)]
         );
     }
 
