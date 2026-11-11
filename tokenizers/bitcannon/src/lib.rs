@@ -299,22 +299,16 @@ pub(crate) fn has_rvv() -> bool {
     if !supported {
         return false;
     }
+    // V control is per-thread, so each thread asks the kernel once. A thread that enables V
+    // later stays on the scalar path, which is slower but correct.
     thread_local! {
-        static ENABLED: Cell<bool> = const { Cell::new(false) };
+        static ENABLED: bool = {
+            let status = unsafe { prctl(PR_RISCV_V_GET_CONTROL, 0usize, 0usize, 0usize, 0usize) };
+            // Fall back to HWCAP on kernels or emulators without this interface.
+            status < 0 || status & PR_RISCV_V_VSTATE_CTRL_CUR_MASK == PR_RISCV_V_VSTATE_CTRL_ON
+        };
     }
-    ENABLED.with(|enabled| {
-        if enabled.get() {
-            return true;
-        }
-        let status = unsafe { prctl(PR_RISCV_V_GET_CONTROL, 0usize, 0usize, 0usize, 0usize) };
-        // Fall back to HWCAP on kernels or emulators without this interface.
-        let yes =
-            status < 0 || status & PR_RISCV_V_VSTATE_CTRL_CUR_MASK == PR_RISCV_V_VSTATE_CTRL_ON;
-        // V control is per-thread. Once enabled, Linux does not allow disabling it.
-        // Recheck disabled threads so a later enablement can be observed.
-        enabled.set(yes);
-        yes
-    })
+    ENABLED.with(|enabled| *enabled)
 }
 
 pub(crate) const CONT: u8 = 15; // Atom::Cont
