@@ -1,9 +1,8 @@
 //! Merge lookup for pairs outside the dense grid: a perfect-hash map from a packed
 //! `(left, right)` pair of internal ids to the pair's packed merge value. The `tables` module
 //! documents the value layout.
-use crate::utils::perfect_hash::Mphf;
+use crate::utils::perfect_hash::{Mphf, mphf_params};
 use ahash::RandomState;
-use ptr_hash::PtrHashParams;
 use std::cmp;
 
 // Fixed seeds so a given vocab always hashes identically (the hasher is also stored on the struct,
@@ -47,9 +46,8 @@ impl MphfMap {
         //    a collision a correct miss at query time, but it would drop a token at build, so guard.
         // TODO: check for collisions.
 
-        // 3. Build the (non-minimal) `FastPtrHash` via `PtrHashParams::default_fast()`; query with `.index()`.
-        let params = PtrHashParams::default_fast();
-        let mphf = Mphf::new(&h_keys, params);
+        // 3. Build the (non-minimal) `FastPtrHash`; query with `.index()`.
+        let mphf = Mphf::new(&h_keys, mphf_params(h_keys.len()));
         // At least one slot: a small vocab can have every merge inside the dense grid, and an
         // empty slab would make `get` index out of bounds. u64::MAX is never a real key (that
         // needs both operands to be u32::MAX), so the lone slot always misses.

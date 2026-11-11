@@ -3,9 +3,8 @@ use super::buckets::{AddedTokenFlags, Buckets};
 use crate::pipeline::Normalizer;
 use crate::pipeline::PipelinePatternMatcher;
 use crate::pre_tokenizers::whitespace::is_word_char;
-use crate::utils::perfect_hash::{Mphf, splitmix64};
+use crate::utils::perfect_hash::{Mphf, mphf_params, splitmix64};
 use ahash::AHashMap;
-use ptr_hash::PtrHashParams;
 use std::collections::BTreeMap;
 use std::fmt;
 /// Represent a token added by the user on top of the existing Model vocabulary.
@@ -198,7 +197,7 @@ impl InternalIds {
             .iter()
             .map(|&id| splitmix64(id as u64))
             .collect();
-        let mphf = Mphf::new(&keys, PtrHashParams::default_fast());
+        let mphf = Mphf::new(&keys, mphf_params(keys.len()));
         // Unused slots hold 0 - `internal_id` rejects them by comparing the vocab id.
         let mut internal_ids = vec![0; mphf.max_index()].into_boxed_slice();
         for (internal_id, key) in keys.iter().enumerate() {
