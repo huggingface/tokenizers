@@ -230,8 +230,8 @@ fn append_normalizer(root: &mut Map<String, Value>, normalizer: Value) {
     let existing = root.get("normalizer").cloned().unwrap_or(Value::Null);
     let chain = match existing {
         Value::Null => normalizer,
-        Value::Object(ref o) if o.get("type").and_then(Value::as_str) == Some("Sequence") => {
-            let mut members = o
+        ref sequence if component_type(sequence) == Some("Sequence") => {
+            let mut members = sequence
                 .get("normalizers")
                 .and_then(Value::as_array)
                 .cloned()
@@ -319,9 +319,10 @@ const SEQUENCE_CHILDREN: [&str; 4] = ["normalizers", "pretokenizers", "decoders"
 /// Only `Sequence` children are descended into: a blind walk would eventually meet a data object
 /// with a `"type"` key (a post-processor's `special_tokens`) and rewrite it.
 fn canonicalize_component(node: &mut Value) -> Result<(), ConvertError> {
+    let is_metaspace = component_type(node) == Some("Metaspace");
     match node {
         Value::Object(obj) => {
-            if obj.get("type").and_then(Value::as_str) == Some("Metaspace") {
+            if is_metaspace {
                 canonicalize_metaspace(obj)?;
             }
             for key in SEQUENCE_CHILDREN {
@@ -397,6 +398,10 @@ fn canonicalize_metaspace(obj: &mut Map<String, Value>) -> Result<String, Conver
     Ok(scheme)
 }
 
+fn component_type(component: &Value) -> Option<&str> {
+    component.get("type").and_then(Value::as_str)
+}
+
 /// `serde_json` has no public name for a `Value`'s variant.
 fn kind_of(value: &Value) -> &'static str {
     match value {
@@ -412,40 +417,41 @@ fn kind_of(value: &Value) -> &'static str {
 /// A `Metaspace` pre-tokenizer is two components, so it does not survive as itself.
 ///
 /// It becomes a `MetaspaceNormalizer` in the `normalizer` slot (which rewrites the text) plus a
-/// `Split` on the delimiter here (which cuts it). `Sequence[WhitespaceSplit, Metaspace]` -- the
-/// shape t5 and albert ship -- is the same thing with `drop_whitespace`, and the whole `Sequence`
-/// collapses to the lone `Split`.
+/// `Split` on the delimiter here (which cuts it).
+///
+/// `Sequence[Metaspace]` is equivalent.
+///
+/// `Sequence[WhitespaceSplit, Metaspace]` (eg, t5 or albert) is the same thing with `drop_whitespace`.
 ///
 /// `split: false` leaves this slot empty. The reader reads a null `pre_tokenizer` as one span
 /// covering the whole text, which is what not cutting means.
 fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), ConvertError> {
-    let Some(pretok) = root.get("pre_tokenizer") else {
+    let Some(pretokenizer) = root.get("pre_tokenizer") else {
         return Ok(());
     };
-    let (metaspace, drop_whitespace) = match pretok {
-        Value::Object(o) if o.get("type").and_then(Value::as_str) == Some("Metaspace") => {
-            (o.clone(), false)
-        }
-        Value::Object(o) if o.get("type").and_then(Value::as_str) == Some("Sequence") => {
-            match o
-                .get("pretokenizers")
-                .and_then(Value::as_array)
-                .map(|m| &m[..])
-            {
-                Some([first, second])
-                    if first.get("type").and_then(Value::as_str) == Some("WhitespaceSplit")
-                        && second.get("type").and_then(Value::as_str) == Some("Metaspace") =>
-                {
-                    (
-                        second.as_object().expect("matched as an object").clone(),
-                        true,
-                    )
-                }
-                _ => return Ok(()),
-            }
+    let members = if component_type(pretokenizer) == Some("Sequence") {
+        let Some(items) = pretokenizer.get("pretokenizers").and_then(Value::as_array) else {
+            return Ok(());
+        };
+        items.as_slice()
+    } else {
+        std::slice::from_ref(pretokenizer)
+    };
+    let (metaspace, drop_whitespace) = match members {
+        [metaspace] if component_type(metaspace) == Some("Metaspace") => (metaspace, false),
+        [split, metaspace]
+            if component_type(split) == Some("WhitespaceSplit")
+                && component_type(metaspace) == Some("Metaspace") =>
+        {
+            (metaspace, true)
         }
         _ => return Ok(()),
     };
+
+    let mut metaspace = metaspace
+        .as_object()
+        .expect("a component with a `type` is an object")
+        .clone();
 
     // Read before `canonicalize_metaspace` drops the field.
     let split = metaspace
@@ -454,7 +460,6 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
         .unwrap_or(true);
     // Reuse the field normalisation written for the decoder case, so the `add_prefix_space` quirk
     // is applied in exactly one place.
-    let mut metaspace = metaspace;
     let prepend = canonicalize_metaspace(&mut metaspace)?;
 
     if drop_whitespace && prepend != "always" {
@@ -508,7 +513,7 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
     let Some(pretok) = root.get_mut("pre_tokenizer") else {
         return Ok(());
     };
-    let is_byte_level = |v: &Value| v.get("type").and_then(Value::as_str) == Some("ByteLevel");
+    let is_byte_level = |v: &Value| component_type(v) == Some("ByteLevel");
 
     // `use_regex` defaults to true, which is what gpt2 and roberta rely on.
     let split_for = |bl: &Value| -> Result<Option<Value>, ConvertError> {
@@ -532,7 +537,7 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
     let mut model_byte_level = true;
     let replacement = if is_byte_level(pretok) {
         Some(split_for(pretok)?)
-    } else if pretok.get("type").and_then(Value::as_str) == Some("Sequence") {
+    } else if component_type(pretok) == Some("Sequence") {
         let Some(members) = pretok
             .get_mut("pretokenizers")
             .and_then(Value::as_array_mut)
@@ -561,8 +566,7 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
 
     let kind = root
         .get("model")
-        .and_then(|m| m.get("type"))
-        .and_then(Value::as_str)
+        .and_then(component_type)
         .unwrap_or("an untyped model")
         .to_string();
     if kind != "BPE" {
@@ -598,10 +602,11 @@ fn set_model_flag(
 fn fill_model_defaults(root: &mut Map<String, Value>) -> Result<(), ConvertError> {
     let model = root.get_mut("model").ok_or(ConvertError::MissingModel)?;
     let found = kind_of(model);
+    let is_bpe = component_type(model) == Some("BPE");
     let model = model
         .as_object_mut()
         .ok_or(ConvertError::ModelNotObject { found })?;
-    if model.get("type").and_then(Value::as_str) == Some("BPE") {
+    if is_bpe {
         // Only set when the `ByteLevel` lowering did not already say otherwise.
         model.entry("byte_level").or_insert(Value::Bool(false));
     }
@@ -628,7 +633,7 @@ fn lower_template_processing(root: &mut Map<String, Value>) -> Result<(), Conver
 /// offsets, which the pipeline does not keep. A `TemplateProcessing` is one when its pieces are
 /// the default arrangement, `$A` and `$A $B` with type ids 0 then 1.
 fn adds_no_tokens(member: &Value) -> bool {
-    if member.get("type").and_then(Value::as_str) != Some("TemplateProcessing") {
+    if component_type(member) != Some("TemplateProcessing") {
         return true;
     }
     let default_seq = |piece: &Value, id: &str, type_id: u64| {
@@ -738,21 +743,17 @@ fn lower_template_node(node: &mut Value) -> Result<(), ConvertError> {
         }
         return Ok(());
     }
+    // Owned, so `node` stays free to be written through below.
+    let kind = component_type(node).unwrap_or_default().to_string();
     let Some(pp) = node.as_object_mut() else {
         return Ok(());
     };
-    if pp.get("type").and_then(Value::as_str) == Some("Sequence")
+    if kind == "Sequence"
         && let Some(children) = pp.get_mut("processors")
     {
         lower_template_node(children)?;
         return collapse_sequence(node);
     }
-    // Owned, so the borrow of `pp` ends before `node` is written through.
-    let kind = pp
-        .get("type")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
     match kind.as_str() {
         "BertProcessing" | "RobertaProcessing" => {
             let lowered = lower_bert_like(pp, &kind)?;
