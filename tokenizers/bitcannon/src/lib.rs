@@ -276,7 +276,6 @@ pub(crate) fn has_ssse3() -> bool {
 
 #[cfg(all(target_arch = "riscv64", target_os = "linux"))]
 pub(crate) fn has_rvv() -> bool {
-    use std::cell::Cell;
     use std::sync::atomic::{AtomicU8, Ordering};
     unsafe extern "C" {
         fn getauxval(kind: usize) -> usize;
