@@ -92,9 +92,15 @@ impl WordPieceTrainerBuilder {
 }
 
 /// Trains a `WordPiece` model.
-#[derive(Default, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct WordPieceTrainer {
     bpe_trainer: BpeTrainer,
+}
+
+impl Default for WordPieceTrainer {
+    fn default() -> Self {
+        Self::builder().build()
+    }
 }
 
 impl WordPieceTrainer {
@@ -204,5 +210,66 @@ impl Trainer for WordPieceTrainer {
         F: Fn(&str) -> Result<Vec<String>> + Sync,
     {
         self.bpe_trainer.feed(iterator, process)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_trainer_learns_continuation_pieces() {
+        let mut trainer = WordPieceTrainer::default();
+        trainer.set_show_progress(false);
+        trainer.set_vocab_size(4);
+        trainer.set_special_tokens(vec![AddedToken::from("[UNK]", true)]);
+        trainer
+            .feed(["ab", "ac"].into_iter(), |word| Ok(vec![word.to_owned()]))
+            .unwrap();
+        let mut model = WordPiece::default();
+        trainer.train(&mut model).unwrap();
+
+        assert_eq!(model.continuing_subword_prefix, "##");
+        let tokens = model.tokenize("acb").unwrap();
+        let pieces: Vec<_> = tokens.iter().map(|token| token.value.as_str()).collect();
+        assert_eq!(pieces, ["a", "##c", "##b"]);
+        let offsets: Vec<_> = tokens.iter().map(|token| token.offsets).collect();
+        assert_eq!(offsets, [(0, 1), (1, 2), (2, 3)]);
+    }
+
+    #[test]
+    fn configured_continuation_prefix_is_preserved() {
+        for prefix in [Some("@@"), None] {
+            let mut trainer = WordPieceTrainer::builder()
+                .continuing_subword_prefix("@@".into())
+                .show_progress(false)
+                .vocab_size(4)
+                .special_tokens(vec![AddedToken::from("[UNK]", true)])
+                .build();
+            if prefix.is_none() {
+                trainer.set_continuing_subword_prefix(None);
+            }
+            trainer
+                .feed(["ab", "ac"].into_iter(), |word| Ok(vec![word.to_owned()]))
+                .unwrap();
+            let mut model = WordPiece::builder()
+                .continuing_subword_prefix(String::new())
+                .build()
+                .unwrap();
+            trainer.train(&mut model).unwrap();
+
+            let expected_prefix = prefix.unwrap_or_default();
+            assert_eq!(model.continuing_subword_prefix, expected_prefix);
+            let tokens = model.tokenize("acb").unwrap();
+            let pieces: Vec<_> = tokens.iter().map(|token| token.value.as_str()).collect();
+            assert_eq!(
+                pieces,
+                [
+                    "a".to_owned(),
+                    format!("{expected_prefix}c"),
+                    format!("{expected_prefix}b")
+                ]
+            );
+        }
     }
 }
