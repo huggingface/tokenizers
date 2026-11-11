@@ -286,6 +286,7 @@ fn convert_affixed<M: SinkMode>(
     let mut buf = [0u8; AFFIX_BUF];
     let mut chars = sequence.chars().peekable();
     let mut is_first = true;
+    let mut in_unk_run = false;
     while let Some(character) = chars.next() {
         let is_last = chars.peek().is_none();
         let mut len = 0;
@@ -308,31 +309,45 @@ fn convert_affixed<M: SinkMode>(
             .and_then(|external| affixes.to_internal.get(external as usize).copied())
             .filter(|&symbol| symbol != NO_SYMBOL);
         match symbol {
-            Some(symbol) => sink.push(tables, symbol),
-            None => push_unknown(tables, atoms, character, sink),
+            Some(symbol) => {
+                in_unk_run = false;
+                sink.push(tables, symbol);
+            }
+            None => in_unk_run = push_unknown(tables, atoms, character, in_unk_run, sink),
         }
     }
 }
 
-/// A character with no atom of its own: bytes if the model has `byte_fallback`, else `unk`.
+/// A character with no atom of its own: bytes if the model has `byte_fallback`, else `unk`. Returns
+/// whether the character is part of a run of unknown characters, which `fuse_unk` emits once.
 fn push_unknown<M: SinkMode>(
     tables: &BpeTables,
     atoms: &Atoms,
     character: char,
+    in_unk_run: bool,
     sink: &mut SymbolSink<M>,
-) {
+) -> bool {
     match atoms {
-        Atoms::Bytes => sink.push_char_bytes(tables, &tables.byte_internal, character),
+        Atoms::Bytes => {
+            sink.push_char_bytes(tables, &tables.byte_internal, character);
+            false
+        }
         Atoms::Chars {
             byte_fallback,
             unk_token,
-            ..
+            fuse_unk,
         } => {
             if let Some(fallback) = byte_fallback {
                 sink.push_char_bytes(tables, fallback, character);
-            } else if let Some(unk) = unk_token {
+                return false;
+            }
+            let Some(unk) = unk_token else {
+                return false;
+            };
+            if !(*fuse_unk && in_unk_run) {
                 sink.push(tables, *unk);
             }
+            true
         }
     }
 }
