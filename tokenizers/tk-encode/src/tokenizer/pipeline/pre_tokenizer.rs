@@ -110,16 +110,6 @@ impl PreTokenizerScratch {
         split: impl FnOnce(&[u8], &[u8], &mut [u64], &mut [u64], &mut [u64], &mut [Span]) -> usize,
         out: &mut Vec<Span>,
     ) {
-        self.split_on_bits_with_classifier(bytes, split, out, classify);
-    }
-
-    pub(crate) fn split_on_bits_with_classifier(
-        &mut self,
-        bytes: &[u8],
-        split: impl FnOnce(&[u8], &[u8], &mut [u64], &mut [u64], &mut [u64], &mut [Span]) -> usize,
-        out: &mut Vec<Span>,
-        classify: impl FnOnce(&[u8], &mut [u8]),
-    ) {
         let n = bytes.len();
         if n == 0 {
             return;

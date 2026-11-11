@@ -18,20 +18,14 @@ unsafe impl pipeline::PreTokenizer for BertPreTokenizer {
         out: &mut Vec<pipeline::Span>,
     ) -> Result<()> {
         // Bert pre-tokenization = drop whitespace runs, isolate each punctuation char, keep every other
-        // run. One `bitcannon` classification pass (bytes → atom tags) + the class-runs FSM, byte-exact with
+        // run. One `bitcannon` SIMD classify (bytes → atom tags) + the class-runs FSM, byte-exact with
         // the legacy `char::is_whitespace` / `is_punc` split above (see the tests).
-        // Keep BERT on the scalar path on RV64 to avoid measured regressions.
-        #[cfg(target_arch = "riscv64")]
-        let classify = bitcannon::classify::classify_scalar;
-        #[cfg(not(target_arch = "riscv64"))]
-        let classify = bitcannon::classify::classify;
-        scratch.split_on_bits_with_classifier(
+        scratch.split_on_bits(
             text.as_bytes(),
             |b, t, st, fk, _, s| {
                 class_runs_into::<{ mask::WS }, { mask::PUNCT }, 0>(b, t, st, fk, s)
             },
             out,
-            classify,
         );
         Ok(())
     }
