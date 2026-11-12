@@ -146,7 +146,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
                 normalizers,
                 pre_tokenizer,
                 vocab,
-                |v| v.len(),
+                |v| next_model_id(v.values().copied()),
                 |v, t| v.get(t).copied(),
                 |vocab| {
                     Ok(PipelineModel::BPE(PipelineBPE::from_config(BpeConfig {
@@ -163,7 +163,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
             normalizers,
             pre_tokenizer,
             read_wordpiece(model_cfg)?,
-            tk_encode::models::wordpiece::WordPiece::get_vocab_size,
+            |wp| next_model_id(wp.vocab.values().copied()),
             tk_encode::models::wordpiece::WordPiece::token_to_id,
             |wp| Ok(PipelineModel::WordPiece(wp.try_into()?)),
         ),
@@ -173,7 +173,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
             normalizers,
             pre_tokenizer,
             read_unigram(model_cfg)?,
-            tk_encode::models::unigram::Unigram::get_vocab_size,
+            |u| Ok(u.get_vocab_size()),
             tk_encode::models::unigram::Unigram::token_to_id,
             |u| Ok(PipelineModel::Unigram(u)),
         ),
@@ -183,7 +183,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
             normalizers,
             pre_tokenizer,
             read_wordlevel(model_cfg)?,
-            tk_encode::models::wordlevel::WordLevel::get_vocab_size,
+            |wl| next_model_id(wl.vocab.values().copied()),
             tk_encode::models::wordlevel::WordLevel::token_to_id,
             |wl| Ok(PipelineModel::WordLevel(wl)),
         ),
@@ -198,16 +198,31 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
     }
 }
 
+fn next_model_id(ids: impl Iterator<Item = u32>) -> Result<usize> {
+    let next_id = ids.max().map_or(0, |id| u64::from(id) + 1);
+    usize::try_from(next_id).map_err(|_| "model token IDs exhaust the available ID space".into())
+}
+
 fn build<M>(
     doc: &Json<'_>,
     normalizers: Vec<PipelineNormalizer>,
     pre_tokenizer: PipelinePreTokenizer,
     concrete: M,
-    vocab_size: impl FnOnce(&M) -> usize,
+    next_model_id: impl FnOnce(&M) -> Result<usize>,
     token_to_id: impl Fn(&M, &str) -> Option<u32>,
     lower: impl FnOnce(M) -> Result<PipelineModel>,
 ) -> Result<PipelineTokenizer> {
     let added = read_added_tokens(doc.field("added_tokens"))?;
+    // Sparse model IDs need not end at vocab.len() - 1. Only new tokens need an ID;
+    // registering an existing model token remains valid even at the ID limit.
+    let first_added_id = if added
+        .iter()
+        .any(|t| !t.content.is_empty() && token_to_id(&concrete, &t.content).is_none())
+    {
+        next_model_id(&concrete)?
+    } else {
+        0
+    };
 
     let mut added_vocabulary = BucketAddedVocabulary::new();
     // TODO: this has nothing to do here.
@@ -218,7 +233,7 @@ fn build<M>(
     let chain = NormalizerChain(declared);
     added_vocabulary.add_tokens(
         added,
-        vocab_size(&concrete),
+        first_added_id,
         |t| token_to_id(&concrete, t),
         Some(&chain),
     )?;
