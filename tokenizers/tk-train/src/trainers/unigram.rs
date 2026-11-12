@@ -198,6 +198,8 @@ impl UnigramTrainer {
         inserted.insert("<UNK>".into());
 
         let existing_pieces: AHashMap<String, f64> = model.iter().cloned().collect();
+        let mut required_chars: Vec<_> = required_chars.into_iter().collect();
+        required_chars.sort_unstable();
         for c in required_chars {
             if let Some(t) = existing_pieces.get(&c) {
                 inserted.insert(c.clone());
@@ -685,6 +687,10 @@ impl UnigramTrainer {
         Ok(self.special_tokens.clone())
     }
 }
+
+#[cfg(test)]
+#[path = "unigram_finalization_order.rs"]
+mod finalization_order_tests;
 
 impl Trainer for UnigramTrainer {
     type Model = Unigram;
