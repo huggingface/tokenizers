@@ -694,6 +694,10 @@ pub(crate) fn emit(starts: &[u64], fake: &[u64], nblk: usize, n: usize, out: &mu
 /// over GPT-2's case-sensitive one.
 #[inline]
 pub(crate) fn contr_len(text: &[u8], i: usize, ci: bool) -> usize {
+    // Unicode case folding also maps long s (U+017F) to s.
+    if ci && text.get(i..i + 3) == Some(b"'\xC5\xBF".as_slice()) {
+        return 3;
+    }
     let n = text.len();
     if i + 1 >= n || text[i] != b'\'' || text[i + 1] >= 0x80 {
         return 0;
