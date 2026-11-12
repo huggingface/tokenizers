@@ -339,14 +339,14 @@ fn byte_fallback_config(vocab: Vocab) -> BpeConfig {
     }
 }
 
-/// The bytes a config is refused for, or `None` if it loads or fails for another reason.
-fn missing_byte_codes(config: BpeConfig) -> Option<Vec<u8>> {
-    match PipelineBPE::from_config(config)
-        .err()?
-        .downcast_ref::<Error>()
-    {
-        Some(Error::ByteFallbackOutOfVocabulary(bytes)) => Some(bytes.clone()),
-        _ => None,
+/// The bytes `config` is refused for. Panics if it loads or fails for another reason.
+fn missing_byte_codes(config: BpeConfig) -> Vec<u8> {
+    let Err(error) = PipelineBPE::from_config(config) else {
+        panic!("expected ByteFallbackOutOfVocabulary, but the config loaded");
+    };
+    match error.downcast_ref::<Error>() {
+        Some(Error::ByteFallbackOutOfVocabulary(bytes)) => bytes.clone(),
+        _ => panic!("expected ByteFallbackOutOfVocabulary, got: {error}"),
     }
 }
 
@@ -379,7 +379,7 @@ fn byte_fallback_lists_every_missing_code() {
     vocab.remove("<0x0A>");
     assert_eq!(
         missing_byte_codes(byte_fallback_config(vocab)),
-        Some(vec![0x09, 0x0A])
+        vec![0x09, 0x0A]
     );
 }
 
@@ -389,10 +389,7 @@ fn byte_fallback_missing_non_ascii_code_errors() {
     let mut vocab = byte_fallback_vocab();
     vocab.remove("<0xA9>");
     vocab.insert("\u{a9}".into(), 501);
-    assert_eq!(
-        missing_byte_codes(byte_fallback_config(vocab)),
-        Some(vec![0xA9])
-    );
+    assert_eq!(missing_byte_codes(byte_fallback_config(vocab)), vec![0xA9]);
 }
 
 #[test]
@@ -405,7 +402,20 @@ fn byte_fallback_missing_code_with_affixes_errors() {
         end_of_word_suffix: Some("</w>".into()),
         ..byte_fallback_config(vocab)
     };
-    assert_eq!(missing_byte_codes(config), Some(vec![0x09]));
+    assert_eq!(missing_byte_codes(config), vec![0x09]);
+}
+
+#[test]
+fn byte_fallback_missing_code_with_prefix_errors() {
+    // A tab inside a word is looked up as `##\t`, which can miss and fall back.
+    let mut vocab = byte_fallback_vocab();
+    vocab.remove("<0x09>");
+    vocab.insert("\t".into(), 500);
+    let config = BpeConfig {
+        continuing_subword_prefix: Some("##".into()),
+        ..byte_fallback_config(vocab)
+    };
+    assert_eq!(missing_byte_codes(config), vec![0x09]);
 }
 
 #[test]
