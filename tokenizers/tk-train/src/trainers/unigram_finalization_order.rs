@@ -9,13 +9,20 @@ fn required(chars: &[&str], seed: u64) -> AHashSet<String> {
 
 fn trained_pieces(pieces: &[(&str, f64)]) -> Unigram {
     let mut vocab = vec![("<UNK>".to_owned(), f64::NAN)];
-    vocab.extend(pieces.iter().map(|(token, score)| ((*token).to_owned(), *score)));
+    vocab.extend(
+        pieces
+            .iter()
+            .map(|(token, score)| ((*token).to_owned(), *score)),
+    );
     Unigram::from(vocab, Some(0), false).unwrap()
 }
 
 #[test]
 fn equal_score_character_ids_do_not_depend_on_hash_seed() {
-    let trainer = UnigramTrainer::builder().show_progress(false).build().unwrap();
+    let trainer = UnigramTrainer::builder()
+        .show_progress(false)
+        .build()
+        .unwrap();
     for seed in 0..32 {
         let model = trainer
             .finalize(
@@ -31,7 +38,10 @@ fn equal_score_character_ids_do_not_depend_on_hash_seed() {
 
 #[test]
 fn missing_character_penalties_do_not_depend_on_hash_seed() {
-    let trainer = UnigramTrainer::builder().show_progress(false).build().unwrap();
+    let trainer = UnigramTrainer::builder()
+        .show_progress(false)
+        .build()
+        .unwrap();
     for seed in 0..32 {
         let model = trainer
             .finalize(
@@ -77,7 +87,10 @@ fn special_token_order_and_unknown_id_are_preserved() {
 
 #[test]
 fn distinct_scores_keep_the_existing_probability_order() {
-    let trainer = UnigramTrainer::builder().show_progress(false).build().unwrap();
+    let trainer = UnigramTrainer::builder()
+        .show_progress(false)
+        .build()
+        .unwrap();
     for seed in 0..16 {
         let model = trainer
             .finalize(
@@ -87,7 +100,11 @@ fn distinct_scores_keep_the_existing_probability_order() {
             .unwrap();
         assert_eq!(
             model.vocab(),
-            [("c".to_owned(), -1.0), ("a".to_owned(), -2.0), ("b".to_owned(), -3.0)]
+            [
+                ("c".to_owned(), -1.0),
+                ("a".to_owned(), -2.0),
+                ("b".to_owned(), -3.0)
+            ]
         );
     }
 }
@@ -103,13 +120,22 @@ fn native_training_assigns_repeatable_ids_to_equal_frequency_characters() {
         let mut model = Unigram::default();
         trainer
             .do_train(
-                ["a", "b", "c", "é", "界"].into_iter().map(|s| (s.to_owned(), 4)).collect(),
+                ["a", "b", "c", "é", "界"]
+                    .into_iter()
+                    .map(|s| (s.to_owned(), 4))
+                    .collect(),
                 &mut model,
             )
             .unwrap();
         let encoded = model.tokenize("abcé界").unwrap();
-        assert_eq!(encoded.iter().map(|t| t.id).collect::<Vec<_>>(), [0, 1, 2, 3, 4]);
-        assert_eq!(encoded.iter().map(|t| t.offsets).collect::<Vec<_>>(), [(0, 1), (1, 2), (2, 3), (3, 5), (5, 8)]);
+        assert_eq!(
+            encoded.iter().map(|t| t.id).collect::<Vec<_>>(),
+            [0, 1, 2, 3, 4]
+        );
+        assert_eq!(
+            encoded.iter().map(|t| t.offsets).collect::<Vec<_>>(),
+            [(0, 1), (1, 2), (2, 3), (3, 5), (5, 8)]
+        );
     }
 }
 
@@ -124,7 +150,9 @@ fn unseen_initial_alphabet_scores_and_ids_survive_retraining() {
     let mut reference = None;
     for _ in 0..24 {
         let mut model = Unigram::default();
-        trainer.do_train(vec![("a".to_owned(), 8)], &mut model).unwrap();
+        trainer
+            .do_train(vec![("a".to_owned(), 8)], &mut model)
+            .unwrap();
         let vocab = model.vocab().to_vec();
         if let Some(expected) = &reference {
             assert_eq!(&vocab, expected);
@@ -132,6 +160,9 @@ fn unseen_initial_alphabet_scores_and_ids_survive_retraining() {
             reference = Some(vocab);
         }
         let tokens = model.tokenize("axé界").unwrap();
-        assert_eq!(tokens.iter().map(|t| t.value.as_str()).collect::<String>(), "axé界");
+        assert_eq!(
+            tokens.iter().map(|t| t.value.as_str()).collect::<String>(),
+            "axé界"
+        );
     }
 }
