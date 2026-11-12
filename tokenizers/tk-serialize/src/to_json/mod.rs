@@ -71,6 +71,7 @@ pub fn str_to_json(value: &str) -> String {
 
 /// Write a `tokenizer.json` as a string.
 pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
+    tokenizer.validate_byte_map()?;
     let mut out = Out::new();
     let model = tokenizer.get_model();
     let normalizers = tokenizer.get_normalizers();

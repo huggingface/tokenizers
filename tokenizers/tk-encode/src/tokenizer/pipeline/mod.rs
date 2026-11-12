@@ -17,6 +17,7 @@ use crate::{
     models::bpe::{BpeScratch, PipelineBPE},
     pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
+    pre_tokenizers::sequence::PipelineSequence,
     tokenizer::Decoder as _,
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
 };
@@ -573,6 +574,24 @@ impl PipelineTokenizer {
         &self.inner.pre_tokenizer
     }
 
+    /// Check that a sequence's byte map feeds a BPE model that consumes characters.
+    pub fn validate_byte_map(&self) -> Result<()> {
+        self.byte_mapped_sequence().map(|_| ())
+    }
+
+    fn byte_mapped_sequence(&self) -> Result<Option<&PipelineSequence>> {
+        let PipelinePreTokenizer::Sequence(sequence) = &self.inner.pre_tokenizer else {
+            return Ok(None);
+        };
+        if sequence.byte_map_index().is_none() {
+            return Ok(None);
+        }
+        if !matches!(&self.inner.model, PipelineModel::BPE(model) if !model.is_byte_level()) {
+            return Err("a ByteMap Sequence requires a BPE model with byte_level: false".into());
+        }
+        Ok(Some(sequence))
+    }
+
     pub fn get_post_processor(&self) -> &PipelinePostProcessor {
         &self.inner.post_processor
     }
@@ -768,6 +787,7 @@ impl PipelineTokenizer {
         scratch: &mut EncodeScratch,
         output: &mut Vec<PipelineToken>,
     ) -> Result<()> {
+        let byte_mapped_sequence = self.byte_mapped_sequence()?;
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(
             input,
@@ -819,6 +839,24 @@ impl PipelineTokenizer {
                                     pre_tokens,
                                     split: pre_tokenizer_scratch,
                                 } = &mut *scratch;
+                                if let Some(sequence) = byte_mapped_sequence {
+                                    sequence.with_mapped_spans(
+                                        normalized_chunk,
+                                        pre_tokenizer_scratch,
+                                        pre_tokens,
+                                        |mapped, spans| {
+                                            // The suffix splitters produce valid UTF-8 ranges
+                                            // within `mapped`, which the model slices unchecked.
+                                            self.inner.model.tokenize_spans(
+                                                mapped,
+                                                spans,
+                                                model_scratch,
+                                                output,
+                                            )
+                                        },
+                                    )?;
+                                    continue;
+                                }
                                 pre_tokens.clear();
                                 self.inner.pre_tokenizer.pre_tokenize(
                                     normalized_chunk,

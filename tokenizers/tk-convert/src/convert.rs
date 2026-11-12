@@ -83,7 +83,9 @@ pub enum ConvertError {
     #[error("a `ByteLevel` pre-tokenizer with `add_prefix_space: true` is not supported")]
     ByteLevelAddPrefixSpace,
 
-    #[error("a `ByteLevel` pre-tokenizer must be the last member of its `Sequence`")]
+    /// A second map is still unsupported. Retain the error variant from before
+    /// a single nonterminal `ByteLevel` could be lowered.
+    #[error("a `Sequence` with multiple `ByteLevel` pre-tokenizers is not supported")]
     ByteLevelNotLast,
 
     #[error("a `ByteLevel` pre-tokenizer needs a BPE model, found {model}")]
@@ -505,9 +507,8 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
 
 /// A `ByteLevel` pre-tokenizer says two things, and only one of them is about splitting.
 ///
-/// The byte map is a property of the vocabulary, so it becomes `"byte_level": true` on the model.
-/// What is left is the split it asked for: the GPT-2 regex when `use_regex` (the default), and
-/// nothing at all when not.
+/// A final byte map can be fused into the BPE model. When a later pre-tokenizer needs to see the
+/// mapped text, keep the map at its original position and leave the BPE vocabulary as text.
 fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), ConvertError> {
     let Some(pretok) = root.get_mut("pre_tokenizer") else {
         return Ok(());
@@ -533,34 +534,32 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
         )
     };
 
+    let mut model_byte_level = true;
     let replacement = if is_byte_level(pretok) {
         Some(split_for(pretok)?)
     } else if component_type(pretok) == Some("Sequence") {
-        let members = pretok
+        let Some(members) = pretok
             .get_mut("pretokenizers")
-            .and_then(Value::as_array_mut);
-        match members {
-            Some(members) if members.last().is_some_and(is_byte_level) => {
-                let bl = members.pop().expect("checked by `last`");
-                if let Some(split) = split_for(&bl)? {
-                    members.push(split);
-                }
-                // A `Sequence` whose only member was the dropped `ByteLevel` is not an empty
-                // sequence, it is no pre-tokenizer at all -- which is what `use_regex: false`
-                // lowered to before.
-                if members.is_empty() {
-                    Some(None)
-                } else {
-                    None // the `Sequence` was edited in place
-                }
-            }
-            // A `ByteLevel` anywhere but last never loaded: the byte map has to apply after every
-            // split, and guessing an order would produce a different tokenizer rather than an error.
-            Some(members) if members.iter().any(is_byte_level) => {
-                return Err(ConvertError::ByteLevelNotLast);
-            }
-            _ => return Ok(()),
+            .and_then(Value::as_array_mut)
+        else {
+            return Ok(());
+        };
+        let Some(index) = members.iter().position(is_byte_level) else {
+            return Ok(());
+        };
+        if members[index + 1..].iter().any(is_byte_level) {
+            return Err(ConvertError::ByteLevelNotLast);
         }
+        let split = split_for(&members[index])?;
+        members.remove(index);
+        if index < members.len() {
+            members.insert(index, tagged("ByteMap", &[]));
+            model_byte_level = false;
+        }
+        if let Some(split) = split {
+            members.insert(index, split);
+        }
+        members.is_empty().then_some(None)
     } else {
         return Ok(());
     };
@@ -580,7 +579,7 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
             None => root.remove("pre_tokenizer"),
         };
     }
-    set_model_flag(root, "byte_level", true)?;
+    set_model_flag(root, "byte_level", model_byte_level)?;
     Ok(())
 }
 

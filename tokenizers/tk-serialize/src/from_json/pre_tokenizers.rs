@@ -34,10 +34,21 @@ pub(super) fn read_pre_tokenizer(cfg: Option<&Json<'_>>) -> Result<PipelinePreTo
             return Err("Nesting Sequence pre tokenizers is not supported".into());
         }
         let mut built = Vec::with_capacity(members.len());
+        let mut byte_map = None;
         for member in members {
-            built.push(read_one_pre_tokenizer(member)?);
+            if member.type_tag() == Some("ByteMap") {
+                if byte_map.replace(built.len()).is_some() {
+                    return Err("a Sequence can contain only one ByteMap".into());
+                }
+            } else {
+                built.push(read_one_pre_tokenizer(member)?);
+            }
         }
-        return Ok(PipelinePreTokenizer::Sequence(PipelineSequence::new(built)));
+        let mut sequence = PipelineSequence::new(built);
+        if let Some(index) = byte_map {
+            sequence = sequence.with_byte_map(index)?;
+        }
+        return Ok(PipelinePreTokenizer::Sequence(sequence));
     }
 
     read_one_pre_tokenizer(cfg)

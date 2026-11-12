@@ -1,5 +1,6 @@
 use crate::pipeline::{self, PipelinePreTokenizer};
 use crate::tokenizer::Result;
+use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
 
 // The `Sequence` pre-tokenizer is a `Vec<PreTokenizerWrapper>`, so it lives in `tk-convert`
 // with the wrapper it is parameterised by, together with the `TryFrom<Sequence>` that lowers it
@@ -8,11 +9,31 @@ use crate::tokenizer::Result;
 #[derive(Clone, Debug, PartialEq)]
 pub struct PipelineSequence {
     pre_tokenizers: Vec<PipelinePreTokenizer>,
+    byte_map: Option<usize>,
 }
 
 impl PipelineSequence {
     pub fn new(pre_tokenizers: Vec<PipelinePreTokenizer>) -> Self {
-        Self { pre_tokenizers }
+        Self {
+            pre_tokenizers,
+            byte_map: None,
+        }
+    }
+
+    /// Insert a GPT-2 byte map before the member at `index`. Subsequent splitters
+    /// operate on the mapped text. The tokenizer must use a BPE model with
+    /// `byte_level: false` to consume that text.
+    pub fn with_byte_map(mut self, index: usize) -> Result<Self> {
+        if index >= self.pre_tokenizers.len() {
+            return Err("a ByteMap must precede another pre-tokenizer in its Sequence".into());
+        }
+        self.byte_map = Some(index);
+        Ok(self)
+    }
+
+    /// The index of the first splitter that operates on the mapped text.
+    pub fn byte_map_index(&self) -> Option<usize> {
+        self.byte_map
     }
 
     /// The members, in order. For a writer, which has to spell the `Sequence` back out.
@@ -28,6 +49,9 @@ impl PipelineSequence {
     // recognized lives in `tk-convert` now (it needs `PreTokenizerWrapper` to build the
     // legacy oracle it compares against).
     pub fn is_deepseek(&self) -> bool {
+        if self.byte_map.is_some() {
+            return false;
+        }
         use crate::pre_tokenizers::split::SplitPattern;
         use crate::tokenizer::SplitDelimiterBehavior::Isolated;
         let regex = |i: usize| match self.pre_tokenizers.get(i) {
@@ -43,6 +67,35 @@ impl PipelineSequence {
             (regex(0), regex(1), regex(2)),
             (Some(a), Some(b), Some(c)) if crate::utils::is_deepseek(a, b, c)
         )
+    }
+
+    pub(crate) fn with_mapped_spans(
+        &self,
+        text: &str,
+        scratch: &mut pipeline::PreTokenizerScratch,
+        spans: &mut Vec<pipeline::Span>,
+        mut consume: impl FnMut(&str, &[pipeline::Span]) -> Result<()>,
+    ) -> Result<()> {
+        let index = self.byte_map.ok_or("the Sequence has no ByteMap")?;
+        let (prefix, suffix) = self.pre_tokenizers.split_at(index);
+        let mut pieces = Vec::new();
+        split_children(prefix, text, scratch, &mut pieces)?;
+
+        let table = &*BYTES_CHAR_LOOKUP;
+        let mut mapped = String::new();
+        for piece in pieces {
+            mapped.clear();
+            mapped.extend(text[piece.range()].bytes().map(|byte| table[byte as usize]));
+            if mapped.len() > u32::MAX as usize {
+                return Err("sequence too long to pre-tokenize after ByteMap".into());
+            }
+            // A suffix split can cut between two mapped bytes of one original UTF-8
+            // character. Keep its ranges in the mapped string rather than rebasing them.
+            spans.clear();
+            split_children(suffix, &mapped, scratch, spans)?;
+            consume(&mapped, spans)?;
+        }
+        Ok(())
     }
 }
 
@@ -66,6 +119,9 @@ unsafe impl pipeline::PreTokenizer for PipelineSequence {
     ) -> Result<()> {
         if text.is_empty() {
             return Ok(());
+        }
+        if self.byte_map.is_some() {
+            return Err("a ByteMap Sequence needs an encoder that consumes the mapped text".into());
         }
 
         // deepseek's 3-Split composition → one native FSM pass (also lets the Sequence handle the
@@ -94,46 +150,50 @@ unsafe impl pipeline::PreTokenizer for PipelineSequence {
             return pipeline::PreTokenizer::pre_tokenize(only, text, scratch, out);
         }
 
-        let [mut current, mut next] = scratch.take_pair();
-        current.clear();
-        current.push(pipeline::Span {
-            start: 0,
-            end: text.len() as u32,
-        });
-
-        for child in &self.pre_tokenizers {
-            next.clear();
-            for span in &current {
-                let base = span.start;
-                // The child appends span-relative spans straight into `next`;
-                // rebase just those to absolute in place — no scratch buffer.
-                let from = next.len();
-                pipeline::PreTokenizer::pre_tokenize(
-                    child,
-                    &text[span.range()],
-                    scratch,
-                    &mut next,
-                )?;
-                // FIXME: do we want to add an `offset` param to `pre_tokenize` so we don't have to
-                // rebase?
-                for s in &mut next[from..] {
-                    s.start += base;
-                    s.end += base;
-                }
-            }
-            std::mem::swap(&mut current, &mut next);
-        }
-
-        // Every call the pipeline makes arrives with `out` empty, since `encode_sequence` clears
-        // `pre_tokens` before pre-tokenizing: hand it the buffer the loop just filled instead of
-        // copying. `current` takes `out`'s allocation in exchange and goes back to the scratch,
-        // and both are pooled, so which buffer ends up where does not matter.
-        if out.is_empty() {
-            std::mem::swap(out, &mut current);
-        } else {
-            out.extend_from_slice(&current);
-        }
-        scratch.put_pair([current, next]);
-        Ok(())
+        split_children(&self.pre_tokenizers, text, scratch, out)
     }
+}
+
+fn split_children(
+    children: &[PipelinePreTokenizer],
+    text: &str,
+    scratch: &mut pipeline::PreTokenizerScratch,
+    out: &mut Vec<pipeline::Span>,
+) -> Result<()> {
+    let [mut current, mut next] = scratch.take_pair();
+    current.clear();
+    current.push(pipeline::Span {
+        start: 0,
+        end: text.len() as u32,
+    });
+
+    for child in children {
+        next.clear();
+        for span in &current {
+            let base = span.start;
+            // The child appends span-relative spans straight into `next`;
+            // rebase just those to absolute in place — no scratch buffer.
+            let from = next.len();
+            pipeline::PreTokenizer::pre_tokenize(child, &text[span.range()], scratch, &mut next)?;
+            // FIXME: do we want to add an `offset` param to `pre_tokenize` so we don't have to
+            // rebase?
+            for s in &mut next[from..] {
+                s.start += base;
+                s.end += base;
+            }
+        }
+        std::mem::swap(&mut current, &mut next);
+    }
+
+    // Every call the pipeline makes arrives with `out` empty, since `encode_sequence` clears
+    // `pre_tokens` before pre-tokenizing: hand it the buffer the loop just filled instead of
+    // copying. `current` takes `out`'s allocation in exchange and goes back to the scratch,
+    // and both are pooled, so which buffer ends up where does not matter.
+    if out.is_empty() {
+        std::mem::swap(out, &mut current);
+    } else {
+        out.extend_from_slice(&current);
+    }
+    scratch.put_pair([current, next]);
+    Ok(())
 }

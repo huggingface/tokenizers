@@ -331,11 +331,136 @@ fn a_byte_level_pre_tokenizer_becomes_a_model_flag_and_a_split() {
         err(
             BPE,
             r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
-             {"type": "ByteLevel"}, {"type": "WhitespaceSplit"}]}"#
+             {"type": "ByteLevel"}, {"type": "WhitespaceSplit"}, {"type": "ByteLevel"}]}"#
         )
-        .contains("last member")
+        .contains("multiple")
     );
     assert!(err(UNIGRAM, bl).contains("needs a BPE model"));
+}
+
+#[test]
+fn nonterminal_byte_level_splits_the_mapped_text() {
+    use tk_encode::pipeline::{EncodeOptions, PipelineToken};
+
+    let model = r#"{
+        "type": "BPE",
+        "vocab": {"Î": 0, "²": 1, "Î²": 2, "1": 3, "2": 4, "3": 5,
+                  "12": 6, "123": 7, "4": 8, "!": 9, "a": 10, "Ġ": 11, "aĠ": 12},
+        "merges": [["Î", "²"], ["1", "2"], ["12", "3"], ["a", "Ġ"]]
+    }"#;
+    for use_regex in [true, false] {
+        let extra = format!(
+            r#", "pre_tokenizer": {{"type": "Sequence", "pretokenizers": [
+                {{"type": "Punctuation", "behavior": "Contiguous"}},
+                {{"type": "ByteLevel", "add_prefix_space": false, "use_regex": {use_regex}}},
+                {{"type": "Digits", "individual_digits": false}},
+                {{"type": "Split", "pattern": {{"Regex": "[0-9][0-9][0-9]"}},
+                  "behavior": "Isolated"}}
+            ]}}, "decoder": {{"type": "ByteLevel"}}"#
+        );
+        let canonical = done(model, &extra);
+        assert_eq!(canonical["model"]["byte_level"], false);
+        let once = canonical.to_string();
+        assert_eq!(
+            serde_json::from_str::<Value>(&canonicalize_str(&once).unwrap()).unwrap(),
+            canonical
+        );
+        let pipeline = tk_serialize::from_json(&once).unwrap();
+        let saved = tk_serialize::to_json(&pipeline).unwrap();
+        let reopened = tk_serialize::from_json(&saved).unwrap();
+        for tokenizer in [pipeline, reopened] {
+            // β maps to Î². Digits isolates ², so the otherwise valid Î+² merge
+            // cannot fire. The final split isolates 123 from the trailing digit.
+            let mut ids = Vec::new();
+            tokenizer
+                .encode_into("β1234!", &EncodeOptions::no_specials(), &mut ids)
+                .unwrap();
+            assert_eq!(ids, [0, 1, 7, 8, 9]);
+            assert_eq!(
+                tokenizer
+                    .decode(PipelineToken::cast_slice(&ids), false)
+                    .unwrap(),
+                "β1234!"
+            );
+            ids.clear();
+            tokenizer
+                .encode_into("a ", &EncodeOptions::no_specials(), &mut ids)
+                .unwrap();
+            let expected: &[u32] = if use_regex { &[10, 11] } else { &[12] };
+            assert_eq!(PipelineToken::cast_slice(&ids), expected);
+        }
+    }
+}
+
+#[test]
+fn a_canonical_byte_map_requires_one_nonterminal_stage_and_text_bpe() {
+    for (byte_level, members, expected) in [
+        (
+            false,
+            r#"{"type":"WhitespaceSplit"},{"type":"ByteMap"}"#,
+            "must precede",
+        ),
+        (
+            false,
+            r#"{"type":"ByteMap"},{"type":"ByteMap"},{"type":"WhitespaceSplit"}"#,
+            "only one",
+        ),
+        (
+            true,
+            r#"{"type":"ByteMap"},{"type":"WhitespaceSplit"}"#,
+            "byte_level: false",
+        ),
+    ] {
+        let mut v = done(
+            BPE,
+            &format!(r#", "pre_tokenizer": {{"type":"Sequence","pretokenizers":[{members}]}}"#),
+        );
+        v["model"]["byte_level"] = Value::Bool(byte_level);
+        let Err(error) = tk_serialize::from_json(&v.to_string()) else {
+            panic!("invalid ByteMap configuration was accepted");
+        };
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+}
+
+#[test]
+fn a_manually_built_byte_map_sequence_rejects_byte_level_bpe() {
+    use tk_encode::models::bpe::{BpeConfig, PipelineBPE};
+    use tk_encode::pipeline::{
+        EncodeOptions, PipelineModel, PipelinePreTokenizer, PipelineTokenizer,
+    };
+    use tk_encode::pre_tokenizers::sequence::PipelineSequence;
+    use tk_encode::pre_tokenizers::whitespace::WhitespaceSplit;
+    use tk_encode::vocab::bucket_added_vocabulary::AddedVocabulary;
+
+    let model = PipelineBPE::from_config(BpeConfig {
+        vocab: [("a".to_owned(), 0)].into_iter().collect(),
+        byte_level: true,
+        ..BpeConfig::default()
+    })
+    .unwrap();
+    let sequence =
+        PipelineSequence::new(vec![PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit)])
+            .with_byte_map(0)
+            .unwrap();
+    let tokenizer = PipelineTokenizer::from_parts(
+        AddedVocabulary::new(),
+        Vec::new(),
+        PipelinePreTokenizer::Sequence(sequence),
+        PipelineModel::BPE(model),
+        Default::default(),
+        None,
+        Default::default(),
+        None,
+        None,
+    );
+
+    let error = tokenizer
+        .encode_into("a", &EncodeOptions::no_specials(), &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("byte_level: false"));
+    let error = tk_serialize::to_json(&tokenizer).unwrap_err();
+    assert!(error.to_string().contains("byte_level: false"));
 }
 
 // ---- the post-processor ------------------------------------------------------------------------

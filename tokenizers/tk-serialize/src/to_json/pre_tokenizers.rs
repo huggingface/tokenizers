@@ -81,7 +81,10 @@ fn write_one(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {
             out.type_tag("Sequence");
             out.key("pretokenizers");
             out.arr_open();
-            for member in sequence.pre_tokenizers() {
+            for (index, member) in sequence.pre_tokenizers().iter().enumerate() {
+                if sequence.byte_map_index() == Some(index) {
+                    bare(out, "ByteMap");
+                }
                 write_one(out, member)?;
             }
             out.arr_close();

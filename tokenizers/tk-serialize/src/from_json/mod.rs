@@ -19,9 +19,9 @@
 //! - `add_prefix_space` on a `Metaspace`, with its quirk: `false` is an error unless
 //!   `prepend_scheme: "never"` is spelled beside it, and `true` is ignored outright
 //! - a `Metaspace` decoder with no `prepend_scheme` — it defaulted to `always`
-//! - a `ByteLevel` *pre-tokenizer* — it becomes `"byte_level": true` on the model plus, for
-//!   `use_regex: true`, a `Split` on the GPT-2 regex with `Isolated`; `use_regex: false` leaves no
-//!   pre-tokenizer at all. `add_prefix_space: true` on one is still unsupported downstream
+//! - a `ByteLevel` *pre-tokenizer* — a terminal byte map becomes `"byte_level": true` on the
+//!   model, and a nonterminal one becomes a `ByteMap` member in its `Sequence`. Both insert an
+//!   isolated `Split` on the GPT-2 regex when `use_regex: true`. `add_prefix_space: true` is unsupported
 //!
 //! Refused by both, because nothing converts it: a vocabulary named by path (`files`).
 mod added_tokens;
@@ -224,7 +224,7 @@ fn build<M>(
     )?;
     let model = lower(concrete)?;
 
-    Ok(PipelineTokenizer::from_parts(
+    let tokenizer = PipelineTokenizer::from_parts(
         added_vocabulary,
         normalizers,
         pre_tokenizer,
@@ -234,7 +234,9 @@ fn build<M>(
         read_role_to_token(doc.field("role_to_token"))?,
         read_padding(doc.field("padding"))?,
         read_truncation(doc.field("truncation"))?,
-    ))
+    );
+    tokenizer.validate_byte_map()?;
+    Ok(tokenizer)
 }
 
 /// `{"eos_token": "</s>", ...}`. Absent or `null` means the config declares no roles.
