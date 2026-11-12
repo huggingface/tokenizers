@@ -35,7 +35,9 @@ fn ctc_word_boundaries_do_not_depend_on_cleanup() {
             let tokenizer = ctc_tokenizer(cleanup, delimiter);
             // Frame predictions: a a blank a delimiter delimiter b b blank b.
             assert_eq!(
-                tokenizer.decode(&[2, 2, 1, 2, 4, 4, 3, 3, 1, 3], false).unwrap(),
+                tokenizer
+                    .decode(&[2, 2, 1, 2, 4, 4, 3, 3, 1, 3], false)
+                    .unwrap(),
                 "aa bb"
             );
         }
@@ -45,14 +47,22 @@ fn ctc_word_boundaries_do_not_depend_on_cleanup() {
 #[test]
 fn ctc_cleanup_still_controls_punctuation() {
     let ids = [2, 5, 4, 3];
-    assert_eq!(ctc_tokenizer(false, "|").decode(&ids, false).unwrap(), "a . b");
-    assert_eq!(ctc_tokenizer(true, "|").decode(&ids, false).unwrap(), "a. b");
+    assert_eq!(
+        ctc_tokenizer(false, "|").decode(&ids, false).unwrap(),
+        "a . b"
+    );
+    assert_eq!(
+        ctc_tokenizer(true, "|").decode(&ids, false).unwrap(),
+        "a. b"
+    );
 }
 
 #[test]
 fn ctc_unicode_words_keep_their_boundary_without_cleanup() {
     assert_eq!(
-        ctc_tokenizer(false, "▁").decode(&[6, 6, 4, 7, 7], false).unwrap(),
+        ctc_tokenizer(false, "▁")
+            .decode(&[6, 6, 4, 7, 7], false)
+            .unwrap(),
         "你 好"
     );
 }
