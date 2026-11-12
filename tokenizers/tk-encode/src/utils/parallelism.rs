@@ -20,9 +20,6 @@ use std::sync::atomic::Ordering;
 pub use rayon::current_num_threads;
 
 /// TODO: deprecate
-pub const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
-
-/// TODO: deprecate
 static USED_PARALLELISM: AtomicBool = AtomicBool::new(false);
 
 /// TODO: deprecate
@@ -208,9 +205,9 @@ pub fn set_max_threads(n: usize) {
     invalidate();
 }
 
-/// Check if the TOKENIZERS_PARALLELISM env variable has been explicitly set
+/// Whether [`set_parallelism`] was called.
 pub fn is_parallelism_configured() -> bool {
-    std::env::var(ENV_VARIABLE).is_ok() || get_override_parallelism().is_some()
+    get_override_parallelism().is_some()
 }
 
 /// Check if at some point we used a parallel iterator
@@ -228,47 +225,28 @@ fn get_override_parallelism() -> Option<bool> {
     }
 }
 
-/// Get the currently set value for `TOKENIZERS_PARALLELISM` env variable
-fn get_env_parallelism() -> bool {
-    match std::env::var(ENV_VARIABLE) {
-        Ok(mut v) => {
-            v.make_ascii_lowercase();
-            !matches!(v.as_ref(), "" | "off" | "false" | "f" | "no" | "n" | "0")
-        }
-        Err(_) => true, // If we couldn't get the variable, we use the default
-    }
-}
-
+/// Whether the `MaybeParallel*` iterators run in parallel: [`set_parallelism`], else `true`.
 pub fn get_parallelism() -> bool {
-    if let Some(parallel) = get_override_parallelism() {
-        parallel
-    } else {
-        get_env_parallelism()
-    }
+    get_override_parallelism().unwrap_or(true)
 }
 
-/// Set the value for `TOKENIZERS_PARALLELISM` for the current process
+/// Turn the `MaybeParallel*` iterators on or off for the whole process.
 pub fn set_parallelism(val: bool) {
     PARALLELISM.store(if val { 2 } else { 1 }, Ordering::SeqCst);
 }
 
-/// Allows to convert into an iterator that can be executed either parallelly or serially.
-///
-/// The choice is made according to the currently set `TOKENIZERS_PARALLELISM` environment variable.
-/// This variable can have one of the following values
-///   - False => "" (empty value), "false", "f", "off", "no", "n", "0"
-///   - True => Any other value
-///
+/// Allows to convert into an iterator that can be executed either parallelly or serially,
+/// according to [`get_parallelism`].
 pub trait MaybeParallelIterator<P, S>
 where
     P: ParallelIterator,
     S: Iterator<Item = P::Item>,
 {
     /// Convert ourself in a CondIterator, that will be executed either in parallel or serially,
-    /// based solely on the `TOKENIZERS_PARALLELISM` environment variable
+    /// based solely on [`get_parallelism`]
     fn into_maybe_par_iter(self) -> CondIterator<P, S>;
     /// Convert ourself in a CondIterator, that will be executed either in parallel or serially,
-    /// based on both the `TOKENIZERS_PARALLELISM` environment variable and the provided bool.
+    /// based on both [`get_parallelism`] and the provided bool.
     /// Both must be true to run with parallelism activated.
     fn into_maybe_par_iter_cond(self, cond: bool) -> CondIterator<P, S>;
 }
@@ -393,13 +371,13 @@ where
     T: Sync,
 {
     /// Create a CondIterator, that will be executed either in parallel or serially,
-    /// based solely on the `TOKENIZERS_PARALLELISM` environment variable
+    /// based solely on [`get_parallelism`]
     fn maybe_par_chunks(
         &'_ self,
         chunk_size: usize,
     ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>>;
     /// Create a CondIterator, that will be executed either in parallel or serially,
-    /// based on both the `TOKENIZERS_PARALLELISM` environment variable and the provided bool.
+    /// based on both [`get_parallelism`] and the provided bool.
     /// Both must be true to run with parallelism activated.
     fn maybe_par_chunks_cond(
         &'_ self,
