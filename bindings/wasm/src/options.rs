@@ -114,6 +114,7 @@ pub(crate) fn convert_encode_options(
         encode_special_tokens: options.encode_special_tokens.unwrap_or(false),
         padding: into_override(options.padding, PaddingOptions::params),
         truncation: into_override(options.truncation, TruncationOptions::params),
+        max_threads: None,
     })
 }
 
@@ -210,6 +211,7 @@ mod tests {
                     direction: TruncationDirection::Left,
                     stride: 0,
                 }),
+                max_threads: None,
             }
         );
     }

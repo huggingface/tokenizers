@@ -165,6 +165,7 @@ impl PipelineTokenizer {
       encode_special_tokens: options.encode_special_tokens.unwrap_or(false),
       padding: override_with(options.padding, PaddingOptions::params)?,
       truncation: override_with(options.truncation, TruncationOptions::params)?,
+      max_threads: None,
     })
   }
 }
