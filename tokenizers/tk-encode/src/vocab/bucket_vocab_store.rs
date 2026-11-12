@@ -5,7 +5,7 @@ use ptr_hash::PtrHashParams;
 use std::fmt;
 
 use crate::Result;
-use crate::utils::perfect_hash::{Mphf, mix};
+use crate::utils::perfect_hash::{Mphf, mix, mphf_params};
 
 static KEY_HASHER: RandomState = RandomState::with_seeds(
     0x243F_6A88_85A3_08D3,
@@ -98,8 +98,8 @@ pub fn key_and_hash(word: &[u8]) -> (u64, u64) {
 ///
 /// The hash picks the slot and `digest` confirms it -- the key itself is never stored, which is why
 /// a query cannot tell a collision from a hit on its own and does not need to (see [`BucketVocabStore::get_bytes`]).
-/// A slot the build never wrote stays [`Default`], and occupancy is read off the parallel `spans`.
-#[derive(Clone, Copy, Debug, Default)]
+/// A slot the build never wrote stays [`UNUSED_ENTRY`], and occupancy is read off the parallel `spans`.
+#[derive(Clone, Copy, Debug)]
 #[repr(C)]
 struct Entry {
     digest: u32,
@@ -108,6 +108,12 @@ struct Entry {
 }
 
 const _: () = assert!(size_of::<Entry>() == 8);
+
+/// The empty word hashes to 0, so an unused slot cannot have a digest of 0 or it would match it.
+const UNUSED_ENTRY: Entry = Entry {
+    digest: u32::MAX,
+    id: 0,
+};
 
 static KEY_MASK: [u64; 8] = [
     0x0000_0000_0000_0000,
@@ -243,13 +249,13 @@ impl BucketVocabStore {
             );
         }
 
-        // 3. Build the (non-minimal) `FastPtrHash` via `PtrHashParams::default_fast()`; query with `.index()`.
-        let params = PtrHashParams::default_fast();
+        // 3. Build the (non-minimal) `FastPtrHash`; query with `.index()`.
+        let params = mphf_params(unique_entries.len());
         let mphf = Mphf::new(&unique_entries.into_keys().collect::<Vec<u64>>(), params);
 
         // FastPtrHash is non-minimal: `index()` may return a slot up to `max_index()` (>= n),
         // so `entries` must be sized to cover the whole slot range. Slots never written by the
-        // build loop stay as the default `Entry { len: 0, .. }` (phantom/padding slots), which
+        // build loop stay as `UNUSED_ENTRY` with an empty span (phantom/padding slots), which
         // enumeration/count paths filter out via `len > 0`.
         let n_slots = mphf.max_index();
 
@@ -261,7 +267,7 @@ impl BucketVocabStore {
             .max()
             .unwrap_or(0);
         let mut bytes = Vec::with_capacity(total);
-        let mut entries = vec![Entry::default(); n_slots];
+        let mut entries = vec![UNUSED_ENTRY; n_slots];
         let mut spans = vec![Span::default(); n_slots];
         let mut id_to_slot = vec![u32::MAX; id_space];
         for (s, id) in &tokens {
@@ -457,6 +463,23 @@ impl BucketVocabStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Six keys used to get exactly six slots, and this set has no placement in them on any seed.
+    #[test]
+    fn six_tokens_build() {
+        let tokens = ["<s>", "<unk>", "<bos>", "[CLS]", "[SEP]", "[MASK]"];
+        let vocab = BucketVocabStore::build(
+            tokens
+                .iter()
+                .zip(0u32..)
+                .map(|(token, id)| (token.as_bytes().to_vec(), id))
+                .collect(),
+        )
+        .unwrap();
+        for (token, id) in tokens.iter().zip(0u32..) {
+            assert_eq!(vocab.token_to_id(token), Some(id));
+        }
+    }
 
     // The key is a little-endian pack of the word with its length on top -- not whatever a `u64`
     // load of those bytes happens to give. Built with shifts here so the expected value is the
