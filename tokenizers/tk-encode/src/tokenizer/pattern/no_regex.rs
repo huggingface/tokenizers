@@ -5,7 +5,8 @@
 //! class family, char-delimiter) need no backend, and a plain string pattern is searched for directly
 //! (`bitcannon::literal`). A regex bitcannon does not cover errors at load time with a clear message.
 //! Enable `fancy-regex` to get a real backend.
-use std::error::Error;
+use super::matcher::Pattern;
+use crate::{Offsets, Result};
 
 #[derive(Debug)]
 pub struct SysRegex {
@@ -15,7 +16,7 @@ pub struct SysRegex {
 }
 
 impl SysRegex {
-    pub fn new(_regex_str: &str) -> Result<Self, Box<dyn Error + Send + Sync + 'static>> {
+    pub fn new(_regex_str: &str) -> Result<Self> {
         Err(
             "no system-regex backend compiled: enable the `fancy-regex` feature to use a regex \
              pattern in a `Split` pre-tokenizer or a `Replace` normalizer (a plain string pattern \
@@ -23,8 +24,10 @@ impl SysRegex {
                 .into(),
         )
     }
+}
 
-    pub fn find_iter(&self, _inside: &str) -> std::iter::Empty<(usize, usize)> {
+impl Pattern for SysRegex {
+    fn scan<'t>(&'t self, _inside: &'t str) -> impl Iterator<Item = Result<Offsets>> {
         // Unreachable: no `SysRegex` is ever constructed without a backend.
         std::iter::empty()
     }

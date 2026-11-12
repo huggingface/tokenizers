@@ -7,7 +7,7 @@
 // The `Path` types are reachable only from `Model::save`.
 
 mod encoding;
-pub mod pattern;
+pub(crate) mod pattern;
 pub mod pipeline;
 
 // `Tokenizer`, `TokenizerImpl`, `TokenizerBuilder`, `DecodeStream`, the legacy `AddedVocabulary`

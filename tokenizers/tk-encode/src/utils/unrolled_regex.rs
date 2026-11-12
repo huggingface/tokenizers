@@ -80,37 +80,6 @@ pub fn recognize(pattern: &str) -> Option<Grammar> {
     }
 }
 
-/// `Pattern` that runs the native grammar on the legacy (`NormalizedString`) split path, so GPT
-/// pre-tokenizers need no system-regex backend. `Isolated` keeps every span and these grammars
-/// cover the input contiguously, so this is byte-for-byte the original regex `Isolated` split.
-pub struct GrammarPattern(pub Grammar);
-
-impl crate::tokenizer::pattern::Pattern for GrammarPattern {
-    fn find_matches(
-        &self,
-        inside: &str,
-    ) -> crate::tokenizer::Result<Vec<(crate::tokenizer::Offsets, bool)>> {
-        if inside.is_empty() {
-            return Ok(vec![((0, 0), false)]);
-        }
-        let bytes = inside.as_bytes();
-        let n = bytes.len();
-        let mut tags = vec![0u8; n];
-        bitcannon::classify::classify(bytes, &mut tags);
-        let words = n.div_ceil(64) + 1;
-        let (mut starts, mut flag) = (vec![0u64; words], vec![0u64; words]);
-        let mut later = vec![0u64; 2 * words];
-        let mut spans = vec![Span::default(); n + 1];
-        let k = self
-            .0
-            .split(bytes, &tags, &mut starts, &mut flag, &mut later, &mut spans);
-        Ok(spans[..k]
-            .iter()
-            .map(|sp| ((sp.start as usize, sp.end as usize), true))
-            .collect())
-    }
-}
-
 // deepseek-v3/v4's pre-tokenizer is a `Sequence` of these three Isolated `Split`s (+ a byte-map
 // `ByteLevel`), which `bitcannon::bitcannon_deepseek` collapses into one pass. Byte-exact with the
 // shipped tokenizer.json — the big pattern carries LITERAL CR/LF, spliced in via `concat!`.
