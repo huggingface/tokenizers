@@ -61,7 +61,12 @@ pub struct Split {
 
 impl Clone for Split {
     fn clone(&self) -> Self {
-        Self::new(self.pattern.clone(), self.behavior, self.invert).unwrap()
+        if matches!(self.search, Search::Unavailable) {
+            // A native composition may contain regexes that have no standalone backend.
+            Self::native(self.pattern.clone(), self.behavior, self.invert).unwrap()
+        } else {
+            Self::new(self.pattern.clone(), self.behavior, self.invert).unwrap()
+        }
     }
 }
 
