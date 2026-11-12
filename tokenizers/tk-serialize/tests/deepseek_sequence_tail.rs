@@ -46,12 +46,17 @@ fn pieces(sequence: &PipelineSequence, text: &str) -> Vec<String> {
 #[test]
 fn trailing_digits_split_native_numeric_groups() {
     let seq = sequence(vec![PipelinePreTokenizer::Digits(Digits::new(true))]);
-    assert_eq!(pieces(&seq, "hello123456"), ["hello", "1", "2", "3", "4", "5", "6"]);
+    assert_eq!(
+        pieces(&seq, "hello123456"),
+        ["hello", "1", "2", "3", "4", "5", "6"]
+    );
 }
 
 #[test]
 fn trailing_delimiters_are_removed() {
-    let seq = sequence(vec![PipelinePreTokenizer::Delimiter(CharDelimiterSplit::new('l'))]);
+    let seq = sequence(vec![PipelinePreTokenizer::Delimiter(
+        CharDelimiterSplit::new('l'),
+    )]);
     assert_eq!(pieces(&seq, "hello123"), ["he", "o", "123"]);
 }
 
@@ -82,8 +87,14 @@ fn multiple_trailing_children_run_in_order() {
 
 #[test]
 fn native_prefix_with_only_identity_children_is_unchanged() {
-    for tail in [vec![], vec![PipelinePreTokenizer::None, PipelinePreTokenizer::None]] {
-        assert_eq!(pieces(&sequence(tail), "hello123456"), ["hello", "123", "456"]);
+    for tail in [
+        vec![],
+        vec![PipelinePreTokenizer::None, PipelinePreTokenizer::None],
+    ] {
+        assert_eq!(
+            pieces(&sequence(tail), "hello123456"),
+            ["hello", "123", "456"]
+        );
     }
 }
 
@@ -97,7 +108,10 @@ fn output_appends_and_scratch_can_be_reused() {
         seq.pre_tokenize(text, &mut scratch, &mut actual).unwrap();
         assert_eq!(actual[0], sentinel);
         let expected: Vec<_> = text.chars().map(|c| c.to_string()).collect();
-        let actual: Vec<_> = actual[1..].iter().map(|span| text[span.range()].to_owned()).collect();
+        let actual: Vec<_> = actual[1..]
+            .iter()
+            .map(|span| text[span.range()].to_owned())
+            .collect();
         assert_eq!(actual, expected);
     }
 }
@@ -121,10 +135,12 @@ fn errors_from_trailing_children_are_not_suppressed() {
 fn canonical_json_pipeline_applies_the_configured_tail() {
     let mut members: Vec<_> = DEEPSEEK_PATTERNS
         .iter()
-        .map(|pattern| json!({
-            "type": "Split", "pattern": {"Regex": pattern},
-            "behavior": "Isolated", "invert": false
-        }))
+        .map(|pattern| {
+            json!({
+                "type": "Split", "pattern": {"Regex": pattern},
+                "behavior": "Isolated", "invert": false
+            })
+        })
         .collect();
     members.push(json!({"type": "Digits", "individual_digits": true}));
     let config = json!({
@@ -132,13 +148,16 @@ fn canonical_json_pipeline_applies_the_configured_tail() {
         "pre_tokenizer": {"type": "Sequence", "pretokenizers": members},
         "model": {"type": "WordLevel", "unk_token": "<unk>",
                   "vocab": {"<unk>": 0, "abc": 1, "1": 2, "2": 3, "3": 4, "123": 5}}
-    }).to_string();
+    })
+    .to_string();
     let tokenizer = tk_serialize::from_json(&config).unwrap();
-    let encoded = tokenizer.encode("abc123", &EncodeOptions::no_specials()).wait().unwrap();
+    let encoded = tokenizer
+        .encode("abc123", &EncodeOptions::no_specials())
+        .wait()
+        .unwrap();
     let ids: Vec<_> = encoded[0].ids().iter().map(|token| token.id()).collect();
     assert_eq!(ids, [1, 2, 3, 4]);
 }
-
 #[test]
 fn ordinary_sequences_keep_their_existing_behavior() {
     let seq = PipelineSequence::new(vec![
