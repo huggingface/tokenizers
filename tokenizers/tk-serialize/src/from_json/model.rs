@@ -141,9 +141,9 @@ pub(super) fn read_unigram(cfg: &Json<'_>) -> Result<tk_encode::models::unigram:
     model.alpha = cfg
         .field("alpha")
         .map(|value| {
-            value.as_f64().ok_or_else(|| -> tk_encode::Error {
-                "Unigram `alpha` is not a number".into()
-            })
+            value
+                .as_f64()
+                .ok_or_else(|| -> tk_encode::Error { "Unigram `alpha` is not a number".into() })
         })
         .transpose()?;
     model.nbest_size = cfg
