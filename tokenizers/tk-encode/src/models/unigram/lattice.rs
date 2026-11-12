@@ -403,7 +403,7 @@ impl<'a> Lattice<'a> {
                     let rid = rnode.borrow().node_id;
                     alpha[rid] = log_sum_exp(
                         alpha[rid],
-                        theta * (lnode.borrow().score + alpha[lid]),
+                        theta * lnode.borrow().score + alpha[lid],
                         *lnode == self.end_nodes[pos][0],
                     );
                 }
