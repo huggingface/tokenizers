@@ -259,12 +259,17 @@ impl PipelineBPE {
                         fallback_lookup[b as usize] = internal;
                     }
                 }
+
                 // NVIDIA NeMo models such as Parakeet set `byte_fallback` with no `<0xNN>` token at all.
+                // In this case, we turn off the byte fallback at load time.
                 if fallback_lookup.iter().all(|&id| id == NO_SYMBOL) {
                     None
                 } else {
-                    // The encoder falls back only on characters missing from the vocab, so a `"\t"` token can replace `<0x09>`.
-                    // With a prefix or suffix, the encoder looks up `##\t` or `\t</w>` instead, and those can be missing.
+                    // Some model don't store fallback tokens for single-bytes characters that
+                    // are already in the vocab. For example, Gemma doesn't store a <0x09> fallback token (`\t`).
+                    // It's a valid configuration because the byte fallback only triggers when
+                    // a character is missing from the vocabulary.
+
                     let has_affixes = !prefix.is_empty() || !suffix.is_empty();
                     let mut missing = Vec::new();
                     for b in 0u8..=255 {
