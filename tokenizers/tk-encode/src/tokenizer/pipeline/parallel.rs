@@ -28,6 +28,9 @@ use super::Result;
 // this threshold to reach the parallel path at all.
 pub const PARALLEL_MIN_BYTES: usize = 8 * 1024;
 
+/// How far past a stride point the planner looks for a safe cut.
+const MAX_PROBE: usize = 1024;
+
 impl Input {
     fn len(&self) -> usize {
         match self {
@@ -299,6 +302,37 @@ impl PipelineTokenizer {
         self.inner.scratch_pool.get(&self.inner.model)
     }
 
+    /// Cut points for a special-free `segment`: the first safe cut past each
+    /// [`PARALLEL_MIN_BYTES`] stride point, probing at most [`MAX_PROBE`] bytes (a point with no
+    /// cut that close is skipped, which bounds the serial scan).
+    ///
+    /// None with `encode_special_tokens`: specials stay in the text, and a cut inside one could
+    /// expose a shorter added token the serial scan skips over.
+    fn cut_points<'a>(
+        &self,
+        segment: &'a str,
+        encode_special_tokens: bool,
+    ) -> impl Iterator<Item = usize> + 'a {
+        let cut = self
+            .inner
+            .cut
+            .filter(|_| !encode_special_tokens && segment.len() >= 2 * PARALLEL_MIN_BYTES);
+        let last = segment.len().saturating_sub(PARALLEL_MIN_BYTES);
+        let mut next = PARALLEL_MIN_BYTES;
+        std::iter::from_fn(move || {
+            let cut = cut?;
+            while next < last {
+                let found = cut(segment.as_bytes(), next, (next + MAX_PROBE).min(last));
+                if let Some(p) = found {
+                    next = p + PARALLEL_MIN_BYTES;
+                    return Some(p);
+                }
+                next += PARALLEL_MIN_BYTES;
+            }
+            None
+        })
+    }
+
     fn plan_sequence(
         &self,
         seq_idx: usize,
@@ -327,7 +361,6 @@ impl PipelineTokenizer {
             false,
             encode_special_tokens,
         ) {
-            let idx = seq_outputs.len();
             let (segment, offset) = match segment {
                 Segment::SpecialToken(id) => {
                     let token = PipelineToken::from(id);
@@ -336,13 +369,20 @@ impl PipelineTokenizer {
                 }
                 Segment::Text { text, input_offset } => (text, input_offset),
             };
-            chunks.push(SequenceChunk {
-                seq: seq_idx,
-                idx,
-                side,
-                range: offset..offset + segment.len(),
-            });
-            seq_outputs.push(ChunkResult::new(None));
+            let mut start = 0;
+            for end in self
+                .cut_points(segment, encode_special_tokens)
+                .chain([segment.len()])
+            {
+                chunks.push(SequenceChunk {
+                    seq: seq_idx,
+                    idx: seq_outputs.len(),
+                    side,
+                    range: offset + start..offset + end,
+                });
+                seq_outputs.push(ChunkResult::new(None));
+                start = end;
+            }
         }
         // make sure we have at least one chunk per sequence, otherwise we'll wait indefinitely
         // for a completion event
