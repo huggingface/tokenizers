@@ -238,6 +238,29 @@ fn ignore_merges_prefers_whole_word() {
 }
 
 #[test]
+fn fuse_unk_applies_to_models_with_affixes() {
+    let build = |continuing_subword_prefix: Option<&str>, end_of_word_suffix: Option<&str>| {
+        PipelineBPE::from_config(BpeConfig {
+            vocab: v(&[("a", 0), ("##a", 1), ("a</w>", 2), ("<unk>", 3)]),
+            unk_token: Some("<unk>".into()),
+            continuing_subword_prefix: continuing_subword_prefix.map(Into::into),
+            end_of_word_suffix: end_of_word_suffix.map(Into::into),
+            fuse_unk: true,
+            ..Default::default()
+        })
+        .unwrap()
+    };
+
+    let suffix = build(None, Some("</w>"));
+    assert_eq!(pipeline_ids(&suffix, "xyz"), vec![3]);
+    assert_eq!(pipeline_ids(&suffix, "xyaxyz"), vec![3, 0, 3]);
+
+    let prefix = build(Some("##"), None);
+    assert_eq!(pipeline_ids(&prefix, "xyz"), vec![3]);
+    assert_eq!(pipeline_ids(&prefix, "xyaxyz"), vec![3, 1, 3]);
+}
+
+#[test]
 fn rejects_unsupported_configs() {
     // no merges: the merge-map derivation underflows on merges whose right token
     // is shorter than continuing_subword_prefix (pre-existing, unrelated)
