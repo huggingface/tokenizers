@@ -185,10 +185,17 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     pool
 }
 
-/// Max threads per encode, caller included: the shared pool holds `max_threads() - 1`, so 1 means
-/// serial. Defaults to `available_parallelism()` (affinity mask, cgroup quota).
+/// Max threads one encode uses, caller included: the shared pool holds `max_threads() - 1`, so 1
+/// means serial.
+///
+/// A value set with [`set_max_threads`] always wins, and forked children inherit it. Unset, it is
+/// `available_parallelism()` (affinity mask, cgroup quota), except in a forked child, which can't
+/// know how many siblings share the cores and runs serially. A fork is only detected if this module
+/// was used before it (an encode, `max_threads` or `set_max_threads`).
 pub fn max_threads() -> usize {
+    register_fork_handler();
     match MAX_THREADS.load(Ordering::Acquire) {
+        0 if fork_generation() > 0 => 1,
         0 => available_parallelism(),
         n => n,
     }
@@ -200,8 +207,11 @@ fn available_parallelism() -> usize {
     *CORES.get_or_init(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
 }
 
-/// Set [`max_threads`] process-wide; `0` restores the default. Takes effect on the next encode.
+/// Set [`max_threads`] for the process. It takes precedence over every default, including the
+/// serial one of a forked child, and forked children inherit it. `0` restores the default. Takes
+/// effect on the next encode.
 pub fn set_max_threads(n: usize) {
+    register_fork_handler();
     MAX_THREADS.store(n, Ordering::Release);
 }
 
@@ -466,6 +476,27 @@ mod tests {
         );
     }
 
+    /// A forked child defaults to serial; an explicit max still applies.
+    #[cfg(unix)]
+    #[test]
+    fn forked_children_default_to_one_thread() {
+        let _serial = POOL_TESTS.lock().unwrap_or_else(|p| p.into_inner());
+        set_max_threads(0);
+        register_fork_handler();
+        // SAFETY: the child only reads atomics and `_exit`s
+        let pid = unsafe { libc::fork() };
+        if pid == 0 {
+            let default = max_threads();
+            set_max_threads(3);
+            let explicit = max_threads();
+            unsafe { libc::_exit(i32::from(!(default == 1 && explicit == 3))) };
+        }
+        let mut status = 0;
+        assert_eq!(unsafe { libc::waitpid(pid, &mut status, 0) }, pid);
+        assert!(libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0);
+        assert!(max_threads() >= 1, "the parent keeps its default");
+    }
+
     /// Contended callers must reuse the cached pool, not build their own.
     #[test]
     fn concurrent_callers_share_one_pool() {
@@ -508,6 +539,8 @@ mod tests {
         // SAFETY: the child only builds the pool and `_exit`s
         let pid = unsafe { libc::fork() };
         if pid == 0 {
+            // forked children default to serial
+            set_max_threads(2);
             unsafe { libc::_exit(i32::from(pool().is_none())) };
         }
         BUILDING.store(false, Ordering::SeqCst);
@@ -535,6 +568,8 @@ mod tests {
         // SAFETY: the child only builds the pool and `_exit`s
         let pid = unsafe { libc::fork() };
         if pid == 0 {
+            // forked children default to serial
+            set_max_threads(2);
             unsafe { libc::_exit(i32::from(pool().is_none())) };
         }
         holder.join().unwrap();
