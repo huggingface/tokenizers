@@ -85,6 +85,10 @@ fn texts(special: &str) -> Vec<(&'static str, String)> {
             sized("don't we'll they've I'M it's y'all'd've ", len),
         ),
         ("specials", with_specials),
+        (
+            "dense specials",
+            sized(&format!("{}{special}", &english[..64]), len),
+        ),
     ]
 }
 
@@ -114,16 +118,14 @@ fn llama3_cut_encode_matches_serial() {
     );
 }
 
-/// Control: not cut (normalized added tokens).
 #[test]
-fn roberta_encode_matches_serial() {
-    assert_cut_encode_matches_serial("roberta.json", "<|endoftext|>", false);
+fn roberta_cut_encode_matches_serial() {
+    assert_cut_encode_matches_serial("roberta.json", "<|endoftext|>", true);
 }
 
-/// Control: not cut (normalized `<|endoftext|>`).
 #[test]
-fn gpt2_encode_matches_serial() {
-    assert_cut_encode_matches_serial("gpt2.json", "<|endoftext|>", false);
+fn gpt2_cut_encode_matches_serial() {
+    assert_cut_encode_matches_serial("gpt2.json", "<|endoftext|>", true);
 }
 
 /// Control: not cut (`Whitespace` has no proven cut).
@@ -132,30 +134,59 @@ fn wiki_encode_matches_serial() {
     assert_cut_encode_matches_serial("tokenizer-wiki.json", "[SEP]", false);
 }
 
+/// `file` with its added tokens replaced by `tokens`.
+fn with_added_tokens(file: &str, tokens: serde_json::Value) -> PipelineTokenizer {
+    let mut json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(format!("{DATA}/{file}")).unwrap()).unwrap();
+    json["added_tokens"] = tokens;
+    tk_serialize::from_json(&tk_convert::canonicalize_str(&json.to_string()).unwrap()).unwrap()
+}
+
+fn token(
+    id: u32,
+    content: &str,
+    special: bool,
+    normalized: bool,
+    lstrip: bool,
+) -> serde_json::Value {
+    serde_json::json!({"id": id, "content": content, "special": special, "single_word": false,
+        "lstrip": lstrip, "rstrip": false, "normalized": normalized})
+}
+
+fn assert_matches_serial(tokenizer: &PipelineTokenizer, text: &str, options: &EncodeOptions) {
+    let mut serial = Vec::new();
+    tokenizer.encode_into(text, options, &mut serial).unwrap();
+    let parallel = tokenizer.encode(text, options).wait().unwrap();
+    assert!(parallel[0].ids() == serial.as_slice());
+}
+
 /// With `encode_special_tokens`, specials stay in the text: a cut inside one must not expose a
 /// shorter added token that the serial scan skips over along with the special.
 #[test]
 fn cuts_never_split_specials_left_in_the_text() {
-    let mut json: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(format!("{DATA}/gpt2.json")).unwrap())
-            .unwrap();
-    let token = |id: u32, content: &str, special: bool| {
-        serde_json::json!({"id": id, "content": content, "special": special, "single_word": false,
-            "lstrip": false, "rstrip": false, "normalized": false})
-    };
-    json["added_tokens"] = serde_json::json!([
-        token(50256, "<|endoftext|>", true),
-        token(50257, "<|endof", false)
-    ]);
-    let canonical = tk_convert::canonicalize_str(&json.to_string()).unwrap();
-    let tokenizer = tk_serialize::from_json(&canonical).unwrap();
+    let tokenizer = with_added_tokens(
+        "gpt2.json",
+        serde_json::json!([
+            token(50256, "<|endoftext|>", true, false, false),
+            token(50257, "<|endof", false, false, false)
+        ]),
+    );
     let options = EncodeOptions {
         encode_special_tokens: true,
         ..EncodeOptions::no_specials()
     };
     let text = "<|endoftext|>".repeat(4 * PARALLEL_MIN_BYTES / 13);
-    let mut serial = Vec::new();
-    tokenizer.encode_into(&text, &options, &mut serial).unwrap();
-    let parallel = tokenizer.encode(text.as_str(), &options).wait().unwrap();
-    assert!(parallel[0].ids() == serial.as_slice());
+    assert_matches_serial(&tokenizer, &text, &options);
+}
+
+/// A normalized `lstrip` token (roberta's `<mask>`) is peeled with the whitespace it swallows.
+#[test]
+fn normalized_lstrip_tokens_are_peeled_whole() {
+    let tokenizer = with_added_tokens(
+        "roberta.json",
+        serde_json::json!([token(50264, "<mask>", true, true, true)]),
+    );
+    // only `<mask>` holds letters, so every stride probe lands in one
+    let text = sized("   <mask>", 16 * PARALLEL_MIN_BYTES);
+    assert_matches_serial(&tokenizer, &text, &EncodeOptions::no_specials());
 }

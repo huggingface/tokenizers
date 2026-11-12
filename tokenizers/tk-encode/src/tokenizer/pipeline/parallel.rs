@@ -297,6 +297,11 @@ fn drain(results: &[ChunkResult]) -> Result<Vec<PipelineToken>> {
     Ok(out.concat())
 }
 
+/// A peeled added token: its id is the chunk's whole result.
+fn push_special(id: u32, seq_outputs: &mut Vec<ChunkResult>) {
+    seq_outputs.push(ChunkResult::new(Some(Ok(vec![PipelineToken::from(id)]))));
+}
+
 impl PipelineTokenizer {
     fn get_scratch(&self) -> ScratchGuard<'_> {
         self.inner.scratch_pool.get(&self.inner.model)
@@ -309,20 +314,21 @@ impl PipelineTokenizer {
     /// None with `encode_special_tokens`: specials stay in the text, and a cut inside one could
     /// expose a shorter added token the serial scan skips over.
     fn cut_points<'a>(
-        &self,
+        &'a self,
         segment: &'a str,
         encode_special_tokens: bool,
     ) -> impl Iterator<Item = usize> + 'a {
         let cut = self
             .inner
             .cut
+            .as_ref()
             .filter(|_| !encode_special_tokens && segment.len() >= 2 * PARALLEL_MIN_BYTES);
         let last = segment.len().saturating_sub(PARALLEL_MIN_BYTES);
         let mut next = PARALLEL_MIN_BYTES;
         std::iter::from_fn(move || {
             let cut = cut?;
             while next < last {
-                let found = cut(segment.as_bytes(), next, (next + MAX_PROBE).min(last));
+                let found = cut.find(segment.as_bytes(), next, (next + MAX_PROBE).min(last));
                 if let Some(p) = found {
                     next = p + PARALLEL_MIN_BYTES;
                     return Some(p);
@@ -331,6 +337,34 @@ impl PipelineTokenizer {
             }
             None
         })
+    }
+
+    /// `segment` (at `offset` in its sequence) as chunks split at [`Self::cut_points`].
+    #[allow(clippy::too_many_arguments)]
+    fn push_chunks(
+        &self,
+        seq: usize,
+        side: Seq,
+        segment: &str,
+        offset: usize,
+        encode_special_tokens: bool,
+        chunks: &mut Vec<SequenceChunk>,
+        seq_outputs: &mut Vec<ChunkResult>,
+    ) {
+        let mut start = 0;
+        for end in self
+            .cut_points(segment, encode_special_tokens)
+            .chain([segment.len()])
+        {
+            chunks.push(SequenceChunk {
+                seq,
+                idx: seq_outputs.len(),
+                side,
+                range: offset + start..offset + end,
+            });
+            seq_outputs.push(ChunkResult::new(None));
+            start = end;
+        }
     }
 
     fn plan_sequence(
@@ -363,26 +397,20 @@ impl PipelineTokenizer {
         ) {
             let (segment, offset) = match segment {
                 Segment::SpecialToken(id) => {
-                    let token = PipelineToken::from(id);
-                    seq_outputs.push(ChunkResult::new(Some(Ok(vec![token]))));
+                    push_special(id, seq_outputs);
                     continue;
                 }
                 Segment::Text { text, input_offset } => (text, input_offset),
             };
-            let mut start = 0;
-            for end in self
-                .cut_points(segment, encode_special_tokens)
-                .chain([segment.len()])
-            {
-                chunks.push(SequenceChunk {
-                    seq: seq_idx,
-                    idx: seq_outputs.len(),
-                    side,
-                    range: offset + start..offset + end,
-                });
-                seq_outputs.push(ChunkResult::new(None));
-                start = end;
-            }
+            self.push_chunks(
+                seq_idx,
+                side,
+                segment,
+                offset,
+                encode_special_tokens,
+                chunks,
+                seq_outputs,
+            );
         }
         // make sure we have at least one chunk per sequence, otherwise we'll wait indefinitely
         // for a completion event
