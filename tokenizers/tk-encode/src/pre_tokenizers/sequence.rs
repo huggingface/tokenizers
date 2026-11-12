@@ -68,9 +68,18 @@ unsafe impl pipeline::PreTokenizer for PipelineSequence {
             return Ok(());
         }
 
-        // deepseek's 3-Split composition → one native FSM pass (also lets the Sequence handle the
-        // trailing byte-map ByteLevel, which the generic child loop can't range-split).
-        if self.is_deepseek() {
+        let deepseek = self.is_deepseek();
+        let children = if deepseek {
+            &self.pre_tokenizers[3..]
+        } else {
+            &self.pre_tokenizers[..]
+        };
+        // DeepSeek's first three splits fuse into one pass. Only identity children may be skipped.
+        if deepseek
+            && children
+                .iter()
+                .all(|child| matches!(child, PipelinePreTokenizer::None))
+        {
             scratch.split_on_bits(
                 text.as_bytes(),
                 |t, tags, starts, _flags, _later, out| {
@@ -96,12 +105,22 @@ unsafe impl pipeline::PreTokenizer for PipelineSequence {
 
         let [mut current, mut next] = scratch.take_pair();
         current.clear();
-        current.push(pipeline::Span {
-            start: 0,
-            end: text.len() as u32,
-        });
+        if deepseek {
+            scratch.split_on_bits(
+                text.as_bytes(),
+                |t, tags, starts, _flags, _later, out| {
+                    bitcannon::bitcannon_deepseek(t, tags, starts, out)
+                },
+                &mut current,
+            );
+        } else {
+            current.push(pipeline::Span {
+                start: 0,
+                end: text.len() as u32,
+            });
+        }
 
-        for child in &self.pre_tokenizers {
+        for child in children {
             next.clear();
             for span in &current {
                 let base = span.start;
