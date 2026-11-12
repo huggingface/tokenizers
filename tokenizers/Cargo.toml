@@ -90,6 +90,12 @@ tracing-subscriber = "0.3.23"
 [profile.release]
 lto = "fat"
 
+[profile.test]
+inherits = "release"
+debug-assertions = true
+overflow-checks = true
+lto = false
+
 # This is for a slim, on edge build. Perfs are bound to be worst than the normal release, but it reduces the crate size.
 [profile.minsize]
 inherits = "release"

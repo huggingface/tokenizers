@@ -62,3 +62,9 @@ wasm-bindgen-test = "0.3"
 lto = true
 opt-level = "s"
 codegen-units = 1
+
+[profile.test]
+inherits = "release"
+debug-assertions = true
+overflow-checks = true
+lto = false
