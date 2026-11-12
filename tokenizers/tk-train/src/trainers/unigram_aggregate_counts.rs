@@ -113,7 +113,9 @@ fn public_training_and_trainer_serialization_accept_large_aggregate_counts() {
 fn small_weighted_training_matches_the_actual_expanded_corpus() {
     let mut expanded = trainer();
     expanded
-        .feed(["aa", "aa", "aa", "b", "b"].into_iter(), |s| Ok(vec![s.into()]))
+        .feed(["aa", "aa", "aa", "b", "b"].into_iter(), |s| {
+            Ok(vec![s.into()])
+        })
         .unwrap();
     let mut reference = Unigram::default();
     expanded.train(&mut reference).unwrap();
