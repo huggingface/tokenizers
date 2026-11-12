@@ -9,8 +9,7 @@ authors = ["Arthur Zucker <arthur@huggingface.co>", "Luc Georges <luc@huggingfac
 publish = false
 
 [dependencies]
-# Oracle for backwards compatibility with tokenizers 0.23
-onig = "6.5.1"
-# Pins the unicode version used by onig
-# Pinned to the version released `tokenizers` 0.23.x wheels lock (bindings/python/Cargo.lock).
+# Regex engine of tokenizers 0.23. The tables get their Unicode properties from it.
+onig = "=6.5.1"
+# Same version as the tokenizers 0.23 wheels, so the Unicode data is the same (Unicode 16).
 onig_sys = { version = "=69.9.3", default-features = false }

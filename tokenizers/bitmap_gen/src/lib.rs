@@ -5,9 +5,9 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
-/// The oracle: onig, the regex engine of tokenizers 0.23, answering "is `c` in `prop`?".
+/// Onig, the regex engine of tokenizers 0.23, with one compiled [`onig::Regex`] per Unicode property.
 ///
-/// Fixes the unicode version and ensures backwards-compatibility with tokenizers 0.23
+/// The tables read every property from onig, so they keep its Unicode version (16).
 #[derive(Default)]
 struct Onig(HashMap<&'static str, onig::Regex>);
 
@@ -86,9 +86,7 @@ fn atom(c: char, onig: &mut Onig) -> u8 {
         return 8; // ASCII symbols ($ + < = > ^ ` | ~) that `[^\s\p{L}\p{N}]` / is_punc treats as punct
     }
     if c.is_numeric() {
-        // NumericOther: is_numeric ∖ \p{N}. Std's own Unicode version on purpose, since the Digits
-        // pre-tokenizer of tokenizers 0.23 splits on `char::is_numeric`: a digit newer than onig's
-        // Unicode (U+11DE0) is a digit to Digits, but stays `[^\s\p{L}\p{N}]` to every regex.
+        // NumericOther: digits newer than onig's Unicode (U+11DE0)
         return 11;
     }
     if char_matches(r"\p{S}") {
