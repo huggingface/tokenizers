@@ -176,6 +176,51 @@ pub struct AddedVocabulary {
 
     normalized_vocab: Buckets,
     vocab: Buckets,
+    /// The content each token in `normalized_vocab` was added with, by id.
+    #[cfg(feature = "serialize")]
+    normalized_contents: NormalizedContents,
+}
+
+/// What `AddedVocabulary::normalized_contents` holds, indexed by internal id.
+///
+/// Internal ids are dense, so `ids` is already the perfect hash in front of this, and only the
+/// writer reads it, so nothing ever looks a token up by its content. All that is left to store is
+/// the text. A token whose content is what its matcher holds has an empty entry here: it costs one
+/// `u32`, and an added token is never empty, so the entry cannot be mistaken for a content.
+#[cfg(feature = "serialize")]
+#[derive(Clone, Default)]
+struct NormalizedContents {
+    /// Every content, concatenated in internal id order.
+    text: Box<str>,
+    /// `ends[internal_id]` is where that content stops in `text`. It starts where the previous
+    /// one stops.
+    ends: Box<[u32]>,
+}
+
+#[cfg(feature = "serialize")]
+impl NormalizedContents {
+    /// Takes the contents in internal id order.
+    fn new<'a>(contents: impl ExactSizeIterator<Item = &'a String>) -> Self {
+        let mut text = String::new();
+        let mut ends = Vec::with_capacity(contents.len());
+        for content in contents {
+            text.push_str(content);
+            ends.push(text.len() as u32);
+        }
+        Self {
+            text: text.into(),
+            ends: ends.into(),
+        }
+    }
+
+    fn get(&self, internal_id: u32) -> &str {
+        let internal_id = internal_id as usize;
+        let start = match internal_id {
+            0 => 0,
+            _ => self.ends[internal_id - 1] as usize,
+        };
+        &self.text[start..self.ends[internal_id] as usize]
+    }
 }
 
 /// Renumbers the added tokens 0..n in vocab-id order, and maps between those internal ids and the
@@ -247,6 +292,8 @@ impl AddedVocabulary {
             token_metadata: Box::new([]),
             normalized_vocab: Buckets::new(),
             vocab: Buckets::new(),
+            #[cfg(feature = "serialize")]
+            normalized_contents: NormalizedContents::default(),
         }
     }
 
@@ -290,12 +337,18 @@ impl AddedVocabulary {
             .collect::<AHashMap<String, u32>>()
     }
 
-    /// Get the additional vocabulary with the AddedTokens
+    /// Get the additional vocabulary with the AddedTokens. With the `serialize` feature each has
+    /// the content it was added with; without it a normalized token has its normalized form.
     /// TODO: this will be slow because we rebuild the added tokens
     pub fn get_added_tokens_decoder(&self) -> AHashMap<u32, AddedToken> {
         self.tokens()
             .map(|(token, internal_id)| {
                 let m = &self.token_metadata[internal_id as usize];
+                #[cfg(feature = "serialize")]
+                let token = match self.normalized_contents.get(internal_id) {
+                    "" => token,
+                    content => content.to_owned(),
+                };
                 (
                     self.ids.vocab_id(internal_id),
                     AddedToken {
@@ -365,6 +418,9 @@ impl AddedVocabulary {
             .max(model_size);
 
         let mut entries: BTreeMap<u32, (Vec<u8>, AddedTokenFlags)> = BTreeMap::new();
+        // Same keys as `entries`, so its values come out in internal id order too.
+        #[cfg(feature = "serialize")]
+        let mut normalized_contents: BTreeMap<u32, String> = BTreeMap::new();
         let existing_tokens = self
             .vocab
             .token_bytes()
@@ -372,7 +428,10 @@ impl AddedVocabulary {
             .chain(self.normalized_vocab.token_bytes());
         for (form, internal_id) in existing_tokens {
             let flags = self.token_metadata[internal_id as usize].clone();
-            entries.insert(self.ids.vocab_id(internal_id), (form, flags));
+            let id = self.ids.vocab_id(internal_id);
+            #[cfg(feature = "serialize")]
+            normalized_contents.insert(id, self.normalized_contents.get(internal_id).to_owned());
+            entries.insert(id, (form, flags));
         }
         let mut seen: AHashMap<String, u32> = AHashMap::new();
 
@@ -416,6 +475,15 @@ impl AddedVocabulary {
                 next_id += 1;
                 i
             });
+            #[cfg(feature = "serialize")]
+            normalized_contents.insert(
+                id,
+                if token.content.as_bytes() == form {
+                    String::new()
+                } else {
+                    token.content.clone()
+                },
+            );
             entries.insert(id, (form, flags));
             seen.insert(token.content.clone(), id);
         }
@@ -439,6 +507,10 @@ impl AddedVocabulary {
         self.token_metadata = token_metadata.into();
         self.vocab = vocab;
         self.normalized_vocab = normalized_vocab;
+        #[cfg(feature = "serialize")]
+        {
+            self.normalized_contents = NormalizedContents::new(normalized_contents.values());
+        }
         Ok(total - ignored)
     }
 }
@@ -777,8 +849,8 @@ mod tests {
 
     #[test]
     fn normalized_tokens_are_stored_by_normalized_form() {
-        // The Buckets rewrite doesn't retain the original content of normalized tokens:
-        // they are stored (and decoded) by their normalized form.
+        // Normalized tokens are matched (and decoded) by their normalized form, but keep the
+        // content they were added with: that is what `added_tokens` saves.
         let model = ModelMock::new(&[]);
         let mut vocab = AddedVocabulary::new();
         let normalizer = Lowercase;
@@ -796,13 +868,43 @@ mod tests {
             .unwrap();
 
         let decoder = vocab.get_added_tokens_decoder();
-        // normalized=true → stored under the normalizer output
-        assert!(decoder.values().any(|t| t.content == "hello"));
-        // normalized=false → stored under the original content
-        assert!(decoder.values().any(|t| t.content == "[CLS]"));
+        let content = if cfg!(feature = "serialize") {
+            "Hello"
+        } else {
+            "hello"
+        };
+        assert_eq!(decoder[&0].content, content);
+        assert_eq!(decoder[&1].content, "[CLS]");
+        assert_eq!(vocab.token_to_id("hello"), Some(0));
 
         assert_eq!(vocab.id_to_token_bytes(0).unwrap().0, b"hello");
         assert_eq!(vocab.id_to_token_bytes(1).unwrap().0, b"[CLS]");
+    }
+
+    #[cfg(feature = "serialize")]
+    #[test]
+    fn a_normalized_content_follows_its_token_when_internal_ids_shift() {
+        let model = ModelMock::new(&[("a", 0), ("[CLS]", 1)]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer = Lowercase;
+        for token in [
+            AddedToken::from("Hello", false),
+            // Sorts below `Hello`, whose internal id moves from 0 to 1.
+            AddedToken::from("[CLS]", true),
+        ] {
+            vocab
+                .add_tokens(
+                    [token],
+                    model.get_vocab_size(),
+                    |t| model.token_to_id(t),
+                    Some(&normalizer),
+                )
+                .unwrap();
+        }
+
+        let decoder = vocab.get_added_tokens_decoder();
+        assert_eq!(decoder[&1].content, "[CLS]");
+        assert_eq!(decoder[&2].content, "Hello");
     }
 
     #[test]

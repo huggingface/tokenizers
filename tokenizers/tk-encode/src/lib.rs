@@ -80,6 +80,9 @@
 //!
 //! - **parallelism**: rayon-backed batch encoding.
 //!
+//! - **serialize**: keeps the content normalized added tokens were added with, which only writing
+//!   a config back out reads. `tk-serialize`'s `serialize` feature turns it on.
+//!
 //! - **fancy-regex**: the optional system-regex backend, needed *only* for a genuine regex pattern
 //!   in a `Split` pre-tokenizer or a `Replace` normalizer. The bitcannon-native pre-tokenizers
 //!   (GPT-2, cl100k, o200k, tekken, deepseek, the class family, char-delimiter) need no backend,
