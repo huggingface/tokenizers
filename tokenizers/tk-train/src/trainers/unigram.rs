@@ -187,76 +187,91 @@ impl UnigramTrainer {
         true
     }
 
-    fn finalize(&self, model: Unigram, required_chars: AHashSet<String>) -> Result<Unigram> {
+    fn finalize(
+        &self,
+        model: Unigram,
+        required_chars: AHashSet<String>,
+        byte_fallback: bool,
+    ) -> Result<Unigram> {
+        let mut reserved_tokens = self
+            .special_tokens
+            .iter()
+            .map(|t| (t.content.clone(), 0.0))
+            .collect::<Vec<_>>();
+        if let Some(unk) = &self.unk_token
+            && !reserved_tokens.iter().any(|(token, _)| token == unk)
+        {
+            reserved_tokens.insert(0, (unk.clone(), 0.0));
+        }
+
+        let mut inserted: AHashSet<String> = AHashSet::new();
+        if byte_fallback {
+            reserved_tokens.retain(|(token, _)| inserted.insert(token.clone()));
+            // Byte pieces are model vocabulary, not added special tokens. Reserve
+            // them after EM so corpus-only pruning cannot remove unseen bytes.
+            for byte in 0..=255 {
+                let token = format!("<0x{byte:02X}>");
+                if inserted.insert(token.clone()) {
+                    reserved_tokens.push((token, 0.0));
+                }
+            }
+        }
+        let unk_id = self
+            .unk_token
+            .as_ref()
+            .and_then(|unk| reserved_tokens.iter().position(|(token, _)| token == unk));
+        let learned_vocab_size = if byte_fallback {
+            (self.vocab_size as usize)
+                .checked_sub(reserved_tokens.len())
+                .ok_or(UnigramTrainerError::VocabularyTooSmall)?
+        } else {
+            self.vocab_size as usize - reserved_tokens.len()
+        };
+
         let mut min_score_penalty = 0.0;
         let min_score_penalty_delta = 0.0001;
-
         let mut pieces: Vec<(String, f64)> = vec![];
-        let mut inserted: AHashSet<String> = AHashSet::new();
 
         // We don't want to include the <UNK> that was used to train
         inserted.insert("<UNK>".into());
-
         let existing_pieces: AHashMap<String, f64> = model.iter().cloned().collect();
         for c in required_chars {
+            if byte_fallback && inserted.contains(&c) {
+                continue;
+            }
             if let Some(t) = existing_pieces.get(&c) {
                 inserted.insert(c.clone());
                 pieces.push((c, *t));
             } else {
                 let score = model.min_score + min_score_penalty;
-
                 inserted.insert(c.clone());
                 pieces.push((c, score));
                 min_score_penalty += min_score_penalty_delta;
             }
         }
-
-        let (unk_id, need_add_unk) = if let Some(ref unk) = self.unk_token {
-            let unk_id = self
-                .special_tokens
-                .iter()
-                .enumerate()
-                .find_map(|(i, t)| if t.content == *unk { Some(i) } else { None });
-            match unk_id {
-                Some(id) => (Some(id), false),
-                None => (Some(0), true),
-            }
-        } else {
-            (None, false)
-        };
-
-        let vocab_size_without_special_tokens = if need_add_unk {
-            self.vocab_size as usize - self.special_tokens.len() - 1
-        } else {
-            self.vocab_size as usize - self.special_tokens.len()
-        };
+        if byte_fallback && pieces.len() > learned_vocab_size {
+            return Err(Box::new(UnigramTrainerError::VocabularyTooSmall));
+        }
         for (token, score) in model.iter() {
+            if byte_fallback && pieces.len() == learned_vocab_size {
+                break;
+            }
             if inserted.contains::<str>(token) {
                 continue;
             }
             inserted.insert(token.to_string());
             pieces.push((token.to_string(), if score.is_nan() { 0.0 } else { *score }));
 
-            if pieces.len() == vocab_size_without_special_tokens {
+            if pieces.len() == learned_vocab_size {
                 break;
             }
         }
         pieces.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
 
-        // Insert the necessary tokens
-        let mut special_tokens = self
-            .special_tokens
-            .iter()
-            .map(|t| (t.content.clone(), 0.0))
-            .collect::<Vec<_>>();
-        if need_add_unk {
-            special_tokens.insert(0, (self.unk_token.clone().unwrap(), 0.0));
-        }
-
         Unigram::from(
-            special_tokens.into_iter().chain(pieces).collect(),
+            reserved_tokens.into_iter().chain(pieces).collect(),
             unk_id,
-            model.byte_fallback(),
+            byte_fallback,
         )
     }
 
@@ -680,7 +695,7 @@ impl UnigramTrainer {
         self.finalize_progress(&progress, expected_updates);
 
         // Finally, adjusts the size of sentencepices to be |vocab_size|.
-        *model = self.finalize(new_model, required_chars)?;
+        *model = self.finalize(new_model, required_chars, model.byte_fallback())?;
 
         Ok(self.special_tokens.clone())
     }
@@ -887,6 +902,150 @@ mod tests {
         let mut pieces = unigram.iter();
         assert_eq!(pieces.next(), Some(&("[SEP]".into(), 0.0)));
         assert_eq!(pieces.next(), Some(&("[CLS]".into(), 0.0)));
+    }
+
+    fn feed_byte_fallback_corpus(trainer: &mut UnigramTrainer) {
+        trainer
+            .feed(["abab", "baba", "abba", "baab"].into_iter(), |text| {
+                Ok(vec![text.to_owned()])
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn byte_fallback_training_keeps_all_bytes_and_encodes_unseen_text() {
+        use tk_encode::pipeline::Model;
+
+        for with_seed_bytes in [false, true] {
+            let mut vocab = vec![("<unk>".to_owned(), 0.0)];
+            if with_seed_bytes {
+                vocab.extend((0..=255).map(|byte| (format!("<0x{byte:02X}>"), 0.0)));
+            }
+            let mut model = Unigram::from(vocab, Some(0), true).unwrap();
+            let mut trainer = UnigramTrainer::builder()
+                .show_progress(false)
+                .vocab_size(260)
+                .unk_token(Some("<unk>".into()))
+                .special_tokens(vec![AddedToken::from("<pad>", true)])
+                .build()
+                .unwrap();
+            feed_byte_fallback_corpus(&mut trainer);
+            let added = trainer.train(&mut model).unwrap();
+
+            assert!(model.byte_fallback());
+            assert_eq!(model.len(), 260);
+            assert_eq!(added, trainer.special_tokens);
+            for byte in 0..=255 {
+                assert!(model.token_to_id(&format!("<0x{byte:02X}>")).is_some());
+            }
+            for (text, pieces) in [
+                ("河", vec!["<0xE6>", "<0xB2>", "<0xB3>"]),
+                ("é", vec!["<0xC3>", "<0xA9>"]),
+            ] {
+                let tokens = model.tokenize(text).unwrap();
+                let ids: Vec<_> = pieces
+                    .iter()
+                    .map(|piece| model.token_to_id(piece).unwrap())
+                    .collect();
+                assert_eq!(tokens.iter().map(|token| token.id).collect::<Vec<_>>(), ids);
+                assert_eq!(
+                    tokens
+                        .iter()
+                        .map(|token| token.value.as_str())
+                        .collect::<Vec<_>>(),
+                    pieces
+                );
+                assert!(tokens.iter().all(|token| token.offsets == (0, text.len())));
+                let mut scratch = Model::init_scratch(&model);
+                for _ in 0..2 {
+                    let mut output = vec![];
+                    Model::tokenize_pipeline(&model, text, &mut scratch, &mut output).unwrap();
+                    assert_eq!(
+                        output.iter().map(|token| token.id()).collect::<Vec<_>>(),
+                        ids
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn byte_fallback_training_rejects_insufficient_capacity() {
+        let mut trainer = UnigramTrainer::builder()
+            .show_progress(false)
+            .vocab_size(259)
+            .unk_token(Some("<unk>".into()))
+            .special_tokens(vec![AddedToken::from("<pad>", true)])
+            .build()
+            .unwrap();
+        feed_byte_fallback_corpus(&mut trainer);
+        let mut model = Unigram::from(vec![("<unk>".into(), 0.0)], Some(0), true).unwrap();
+        let error = trainer.train(&mut model).unwrap_err();
+        assert!(matches!(
+            error.downcast_ref(),
+            Some(UnigramTrainerError::VocabularyTooSmall)
+        ));
+        assert!(model.byte_fallback());
+        assert_eq!(model.len(), 1);
+    }
+
+    #[test]
+    fn byte_fallback_training_counts_overlapping_reservations_once() {
+        for (unk, capacity) in [("<unk>", 260), ("a", 259)] {
+            let mut trainer = UnigramTrainer::builder()
+                .show_progress(false)
+                .vocab_size(capacity)
+                .unk_token(Some(unk.into()))
+                .special_tokens(vec![
+                    AddedToken::from("<pad>", true),
+                    AddedToken::from("<0x00>", true),
+                    AddedToken::from(unk, true),
+                    AddedToken::from("a", true),
+                ])
+                .build()
+                .unwrap();
+            feed_byte_fallback_corpus(&mut trainer);
+            let mut model = Unigram::from(vec![(unk.into(), 0.0)], Some(0), true).unwrap();
+            trainer.train(&mut model).unwrap();
+            let unique: AHashSet<_> = model.vocab().iter().map(|(piece, _)| piece).collect();
+            assert_eq!(model.len(), capacity as usize);
+            assert_eq!(unique.len(), model.len());
+            assert_eq!(model.token_to_id(unk), Some(2));
+            assert_eq!(model.token_to_id("<pad>"), Some(0));
+            assert_eq!(model.token_to_id("<0x00>"), Some(1));
+            assert!((0..=255).all(|byte| model.token_to_id(&format!("<0x{byte:02X}>")).is_some()));
+        }
+    }
+
+    #[test]
+    fn training_without_byte_fallback_keeps_ordinary_segmentation() {
+        let mut trainer = UnigramTrainer::builder()
+            .show_progress(false)
+            .unk_token(Some("<unk>".into()))
+            .build()
+            .unwrap();
+        feed_byte_fallback_corpus(&mut trainer);
+        let mut model = Unigram::default();
+        trainer.train(&mut model).unwrap();
+        assert!(!model.byte_fallback());
+        assert!((0..=255).all(|byte| model.token_to_id(&format!("<0x{byte:02X}>")).is_none()));
+        let tokens = model.tokenize("abab").unwrap();
+        assert_eq!(
+            tokens
+                .iter()
+                .map(|token| token.value.as_str())
+                .collect::<String>(),
+            "abab"
+        );
+        assert!(
+            tokens
+                .iter()
+                .all(|token| token.id != model.token_to_id("<unk>").unwrap())
+        );
+        assert_eq!(
+            model.tokenize("河").unwrap()[0].id,
+            model.token_to_id("<unk>").unwrap()
+        );
     }
 
     #[test]
