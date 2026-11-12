@@ -1,6 +1,6 @@
 //! Argument and return types whose type hints pyo3 cannot derive
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
 
 use numpy::{Element, PyArray1, PyReadonlyArray1};
@@ -12,6 +12,19 @@ use pyo3::{Borrowed, PyTypeInfo, type_hint_identifier, type_hint_subscript, type
 
 use crate::added_token::AddedToken;
 use crate::encoding::Encoding;
+
+/// A model vocabulary, typed `dict[str, int]` to accept `get_vocab()`'s return type.
+pub struct VocabDict(pub HashMap<String, u32>);
+
+impl<'py> FromPyObject<'_, 'py> for VocabDict {
+    type Error = PyErr;
+
+    const INPUT_TYPE: PyStaticExpr = <HashMap<String, u32> as IntoPyObject<'static>>::OUTPUT_TYPE;
+
+    fn extract(obj: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+        obj.extract().map(Self)
+    }
+}
 
 /// A 1-D numpy array, typed `NDArray[numpy.<dtype>]`.
 ///

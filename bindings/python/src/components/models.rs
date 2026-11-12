@@ -7,6 +7,7 @@ use serde_json::json;
 
 use crate::components::component_spec::ComponentSpec;
 use crate::error::err;
+use crate::type_hints::VocabDict;
 
 use super::macros::component_kind;
 use super::{ComponentKind, JsonFieldsExt};
@@ -27,7 +28,7 @@ component_kind! {
 /// A vocabulary: `{token: id}`, or the path of a file holding one.
 #[derive(FromPyObject)]
 enum Vocab {
-    Dict(HashMap<String, u32>),
+    Dict(VocabDict),
     Path(PathBuf),
 }
 
@@ -36,7 +37,7 @@ impl Vocab {
     fn read_json(vocab: Option<Self>) -> PyResult<HashMap<String, u32>> {
         match vocab {
             None => Ok(HashMap::new()),
-            Some(Self::Dict(vocab)) => Ok(vocab),
+            Some(Self::Dict(vocab)) => Ok(vocab.0),
             Some(Self::Path(path)) => serde_json::from_str(&fs::read_to_string(path)?).map_err(err),
         }
     }
@@ -46,7 +47,7 @@ impl Vocab {
     fn read_lines(vocab: Option<Self>) -> PyResult<HashMap<String, u32>> {
         match vocab {
             None => Ok(HashMap::new()),
-            Some(Self::Dict(vocab)) => Ok(vocab),
+            Some(Self::Dict(vocab)) => Ok(vocab.0),
             Some(Self::Path(path)) => {
                 let text = fs::read_to_string(path)?;
                 let lines = text.lines().zip(0..);

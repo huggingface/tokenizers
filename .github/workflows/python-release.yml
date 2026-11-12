@@ -70,7 +70,7 @@ jobs:
           uvx twine check --strict dist/*
       - name: build from the sdist
         run: |
-          uv venv --python 3.14 .venv
+          uv venv --python 3.15 .venv
           source .venv/bin/activate
           
           # --no-binary tokenizers: refuse any wheel for this name, so the tarball is what gets built.
@@ -95,38 +95,56 @@ jobs:
       matrix:
         config:
           # ---- Linux glibc, abi3 (one wheel for 3.10+) -------------------------------------
-          - { runner: ubuntu-24.04,     target: x86_64,  manylinux: auto, python: "3.14" }
-          - { runner: ubuntu-24.04-arm, target: aarch64, manylinux: auto, python: "3.14" }
-          - { runner: ubuntu-24.04,     target: i686,    manylinux: auto, python: "3.14" }
-          - { runner: ubuntu-24.04,     target: armv7,   manylinux: auto, python: "3.14" }
-          - { runner: ubuntu-24.04,     target: ppc64le, manylinux: auto, python: "3.14" }
-          - { runner: ubuntu-24.04,     target: s390x,   manylinux: auto, python: "3.14" }
-          - { runner: ubuntu-24.04,     target: riscv64, manylinux: auto, python: "3.14" }
+          - { runner: ubuntu-24.04,     target: x86_64,  manylinux: auto, python: "3.15" }
+          - { runner: ubuntu-24.04-arm, target: aarch64, manylinux: auto, python: "3.15" }
+          - { runner: ubuntu-24.04,     target: i686,    manylinux: auto, python: "3.15" }
+          - { runner: ubuntu-24.04,     target: armv7,   manylinux: auto, python: "3.15" }
+          - { runner: ubuntu-24.04,     target: ppc64le, manylinux: auto, python: "3.15" }
+          - { runner: ubuntu-24.04,     target: s390x,   manylinux: auto, python: "3.15" }
+          - { runner: ubuntu-24.04,     target: riscv64, manylinux: auto, python: "3.15" }
 
           # ---- Linux glibc, free-threaded (cp314t) ------------------------------------------
           - { runner: ubuntu-24.04,     target: x86_64,  manylinux: auto, python: "3.14t" }
           - { runner: ubuntu-24.04-arm, target: aarch64, manylinux: auto, python: "3.14t" }
 
+          # ---- Linux glibc, abi3t (one wheel for free-threaded 3.15+) ----------------------
+          - { runner: ubuntu-24.04,     target: x86_64,  manylinux: auto, python: "3.15t" }
+          - { runner: ubuntu-24.04-arm, target: aarch64, manylinux: auto, python: "3.15t" }
+          - { runner: ubuntu-24.04,     target: i686,    manylinux: auto, python: "3.15t" }
+          - { runner: ubuntu-24.04,     target: armv7,   manylinux: auto, python: "3.15t" }
+          - { runner: ubuntu-24.04,     target: ppc64le, manylinux: auto, python: "3.15t" }
+          - { runner: ubuntu-24.04,     target: s390x,   manylinux: auto, python: "3.15t" }
+          - { runner: ubuntu-24.04,     target: riscv64, manylinux: auto, python: "3.15t" }
+
           # ---- Linux musl ------------------------------------------------------------------
-          - { runner: ubuntu-24.04, target: x86_64,  manylinux: musllinux_1_2, python: "3.14" }
-          - { runner: ubuntu-24.04, target: aarch64, manylinux: musllinux_1_2, python: "3.14" }
-          - { runner: ubuntu-24.04, target: i686,    manylinux: musllinux_1_2, python: "3.14" }
-          - { runner: ubuntu-24.04, target: armv7,   manylinux: musllinux_1_2, python: "3.14" }
+          - { runner: ubuntu-24.04, target: x86_64,  manylinux: musllinux_1_2, python: "3.15" }
+          - { runner: ubuntu-24.04, target: aarch64, manylinux: musllinux_1_2, python: "3.15" }
+          - { runner: ubuntu-24.04, target: i686,    manylinux: musllinux_1_2, python: "3.15" }
+          - { runner: ubuntu-24.04, target: armv7,   manylinux: musllinux_1_2, python: "3.15" }
           - { runner: ubuntu-24.04, target: x86_64,  manylinux: musllinux_1_2, python: "3.14t" }
           - { runner: ubuntu-24.04, target: aarch64, manylinux: musllinux_1_2, python: "3.14t" }
+          - { runner: ubuntu-24.04, target: x86_64,  manylinux: musllinux_1_2, python: "3.15t" }
+          - { runner: ubuntu-24.04, target: aarch64, manylinux: musllinux_1_2, python: "3.15t" }
+          - { runner: ubuntu-24.04, target: i686,    manylinux: musllinux_1_2, python: "3.15t" }
+          - { runner: ubuntu-24.04, target: armv7,   manylinux: musllinux_1_2, python: "3.15t" }
 
           # ---- macOS -----------------------------------------------------------------------
           # macos-latest is macOS 26 on arm64; macos-15-intel is the only current x86_64 box.
-          - { runner: macos-15-intel, target: x86_64,  python: "3.14" }
-          - { runner: macos-latest,   target: aarch64, python: "3.14" }
+          - { runner: macos-15-intel, target: x86_64,  python: "3.15" }
+          - { runner: macos-latest,   target: aarch64, python: "3.15" }
           - { runner: macos-15-intel, target: x86_64,  python: "3.14t" }
           - { runner: macos-latest,   target: aarch64, python: "3.14t" }
+          - { runner: macos-15-intel, target: x86_64,  python: "3.15t" }
+          - { runner: macos-latest,   target: aarch64, python: "3.15t" }
 
           # ---- Windows ---------------------------------------------------------------------
-          - { runner: windows-latest, target: x86_64,  python: "3.14" }
-          - { runner: windows-latest, target: i686,    python: "3.14",  python-arch: x86 }
-          - { runner: windows-11-arm, target: aarch64, python: "3.14",  python-arch: arm64 }
+          - { runner: windows-latest, target: x86_64,  python: "3.15" }
+          - { runner: windows-latest, target: i686,    python: "3.15",  python-arch: x86 }
+          - { runner: windows-11-arm, target: aarch64, python: "3.15",  python-arch: arm64 }
           - { runner: windows-latest, target: x86_64,  python: "3.14t" }
+          - { runner: windows-latest, target: x86_64,  python: "3.15t" }
+          - { runner: windows-latest, target: i686,    python: "3.15t", python-arch: x86 }
+          - { runner: windows-11-arm, target: aarch64, python: "3.15t", python-arch: arm64 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
@@ -151,8 +169,13 @@ jobs:
             --compatibility pypi
             --out dist
             -i ${{ matrix.config.python }}
+            ${{ endsWith(matrix.config.python, 't') && '--features pyo3/abi3t-py315' || '' }}
         env:
           RUSTFLAGS: ${{ runner.os == 'macOS' && '-C link-arg=-undefined -C link-arg=dynamic_lookup' || '' }}
+      - name: restrict abi3t wheels to free-threaded Python
+        if: endsWith(matrix.config.python, 't') && matrix.config.python != '3.14t'
+        # Keep GIL-enabled Python on the faster abi3 wheel.
+        run: uvx wheel tags --abi-tag=abi3t --remove dist/*-cp315-abi3.abi3t-*.whl
       - name: upload wheels
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
@@ -181,19 +204,23 @@ jobs:
         config:
           # ---- Linux x86_64 ------------------------------------------------------------------
           - { runner: ubuntu-latest,    python: "3.10" }
-          - { runner: ubuntu-latest,    python: "3.14" }
           - { runner: ubuntu-latest,    python: "3.14t" }
+          - { runner: ubuntu-latest,    python: "3.15" }
+          - { runner: ubuntu-latest,    python: "3.15t" }
           # ---- macOS arm64 -------------------------------------------------------------------
           - { runner: macos-latest,     python: "3.10" }
-          - { runner: macos-latest,     python: "3.14" }
           - { runner: macos-latest,     python: "3.14t" }
+          - { runner: macos-latest,     python: "3.15" }
+          - { runner: macos-latest,     python: "3.15t" }
           # ---- Other native architectures ----------------------------------------------------
           - { runner: ubuntu-24.04-arm, python: "3.10" }
-          - { runner: ubuntu-24.04-arm, python: "3.14" }
           - { runner: ubuntu-24.04-arm, python: "3.14t" }
+          - { runner: ubuntu-24.04-arm, python: "3.15" }
+          - { runner: ubuntu-24.04-arm, python: "3.15t" }
           - { runner: macos-15-intel,   python: "3.10" }
-          - { runner: macos-15-intel,   python: "3.14" }
           - { runner: macos-15-intel,   python: "3.14t" }
+          - { runner: macos-15-intel,   python: "3.15" }
+          - { runner: macos-15-intel,   python: "3.15t" }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
@@ -230,12 +257,6 @@ jobs:
 
           # Download data
           make test-data HF="uvx --from huggingface_hub hf"
-
-          # Disable the GIL on the free-threaded interpreter, so a module that re-enables it fails
-          # instead of passing single-threaded.
-          if [[ "${{ matrix.config.python }}" == *t ]]; then
-            export PYTHON_GIL=0
-          fi
 
           # Run tests
           pytest tests -m "not network"
