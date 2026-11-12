@@ -330,16 +330,92 @@ fn rejects_unk_token_missing_from_vocab() {
     );
 }
 
+fn byte_fallback_config(vocab: Vocab) -> BpeConfig {
+    BpeConfig {
+        vocab,
+        merges: vec![],
+        byte_fallback: true,
+        ..Default::default()
+    }
+}
+
+/// The bytes `config` is refused for. Panics if it loads or fails for another reason.
+fn missing_byte_codes(config: BpeConfig) -> Vec<u8> {
+    let Err(error) = PipelineBPE::from_config(config) else {
+        panic!("expected ByteFallbackOutOfVocabulary, but the config loaded");
+    };
+    match error.downcast_ref::<Error>() {
+        Some(Error::ByteFallbackOutOfVocabulary(bytes)) => bytes.clone(),
+        _ => panic!("expected ByteFallbackOutOfVocabulary, got: {error}"),
+    }
+}
+
 #[test]
-fn byte_fallback_with_missing_codes_errors() {
-    // Incomplete <0xNN> coverage must be a build error, not a panic.
-    assert!(
-        hello(BpeConfig {
-            byte_fallback: true,
-            ..Default::default()
-        })
-        .is_err()
+fn byte_fallback_without_any_byte_token_falls_back_to_unk() {
+    let vocab = v(&[("h", 300), ("<unk>", 400)]);
+    let pipeline = PipelineBPE::from_config(BpeConfig {
+        unk_token: Some("<unk>".into()),
+        ..byte_fallback_config(vocab)
+    })
+    .unwrap();
+    assert_eq!(pipeline_ids(&pipeline, "hé"), vec![300, 400]);
+}
+
+#[test]
+fn byte_fallback_loads_vocab_missing_an_ascii_code_it_holds_literally() {
+    // SigLIP 2's vocab has "\t" but no <0x09>. A tab never falls back, so only the other bytes
+    // are checked.
+    let mut vocab = byte_fallback_vocab();
+    vocab.remove("<0x09>");
+    vocab.insert("\t".into(), 500);
+    let pipeline = PipelineBPE::from_config(byte_fallback_config(vocab)).unwrap();
+    assert_eq!(pipeline_ids(&pipeline, "h\té"), vec![300, 500, 0xC3, 0xA9]);
+}
+
+#[test]
+fn byte_fallback_lists_every_missing_code() {
+    let mut vocab = byte_fallback_vocab();
+    vocab.remove("<0x09>");
+    vocab.remove("<0x0A>");
+    assert_eq!(
+        missing_byte_codes(byte_fallback_config(vocab)),
+        vec![0x09, 0x0A]
     );
+}
+
+#[test]
+fn byte_fallback_missing_non_ascii_code_errors() {
+    // The character U+00A9 is two bytes in UTF-8 (C2 A9), so its token is not the byte 0xA9.
+    let mut vocab = byte_fallback_vocab();
+    vocab.remove("<0xA9>");
+    vocab.insert("\u{a9}".into(), 501);
+    assert_eq!(missing_byte_codes(byte_fallback_config(vocab)), vec![0xA9]);
+}
+
+#[test]
+fn byte_fallback_missing_code_with_affixes_errors() {
+    // A tab ending a word is looked up as `\t</w>`, which can miss and fall back.
+    let mut vocab = byte_fallback_vocab();
+    vocab.remove("<0x09>");
+    vocab.insert("\t".into(), 500);
+    let config = BpeConfig {
+        end_of_word_suffix: Some("</w>".into()),
+        ..byte_fallback_config(vocab)
+    };
+    assert_eq!(missing_byte_codes(config), vec![0x09]);
+}
+
+#[test]
+fn byte_fallback_missing_code_with_prefix_errors() {
+    // A tab inside a word is looked up as `##\t`, which can miss and fall back.
+    let mut vocab = byte_fallback_vocab();
+    vocab.remove("<0x09>");
+    vocab.insert("\t".into(), 500);
+    let config = BpeConfig {
+        continuing_subword_prefix: Some("##".into()),
+        ..byte_fallback_config(vocab)
+    };
+    assert_eq!(missing_byte_codes(config), vec![0x09]);
 }
 
 #[test]

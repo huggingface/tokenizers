@@ -252,16 +252,44 @@ impl PipelineBPE {
             };
             let unk_token = unk_token.map(|external| to_internal(external).unwrap_or(NO_SYMBOL));
             let fallback_lookup = if byte_fallback {
-                let mut fallback_lookup = [0u32; 256];
+                let mut fallback_lookup = [NO_SYMBOL; 256];
                 for b in 0u8..=255 {
                     let code = format!("<{b:#04X}>");
-                    let external = vocab
-                        .token_to_id(&code)
-                        .ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
-                    fallback_lookup[b as usize] =
-                        to_internal(external).ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
+                    if let Some(internal) = vocab.token_to_id(&code).and_then(to_internal) {
+                        fallback_lookup[b as usize] = internal;
+                    }
                 }
-                Some(fallback_lookup)
+
+                // NVIDIA NeMo models such as Parakeet set `byte_fallback` with no `<0xNN>` token at all.
+                // In this case, we turn off the byte fallback at load time.
+                if fallback_lookup.iter().all(|&id| id == NO_SYMBOL) {
+                    None
+                } else {
+                    // Some model don't store fallback tokens for single-bytes characters that
+                    // are already in the vocab. For example, Gemma doesn't store a <0x09> fallback token (`\t`).
+                    // It's a valid configuration because the byte fallback only triggers when
+                    // a character is missing from the vocabulary.
+
+                    let has_affixes = !prefix.is_empty() || !suffix.is_empty();
+                    let mut missing = Vec::new();
+                    for b in 0u8..=255 {
+                        if fallback_lookup[b as usize] != NO_SYMBOL {
+                            continue;
+                        }
+                        let literal = (b.is_ascii() && !has_affixes)
+                            .then(|| vocab.token_to_id(&(b as char).to_string()))
+                            .flatten()
+                            .and_then(to_internal);
+                        match literal {
+                            Some(internal) => fallback_lookup[b as usize] = internal,
+                            None => missing.push(b),
+                        }
+                    }
+                    if !missing.is_empty() {
+                        return Err(Error::ByteFallbackOutOfVocabulary(missing).into());
+                    }
+                    Some(fallback_lookup)
+                }
             } else {
                 None
             };
