@@ -30,3 +30,4 @@ jobs:
       package_path: tokenizers/bindings/python/
       version_tag_suffix: bindings/python/py_src/
       install_rust: true
+      python_version: "3.11"
