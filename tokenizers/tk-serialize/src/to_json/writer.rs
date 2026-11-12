@@ -99,7 +99,7 @@ impl Out {
     }
 
     #[cfg(feature = "unigram")]
-    /// Behind `unigram` because a Unigram score is the only float a `tokenizer.json` holds.
+    /// Behind `unigram` for vocabulary scores and the optional sampling temperature.
     pub(super) fn f64(&mut self, value: f64) -> Result<()> {
         let literal = float_literal(value)?;
         self.sep();

@@ -56,6 +56,13 @@ pub(super) fn write_model(out: &mut Out, model: &PipelineModel) -> Result<()> {
             }
             out.arr_close();
             out.field_bool("byte_fallback", unigram.byte_fallback());
+            if let Some(alpha) = unigram.alpha {
+                out.key("alpha");
+                out.f64(alpha)?;
+            }
+            if let Some(nbest_size) = unigram.nbest_size {
+                out.field_usize("nbest_size", nbest_size);
+            }
             out.obj_close();
         }
         #[cfg(feature = "wordpiece")]

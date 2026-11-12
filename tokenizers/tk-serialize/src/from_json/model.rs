@@ -137,7 +137,24 @@ pub(super) fn read_unigram(cfg: &Json<'_>) -> Result<tk_encode::models::unigram:
         .field("byte_fallback")
         .and_then(Json::as_bool)
         .unwrap_or(false);
-    tk_encode::models::unigram::Unigram::from(vocab, unk_id, byte_fallback)
+    let mut model = tk_encode::models::unigram::Unigram::from(vocab, unk_id, byte_fallback)?;
+    model.alpha = cfg
+        .field("alpha")
+        .map(|value| {
+            value.as_f64().ok_or_else(|| -> tk_encode::Error {
+                "Unigram `alpha` is not a number".into()
+            })
+        })
+        .transpose()?;
+    model.nbest_size = cfg
+        .field("nbest_size")
+        .map(|value| {
+            value.as_usize().ok_or_else(|| -> tk_encode::Error {
+                "Unigram `nbest_size` is not a usable size".into()
+            })
+        })
+        .transpose()?;
+    Ok(model)
 }
 
 #[cfg(feature = "wordlevel")]
