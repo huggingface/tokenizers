@@ -98,6 +98,9 @@ const TEXTS: &[&str] = &[
     "a\u{4}b\u{b}c",
     "\u{4}\u{b}",
     "a\u{40000}b",
+    // A digit and a symbol new in Unicode 17.
+    " \u{11DE0}",
+    " \u{1FAEA}",
 ];
 
 /// [`TEXTS`] plus inputs long enough for the parallel encoder and the hot/cold queue to take over.
@@ -390,4 +393,9 @@ fn smollm2_135m() {
 #[test]
 fn bloomz_560m() {
     assert_matches_released("bigscience/bloomz-560m", "fixtures/models/bloomz-560m.json");
+}
+
+#[test]
+fn deepseek_v4() {
+    assert_matches_released("deepseek-v4", "deepseek-v4.json");
 }
