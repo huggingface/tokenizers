@@ -444,7 +444,11 @@ impl<'a> Lattice<'a> {
         let mut probs: Vec<f64> = Vec::with_capacity(nbest_paths.len());
         for p in &nbest_paths {
             let path_score: f64 = p.iter().map(|node| node.borrow().score).sum();
-            probs.push((theta * path_score).exp());
+            probs.push(theta * path_score);
+        }
+        let max_score = probs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        for prob in &mut probs {
+            *prob = (*prob - max_score).exp();
         }
 
         if let Ok(dist) = WeightedIndex::new(&probs) {
