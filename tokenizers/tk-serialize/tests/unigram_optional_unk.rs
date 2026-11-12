@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use tk_encode::models::unigram::Unigram;
-use tk_encode::pipeline::{EncodeOptions, PipelineModel, PipelineTokenizer};
+use tk_encode::pipeline::{EncodeOptions, PipelineModel, PipelinePreTokenizer, PipelineTokenizer};
 use tk_encode::vocab::bucket_added_vocabulary::AddedVocabulary;
 
 fn model(nbest: Option<usize>, alpha: Option<f64>) -> Unigram {
@@ -72,7 +72,7 @@ fn pipeline_sampling_without_an_unknown_id_emits_complete_input() {
         let tokenizer = PipelineTokenizer::from_parts(
             AddedVocabulary::new(),
             Vec::new(),
-            Default::default(),
+            PipelinePreTokenizer::None,
             PipelineModel::Unigram(model(nbest, Some(1.0))),
             Default::default(),
             None,
