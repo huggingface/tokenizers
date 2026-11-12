@@ -45,9 +45,9 @@ impl Decoder for CTC {
             .filter_map(|token| {
                 let mut replaced = token.replace(&self.pad_token, "");
                 if self.cleanup {
-                    replaced =
-                        wordpiece::cleanup(&replaced).replace(&self.word_delimiter_token, " ");
+                    replaced = wordpiece::cleanup(&replaced);
                 }
+                replaced = replaced.replace(&self.word_delimiter_token, " ");
                 if replaced.is_empty() {
                     None
                 } else {
