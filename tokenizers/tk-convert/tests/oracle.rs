@@ -101,6 +101,9 @@ const TEXTS: &[&str] = &[
     "a\u{4}b\u{b}c",
     "\u{4}\u{b}",
     "a\u{40000}b",
+    // A digit and a symbol new in Unicode 17.
+    " \u{11DE0}",
+    " \u{1FAEA}",
 ];
 
 /// [`TEXTS`] plus inputs long enough for the parallel encoder and the hot/cold queue to take over.
@@ -385,4 +388,9 @@ fn parakeet_tdt_0_6b_v3() {
         "nvidia/parakeet-tdt-0.6b-v3",
         "fixtures/models/parakeet-tdt-0.6b-v3.json",
     );
+}
+
+#[test]
+fn deepseek_v4() {
+    assert_matches_released("deepseek-v4", "deepseek-v4.json");
 }
