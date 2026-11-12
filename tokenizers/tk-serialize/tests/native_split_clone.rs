@@ -1,7 +1,8 @@
 use serde_json::json;
 use std::collections::BTreeMap;
+use tk_encode::models::bpe::{BpeConfig, PipelineBPE};
 use tk_encode::pipeline::{
-    EncodeOptions, PipelineTokenizer, PreTokenizer, PreTokenizerScratch,
+    EncodeOptions, PipelineModel, PipelineTokenizer, PreTokenizer, PreTokenizerScratch,
 };
 use tk_encode::pre_tokenizers::split::{Search, Split, SplitPattern};
 use tk_encode::tokenizer::SplitDelimiterBehavior;
@@ -71,7 +72,13 @@ fn cloned_canonical_deepseek_sequence_remains_usable_in_a_pipeline() {
         AddedVocabulary::new(),
         Vec::new(),
         original.get_pre_tokenizer().clone(),
-        original.get_model().clone(),
+        PipelineModel::BPE(
+            PipelineBPE::from_config(BpeConfig {
+                vocab: original.get_model().get_vocab().into_iter().collect(),
+                ..Default::default()
+            })
+            .unwrap(),
+        ),
         Default::default(),
         None,
         BTreeMap::new(),
@@ -79,7 +86,10 @@ fn cloned_canonical_deepseek_sequence_remains_usable_in_a_pipeline() {
         None,
     );
     assert_eq!(encode(&cloned, "hello123456\n"), expected);
-    assert_eq!(encode(&cloned, "123456hello"), [4, 5, 6, 7, 8, 9, 0, 1, 2, 2, 3]);
+    assert_eq!(
+        encode(&cloned, "123456hello"),
+        [4, 5, 6, 7, 8, 9, 0, 1, 2, 2, 3]
+    );
 }
 
 #[test]
