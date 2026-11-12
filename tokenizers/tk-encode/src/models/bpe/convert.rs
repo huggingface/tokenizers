@@ -190,18 +190,7 @@ impl PipelineBPE {
         } else {
             match &self.atoms {
                 Atoms::Bytes => convert_bytes(&self.tables, sequence.as_bytes(), sink),
-                Atoms::Chars {
-                    byte_fallback,
-                    unk_token,
-                    fuse_unk,
-                } => convert_chars(
-                    &self.tables,
-                    byte_fallback.as_ref(),
-                    *unk_token,
-                    *fuse_unk,
-                    sequence,
-                    sink,
-                ),
+                Atoms::Chars { .. } => convert_chars(&self.tables, &self.atoms, sequence, sink),
             }
         }
     }
@@ -242,9 +231,7 @@ fn convert_bytes<M: SinkMode>(tables: &BpeTables, bytes: &[u8], sink: &mut Symbo
 /// of one character has a fold entry, so there is no byte decomposition to do here.
 fn convert_chars<M: SinkMode>(
     tables: &BpeTables,
-    byte_fallback: Option<&[u32; 256]>,
-    unk_token: Option<u32>,
-    fuse_unk: bool,
+    atoms: &Atoms,
     sequence: &str,
     sink: &mut SymbolSink<M>,
 ) {
@@ -254,19 +241,8 @@ fn convert_chars<M: SinkMode>(
         if symbol != NO_SYMBOL {
             in_unk_run = false;
             sink.push(tables, symbol);
-            continue;
-        }
-        if let Some(fallback) = byte_fallback {
-            sink.push_char_bytes(tables, fallback, character);
-            in_unk_run = false;
-            continue;
-        }
-        if let Some(unk) = unk_token {
-            // with fuse_unk the run already emitted its unk, so this character adds nothing
-            if !(fuse_unk && in_unk_run) {
-                sink.push(tables, unk);
-            }
-            in_unk_run = true;
+        } else {
+            push_unknown(tables, atoms, &mut in_unk_run, character, sink);
         }
     }
 }
@@ -313,25 +289,23 @@ fn convert_affixed<M: SinkMode>(
                 in_unk_run = false;
                 sink.push(tables, symbol);
             }
-            None => in_unk_run = push_unknown(tables, atoms, character, in_unk_run, sink),
+            None => push_unknown(tables, atoms, &mut in_unk_run, character, sink),
         }
     }
 }
 
-/// A character with no atom of its own: bytes if the model has `byte_fallback`, else `unk`. Returns
-/// whether the character is part of a run of unknown characters, which `fuse_unk` emits once.
+/// A character with no atom of its own: bytes if the model has `byte_fallback`, else `unk`.
+/// `in_unk_run` is true while the characters just before were all turned into `unk`.
+#[inline(always)]
 fn push_unknown<M: SinkMode>(
     tables: &BpeTables,
     atoms: &Atoms,
+    in_unk_run: &mut bool,
     character: char,
-    in_unk_run: bool,
     sink: &mut SymbolSink<M>,
-) -> bool {
+) {
     match atoms {
-        Atoms::Bytes => {
-            sink.push_char_bytes(tables, &tables.byte_internal, character);
-            false
-        }
+        Atoms::Bytes => sink.push_char_bytes(tables, &tables.byte_internal, character),
         Atoms::Chars {
             byte_fallback,
             unk_token,
@@ -339,15 +313,14 @@ fn push_unknown<M: SinkMode>(
         } => {
             if let Some(fallback) = byte_fallback {
                 sink.push_char_bytes(tables, fallback, character);
-                return false;
+                *in_unk_run = false;
+            } else if let Some(unk) = unk_token {
+                // with fuse_unk the run already emitted its unk, so this character adds nothing
+                if !(*fuse_unk && *in_unk_run) {
+                    sink.push(tables, *unk);
+                }
+                *in_unk_run = true;
             }
-            let Some(unk) = unk_token else {
-                return false;
-            };
-            if !(*fuse_unk && in_unk_run) {
-                sink.push(tables, *unk);
-            }
-            true
         }
     }
 }
