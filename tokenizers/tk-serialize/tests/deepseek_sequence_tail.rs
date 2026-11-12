@@ -166,4 +166,3 @@ fn ordinary_sequences_keep_their_existing_behavior() {
     ]);
     assert_eq!(pieces(&seq, "ab12|cd3"), ["ab", "1", "2", "cd", "3"]);
 }
-
