@@ -339,9 +339,32 @@ fn byte_fallback_config(vocab: Vocab) -> BpeConfig {
     }
 }
 
+/// The bytes a config is refused for, or `None` if it loads or fails for another reason.
+fn missing_byte_codes(config: BpeConfig) -> Option<Vec<u8>> {
+    match PipelineBPE::from_config(config)
+        .err()?
+        .downcast_ref::<Error>()
+    {
+        Some(Error::ByteFallbackOutOfVocabulary(bytes)) => Some(bytes.clone()),
+        _ => None,
+    }
+}
+
 #[test]
-fn byte_fallback_missing_ascii_code_takes_its_literal_token() {
-    // Like Gemma: a literal tab token, no <0x09>. Tab is in the vocab, so it never falls back.
+fn byte_fallback_without_any_byte_token_falls_back_to_unk() {
+    let vocab = v(&[("h", 300), ("<unk>", 400)]);
+    let pipeline = PipelineBPE::from_config(BpeConfig {
+        unk_token: Some("<unk>".into()),
+        ..byte_fallback_config(vocab)
+    })
+    .unwrap();
+    assert_eq!(pipeline_ids(&pipeline, "hé"), vec![300, 400]);
+}
+
+#[test]
+fn byte_fallback_loads_vocab_missing_an_ascii_code_it_holds_literally() {
+    // SigLIP 2's vocab has "\t" but no <0x09>. A tab never falls back, so only the other bytes
+    // are checked.
     let mut vocab = byte_fallback_vocab();
     vocab.remove("<0x09>");
     vocab.insert("\t".into(), 500);
@@ -350,46 +373,39 @@ fn byte_fallback_missing_ascii_code_takes_its_literal_token() {
 }
 
 #[test]
-fn byte_fallback_missing_code_without_literal_errors() {
+fn byte_fallback_lists_every_missing_code() {
     let mut vocab = byte_fallback_vocab();
     vocab.remove("<0x09>");
+    vocab.remove("<0x0A>");
     assert_eq!(
-        PipelineBPE::from_config(byte_fallback_config(vocab))
-            .err()
-            .map(|e| e.to_string()),
-        Some(Error::ByteFallbackOutOfVocabulary(0x09).to_string())
+        missing_byte_codes(byte_fallback_config(vocab)),
+        Some(vec![0x09, 0x0A])
     );
 }
 
 #[test]
 fn byte_fallback_missing_non_ascii_code_errors() {
-    // A literal "é" token is not the byte 0xA9, so there is nothing to substitute.
+    // The character U+00A9 is two bytes in UTF-8 (C2 A9), so its token is not the byte 0xA9.
     let mut vocab = byte_fallback_vocab();
     vocab.remove("<0xA9>");
     vocab.insert("\u{a9}".into(), 501);
     assert_eq!(
-        PipelineBPE::from_config(byte_fallback_config(vocab))
-            .err()
-            .map(|e| e.to_string()),
-        Some(Error::ByteFallbackOutOfVocabulary(0xA9).to_string())
+        missing_byte_codes(byte_fallback_config(vocab)),
+        Some(vec![0xA9])
     );
 }
 
 #[test]
 fn byte_fallback_missing_code_with_affixes_errors() {
-    // With affixes the lookup is of the decorated form (`\t</w>`), so a bare tab can still fall back.
+    // A tab ending a word is looked up as `\t</w>`, which can miss and fall back.
     let mut vocab = byte_fallback_vocab();
     vocab.remove("<0x09>");
     vocab.insert("\t".into(), 500);
-    assert_eq!(
-        PipelineBPE::from_config(BpeConfig {
-            end_of_word_suffix: Some("</w>".into()),
-            ..byte_fallback_config(vocab)
-        })
-        .err()
-        .map(|e| e.to_string()),
-        Some(Error::ByteFallbackOutOfVocabulary(0x09).to_string())
-    );
+    let config = BpeConfig {
+        end_of_word_suffix: Some("</w>".into()),
+        ..byte_fallback_config(vocab)
+    };
+    assert_eq!(missing_byte_codes(config), Some(vec![0x09]));
 }
 
 #[test]

@@ -52,12 +52,9 @@ pub enum Error {
     /// Dropout not between 0 and 1.
     #[error("Dropout should be between 0 and 1, inclusive")]
     InvalidDropout,
-    /// When byte_fallback is enabled but the fallback code is not in the vocab
-    #[error(
-        "Byte fallback `<{0:#04X}>` not found in the vocabulary (a missing ASCII code is filled \
-         from its literal character, unless the model has a prefix or suffix)"
-    )]
-    ByteFallbackOutOfVocabulary(u8),
+    /// `byte_fallback` is on, and the vocab has no `<0xNN>` token for these bytes and no substitute.
+    #[error("The vocabulary has no byte fallback token for bytes {0:02X?}")]
+    ByteFallbackOutOfVocabulary(Vec<u8>),
 }
 
 /// NOTE: Unchecked indexing, justified once instead of everywhere we do it.

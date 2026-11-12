@@ -21,8 +21,8 @@
 //! smollm2-135m and bloomz-560m are byte-level BPE with no token for some bytes that valid UTF-8
 //! can contain.
 //!
-//! siglip2-base-patch16-224 and parakeet-tdt-0.6b-v3 set `byte_fallback` without every `<0xNN>`
-//! token. SigLIP 2 lacks `<0x09>` and has a literal `"\t"` token instead. Parakeet has none.
+//! siglip2-base-patch16-224 and parakeet-tdt-0.6b-v3 set `byte_fallback` but lack some `<0xNN>` tokens.
+//! SigLIP 2 has a `"\t"` token in place of `<0x09>`. Parakeet has no `<0xNN>` token at all.
 //!
 //! Decode is fed the release's *own* ids, so it is judged on decode alone even where encode
 //! legitimately diverges.

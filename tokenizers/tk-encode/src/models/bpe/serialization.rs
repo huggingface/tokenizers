@@ -259,22 +259,32 @@ impl PipelineBPE {
                         fallback_lookup[b as usize] = internal;
                     }
                 }
-                // A missing ASCII code takes the id of its literal character, the same byte (Gemma
-                // has `"\t"` but no `<0x09>`). Affixes rule that out, because the vocab lookup is
-                // of the decorated form, so a tab can still reach the fallback.
-                let has_affixes = !prefix.is_empty() || !suffix.is_empty();
-                for b in 0u8..=255 {
-                    if fallback_lookup[b as usize] != NO_SYMBOL {
-                        continue;
+                // NVIDIA NeMo models such as Parakeet set `byte_fallback` with no `<0xNN>` token at all.
+                if fallback_lookup.iter().all(|&id| id == NO_SYMBOL) {
+                    None
+                } else {
+                    // The encoder falls back only on characters missing from the vocab, so a `"\t"` token can replace `<0x09>`.
+                    // With a prefix or suffix, the encoder looks up `##\t` or `\t</w>` instead, and those can be missing.
+                    let has_affixes = !prefix.is_empty() || !suffix.is_empty();
+                    let mut missing = Vec::new();
+                    for b in 0u8..=255 {
+                        if fallback_lookup[b as usize] != NO_SYMBOL {
+                            continue;
+                        }
+                        let literal = (b.is_ascii() && !has_affixes)
+                            .then(|| vocab.token_to_id(&(b as char).to_string()))
+                            .flatten()
+                            .and_then(to_internal);
+                        match literal {
+                            Some(internal) => fallback_lookup[b as usize] = internal,
+                            None => missing.push(b),
+                        }
                     }
-                    let literal = (b.is_ascii() && !has_affixes)
-                        .then(|| vocab.token_to_id(&(b as char).to_string()))
-                        .flatten()
-                        .and_then(to_internal);
-                    fallback_lookup[b as usize] =
-                        literal.ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
+                    if !missing.is_empty() {
+                        return Err(Error::ByteFallbackOutOfVocabulary(missing).into());
+                    }
+                    Some(fallback_lookup)
                 }
-                Some(fallback_lookup)
             } else {
                 None
             };
