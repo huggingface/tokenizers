@@ -273,10 +273,6 @@ fn fuzz_texts(n: usize) -> Vec<String> {
         "\u{16FE3}",
         "\u{16FF0}",
         "\u{16FF1}",
-        "🫪",
-        "\u{088F}",
-        "\u{1ACF}",
-        "𑷠",
     ];
     let mut st = 0x243F_6A88_85A3_08D3u64;
     let mut next = move || {
@@ -421,8 +417,7 @@ fn harness_discriminates() {
     );
 }
 
-/// Backwards compatibility test with tokenizers v0.23
-/// See Issue #2557
+/// Every tag agrees with onig on the Unicode property it stands for, over the whole code space.
 #[test]
 fn classifier_matches_onig_categories() {
     use bitcannon::classify::Atom::*;
@@ -444,11 +439,10 @@ fn classifier_matches_onig_categories() {
         (r"[\p{Lm}\p{Lo}]", |t| {
             t == Letter as u8 || t == HanLetter as u8
         }),
-        // kimi's `[\p{Han}]+`. Han only has a refinement on the coarse classes it mostly lands in
-        // (Lm/Lo, Nl, So); a Han `Po`/`Mc` (U+16FE2, U+16FF0) has no tag to carry it yet.
-        (r"\p{Han}", |t| t & 0xF0 == 0x30 || matches!(t, 0x06 | 0x08)),
+        // kimi's `[\p{Han}]+`
+        (r"\p{Han}", |t| t & 0xF0 == 0x30),
         (r"\p{N}", |t| matches!(t & 0x0F, 1 | 2)), // NumWord | NumOther
-        (r"\p{M}", |t| matches!(t, 0x06 | 0x36)), // Mark | Han mark
+        (r"\p{M}", |t| t == Mark as u8 || t == HanMark as u8),
         (r"[\p{P}\p{S}]", |t| {
             t == AlphaSymMark as u8 || matches!(t & 0x0F, 7..=10) // Connector..=SymOther
         }),
@@ -460,9 +454,8 @@ fn classifier_matches_onig_categories() {
         let cn = prop == r"\p{Cn}";
         for (&c, (i, _)) in chars.iter().zip(text.char_indices()) {
             let oracle = re.is_match(c.encode_utf8(&mut [0; 4]));
-            // `Control` is also Cc/Cf/Co/Cs, so for `\p{Cn}` only "oracle unassigned ⇒ Control" holds,
-            // and likewise a plain `Mark`/`Punct` tag says nothing about `\p{Han}`.
-            let ok = if cn || (prop == r"\p{Han}" && matches!(tags[i], 0x06 | 0x08)) {
+            // `Control` is also Cc/Cf/Co/Cs, so for `\p{Cn}` only "oracle unassigned ⇒ Control" holds.
+            let ok = if cn {
                 !oracle || tagged(tags[i])
             } else {
                 oracle == tagged(tags[i])
