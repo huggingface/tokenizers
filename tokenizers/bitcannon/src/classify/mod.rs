@@ -132,7 +132,8 @@ pub const MB: u8 = Atom::MultiByte as u8;
 
 /// Classify `text` under scheme `S` into `tags` (`tags.len() == text.len()`) — the single arch
 /// dispatcher. aarch64: NEON at compile time (baseline). x86_64: AVX-512 VBMI → SSE4.1 → scalar,
-/// runtime-detected. Linux riscv64: RVV ASCII lookup with scalar Unicode fallback.
+/// runtime-detected. Linux riscv64: RVV ASCII and mixed UTF-8 classification,
+/// with scalar fallback for four-byte characters and tails.
 /// wasm32 with `simd128`: SIMD128. Everything else: the portable scalar walk.
 /// All paths produce the identical stream.
 #[inline]
