@@ -30,13 +30,14 @@ impl<Label: Eq + Hash + Copy> Trie<Label> {
         node.is_leaf = true;
     }
 
+    /// Yield matching prefix lengths in labels, without copying the input.
     pub fn common_prefix_search<T>(&self, iterator: T) -> TrieIterator<'_, Label, T>
     where
         T: Iterator<Item = Label>,
     {
         TrieIterator {
             node: &self.root,
-            prefix: vec![],
+            prefix_len: 0,
             iterator,
         }
     }
@@ -44,7 +45,7 @@ impl<Label: Eq + Hash + Copy> Trie<Label> {
 
 pub struct TrieIterator<'a, Label, T> {
     node: &'a Node<Label>,
-    prefix: Vec<Label>,
+    prefix_len: usize,
     iterator: T,
 }
 
@@ -53,15 +54,15 @@ where
     Label: Eq + Hash + Copy,
     T: Iterator<Item = Label>,
 {
-    type Item = Vec<Label>;
+    type Item = usize;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let label = self.iterator.next()?;
-            self.prefix.push(label);
+            self.prefix_len += 1;
             let child = self.node.children.get(&label)?;
             self.node = child;
             if self.node.is_leaf {
-                return Some(self.prefix.clone());
+                return Some(self.prefix_len);
             }
         }
     }
