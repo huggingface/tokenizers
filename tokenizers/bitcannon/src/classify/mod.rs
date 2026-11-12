@@ -6,6 +6,8 @@ mod atom_tables;
 mod avx;
 #[cfg(target_arch = "aarch64")]
 mod neon;
+#[cfg(all(target_arch = "riscv64", target_os = "linux"))]
+mod rvv;
 mod tables;
 #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
 mod wasm;
@@ -130,8 +132,10 @@ pub const MB: u8 = Atom::MultiByte as u8;
 
 /// Classify `text` under scheme `S` into `tags` (`tags.len() == text.len()`) — the single arch
 /// dispatcher. aarch64: NEON at compile time (baseline). x86_64: AVX-512 VBMI → SSE4.1 → scalar,
-/// runtime-detected. wasm32 with `simd128`: SIMD128. Everything else: the portable scalar walk. All
-/// paths produce the identical stream.
+/// runtime-detected. Linux riscv64: RVV ASCII and mixed UTF-8 classification,
+/// with scalar fallback for four-byte characters and tails.
+/// wasm32 with `simd128`: SIMD128. Everything else: the portable scalar walk.
+/// All paths produce the identical stream.
 #[inline]
 pub fn classify(text: &[u8], tags: &mut [u8]) {
     // Hard assert (not debug): the SIMD kernels do raw 16-byte stores into `tags` for full chunks, so a
@@ -153,7 +157,15 @@ pub fn classify(text: &[u8], tags: &mut [u8]) {
     unsafe {
         wasm::classify_wasm(text, tags)
     }
+    #[cfg(all(target_arch = "riscv64", target_os = "linux"))]
+    if crate::has_rvv() {
+        // SAFETY: RVV is available and the output length was checked above.
+        unsafe { rvv::classify_rvv(text, tags) }
+    } else {
+        classify_scalar(text, tags);
+    }
     #[cfg(not(any(
+        all(target_arch = "riscv64", target_os = "linux"),
         target_arch = "aarch64",
         target_arch = "x86_64",
         all(target_arch = "wasm32", target_feature = "simd128")
