@@ -280,7 +280,7 @@ impl UnigramTrainer {
             .sum::<usize>()
             + sentences.len();
         let mut flat_string = String::with_capacity(total);
-        let mut all_chars: AHashMap<char, u32> = AHashMap::new();
+        let mut all_chars: AHashMap<char, u64> = AHashMap::new();
         let c_sentence_boundary = '\0';
         let k_sentence_boundary = '\0'.to_string();
         for (string, n) in sentences {
@@ -294,7 +294,7 @@ impl UnigramTrainer {
             flat_string.push_str(&k_sentence_boundary);
             for c in string.chars() {
                 if c != c_sentence_boundary {
-                    *all_chars.entry(c).or_insert(0) += n;
+                    *all_chars.entry(c).or_insert(0) += u64::from(*n);
                 }
             }
         }
@@ -332,7 +332,7 @@ impl UnigramTrainer {
 
         // Fill seed_sentencepieces
         for (count, character) in sall_chars {
-            seed_sentencepieces.push((character.to_string(), count.into()));
+            seed_sentencepieces.push((character.to_string(), count as f64));
         }
 
         // sort by decreasing score
@@ -524,7 +524,7 @@ impl UnigramTrainer {
     }
 
     fn run_e_step(&self, model: &Unigram, sentences: &[Sentence]) -> (f64, u32, Vec<f64>) {
-        let all_sentence_freq: u32 = sentences.iter().map(|(_a, b)| *b).sum();
+        let all_sentence_freq: u64 = sentences.iter().map(|(_a, b)| u64::from(*b)).sum();
 
         let chunk_size = std::cmp::max(sentences.len() / current_num_threads(), 1);
         let collected: (f64, u32, Vec<f64>) = sentences
@@ -731,6 +731,10 @@ impl Trainer for UnigramTrainer {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "unigram_aggregate_counts.rs"]
+mod aggregate_count_tests;
 
 #[cfg(test)]
 mod tests {
