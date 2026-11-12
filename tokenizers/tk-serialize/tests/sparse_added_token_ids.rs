@@ -71,7 +71,8 @@ fn sparse_round_trip(kind: &str) {
     for id in [2, 7] {
         let tokenizer = tk_serialize::from_json(&config(model(kind, id), &["<new>"])).unwrap();
         assert_distinct_ids(&tokenizer, id, id + 1);
-        let restored = tk_serialize::from_json(&tk_serialize::to_json(&tokenizer).unwrap()).unwrap();
+        let restored =
+            tk_serialize::from_json(&tk_serialize::to_json(&tokenizer).unwrap()).unwrap();
         assert_distinct_ids(&restored, id, id + 1);
     }
 }
