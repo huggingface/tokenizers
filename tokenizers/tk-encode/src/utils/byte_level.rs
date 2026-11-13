@@ -70,13 +70,29 @@ fn reverse_lookup(c: char) -> Vec<u8> {
     char_to_byte(c).map_or_else(|| c.to_string().into_bytes(), |b| vec![b])
 }
 
+/// True when `token` is not spelled in the byte-level alphabet, e.g. DeepSeek's
+/// `<｜begin▁of▁sentence｜>` or ModernBERT's runs of literal spaces.
+pub(crate) fn is_verbatim(token: &str) -> bool {
+    token.chars().any(|c| char_to_byte(c).is_none())
+}
+
 pub(crate) fn transform_vocab(vocab: Vocab) -> Result<BucketVocabStore> {
-    BucketVocabStore::build(
-        vocab
-            .into_iter()
-            .map(|(string, token_id)| (string.chars().flat_map(reverse_lookup).collect(), token_id))
-            .collect(),
-    )
+    let mut entries: Vec<(Vec<u8>, u32, bool)> = vocab
+        .into_iter()
+        .map(|(string, token_id)| {
+            let verbatim = is_verbatim(&string);
+            (
+                string.chars().flat_map(reverse_lookup).collect(),
+                token_id,
+                verbatim,
+            )
+        })
+        .collect();
+    // A verbatim entry can map to the same bytes as a byte-level one (`"  "` and `"ĠĠ"`). The
+    // store keeps the last duplicate, so put verbatim entries first and let the byte-level
+    // spelling own the bytes, whatever the order of the vocab map.
+    entries.sort_by_key(|&(_, _, verbatim)| !verbatim);
+    BucketVocabStore::build(entries.into_iter().map(|(b, id, _)| (b, id)).collect())
 }
 
 #[cfg(test)]

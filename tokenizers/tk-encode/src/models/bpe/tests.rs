@@ -466,6 +466,44 @@ fn byte_level_bpe(
     })
 }
 
+/// Entries not written in the byte-level alphabet (DeepSeek's `<｜begin▁of▁sentence｜>`,
+/// ModernBERT's literal-space runs) keep their `tokenizer.json` spelling, as in 0.23, through
+/// the vocab lookups and `to_config`, and do not take over the byte-level entry with the same
+/// bytes.
+#[test]
+fn byte_level_vocab_keeps_verbatim_entries_as_written() {
+    let mut vocab: Vocab = (0..=255u8)
+        .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
+        .collect();
+    vocab.insert("ĠĠ".into(), 300);
+    vocab.insert("  ".into(), 301);
+    vocab.insert("<｜eos｜>".into(), 302);
+    let bpe = PipelineBPE::from_config(BpeConfig {
+        vocab,
+        merges: m(&[("Ġ", "Ġ")]),
+        byte_level: true,
+        ..Default::default()
+    })
+    .unwrap();
+
+    assert_eq!(bpe.id_to_token(301).as_deref(), Some("  "));
+    assert_eq!(bpe.id_to_token(302).as_deref(), Some("<｜eos｜>"));
+    assert_eq!(bpe.token_to_id("  "), Some(301));
+    assert_eq!(bpe.token_to_id("<｜eos｜>"), Some(302));
+    assert_eq!(bpe.token_to_id("ĠĠ"), Some(300));
+    let got = bpe.get_vocab();
+    assert_eq!(got.len(), bpe.get_vocab_size());
+    assert_eq!(got["ĠĠ"], 300);
+    assert_eq!(got["  "], 301);
+    assert_eq!(got["<｜eos｜>"], 302);
+
+    let saved = bpe.to_config().unwrap().vocab;
+    assert_eq!(saved.get("ĠĠ"), Some(&300));
+    assert_eq!(saved.get("  "), Some(&301));
+    assert_eq!(saved.get("<｜eos｜>"), Some(&302));
+    assert_eq!(saved.len(), got.len());
+}
+
 #[test]
 fn byte_level_merges_raw_bytes() {
     let pipeline = byte_level_bpe(
