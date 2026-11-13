@@ -2,6 +2,27 @@ use crate::pipeline::Model;
 use crate::tokenizer::Token;
 
 use super::*;
+
+#[test]
+fn encodes_a_vocab_holding_every_utf8_byte() {
+    let chars = crate::models::chars_covering_every_utf8_byte();
+    let mut pieces = vec![("<unk>".to_string(), 0.0)];
+    pieces.extend(chars.iter().map(|c| (c.to_string(), -1.0)));
+    let model = Unigram::from(pieces, Some(0), false).unwrap();
+    let mut scratch = model.init_scratch();
+
+    for (c, id) in chars.iter().zip(1u32..) {
+        let token = c.to_string();
+        let mut output = Vec::new();
+        model
+            .tokenize_pipeline(&token, &mut scratch, &mut output)
+            .unwrap();
+        let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
+        assert_eq!(ids, [id], "{c:?}");
+        assert_eq!(model.token_to_id(&token), Some(id), "{c:?}");
+    }
+}
+
 #[test]
 fn test_populate_nodes_unk() {
     let pieces = vec![("<unk>".to_string(), 0.0)];

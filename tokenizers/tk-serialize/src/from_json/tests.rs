@@ -78,6 +78,39 @@ fn cl100k_digit_caps_preserve_encoded_ids() {
     }
 }
 
+#[cfg(feature = "bpe")]
+#[test]
+fn kimi_han_categories_preserve_encoded_ids() {
+    let pre = serde_json::json!({
+        "type": "Split",
+        "pattern": {"Regex": bitcannon::regexes::KIMI_K2},
+        "behavior": "Isolated",
+        "invert": false
+    })
+    .to_string();
+    let model = serde_json::json!({
+        "type": "BPE", "byte_level": false,
+        "vocab": {
+            "1": 0, "〇": 1, "1〇": 2, "⺀": 3, " ": 4, " ⺀": 5,
+            "!": 6, " !": 7, " !⺀": 8, "a": 9, "\u{16FE2}": 10,
+            "\u{16FF0}": 11, "a\u{16FF0}": 12, "\u{16FE2}a": 13
+        },
+        "merges": [["1", "〇"], [" ", "⺀"], [" ", "!"], [" !", "⺀"],
+            ["a", "\u{16FF0}"], ["\u{16FE2}", "a"]]
+    })
+    .to_string();
+    let json = config(&[("model", &model), ("pre_tokenizer", &pre)]);
+    for (text, expected) in [
+        ("1〇", vec![2]),
+        (" ⺀", vec![5]),
+        (" !⺀", vec![8]),
+        ("\u{16FE2}a", vec![10, 9]),
+        ("a\u{16FF0}", vec![9, 11]),
+    ] {
+        assert_eq!(ids(&json, text), expected, "{text:?}");
+    }
+}
+
 #[cfg(all(feature = "wordlevel", feature = "fancy-regex"))]
 #[test]
 fn generic_regex_split_encodes_from_json() {
@@ -295,12 +328,8 @@ fn byte_level_is_a_model_field_not_a_pre_tokenizer() {
     let doc = Json::parse(&json).unwrap();
     let pretok = read_pre_tokenizer(doc.field("pre_tokenizer")).unwrap();
     assert!(matches!(pretok, PipelinePreTokenizer::None));
-    // Where the flag *does* land is the model, which then wants every byte to be an atom. The
-    // four-token vocab above is not one, so this is refused for that reason and no other.
-    assert!(
-        read_err(&json).contains("byte-level vocabulary has no token for bytes"),
-        "not the byte-atom refusal"
-    );
+    assert_eq!(ids(&json, "abab"), vec![3]);
+    assert_eq!(ids(&json, "ab-ab"), vec![3]);
 }
 
 /// One config per decoder variant, so a field rename fails here rather than silently producing a

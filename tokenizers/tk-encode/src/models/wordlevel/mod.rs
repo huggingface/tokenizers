@@ -141,7 +141,7 @@ impl WordLevel {
     }
 
     pub fn get_vocab_size(&self) -> usize {
-        self.vocab.keys().len()
+        self.vocab.len()
     }
 }
 
@@ -171,6 +171,26 @@ impl pipeline::Model for WordLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn encodes_a_vocab_holding_every_utf8_byte() {
+        let chars = crate::models::chars_covering_every_utf8_byte();
+        let vocab: Vocab = chars
+            .iter()
+            .zip(0u32..)
+            .map(|(c, id)| (c.to_string(), id))
+            .collect();
+        let wordlevel = WordLevelBuilder::default().vocab(vocab).build().unwrap();
+
+        for (c, id) in chars.iter().zip(0u32..) {
+            let token = c.to_string();
+            let mut output = Vec::new();
+            pipeline::Model::tokenize_pipeline(&wordlevel, &token, &mut (), &mut output).unwrap();
+            let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
+            assert_eq!(ids, [id], "{c:?}");
+            assert_eq!(wordlevel.token_to_id(&token), Some(id), "{c:?}");
+        }
+    }
 
     #[test]
     fn test_tokenize_unk() {

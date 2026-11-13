@@ -12,17 +12,14 @@ def ids(batch):
     return [encoding.ids for encoding in batch]
 
 
-def encode_configured(gpt2, truncation, padding):
-    gpt2.truncation = truncation
-    gpt2.padding = padding
-    expected = ids(gpt2.encode_batch(SHORT_AND_LONG))
-    gpt2.truncation = None
-    gpt2.padding = None
-    return expected
+def compile_with(tokenizer, truncation, padding):
+    tokenizer.truncation = truncation
+    tokenizer.padding = padding
+    return tokenizer.compile()
 
 
 # Omitting a kwarg inherits the configured value, None switches it off, a value replaces it.
-# The expected ids come from configuring the effective pair on the tokenizer itself.
+# The expected ids come from compiling the effective pair into the tokenizer itself.
 @pytest.mark.parametrize(
     ("configured", "overrides", "effective"),
     [
@@ -64,9 +61,8 @@ def encode_configured(gpt2, truncation, padding):
         ),
     ],
 )
-def test_overrides_resolve_independently(gpt2, configured, overrides, effective):
-    expected = encode_configured(gpt2, *effective)
-    gpt2.truncation, gpt2.padding = configured
+def test_overrides_resolve_independently(gpt2_spec, configured, overrides, effective):
+    expected = ids(compile_with(gpt2_spec, *effective).encode_batch(SHORT_AND_LONG))
+    configured_tokenizer = compile_with(gpt2_spec, *configured)
 
-    assert ids(gpt2.encode_batch(SHORT_AND_LONG, **overrides)) == expected
-    assert (gpt2.truncation, gpt2.padding) == configured
+    assert ids(configured_tokenizer.encode_batch(SHORT_AND_LONG, **overrides)) == expected

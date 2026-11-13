@@ -20,6 +20,8 @@ const HAN: &[(u32, u32)] = &[
     (0x4E00, 0x9FFF),
     (0xF900, 0xFA6D),
     (0xFA70, 0xFAD9),
+    (0x16FE2, 0x16FE3),
+    (0x16FF0, 0x16FF1),
     (0x20000, 0x2A6DF),
     (0x2A700, 0x2B739),
     (0x2B740, 0x2B81D),
@@ -45,8 +47,8 @@ fn atom(c: char) -> u8 {
         UppercaseLetter | TitlecaseLetter => return 0x10,
         LowercaseLetter => return 0x20,
         // Script=Han takes refinement 3 wherever it lands, so kimi's `[\p{Han}]+` arm is a LUT row
-        // instead of a per-byte range test. Han is orthogonal to the category (98682 Lo, 329 So,
-        // 13 Nl, 2 Lm), hence a refinement on each of the three coarse classes it touches.
+        // instead of a per-byte range test. Han is orthogonal to general category,
+        // so preserve each letter, number, symbol, mark, or punctuation coarse class.
         ModifierLetter | OtherLetter => return if is_han(cp) { 0x30 } else { 0 },
         // \p{N}: Nd∪Nl are numeric AND `\w` (NumWord); No is numeric-only (NumOther).
         DecimalNumber => return 1,
@@ -72,7 +74,7 @@ fn atom(c: char) -> u8 {
         c.general_category(),
         NonspacingMark | SpacingMark | EnclosingMark
     ) {
-        return 6; // \p{M}: real marks — ∈ deepseek/o200k `[\p{L}\p{M}]` and ∈ `\w`
+        return if is_han(cp) { 0x36 } else { 6 }; // \p{M}: real marks — ∈ deepseek/o200k `[\p{L}\p{M}]` and ∈ `\w`
     }
     if c.is_alphabetic() {
         // Other_Alphabetic non-mark (circled letters Ⓘ …, category So): a `\w` word char (coarse Mark →
@@ -95,7 +97,7 @@ fn atom(c: char) -> u8 {
             | FinalPunctuation
             | OtherPunctuation
     ) {
-        return 8; // \p{P} ∖ Pc
+        return if is_han(cp) { 0x38 } else { 8 }; // \p{P} ∖ Pc
     }
     if cp < 0x80 && c.is_ascii_punctuation() {
         return 8; // ASCII symbols ($ + < = > ^ ` | ~) that `[^\s\p{L}\p{N}]` / is_punc treats as punct

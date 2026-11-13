@@ -52,23 +52,9 @@ pub enum Error {
     /// Dropout not between 0 and 1.
     #[error("Dropout should be between 0 and 1, inclusive")]
     InvalidDropout,
-    /// When byte_fallback is enabled but the fallback code is not in the vocab
-    #[error("Byte fallback `<{0:#04X}>` not found in the vocabulary")]
-    ByteFallbackOutOfVocabulary(u8),
-    /// A byte-level vocabulary is missing has no single-byte token for these bytes
-    #[error(
-        "This byte-level vocabulary has no token for bytes {}. Text containing those bytes cannot be encoded.",
-        hex_list(.0)
-    )]
-    ByteAtomOutOfVocabulary(Vec<u8>),
-}
-
-fn hex_list(bytes: &[u8]) -> String {
-    bytes
-        .iter()
-        .map(|byte| format!("{byte:#04X}"))
-        .collect::<Vec<_>>()
-        .join(", ")
+    /// `byte_fallback` is on, and the vocab has no `<0xNN>` token for these bytes and no substitute.
+    #[error("The vocabulary has no byte fallback token for bytes {0:02X?}")]
+    ByteFallbackOutOfVocabulary(Vec<u8>),
 }
 
 /// NOTE: Unchecked indexing, justified once instead of everywhere we do it.

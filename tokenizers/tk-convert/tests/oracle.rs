@@ -18,6 +18,12 @@
 //! `WhitespaceSplit`, and the two shapes convert differently. mistral-7b-v0.1 sets
 //! `prepend_scheme: first` with `split: false`.
 //!
+//! smollm2-135m and bloomz-560m are byte-level BPE with no token for some bytes that valid UTF-8
+//! can contain.
+//!
+//! siglip2-base-patch16-224 and parakeet-tdt-0.6b-v3 set `byte_fallback` but lack some `<0xNN>` tokens.
+//! SigLIP 2 has a `"\t"` token in place of `<0x09>`. Parakeet has no `<0xNN>` token at all.
+//!
 //! Decode is fed the release's *own* ids, so it is judged on decode alone even where encode
 //! legitimately diverges.
 //!
@@ -91,9 +97,13 @@ const TEXTS: &[&str] = &[
     "\u{feff}bom",
     "\u{301}",
     "i\u{307}\u{323}",
+    // Some byte-level vocabularies have no token for 0x04, 0x0B, or the 0xF1 that starts U+40000.
+    "a\u{4}b\u{b}c",
+    "\u{4}\u{b}",
+    "a\u{40000}b",
 ];
 
-/// [`TEXTS`] plus one input long enough for the parallel encoder to take over.
+/// [`TEXTS`] plus inputs long enough for the parallel encoder and the hot/cold queue to take over.
 ///
 /// Both halves clear `PARALLEL_MIN_BYTES`, so the planner splits the sequence at the added token
 /// and encodes each chunk on its own.
@@ -104,6 +114,8 @@ fn cases() -> Vec<String> {
         word.to_string() + &format!(" {word}").repeat(repeats)
     };
     out.push(format!("{}</s>{}", side("alpha"), side("beta")));
+    out.push("-\u{4}".repeat(20));
+    out.push("\u{b}".repeat(30));
     out
 }
 
@@ -367,5 +379,34 @@ fn modernbert_base() {
     assert_matches_released(
         "answerdotai/ModernBERT-base",
         "fixtures/models/modernbert-base.json",
+    );
+}
+
+#[test]
+fn smollm2_135m() {
+    assert_matches_released(
+        "HuggingFaceTB/SmolLM2-135M",
+        "fixtures/models/smollm2-135m.json",
+    );
+}
+
+#[test]
+fn bloomz_560m() {
+    assert_matches_released("bigscience/bloomz-560m", "fixtures/models/bloomz-560m.json");
+}
+
+#[test]
+fn siglip2_base_patch16_224() {
+    assert_matches_released(
+        "google/siglip2-base-patch16-224",
+        "fixtures/models/siglip2-base-patch16-224.json",
+    );
+}
+
+#[test]
+fn parakeet_tdt_0_6b_v3() {
+    assert_matches_released(
+        "nvidia/parakeet-tdt-0.6b-v3",
+        "fixtures/models/parakeet-tdt-0.6b-v3.json",
     );
 }

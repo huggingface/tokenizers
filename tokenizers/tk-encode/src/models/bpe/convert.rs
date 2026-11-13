@@ -3,7 +3,7 @@
 use crate::models::bpe::At;
 use crate::models::bpe::merge_hot_cold_queue::{Entry, MergeQueue, QueueScratch};
 use crate::models::bpe::model::{Atoms, PipelineBPE};
-use crate::models::bpe::tables::{BpeTables, ID_MASK, RANK_MASK};
+use crate::models::bpe::tables::{BpeTables, ID_MASK, NO_SYMBOL, RANK_MASK};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
 /// Set only for the few models that decorate their atoms: `end_of_word_suffix` (CLIP, openai-gpt,
@@ -12,7 +12,7 @@ use crate::vocab::bucket_vocab_store::BucketVocabStore;
 pub(super) struct Affixes {
     pub(super) prefix: String,
     pub(super) suffix: String,
-    /// Dense `external vocab id -> internal symbol id`, `u32::MAX` where there is none. Dense
+    /// Dense `external vocab id -> internal symbol id`, [`NO_SYMBOL`] where there is none. Dense
     /// beats a hash here because external ids are `0..vocab_size`: 4 bytes a slot and one load,
     /// against 8-16 for any map. It is the array `BpeTables::build` makes anyway.
     pub(super) to_internal: Box<[u32]>,
@@ -108,7 +108,11 @@ impl<M: SinkMode> SymbolSink<M> {
     // inlining here is very important
     #[inline(always)]
     fn push(&mut self, tables: &BpeTables, symbol: u32) {
-        if self.previous_symbol != u32::MAX {
+        // This byte is not in the vocabulary: skip it
+        if symbol == NO_SYMBOL {
+            return;
+        }
+        if self.previous_symbol != NO_SYMBOL {
             let merge = tables.get_value(&self.previous_symbol, &symbol);
             self.mode.record_pair(merge, self.previous_symbol, symbol);
         }
@@ -138,7 +142,7 @@ impl PipelineBPE {
                 symbols,
                 lowest_merge: u64::MAX,
             },
-            previous_symbol: u32::MAX,
+            previous_symbol: NO_SYMBOL,
         };
         self.convert(sequence, &mut sink);
         sink.mode.lowest_merge
@@ -162,13 +166,13 @@ impl PipelineBPE {
         queue.clear(sequence.len());
         let mut sink = SymbolSink {
             mode: QueueSink { entries, queue },
-            previous_symbol: u32::MAX,
+            previous_symbol: NO_SYMBOL,
         };
         self.convert(sequence, &mut sink);
         let last = sink.previous_symbol;
         match entries.last_mut() {
             Some(entry) => entry.right_pair_index = u32::MAX, // NONE: nothing right of the final pair
-            None if last != u32::MAX => symbols.push(last),
+            None if last != NO_SYMBOL => symbols.push(last),
             None => {}
         }
     }
@@ -186,18 +190,7 @@ impl PipelineBPE {
         } else {
             match &self.atoms {
                 Atoms::Bytes => convert_bytes(&self.tables, sequence.as_bytes(), sink),
-                Atoms::Chars {
-                    byte_fallback,
-                    unk_token,
-                    fuse_unk,
-                } => convert_chars(
-                    &self.tables,
-                    byte_fallback.as_ref(),
-                    *unk_token,
-                    *fuse_unk,
-                    sequence,
-                    sink,
-                ),
+                Atoms::Chars { .. } => convert_chars(&self.tables, &self.atoms, sequence, sink),
             }
         }
     }
@@ -222,7 +215,7 @@ fn convert_bytes<M: SinkMode>(tables: &BpeTables, bytes: &[u8], sink: &mut Symbo
         let lead = bytes.at(pos);
         let char_len = UTF8_LEN[lead as usize] as usize;
         let folded = tables.fold.get_bytes(bytes, pos, lead, char_len);
-        if folded != u32::MAX {
+        if folded != NO_SYMBOL {
             sink.push(tables, folded);
         } else {
             for offset in 0..char_len {
@@ -238,31 +231,18 @@ fn convert_bytes<M: SinkMode>(tables: &BpeTables, bytes: &[u8], sink: &mut Symbo
 /// of one character has a fold entry, so there is no byte decomposition to do here.
 fn convert_chars<M: SinkMode>(
     tables: &BpeTables,
-    byte_fallback: Option<&[u32; 256]>,
-    unk_token: Option<u32>,
-    fuse_unk: bool,
+    atoms: &Atoms,
     sequence: &str,
     sink: &mut SymbolSink<M>,
 ) {
     let mut in_unk_run = false;
     for character in sequence.chars() {
         let symbol = tables.fold.get_char(character);
-        if symbol != u32::MAX {
+        if symbol != NO_SYMBOL {
             in_unk_run = false;
             sink.push(tables, symbol);
-            continue;
-        }
-        if let Some(fallback) = byte_fallback {
-            sink.push_char_bytes(tables, fallback, character);
-            in_unk_run = false;
-            continue;
-        }
-        if let Some(unk) = unk_token {
-            // with fuse_unk the run already emitted its unk, so this character adds nothing
-            if !(fuse_unk && in_unk_run) {
-                sink.push(tables, unk);
-            }
-            in_unk_run = true;
+        } else {
+            push_unknown(tables, atoms, &mut in_unk_run, character, sink);
         }
     }
 }
@@ -282,6 +262,7 @@ fn convert_affixed<M: SinkMode>(
     let mut buf = [0u8; AFFIX_BUF];
     let mut chars = sequence.chars().peekable();
     let mut is_first = true;
+    let mut in_unk_run = false;
     while let Some(character) = chars.next() {
         let is_last = chars.peek().is_none();
         let mut len = 0;
@@ -302,18 +283,24 @@ fn convert_affixed<M: SinkMode>(
             .ok()
             .and_then(|token| vocab.token_to_id(token))
             .and_then(|external| affixes.to_internal.get(external as usize).copied())
-            .filter(|&symbol| symbol != u32::MAX);
+            .filter(|&symbol| symbol != NO_SYMBOL);
         match symbol {
-            Some(symbol) => sink.push(tables, symbol),
-            None => push_unknown(tables, atoms, character, sink),
+            Some(symbol) => {
+                in_unk_run = false;
+                sink.push(tables, symbol);
+            }
+            None => push_unknown(tables, atoms, &mut in_unk_run, character, sink),
         }
     }
 }
 
 /// A character with no atom of its own: bytes if the model has `byte_fallback`, else `unk`.
+/// `in_unk_run` is true while the characters just before were all turned into `unk`.
+#[inline(always)]
 fn push_unknown<M: SinkMode>(
     tables: &BpeTables,
     atoms: &Atoms,
+    in_unk_run: &mut bool,
     character: char,
     sink: &mut SymbolSink<M>,
 ) {
@@ -322,12 +309,17 @@ fn push_unknown<M: SinkMode>(
         Atoms::Chars {
             byte_fallback,
             unk_token,
-            ..
+            fuse_unk,
         } => {
             if let Some(fallback) = byte_fallback {
                 sink.push_char_bytes(tables, fallback, character);
+                *in_unk_run = false;
             } else if let Some(unk) = unk_token {
-                sink.push(tables, *unk);
+                // with fuse_unk the run already emitted its unk, so this character adds nothing
+                if !(*fuse_unk && *in_unk_run) {
+                    sink.push(tables, *unk);
+                }
+                *in_unk_run = true;
             }
         }
     }
