@@ -84,8 +84,13 @@ impl PipelineBPE {
 
         let mut vocab = Vec::with_capacity(self.vocab.len());
         for (bytes, id) in self.vocab.byte_content() {
-            vocab.push((spell(&bytes)?, id));
+            if self.verbatim.iter().all(|&(v, _)| v != id) {
+                vocab.push((spell(&bytes)?, id));
+            }
         }
+        // Entries spelled outside the byte-level alphabet are saved as written. One that shares
+        // its bytes with a byte-level entry has no slot of its own in `byte_content`.
+        vocab.extend(self.verbatim.iter().map(|(id, token)| (token.clone(), *id)));
 
         let token = |internal: u32| -> Result<String> {
             let external = self
@@ -222,6 +227,15 @@ impl PipelineBPE {
                 .copied()
                 .filter(|&internal| internal != NO_SYMBOL)
         };
+        let verbatim: Box<[(u32, String)]> = if byte_level {
+            vocab
+                .iter()
+                .filter(|(token, _)| byte_level::is_verbatim(token))
+                .map(|(token, &id)| (id, token.clone()))
+                .collect()
+        } else {
+            Box::default()
+        };
         let (vocab, atoms) = if byte_level {
             let missing: Vec<u8> = VALID_UTF8_BYTES
                 .into_iter()
@@ -313,6 +327,7 @@ impl PipelineBPE {
             affixes,
             cache_capacity,
             vocab,
+            verbatim,
             byte_to_gate: build_byte_to_gate(),
         };
         // Every entry carries a foldable bit, so the encode path is one probe and one bit test

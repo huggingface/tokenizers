@@ -56,6 +56,9 @@ pub struct PipelineBPE {
     pub(super) tables: BpeTables,
     pub(super) affixes: Option<Affixes>,
     pub(super) vocab: BucketVocabStore,
+    /// Byte-level only: the entries whose `tokenizer.json` key is not spelled in the byte-level
+    /// alphabet, by id, so the vocab APIs return them as written. Empty for almost every model.
+    pub(super) verbatim: Box<[(u32, String)]>,
     pub(super) byte_to_gate: [u16; 256],
     /// Slots for the per-scratch word cache, from the config. `None` disables it.
     pub(super) cache_capacity: Option<usize>,
@@ -89,10 +92,14 @@ impl PipelineBPE {
         self.vocab.id_to_token_bytes(id)
     }
 
-    /// The string representation of a token, with printable markers of unprintable bytes
+    /// The string representation of a token, with printable markers of unprintable bytes; entries
+    /// not spelled in the byte-level alphabet are returned as written
     pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         if !self.is_byte_level() {
             return self.vocab.id_to_token(id);
+        }
+        if let Some((_, token)) = self.verbatim.iter().find(|(v, _)| *v == id) {
+            return Some(token.clone());
         }
         let bytes = self.id_to_token_bytes(id)?;
         Some(
@@ -108,8 +115,14 @@ impl PipelineBPE {
         if !self.is_byte_level() {
             return self.vocab.token_to_id(token);
         }
-        let bytes: Vec<u8> = token.chars().map(char_to_byte).collect::<Option<_>>()?;
-        self.vocab.get_bytes(&bytes)
+        match token.chars().map(char_to_byte).collect::<Option<Vec<u8>>>() {
+            Some(bytes) => self.vocab.get_bytes(&bytes),
+            None => self
+                .verbatim
+                .iter()
+                .find(|(_, v)| v == token)
+                .map(|&(id, _)| id),
+        }
     }
 
     /// `{token: id}`, with each token as [`Self::id_to_token`] spells it.
