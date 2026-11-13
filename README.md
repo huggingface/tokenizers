@@ -11,6 +11,10 @@
     <a href="https://github.com/huggingface/tokenizers/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue&cachedrop"></a>
 </p>
 
+<p align="center">
+    <b>English</b> · <a href="README.zh.md">简体中文</a>
+</p>
+
 The SOTA tokenization library on all languages, all models, all hardwares. 
 
 Our goal with `tokenizers` is to develop and maintain the industry's standard tokenization engine, making it the defacto place for everyone to contribute to the whole ecosystem.
