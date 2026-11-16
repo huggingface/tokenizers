@@ -5,7 +5,7 @@ use tk_encode::models::unigram::Unigram;
 #[cfg(feature = "wordlevel")]
 use tk_encode::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
-use tk_encode::models::wordpiece::WordPiece;
+use tk_encode::models::wordpiece::WordPieceConfig;
 
 use crate::Trainer;
 #[cfg(feature = "bpe")]
@@ -30,7 +30,7 @@ pub enum ModelWrapper {
     #[cfg(feature = "bpe")]
     BPE(BPE),
     #[cfg(feature = "wordpiece")]
-    WordPiece(WordPiece),
+    WordPiece(WordPieceConfig),
     #[cfg(feature = "wordlevel")]
     WordLevel(WordLevel),
     #[cfg(feature = "unigram")]
@@ -44,8 +44,8 @@ impl From<BPE> for ModelWrapper {
     }
 }
 #[cfg(feature = "wordpiece")]
-impl From<WordPiece> for ModelWrapper {
-    fn from(m: WordPiece) -> Self {
+impl From<WordPieceConfig> for ModelWrapper {
+    fn from(m: WordPieceConfig) -> Self {
         Self::WordPiece(m)
     }
 }
@@ -98,7 +98,7 @@ impl Trainable for WordLevel {
 }
 
 #[cfg(feature = "wordpiece")]
-impl Trainable for WordPiece {
+impl Trainable for WordPieceConfig {
     type Trainer = WordPieceTrainer;
     fn get_trainer(&self) -> WordPieceTrainer {
         WordPieceTrainer::builder().build()

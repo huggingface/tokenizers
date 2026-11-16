@@ -140,8 +140,8 @@ fn from_json_value(doc: &Json<'_>) -> Result<Tokenizer> {
             normalizers,
             pre_tokenizer,
             read_wordpiece(model_cfg)?,
-            tk_encode::models::wordpiece::WordPiece::get_vocab_size,
-            tk_encode::models::wordpiece::WordPiece::token_to_id,
+            |wp| wp.vocab.len(),
+            |wp, t| wp.vocab.get(t).copied(),
             |wp| Ok(Model::WordPiece(wp.try_into()?)),
         ),
         #[cfg(feature = "unigram")]

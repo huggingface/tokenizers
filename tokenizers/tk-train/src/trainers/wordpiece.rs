@@ -5,7 +5,7 @@ use crate::trainers::bpe::{BpeTrainer, BpeTrainerBuilder};
 use ahash::AHashSet;
 use serde::{Deserialize, Serialize};
 use tk_encode::Result;
-use tk_encode::models::wordpiece::WordPiece;
+use tk_encode::models::wordpiece::WordPieceConfig;
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 
 /// A `WordPieceTrainerBuilder` can be used to create a `WordPieceTrainer` with a custom
@@ -134,7 +134,7 @@ impl WordPieceTrainer {
         WordPieceTrainerBuilder::default()
     }
 
-    pub fn train(&self, model: &mut WordPiece) -> Result<Vec<AddedToken>> {
+    pub fn train(&self, model: &mut WordPieceConfig) -> Result<Vec<AddedToken>> {
         // WordPiece reinterprets a trained BPE's vocabulary as its own pieces; the merge list has no
         // meaning here and is dropped. This used to go through `tk_convert`'s `from_bpe`, which
         // built a whole `BPE` to read its vocabulary back off -- `train_vocab` hands over the same
@@ -152,9 +152,9 @@ impl WordPieceTrainer {
 }
 
 impl Trainer for WordPieceTrainer {
-    type Model = WordPiece;
+    type Model = WordPieceConfig;
 
-    fn train(&self, model: &mut WordPiece) -> Result<Vec<AddedToken>> {
+    fn train(&self, model: &mut WordPieceConfig) -> Result<Vec<AddedToken>> {
         self.train(model)
     }
 

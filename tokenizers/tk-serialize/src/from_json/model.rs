@@ -1,6 +1,8 @@
 use super::unsupported;
 use crate::json::Json;
 use tk_encode::models::bpe::{BpeConfig, Merges, Vocab};
+#[cfg(feature = "wordpiece")]
+use tk_encode::models::wordpiece::WordPieceConfig;
 use tk_encode::tokenizer::Result;
 
 pub(super) fn read_bpe(cfg: &Json<'_>) -> Result<(Vocab, Merges, BpeConfig)> {
@@ -75,25 +77,21 @@ fn read_vocab_object(cfg: &Json<'_>) -> Result<Vocab> {
 }
 
 #[cfg(feature = "wordpiece")]
-pub(super) fn read_wordpiece(cfg: &Json<'_>) -> Result<tk_encode::models::wordpiece::WordPiece> {
-    let vocab = read_vocab_object(cfg)?;
-    let max_input_chars_per_word = cfg.need(
+pub(super) fn read_wordpiece(cfg: &Json<'_>) -> Result<WordPieceConfig> {
+    let mut config = WordPieceConfig::default();
+    config.vocab = read_vocab_object(cfg)?;
+    config.max_input_chars_per_word = cfg.need(
         "WordPiece model",
         "max_input_chars_per_word",
         Json::as_usize,
     )?;
-    tk_encode::models::wordpiece::WordPiece::builder()
-        .vocab(vocab)
-        .unk_token(
-            cfg.need("WordPiece model", "unk_token", Json::as_str)?
-                .to_string(),
-        )
-        .continuing_subword_prefix(
-            cfg.need("WordPiece model", "continuing_subword_prefix", Json::as_str)?
-                .to_string(),
-        )
-        .max_input_chars_per_word(max_input_chars_per_word)
-        .build()
+    config.unk_token = cfg
+        .need("WordPiece model", "unk_token", Json::as_str)?
+        .to_string();
+    config.continuing_subword_prefix = cfg
+        .need("WordPiece model", "continuing_subword_prefix", Json::as_str)?
+        .to_string();
+    Ok(config)
 }
 
 /// Unigram's vocab is an array of `[token, score]` pairs, and the scores decide the lattice, so a
