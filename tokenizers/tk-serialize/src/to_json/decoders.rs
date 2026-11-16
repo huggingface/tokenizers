@@ -1,10 +1,9 @@
 //! Every variant keeps its own fields, and this is a
 //! one-arm-per-variant transcription back out.
 
-use super::normalizers::write_replace_pattern;
+use super::normalizers::{prepend_scheme_name, write_replace_pattern};
 use super::writer::Out;
 use tk_encode::decoders::DecoderRuntime;
-use tk_encode::decoders::metaspace::PrependScheme;
 use tk_encode::tokenizer::Result;
 
 pub(super) fn write_decoder(out: &mut Out, decoder: Option<&DecoderRuntime>) -> Result<()> {
@@ -70,11 +69,7 @@ fn write_one(out: &mut Out, decoder: &DecoderRuntime) -> Result<()> {
             );
             out.field_str(
                 "prepend_scheme",
-                match metaspace.prepend_scheme {
-                    PrependScheme::Always => "always",
-                    PrependScheme::First => "first",
-                    PrependScheme::Never => "never",
-                },
+                prepend_scheme_name(metaspace.prepend_scheme),
             );
             out.obj_close();
         }

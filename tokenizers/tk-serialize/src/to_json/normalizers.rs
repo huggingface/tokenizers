@@ -2,10 +2,18 @@
 use super::writer::Out;
 #[cfg(feature = "normalizers")]
 use base64::Engine as _;
-use tk_encode::normalizers::metaspace::PrependBehavior;
+use tk_encode::normalizers::metaspace::PrependScheme;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
 use tk_encode::pipeline::PipelineNormalizer;
 use tk_encode::tokenizer::Result;
+
+pub(super) fn prepend_scheme_name(scheme: PrependScheme) -> &'static str {
+    match scheme {
+        PrependScheme::Always => "always",
+        PrependScheme::First => "first",
+        PrependScheme::Never => "never",
+    }
+}
 
 /// The `normalizer` value for a chain.
 pub(super) fn write_normalizer(out: &mut Out, chain: &[PipelineNormalizer]) -> Result<()> {
@@ -45,14 +53,7 @@ fn write_one(out: &mut Out, normalizer: &PipelineNormalizer) -> Result<()> {
                 "replacement",
                 metaspace.delimiter().encode_utf8(&mut [0; 4]),
             );
-            out.field_str(
-                "prepend",
-                match metaspace.prepend() {
-                    PrependBehavior::Always => "always",
-                    PrependBehavior::First => "first",
-                    PrependBehavior::Never => "never",
-                },
-            );
+            out.field_str("prepend", prepend_scheme_name(metaspace.prepend()));
             out.field_bool("drop_whitespace", metaspace.drop_whitespace());
             out.obj_close();
         }
