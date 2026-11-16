@@ -5,8 +5,8 @@ use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyBytes, PyDict};
 use tk::PaddingParams;
 use tk::TruncationParams;
+use tk::pipeline;
 use tk::pipeline::EncodeOptions;
-use tk::pipeline::Encoding as PipelineEncoding;
 use tk::pipeline::Input;
 use tk::pipeline::Inputs;
 use tk::pipeline::Token;
@@ -49,7 +49,11 @@ impl CompiledTokenizer {
         })
     }
 
-    fn encode_one(&self, input: PyInput, options: &EncodeOptions) -> tk::Result<PipelineEncoding> {
+    fn encode_one(
+        &self,
+        input: PyInput,
+        options: &EncodeOptions,
+    ) -> tk::Result<pipeline::Encoding> {
         let mut encodings = self.pipeline.encode(input, options).wait()?;
         Ok(encodings
             .pop()
