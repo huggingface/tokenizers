@@ -34,7 +34,7 @@ use crate::json::Json;
 use std::collections::BTreeMap;
 use tk_encode::models::bpe::BPE;
 use tk_encode::pipeline::{
-    NormalizerChain, PipelineModel, PipelineNormalizer, PipelinePreTokenizer, Tokenizer,
+    Normalizer, NormalizerChain, PipelineModel, PipelinePreTokenizer, Tokenizer,
 };
 use tk_encode::tokenizer::Result;
 use tk_encode::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
@@ -179,7 +179,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<Tokenizer> {
 
 fn build<M>(
     doc: &Json<'_>,
-    normalizers: Vec<PipelineNormalizer>,
+    normalizers: Vec<Normalizer>,
     pre_tokenizer: PipelinePreTokenizer,
     concrete: M,
     vocab_size: impl FnOnce(&M) -> usize,
@@ -191,7 +191,7 @@ fn build<M>(
     let mut added_vocabulary = BucketAddedVocabulary::new();
     // TODO: this has nothing to do here.
     let declared = match normalizers.last() {
-        Some(PipelineNormalizer::Metaspace(_)) => &normalizers[..normalizers.len() - 1],
+        Some(Normalizer::Metaspace(_)) => &normalizers[..normalizers.len() - 1],
         _ => &normalizers[..],
     };
     let chain = NormalizerChain(declared);

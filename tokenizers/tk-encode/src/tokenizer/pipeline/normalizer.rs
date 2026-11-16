@@ -1,5 +1,5 @@
 //! The normalizer half of the pipeline: the [`Normalize`] trait, the
-//! [`PipelineNormalizer`] enum of concrete steps, and the chain that runs them.
+//! [`Normalizer`] enum of concrete steps, and the chain that runs them.
 
 use std::borrow::Cow;
 
@@ -26,7 +26,7 @@ pub trait Normalize {
 /// One normalization step of a [`Tokenizer`].
 #[derive(Debug)]
 #[non_exhaustive]
-pub enum PipelineNormalizer {
+pub enum Normalizer {
     /// This used to be a pretokenizer, it makes more sense as a normalizer.
     Metaspace(MetaspaceNormalizer),
     Replace(Replace),
@@ -53,7 +53,7 @@ pub enum PipelineNormalizer {
 }
 
 // This replaces the previous normalizer sequence.
-pub struct NormalizerChain<'a>(pub &'a [PipelineNormalizer]);
+pub struct NormalizerChain<'a>(pub &'a [Normalizer]);
 
 /// Runs `normalizers` in order, each one seeing what the one before it produced.
 ///
@@ -96,7 +96,7 @@ impl Normalize for NormalizerChain<'_> {
     }
 }
 
-impl Normalize for PipelineNormalizer {
+impl Normalize for Normalizer {
     fn normalize<'a>(&self, input: &'a str, offset: usize) -> Result<Cow<'a, str>> {
         match self {
             Self::Metaspace(normalizer) => normalizer.normalize(input, offset),
