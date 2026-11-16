@@ -7,10 +7,7 @@ use crate::{
     pipeline::{self, PipelineToken},
     tokenizer::Result,
 };
-use crate::{
-    utils::cache::{Cache, MAX_LENGTH},
-    vocab::bucket_vocab_store::BucketVocabStore,
-};
+use crate::{utils::cache::DEFAULT_CACHE_CAPACITY, vocab::bucket_vocab_store::BucketVocabStore};
 use std::collections::HashMap;
 
 use std::convert::TryInto;
@@ -18,10 +15,11 @@ use std::convert::TryInto;
 pub(crate) type Vocab = Vec<(String, f64)>;
 
 /// A `Unigram` model to encode sentences.
+#[derive(Clone)]
 pub struct Unigram {
     token_to_ids: BucketVocabStore,
     pub(crate) vocab: Vocab,
-    cache: Cache<String, Vec<String>>,
+    cache_capacity: usize,
     trie: Trie<u8>,
     pub min_score: f64,
     pub(super) unk_id: Option<usize>,
@@ -41,29 +39,6 @@ impl PartialEq for Unigram {
             && self.vocab == other.vocab
             && self.alpha == other.alpha
             && self.nbest_size == other.nbest_size
-    }
-}
-
-impl Clone for Unigram {
-    // `Clone` can't be derive because it's not implemented for `Cache`.
-    // To keep things simple when we clone, the new Unigram will start with a fresh cache.
-    fn clone(&self) -> Self {
-        let fresh_cache = self.cache.fresh();
-        Self {
-            vocab: self.vocab.clone(),
-            cache: fresh_cache,
-            token_to_ids: self.token_to_ids.clone(),
-            trie: self.trie.clone(),
-            min_score: self.min_score,
-            unk_id: self.unk_id,
-            bos_id: self.bos_id,
-            eos_id: self.eos_id,
-            fuse_unk: self.fuse_unk,
-            is_optimized: self.is_optimized,
-            byte_fallback: self.byte_fallback,
-            alpha: self.alpha,
-            nbest_size: self.nbest_size,
-        }
     }
 }
 
@@ -145,7 +120,7 @@ impl Unigram {
             eos_id,
             unk_id,
             fuse_unk,
-            cache: Cache::default(),
+            cache_capacity: DEFAULT_CACHE_CAPACITY,
             is_optimized,
             byte_fallback,
             alpha: None,
@@ -156,7 +131,6 @@ impl Unigram {
     #[cfg(test)]
     pub(super) fn set_fuse_unk(&mut self, fuse_unk: bool) {
         self.fuse_unk = fuse_unk;
-        self.cache = self.cache.fresh();
     }
 
     #[cfg(test)]
@@ -212,43 +186,6 @@ impl Unigram {
         }
     }
 
-    /// This functions take a String, and will encode it in a Vec of Strings,
-    /// of the best tokenization available to the current model.
-    /// ```
-    /// use tk_encode::models::unigram::Unigram;
-    ///
-    /// let pieces = vec![
-    ///     ("<unk>".to_string(), 0.0),
-    ///     ("a".to_string(), 0.0),
-    ///     ("b".to_string(), 0.0),
-    ///     ("c".to_string(), 0.0),
-    ///     ("d".to_string(), 0.0),
-    ///     ("cd".to_string(), 1.0),
-    ///     ("ab".to_string(), 2.0),
-    ///     ("abc".to_string(), 5.0),
-    ///     ("abcd".to_string(), 10.0),
-    /// ];
-    /// let model = Unigram::from(pieces, Some(0), false).unwrap();
-    /// let result = model.encode("abcdacdxx").unwrap();
-    /// assert_eq!(result, vec!["abcd", "a", "cd", "xx"]);
-    /// ```
-    pub fn encode(&self, sentence: &str) -> Result<Vec<String>> {
-        if sentence.is_empty() {
-            return Ok(vec![]);
-        }
-        if self.samples() {
-            return self.encode_uncached(sentence);
-        }
-        if let Some(result) = self.cache.get(sentence) {
-            return Ok(result.to_vec());
-        }
-        let result = self.encode_uncached(sentence)?;
-        if sentence.len() < MAX_LENGTH {
-            self.cache.set(sentence.to_owned(), result.clone());
-        }
-        Ok(result)
-    }
-
     /// Whether [`Unigram::alpha`] asks for a tokenization drawn at random from the
     /// lattice instead of its best path. Such a result is one draw out of many, so no
     /// cache may hold it.
@@ -256,9 +193,9 @@ impl Unigram {
         matches!(self.alpha, Some(alpha) if alpha != 0.0)
     }
 
-    /// What `sentence` encodes to, worked out rather than looked up: the lattice's
-    /// best path, or a draw from it when [`Unigram::samples`].
-    fn encode_uncached(&self, sentence: &str) -> Result<Vec<String>> {
+    /// The pieces `sentence` encodes to: the lattice's best path, or a draw from it when
+    /// [`Unigram::samples`].
+    pub(super) fn encode(&self, sentence: &str) -> Result<Vec<String>> {
         if self.is_optimized && !self.samples() {
             self.encode_optimized(sentence)
         } else {
@@ -413,14 +350,10 @@ impl Unigram {
         &self.vocab
     }
 
-    /// Clears the internal cache
-    pub fn clear_cache(&mut self) {
-        self.cache.clear();
-    }
-
-    /// Resize the cache
+    /// Sets how many words the word cache of each new [`UnigramScratch`] holds. Zero turns the
+    /// cache off.
     pub fn resize_cache(&mut self, capacity: usize) {
-        self.cache.resize(capacity);
+        self.cache_capacity = capacity;
     }
 }
 
@@ -478,17 +411,15 @@ impl pipeline::Model for Unigram {
 
     fn init_scratch(&self) -> Self::Scratch {
         Self::Scratch {
-            word_cache: match self.cache.capacity {
+            word_cache: match self.cache_capacity {
                 0 => None,
                 capacity => Some(WordCache::new(capacity)),
             },
         }
     }
 
-    /// The pipeline asks for ids and nothing else, so this path caches ids, where
-    /// [`Unigram::encode`] has to hand back the pieces themselves and caches those. A hit
-    /// skips the lattice, the `String` every piece is built into, and the vocabulary
-    /// lookup that turns each one back into an id.
+    /// The word cache holds ids, not pieces. A hit skips the lattice, the `String` every piece
+    /// is built into, and the vocabulary lookup that turns each one back into an id.
     fn tokenize_pipeline(
         &self,
         sequence: &str,
@@ -512,7 +443,7 @@ impl pipeline::Model for Unigram {
         }
 
         let start = output.len();
-        for string in self.encode_uncached(sequence)? {
+        for string in self.encode(sequence)? {
             match self.token_to_ids.token_to_id(&string) {
                 Some(id) => {
                     output.push(PipelineToken::from(id));
