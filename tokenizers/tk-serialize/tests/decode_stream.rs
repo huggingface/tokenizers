@@ -1,7 +1,7 @@
-//! Tests [`PipelineDecodeStream`] on real tokenizer configs. The expected values are what the
+//! Tests [`DecodeStream`] on real tokenizer configs. The expected values are what the
 //! released 0.23.3 `DecodeStream` returns for the same ids.
 
-use tk_encode::pipeline::{PipelineDecodeStream, PipelineTokenizer};
+use tk_encode::pipeline::{DecodeStream, PipelineTokenizer};
 
 fn load(name: &str) -> PipelineTokenizer {
     let canonical = tk_convert::canonicalize_file(format!("../data/{name}")).unwrap();
@@ -11,7 +11,7 @@ fn load(name: &str) -> PipelineTokenizer {
 #[test]
 fn holds_back_a_character_until_its_last_byte() {
     let llama3 = load("llama-3-tokenizer.json");
-    let mut stream = PipelineDecodeStream::new(Vec::new(), false);
+    let mut stream = DecodeStream::new(Vec::new(), false);
 
     // "삥뽕빵": each syllable takes two or three byte-level tokens
     let steps: Vec<_> = [80690, 98, 167, 121, 243]
@@ -35,12 +35,12 @@ fn prompt_ids_are_context_not_output() {
     let (bos, hello, world) = (1, 15043, 3186);
 
     // The Metaspace decoder strips the space in front of the first word only
-    let mut stream = PipelineDecodeStream::new(vec![bos, hello], true);
+    let mut stream = DecodeStream::new(vec![bos, hello], true);
     assert_eq!(
         stream.step(&llama2, &[world]).unwrap(),
         Some(" world".into())
     );
-    let mut stream = PipelineDecodeStream::new(Vec::new(), true);
+    let mut stream = DecodeStream::new(Vec::new(), true);
     assert_eq!(
         stream.step(&llama2, &[world]).unwrap(),
         Some("world".into())
@@ -50,7 +50,7 @@ fn prompt_ids_are_context_not_output() {
 #[test]
 fn a_rewritten_prefix_is_an_invalid_prefix_error() {
     let llama2 = load("llama-2.json");
-    let mut stream = PipelineDecodeStream::new(Vec::new(), false);
+    let mut stream = DecodeStream::new(Vec::new(), false);
 
     // <0x61> decodes to "a". <0xD5> starts a character, but the next token is not a byte.
     // The ByteFallback decoder then turns both bytes into U+FFFD.

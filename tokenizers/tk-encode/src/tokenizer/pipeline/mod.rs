@@ -971,7 +971,7 @@ impl PipelineTokenizer {
 /// An incomplete character decodes to U+FFFD (`�`), so a step returns `None` while the text
 /// ends with one.
 #[derive(Clone)]
-pub struct PipelineDecodeStream {
+pub struct DecodeStream {
     skip_special_tokens: bool,
     ids: Vec<u32>,
     /// The text of `ids[..prefix_index]`. Each decode of `ids` must start with it, and the
@@ -981,7 +981,7 @@ pub struct PipelineDecodeStream {
     prefix_index: usize,
 }
 
-impl PipelineDecodeStream {
+impl DecodeStream {
     /// Creates a stream that continues `prompt`.
     ///
     /// The first steps decode the prompt ids as context, but never return their text.
