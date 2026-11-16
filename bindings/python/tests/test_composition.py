@@ -272,7 +272,7 @@ def test_editing_a_component_writes_through(gpt2_spec):
 def test_sequence_setitem(gpt2_spec):
     gpt2_spec.normalizer = normalizers.Sequence([normalizers.Prepend("a")])
     gpt2_spec.normalizer[0] = normalizers.Prepend("b")
-    assert gpt2_spec.normalizer[0].prepend == "b"  # ty: ignore[unresolved-attribute]
+    assert gpt2_spec.normalizer[0].prepend == "b"  # ty: ignore[missing-attribute]
 
 
 # Each kind lists a Sequence's items under its own key, and "pretokenizers" has no underscore.
@@ -303,21 +303,21 @@ def test_sequence_item_is_shared():
     item = sequence[0]
     assert isinstance(item, normalizers.Prepend)
     item.prepend = "b"
-    assert sequence[0].prepend == "b"  # ty: ignore[unresolved-attribute]
+    assert sequence[0].prepend == "b"  # ty: ignore[missing-attribute]
 
 
 def test_sequence_shares_its_arguments():
     prepend = normalizers.Prepend("a")
     sequence = normalizers.Sequence([prepend])
     prepend.prepend = "b"
-    assert sequence[0].prepend == "b"  # ty: ignore[unresolved-attribute]
+    assert sequence[0].prepend == "b"  # ty: ignore[missing-attribute]
 
 
 def test_sequence_negative_index():
     sequence = normalizers.Sequence([normalizers.Prepend("a"), normalizers.Prepend("b")])
     assert sequence[-1].__getstate__() == sequence[1].__getstate__()
     sequence[-2] = normalizers.Prepend("c")
-    assert [item.prepend for item in sequence] == ["c", "b"]  # ty: ignore[unresolved-attribute]
+    assert [item.prepend for item in sequence] == ["c", "b"]  # ty: ignore[missing-attribute]
 
 
 def test_sequence_index_out_of_range():
@@ -345,7 +345,7 @@ def test_sequence_flattens_a_sequence_argument():
     item = inner[0]
     assert isinstance(item, normalizers.Prepend)
     item.prepend = "x"
-    assert outer[0].prepend == "x"  # ty: ignore[unresolved-attribute]
+    assert outer[0].prepend == "x"  # ty: ignore[missing-attribute]
 
 
 # A file can nest a Sequence in a Sequence.
