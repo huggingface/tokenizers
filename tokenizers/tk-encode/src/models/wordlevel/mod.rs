@@ -1,5 +1,5 @@
 use crate::pipeline::{self, ModelScratch, PipelineToken};
-use crate::tokenizer::{Result, Token};
+use crate::tokenizer::Result;
 use ahash::AHashMap;
 use std::collections::HashMap;
 
@@ -110,24 +110,6 @@ impl Default for WordLevel {
 /// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
 /// plain inherent methods now and every call site is unchanged.
 impl WordLevel {
-    pub fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
-        if let Some(&id) = self.vocab.get(token) {
-            Ok(vec![Token {
-                id,
-                value: token.to_owned(),
-                offsets: (0, token.len()),
-            }])
-        } else if let Some(&unk_id) = self.vocab.get(&self.unk_token) {
-            Ok(vec![Token {
-                id: unk_id,
-                value: self.unk_token.to_owned(),
-                offsets: (0, token.len()),
-            }])
-        } else {
-            Err(Box::new(Error::MissingUnkToken))
-        }
-    }
-
     pub fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab.get(token).copied()
     }
@@ -172,6 +154,12 @@ impl pipeline::Model for WordLevel {
 mod tests {
     use super::*;
 
+    fn tokenize(wordlevel: &WordLevel, sequence: &str) -> Result<Vec<u32>> {
+        let mut output = Vec::new();
+        pipeline::Model::tokenize_pipeline(wordlevel, sequence, &mut (), &mut output)?;
+        Ok(output.iter().map(|token| token.id()).collect())
+    }
+
     #[test]
     fn encodes_a_vocab_holding_every_utf8_byte() {
         let chars = crate::models::chars_covering_every_utf8_byte();
@@ -203,21 +191,17 @@ mod tests {
             .unk_token("<unk>".to_string())
             .build()
             .unwrap();
-        let tokens = wordlevel.tokenize("c").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 1)),]);
-
-        let tokens = wordlevel.tokenize("a").unwrap();
-        assert_eq!(tokens, vec![Token::new(1u32, "a".into(), (0, 1)),]);
+        assert_eq!(tokenize(&wordlevel, "c").unwrap(), [0]);
+        assert_eq!(tokenize(&wordlevel, "a").unwrap(), [1]);
     }
 
     #[test]
     fn test_tokenize_missing_unk_token() {
         let vocab: Vocab = [("a".into(), 0), ("b".into(), 1)].iter().cloned().collect();
         let wordlevel = WordLevelBuilder::default().vocab(vocab).build().unwrap();
-        let tokens = wordlevel.tokenize("a").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "a".into(), (0, 1)),]);
+        assert_eq!(tokenize(&wordlevel, "a").unwrap(), [0]);
 
-        let error = wordlevel.tokenize("c").err().unwrap();
+        let error = tokenize(&wordlevel, "c").err().unwrap();
         assert!(error.is::<Error>());
     }
 }
