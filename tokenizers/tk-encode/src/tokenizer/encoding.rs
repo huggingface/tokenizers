@@ -186,17 +186,6 @@ impl Encoding {
         std::mem::take(&mut self.overflowing)
     }
 
-    pub(crate) fn process_tokens_with_offsets_mut<F>(&mut self, func: F)
-    where
-        F: FnMut((usize, (&String, &mut Offsets))),
-    {
-        self.tokens
-            .iter()
-            .zip(self.offsets.iter_mut())
-            .enumerate()
-            .for_each(func)
-    }
-
     /// Returns the range to target to retrieve something (word_id, offsets, ..) related to the
     /// given sequence id
     fn sequence_range(&self, sequence_id: usize) -> Range<usize> {
