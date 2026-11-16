@@ -110,6 +110,12 @@ pub mod mask {
 }
 
 pub const CONT: u8 = Atom::Cont as u8;
+// Only the SIMD kernels read it.
+#[cfg(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    all(target_arch = "wasm32", target_feature = "simd128")
+))]
 pub(crate) const MB: u8 = Atom::MultiByte as u8;
 
 /// Classify `text` under scheme `S` into `tags` (`tags.len() == text.len()`) — the single arch
