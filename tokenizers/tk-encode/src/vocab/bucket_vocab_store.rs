@@ -398,11 +398,6 @@ impl BucketVocabStore {
             .collect()
     }
 
-    /// Alias for `content` — kept so `Model::get_vocab` call sites resolve.
-    pub(crate) fn get_vocab(&self) -> Vec<(String, u32)> {
-        self.content()
-    }
-
     /// convenient when we want to re-build a vocab
     pub(crate) fn byte_content(&self) -> Vec<(Vec<u8>, u32)> {
         self.entries
@@ -573,10 +568,9 @@ mod tests {
     fn content_views_agree() {
         let vocab =
             BucketVocabStore::build(vec![(b"hi".to_vec(), 0), (b"yo".to_vec(), 1)]).unwrap();
-        let mut got = vocab.get_vocab();
+        let mut got = vocab.content();
         got.sort();
         assert_eq!(got, vec![("hi".to_string(), 0), ("yo".to_string(), 1)]);
-        assert_eq!(vocab.content(), vocab.get_vocab());
         let mut bytes = vocab.byte_content();
         bytes.sort();
         assert_eq!(bytes, vec![(b"hi".to_vec(), 0), (b"yo".to_vec(), 1)]);

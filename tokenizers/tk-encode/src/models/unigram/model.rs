@@ -375,7 +375,7 @@ impl<'a> Iterator for UnigramIterator<'a> {
 /// plain inherent methods now and every call site is unchanged.
 impl Unigram {
     pub(crate) fn get_vocab(&self) -> HashMap<String, u32> {
-        self.token_to_ids.get_vocab().into_iter().collect()
+        self.token_to_ids.content().into_iter().collect()
     }
 
     pub fn get_vocab_size(&self) -> usize {
