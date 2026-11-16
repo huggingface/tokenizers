@@ -309,13 +309,6 @@ impl<'a> Lattice<'a> {
         }
     }
 
-    pub fn nbest_tokens(&mut self, n: usize) -> Vec<Vec<String>> {
-        self.nbest(n)
-            .iter()
-            .map(|v| v.iter().map(|node| self.piece(&node.borrow())).collect())
-            .collect()
-    }
-
     pub fn len(&self) -> usize {
         self.len
     }
@@ -648,6 +641,19 @@ mod tests {
             .unwrap();
     }
 
+    fn nbest_tokens(lattice: &mut Lattice, n: usize) -> Vec<Vec<String>> {
+        let paths = lattice.nbest(n);
+        let mut tokens = Vec::with_capacity(paths.len());
+        for path in &paths {
+            let pieces: Vec<String> = path
+                .iter()
+                .map(|node| lattice.piece(&node.borrow()))
+                .collect();
+            tokens.push(pieces);
+        }
+        tokens
+    }
+
     #[test]
     fn test_nbest() {
         let mut lattice = Lattice::from("ABC", 1, 2);
@@ -658,7 +664,7 @@ mod tests {
         lattice.insert(1, 2, 5.0, 7);
         lattice.insert(0, 3, 10.0, 8);
 
-        let nbests = lattice.nbest_tokens(10);
+        let nbests = nbest_tokens(&mut lattice, 10);
         assert_eq!(
             nbests,
             vec![
@@ -669,8 +675,8 @@ mod tests {
             ]
         );
 
-        assert!(lattice.nbest_tokens(0).is_empty());
-        assert_eq!(lattice.nbest_tokens(1), vec![vec!["ABC"]]);
+        assert!(nbest_tokens(&mut lattice, 0).is_empty());
+        assert_eq!(nbest_tokens(&mut lattice, 1), vec![vec!["ABC"]]);
     }
     #[test]
     fn test_log_sum_exp() {
