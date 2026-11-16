@@ -8,11 +8,11 @@ use std::{
 
 use bitcannon::Span;
 
-use crate::pipeline::{PipelineModel, PipelineModelScratch, PreTokenizerScratch, Tokenize};
+use crate::pipeline::{ModelScratch, PipelineModel, PreTokenizerScratch, Tokenize};
 
 #[derive(Default)]
 pub(crate) struct EncodeScratch {
-    pub(crate) model: PipelineModelScratch,
+    pub(crate) model: ModelScratch,
     pub(crate) split: PreTokenizerScratch,
     pub(crate) pre_tokens: Vec<Span>,
 }
@@ -29,11 +29,11 @@ fn scratch_shard() -> usize {
     SHARD.with(|shard| *shard)
 }
 
-/// A pool of [`PipelineModelScratch`], split into [`SCRATCH_SHARDS`] independent sub-pools.
+/// A pool of [`ModelScratch`], split into [`SCRATCH_SHARDS`] independent sub-pools.
 ///
 /// Sharding the thread pool considerably reduces contention on machines with a very high number of threads (NVIDIA Vera, Intel GNR, AMD Turin) - see https://github.com/huggingface/tokenizers/pull/2365
 ///
-/// When calling [`Tokenizer::encode`], an instance of [`PipelineModelScratch`] is taken out of this pool
+/// When calling [`Tokenizer::encode`], an instance of [`ModelScratch`] is taken out of this pool
 /// and given to the tokenizer. When the encoding is done, the scratch buffer is returned to the pool and can be
 /// reused by later calls.
 ///
@@ -95,8 +95,8 @@ impl ScratchPool {
     }
 }
 
-/// A wrapper around [`PipelineModelScratch`].
-/// Implements [`Deref`] and [`DerefMut`], so it behaves as [`PipelineModelScratch`].
+/// A wrapper around [`ModelScratch`].
+/// Implements [`Deref`] and [`DerefMut`], so it behaves as [`ModelScratch`].
 ///
 /// When it gets dropped, it pushes [`Self::scratch`] back into the shared [`Self::pool`] so it can
 /// get reused by a later call to [`Tokenizer::encode`].
@@ -110,7 +110,7 @@ pub(super) struct ScratchGuard<'a> {
 
 impl Drop for ScratchGuard<'_> {
     fn drop(&mut self) {
-        // Steals the scratch buffer from self, replaces it with PipelineModelScratch::default()
+        // Steals the scratch buffer from self, replaces it with ModelScratch::default()
         let scratch = mem::take(&mut self.scratch);
         // Push the scratch back in the pool
         self.pool.0[self.shard]
@@ -341,7 +341,7 @@ mod tests {
         assert_eq!(pipeline.inner.scratch_pool.len(), 1);
         let scratch = pipeline.inner.scratch_pool.get(&pipeline.inner.model);
         assert!(
-            matches!(scratch.model, PipelineModelScratch::BPE(_)),
+            matches!(scratch.model, ModelScratch::BPE(_)),
             "the pooled scratch is not the BPE scratch the model used"
         );
     }
@@ -357,7 +357,7 @@ mod tests {
 
     fn pooled_buffers(pipeline: &Tokenizer) -> Buffers {
         let scratch = pipeline.inner.scratch_pool.get(&pipeline.inner.model);
-        let PipelineModelScratch::BPE(bpe) = &scratch.model else {
+        let ModelScratch::BPE(bpe) = &scratch.model else {
             panic!("a BPE pipeline encodes with a BPE scratch");
         };
         Buffers {
@@ -471,7 +471,7 @@ mod tests {
             .unwrap();
 
         let mut scratch = pipeline.inner.scratch_pool.get(&pipeline.inner.model);
-        let PipelineModelScratch::BPE(bpe) = &mut scratch.model else {
+        let ModelScratch::BPE(bpe) = &mut scratch.model else {
             panic!("a BPE pipeline encodes with a BPE scratch");
         };
         let cache = bpe.word_cache.as_mut().expect("BPE encodes with a cache");
