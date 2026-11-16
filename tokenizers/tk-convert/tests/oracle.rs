@@ -21,6 +21,9 @@
 //! smollm2-135m and bloomz-560m are byte-level BPE with no token for some bytes that valid UTF-8
 //! can contain.
 //!
+//! siglip2-base-patch16-224 and parakeet-tdt-0.6b-v3 set `byte_fallback` but lack some `<0xNN>` tokens.
+//! SigLIP 2 has a `"\t"` token in place of `<0x09>`. Parakeet has no `<0xNN>` token at all.
+//!
 //! Decode is fed the release's *own* ids, so it is judged on decode alone even where encode
 //! legitimately diverges.
 //!
@@ -390,4 +393,20 @@ fn smollm2_135m() {
 #[test]
 fn bloomz_560m() {
     assert_matches_released("bigscience/bloomz-560m", "fixtures/models/bloomz-560m.json");
+}
+
+#[test]
+fn siglip2_base_patch16_224() {
+    assert_matches_released(
+        "google/siglip2-base-patch16-224",
+        "fixtures/models/siglip2-base-patch16-224.json",
+    );
+}
+
+#[test]
+fn parakeet_tdt_0_6b_v3() {
+    assert_matches_released(
+        "nvidia/parakeet-tdt-0.6b-v3",
+        "fixtures/models/parakeet-tdt-0.6b-v3.json",
+    );
 }

@@ -274,6 +274,42 @@ pub(crate) fn has_ssse3() -> bool {
     }
 }
 
+#[cfg(all(target_arch = "riscv64", target_os = "linux"))]
+pub(crate) fn has_rvv() -> bool {
+    use std::sync::atomic::{AtomicU8, Ordering};
+    unsafe extern "C" {
+        fn getauxval(kind: usize) -> usize;
+        fn prctl(option: i32, ...) -> i32;
+    }
+    const AT_HWCAP: usize = 16;
+    const PR_RISCV_V_GET_CONTROL: i32 = 70;
+    const PR_RISCV_V_VSTATE_CTRL_ON: i32 = 2;
+    const PR_RISCV_V_VSTATE_CTRL_CUR_MASK: i32 = 3;
+    static CACHED: AtomicU8 = AtomicU8::new(0);
+    let supported = match CACHED.load(Ordering::Relaxed) {
+        0 => {
+            // Linux HWCAP exposes the standard V extension as bit ('V' - 'A').
+            let yes = unsafe { getauxval(AT_HWCAP) & (1 << (b'V' - b'A')) != 0 };
+            CACHED.store(1 + u8::from(yes), Ordering::Relaxed);
+            yes
+        }
+        n => n == 2,
+    };
+    if !supported {
+        return false;
+    }
+    // V control is per-thread, so each thread asks the kernel once. A thread that enables V
+    // later stays on the scalar path, which is slower but correct.
+    thread_local! {
+        static ENABLED: bool = {
+            let status = unsafe { prctl(PR_RISCV_V_GET_CONTROL, 0usize, 0usize, 0usize, 0usize) };
+            // Fall back to HWCAP on kernels or emulators without this interface.
+            status < 0 || status & PR_RISCV_V_VSTATE_CTRL_CUR_MASK == PR_RISCV_V_VSTATE_CTRL_ON
+        };
+    }
+    ENABLED.with(|enabled| *enabled)
+}
+
 pub(crate) const CONT: u8 = 15; // Atom::Cont
 pub(crate) const CODE_CONT: u8 = 7; // every grammar's dense code for a continuation byte
 
@@ -694,6 +730,10 @@ pub(crate) fn emit(starts: &[u64], fake: &[u64], nblk: usize, n: usize, out: &mu
 /// over GPT-2's case-sensitive one.
 #[inline]
 pub(crate) fn contr_len(text: &[u8], i: usize, ci: bool) -> usize {
+    // Unicode case folding also maps long s (U+017F) to s.
+    if ci && text.get(i..i + 3) == Some(b"'\xC5\xBF".as_slice()) {
+        return 3;
+    }
     let n = text.len();
     if i + 1 >= n || text[i] != b'\'' || text[i + 1] >= 0x80 {
         return 0;

@@ -7,3 +7,6 @@
 pub(crate) mod neon;
 #[cfg(target_arch = "x86_64")]
 pub(crate) mod x86;
+
+#[cfg(all(target_arch = "riscv64", target_os = "linux"))]
+pub(crate) mod rvv;

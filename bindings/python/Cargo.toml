@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 pyo3 = { version = "=0.29", default-features = false, features = [
   "macros",
   "extension-module",
-  "abi3-py310",
+  "abi3-py311",
   "experimental-inspect",
 ] }
 #TODO: this will be a soft dependency later on IMO.

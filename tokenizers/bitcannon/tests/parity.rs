@@ -223,9 +223,48 @@ fn check(name: &str, f: Split, oracle: &Oracle) {
 /// disagree about.
 fn fuzz_texts(n: usize) -> Vec<String> {
     const ALPHA: &[&str] = &[
-        "a", "b", "z", "A", "Q", "é", "ß", "Ĳ", "0", "1", "9", " ", "  ", "\n", "\r\n", "\t", "'",
-        "'s", "'ll", ".", "!", "/", "#", "_", "中", "文", "ひ", "カ", "한", "م", "😀", "\u{0301}",
-        "\u{200D}", "½", "\u{2168}",
+        "a",
+        "b",
+        "z",
+        "A",
+        "Q",
+        "é",
+        "ß",
+        "Ĳ",
+        "0",
+        "1",
+        "9",
+        " ",
+        "  ",
+        "\n",
+        "\r\n",
+        "\t",
+        "'",
+        "'s",
+        "'ll",
+        ".",
+        "!",
+        "/",
+        "#",
+        "_",
+        "中",
+        "文",
+        "ひ",
+        "カ",
+        "한",
+        "م",
+        "😀",
+        "\u{0301}",
+        "\u{200D}",
+        "½",
+        "\u{2168}",
+        "ſ",
+        "⺀",
+        "〇",
+        "\u{16FE2}",
+        "\u{16FE3}",
+        "\u{16FF0}",
+        "\u{16FF1}",
     ];
     let mut st = 0x243F_6A88_85A3_08D3u64;
     let mut next = move || {
@@ -293,6 +332,61 @@ fn tekken_parity() {
     let o = Oracle::Whole(Regex::new(TEKKEN).unwrap());
     check("tekken", bs_tekken, &o);
     check_fuzz("tekken", bs_tekken, &o);
+}
+
+#[test]
+fn kimi_han_category_parity() {
+    let re = Regex::new(KIMI_K2).unwrap();
+    let cases = [" ⺀", " !⺀", "1〇", "2〇〇", "\u{16FE2}a", "a\u{16FF0}"];
+    let expected = [
+        vec![" ⺀"],
+        vec![" !⺀"],
+        vec!["1〇"],
+        vec!["2〇〇"],
+        vec!["\u{16FE2}", "a"],
+        vec!["a", "\u{16FF0}"],
+    ];
+    let mut actual = Vec::new();
+    for (text, expected) in cases.into_iter().zip(expected) {
+        let oracle: Vec<_> = onig_spans(&re, text)
+            .iter()
+            .map(|s| &text[s.start as usize..s.end as usize])
+            .collect();
+        assert_eq!(oracle, expected, "oracle: {text:?}");
+        let tokens: Vec<_> = spans(bs_kimi, text)
+            .iter()
+            .map(|s| &text[s.start as usize..s.end as usize])
+            .collect();
+        actual.push((tokens, expected));
+    }
+    assert!(actual.iter().all(|(got, want)| got == want), "{actual:?}");
+    for phase in 0..64 {
+        for tail in [
+            "⺀中a",
+            "1〇中",
+            "12〇〇中",
+            "123〇中",
+            "!⺀中",
+            "⺀!中",
+            "\u{16FE2}a",
+            "a\u{16FF0}",
+            "\u{16FE3}ABC",
+            "\u{16FF1}a",
+            "\u{0301}A⺀",
+            "a'ſ⺀",
+            "A'ſ1〇",
+            " \u{16FF0}A",
+            "\n  !〇's",
+            "a\r\n〇123",
+        ] {
+            let text = format!("{}{tail}", "x".repeat(phase));
+            assert_eq!(
+                spans(bs_kimi, &text),
+                onig_spans(&re, &text),
+                "{phase}: {tail:?}"
+            );
+        }
+    }
 }
 
 #[test]

@@ -30,7 +30,14 @@ const fn lut<const DROP: u16, const ISOLATE: u16, const KEEP_A: u16>() -> [u8; 6
 streams!(
     /// One block's class streams — one per dense code. Only `other` needs the `valid` mask, since
     /// past the block end every plane reads 0, i.e. code 0.
-    Cls { lead, cont, dropped, isolate, keep_a, other }
+    Cls {
+        lead,
+        cont,
+        dropped,
+        isolate,
+        keep_a,
+        other
+    }
 );
 
 /// Decode the two planes; returns the fill seed for the block after.

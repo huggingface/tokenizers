@@ -180,11 +180,7 @@ impl UnigramTrainer {
         // care of within pre_tokenizers.
         // https://github.com/google/sentencepiece/blob/26be9516cd81d5315ee31c48d2438018e0eab879/src/trainer_interface.cc#L203
         let n = char_string.len();
-        if char_string.is_empty() || n > self.max_piece_length {
-            return false;
-        }
-
-        true
+        !(char_string.is_empty() || n > self.max_piece_length)
     }
 
     fn finalize(&self, model: Unigram, required_chars: AHashSet<String>) -> Result<Unigram> {
