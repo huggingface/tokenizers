@@ -102,7 +102,7 @@ impl PartialEq for Node {
 }
 
 impl Node {
-    pub fn new(id: usize, node_id: usize, pos: usize, length: usize, score: f64) -> Self {
+    pub(crate) fn new(id: usize, node_id: usize, pos: usize, length: usize, score: f64) -> Self {
         Self {
             id,
             node_id,
@@ -176,7 +176,7 @@ impl<'a> Lattice<'a> {
         }
     }
 
-    pub fn insert(&mut self, pos: usize, length: usize, score: f64, id: usize) {
+    pub(crate) fn insert(&mut self, pos: usize, length: usize, score: f64, id: usize) {
         let node_id = self.nodes.len();
         let node = Rc::new(RefCell::new(Node::new(id, node_id, pos, length, score)));
 
@@ -236,7 +236,7 @@ impl<'a> Lattice<'a> {
         results
     }
 
-    pub fn piece(&self, node: &Node) -> String {
+    pub(crate) fn piece(&self, node: &Node) -> String {
         self.sentence[node.pos..node.pos + node.length].to_owned()
     }
 
@@ -302,7 +302,7 @@ impl<'a> Lattice<'a> {
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.len
     }
 
@@ -310,10 +310,10 @@ impl<'a> Lattice<'a> {
         self.len == 0
     }
 
-    pub fn bos_node(&self) -> NodeRef {
+    pub(crate) fn bos_node(&self) -> NodeRef {
         Rc::clone(&self.end_nodes[0][0])
     }
-    pub fn eos_node(&self) -> NodeRef {
+    pub(crate) fn eos_node(&self) -> NodeRef {
         Rc::clone(&self.begin_nodes[self.len][0])
     }
 
@@ -366,7 +366,7 @@ impl<'a> Lattice<'a> {
         freq * z
     }
 
-    pub fn sample(&self, theta: f64) -> Vec<NodeRef> {
+    pub(crate) fn sample(&self, theta: f64) -> Vec<NodeRef> {
         let len = self.len();
         if len == 0 {
             return vec![];
@@ -411,7 +411,7 @@ impl<'a> Lattice<'a> {
         results
     }
 
-    pub fn sample_nbest(&mut self, n: usize, theta: f64) -> Vec<NodeRef> {
+    pub(crate) fn sample_nbest(&mut self, n: usize, theta: f64) -> Vec<NodeRef> {
         let nbest_paths = self.nbest(n);
         if nbest_paths.is_empty() {
             return self.viterbi();

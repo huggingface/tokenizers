@@ -29,8 +29,8 @@ pub struct Unigram {
     is_optimized: bool,
     byte_fallback: bool,
 
-    pub alpha: Option<f64>,
-    pub nbest_size: Option<usize>,
+    pub(crate) alpha: Option<f64>,
+    pub(crate) nbest_size: Option<usize>,
 }
 impl PartialEq for Unigram {
     fn eq(&self, other: &Self) -> bool {
@@ -54,7 +54,7 @@ impl std::fmt::Debug for Unigram {
 static K_UNK_PENALTY: f64 = 10.0;
 
 #[derive(thiserror::Error, Debug)]
-pub enum UnigramError {
+pub(crate) enum UnigramError {
     #[error("The vocabulary is empty but at least <unk> is needed")]
     EmptyVocabulary,
     #[error("The `unk_id` is larger than vocabulary size")]
