@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::sync::TryLockError;
-use std::sync::atomic::AtomicU8;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
@@ -18,9 +17,6 @@ pub use rayon::current_num_threads;
 
 /// TODO: deprecate
 pub const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
-
-/// TODO: deprecate
-static PARALLELISM: AtomicU8 = AtomicU8::new(0);
 
 /// 0 means deafult value
 static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
@@ -147,18 +143,8 @@ pub fn set_num_threads(n: usize) {
     invalidate();
 }
 
-/// Get internally set parallelism
-fn get_override_parallelism() -> Option<bool> {
-    match PARALLELISM.load(Ordering::SeqCst) {
-        0 => None,
-        1 => Some(false),
-        2 => Some(true),
-        _ => unreachable!(),
-    }
-}
-
 /// Get the currently set value for `TOKENIZERS_PARALLELISM` env variable
-fn get_env_parallelism() -> bool {
+pub fn get_parallelism() -> bool {
     match std::env::var(ENV_VARIABLE) {
         Ok(mut v) => {
             v.make_ascii_lowercase();
@@ -166,19 +152,6 @@ fn get_env_parallelism() -> bool {
         }
         Err(_) => true, // If we couldn't get the variable, we use the default
     }
-}
-
-pub fn get_parallelism() -> bool {
-    if let Some(parallel) = get_override_parallelism() {
-        parallel
-    } else {
-        get_env_parallelism()
-    }
-}
-
-/// Set the value for `TOKENIZERS_PARALLELISM` for the current process
-pub fn set_parallelism(val: bool) {
-    PARALLELISM.store(if val { 2 } else { 1 }, Ordering::SeqCst);
 }
 
 /// Allows to convert into an iterator that can be executed either parallelly or serially.
