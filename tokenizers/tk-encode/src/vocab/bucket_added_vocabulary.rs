@@ -179,7 +179,7 @@ pub struct AddedVocabulary {
 
 /// Renumbers the added tokens 0..n in vocab-id order, and maps between those internal ids and the
 /// true vocab token ids.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct InternalIds {
     vocab_ids: Box<[u32]>,
     mphf: Mphf,
@@ -242,8 +242,7 @@ impl fmt::Debug for AddedVocabulary {
 impl AddedVocabulary {
     pub fn new() -> Self {
         Self {
-            ids: InternalIds::try_new(Box::new([]))
-                .expect("ptr_hash builds a perfect hash over no keys"),
+            ids: InternalIds::default(),
             token_metadata: Box::new([]),
             normalized_vocab: Buckets::new(),
             vocab: Buckets::new(),

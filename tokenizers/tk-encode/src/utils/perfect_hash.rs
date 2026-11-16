@@ -52,6 +52,13 @@ impl Mphf {
     }
 }
 
+impl Default for Mphf {
+    fn default() -> Self {
+        // XXX: use Default implementation of PtrHash when fixed upstream
+        Self::try_new(&[]).expect("always succeeds with empty key slice")
+    }
+}
+
 /// Spreads an integer key over all 64 bits, for use as an [`Mphf`] key.
 ///
 /// `mix` is a bijection, so distinct integers stay distinct keys.

@@ -305,7 +305,7 @@ impl BucketVocabStore {
     pub fn new() -> Self {
         // convenient to build empty edit later.
         Self {
-            mphf: Mphf::try_new(&[]).expect("ptr_hash builds a perfect hash over no keys"),
+            mphf: Mphf::default(),
             bytes: Box::new([]),
             entries: Box::new([]),
             spans: Box::new([]),

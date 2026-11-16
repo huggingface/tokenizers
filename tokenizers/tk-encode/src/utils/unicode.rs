@@ -23,8 +23,9 @@ impl Unicode9IgnoredCombiningMarks {
             .iter()
             .map(|&c| mix(c as u64))
             .collect();
-        let mphf = Mphf::try_new(&keys)
-            .expect("MARKS_ONLY_IN_UNICODE_17 is a set of distinct chars, and building is tested below");
+        let mphf = Mphf::try_new(&keys).expect(
+            "MARKS_ONLY_IN_UNICODE_17 is a set of distinct chars, and building is tested below",
+        );
         let mut slots = vec![u32::MAX; mphf.max_index()].into_boxed_slice();
         for &c in &MARKS_ONLY_IN_UNICODE_17 {
             slots[mphf.index(mix(c as u64))] = c as u32;
