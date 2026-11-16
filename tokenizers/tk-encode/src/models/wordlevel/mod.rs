@@ -1,4 +1,4 @@
-use crate::pipeline::{self, ModelScratch, PipelineToken};
+use crate::pipeline::{self, PipelineToken};
 use crate::tokenizer::Result;
 use ahash::AHashMap;
 use std::collections::HashMap;
@@ -139,11 +139,8 @@ impl WordLevel {
     }
 }
 
-type WordLevelScratch = ();
-impl ModelScratch for WordLevelScratch {}
-
 impl pipeline::Model for WordLevel {
-    type Scratch = WordLevelScratch;
+    type Scratch = ();
     fn init_scratch(&self) -> Self::Scratch {}
     fn tokenize_pipeline(
         &self,

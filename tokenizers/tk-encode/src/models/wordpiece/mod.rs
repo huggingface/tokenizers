@@ -157,8 +157,6 @@ pub struct WordPieceScratch {
     word_cache: WordCache,
 }
 
-impl pipeline::ModelScratch for WordPieceScratch {}
-
 /// yada cannot store the NUL byte as a token, the trie holds NUL as 0xFF instead.
 /// 0xFF is not a valid UTF-8 byte.
 const NUL_IN_TRIE: u8 = 0xFF;

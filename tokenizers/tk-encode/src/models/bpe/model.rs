@@ -202,8 +202,6 @@ pub struct BpeScratch {
     pub(crate) word_cache: Option<WordCache>,
 }
 
-impl pipeline::ModelScratch for BpeScratch {}
-
 impl pipeline::Model for PipelineBPE {
     type Scratch = BpeScratch;
 
