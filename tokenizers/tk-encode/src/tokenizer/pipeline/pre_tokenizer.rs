@@ -8,7 +8,7 @@ use crate::pre_tokenizers::{
     digits::Digits,
     fixed_length::FixedLength,
     punctuation::Punctuation,
-    sequence::PipelineSequence,
+    sequence::Sequence,
     split::Split as SplitPretok,
     whitespace::{Whitespace, WhitespaceSplit},
 };
@@ -53,7 +53,7 @@ pub struct PreTokenizerScratch {
     starts: Vec<u64>,
     flags: Vec<u64>,
     later: Vec<u64>,
-    /// The two buffers a [`PipelineSequence`] reads and writes as each of its children subdivides
+    /// The two buffers a [`Sequence`] reads and writes as each of its children subdivides
     /// the spans the child before it produced. Handed out by [`Self::take_pair`] rather than
     /// borrowed, so the sequence can pass the rest of the scratch to its children while it holds
     /// them.
@@ -148,7 +148,7 @@ pub enum PipelinePreTokenizer {
     Digits(Digits),
     FixedLength(FixedLength),
     Punctuation(Punctuation),
-    Sequence(PipelineSequence),
+    Sequence(Sequence),
     Split(SplitPretok),
     #[cfg(feature = "unicode-scripts")]
     UnicodeScripts(crate::pre_tokenizers::unicode_scripts::UnicodeScripts),
@@ -476,7 +476,7 @@ mod tests {
             PipelinePreTokenizer::Punctuation(Punctuation::new(Contiguous)),
             PipelinePreTokenizer::Punctuation(Punctuation::new(MergedWithPrevious)),
             PipelinePreTokenizer::Punctuation(Punctuation::new(MergedWithNext)),
-            PipelinePreTokenizer::Sequence(PipelineSequence::new(vec![
+            PipelinePreTokenizer::Sequence(Sequence::new(vec![
                 PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
                 PipelinePreTokenizer::Punctuation(Punctuation::new(Isolated)),
             ])),

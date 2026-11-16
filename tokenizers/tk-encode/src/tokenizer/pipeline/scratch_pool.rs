@@ -146,7 +146,7 @@ mod tests {
         EncodeOptions, PipelineModel, PipelinePostProcessor, PipelinePreTokenizer,
         PipelineTokenizer,
     };
-    use crate::pre_tokenizers::sequence::PipelineSequence;
+    use crate::pre_tokenizers::sequence::Sequence;
     use crate::pre_tokenizers::whitespace::Whitespace;
     use crate::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
 
@@ -209,13 +209,13 @@ mod tests {
     }
 
     /// The same model, with a `Sequence` of two real children: the shape that runs
-    /// [`PipelineSequence`]'s child loop, where a single child or a recognized deepseek
+    /// [`Sequence`]'s child loop, where a single child or a recognized deepseek
     /// composition would take a fast path above it instead.
     fn hello_pipeline_sequence() -> PipelineTokenizer {
         use crate::pre_tokenizers::digits::Digits;
         use crate::pre_tokenizers::whitespace::WhitespaceSplit;
 
-        hello_pipeline_with(PipelinePreTokenizer::Sequence(PipelineSequence::new(vec![
+        hello_pipeline_with(PipelinePreTokenizer::Sequence(Sequence::new(vec![
             PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
             PipelinePreTokenizer::Digits(Digits::default()),
         ])))
@@ -420,7 +420,7 @@ mod tests {
             .collect()
     }
 
-    // `PipelineSequence` swaps its two buffers with `pre_tokens` rather than copying out of them,
+    // `Sequence` swaps its two buffers with `pre_tokens` rather than copying out of them,
     // so no one buffer keeps the same allocation from call to call and the per-buffer comparison
     // above would not hold here. What must hold is that the three allocations a warm pipeline
     // rotates are still the three it uses: a call that allocated a fresh buffer instead of taking
