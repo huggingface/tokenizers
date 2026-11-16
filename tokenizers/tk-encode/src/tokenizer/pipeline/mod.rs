@@ -38,7 +38,7 @@ mod normalizer;
 mod post_processor;
 mod pre_tokenizer;
 
-pub use normalizer::{Normalize, NormalizerChain, PipelineNormalizer, normalize_all};
+pub use normalizer::{Normalize, Normalizer, NormalizerChain, normalize_all};
 pub use post_processor::{PostProcessor, Template};
 pub use pre_tokenizer::{PipelinePreTokenizer, PreTokenize, PreTokenizerScratch};
 pub(crate) use pre_tokenizer::{split_delimiter, split_matches};
@@ -212,7 +212,7 @@ impl<'a, 'b, M: PatternMatcher> Iterator for SpecialSegmentIterator<'a, 'b, M> {
 
 struct TokenizerInner {
     added_vocabulary: BucketAddedVocabulary,
-    normalizers: Vec<PipelineNormalizer>,
+    normalizers: Vec<Normalizer>,
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
     post_processor: PostProcessor,
@@ -256,7 +256,7 @@ impl Tokenizer {
     #[allow(clippy::too_many_arguments)]
     pub fn from_parts(
         added_vocabulary: BucketAddedVocabulary,
-        normalizers: Vec<PipelineNormalizer>,
+        normalizers: Vec<Normalizer>,
         pre_tokenizer: PipelinePreTokenizer,
         model: PipelineModel,
         post_processor: PostProcessor,
@@ -575,7 +575,7 @@ impl Tokenizer {
     ///
     /// This is for a writer, which needs the members themselves. A config `Sequence` was
     /// flattened on the way in, so what comes back is the concatenation, not the nesting.
-    pub fn get_normalizers(&self) -> &[PipelineNormalizer] {
+    pub fn get_normalizers(&self) -> &[Normalizer] {
         &self.inner.normalizers
     }
 
@@ -1858,7 +1858,7 @@ mod tests {
                 [AddedToken::from("<s>", true)],
                 8,
                 |_| None,
-                None::<&PipelineNormalizer>,
+                None::<&Normalizer>,
             )
             .unwrap();
         let pipeline = Tokenizer::from_parts(
@@ -1929,7 +1929,7 @@ mod tests {
                 ],
                 256,
                 |_| None,
-                None::<&PipelineNormalizer>,
+                None::<&Normalizer>,
             )
             .unwrap();
         let pipeline = Tokenizer::from_parts(
@@ -1997,7 +1997,7 @@ mod tests {
                 [AddedToken::from(content, true)],
                 8,
                 |_| None,
-                None::<&PipelineNormalizer>,
+                None::<&Normalizer>,
             )
             .unwrap();
         Tokenizer::from_parts(
