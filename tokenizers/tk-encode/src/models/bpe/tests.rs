@@ -41,7 +41,7 @@ fn hello(options: BpeConfig) -> Result<BPE> {
 fn pipeline_ids(model: &BPE, sequence: &str) -> Vec<u32> {
     let mut out = Vec::new();
     let mut scratch = model.init_scratch();
-    pipeline::Tokenize::tokenize_pipeline(model, sequence, &mut scratch, &mut out).unwrap();
+    pipeline::Tokenize::tokenize(model, sequence, &mut scratch, &mut out).unwrap();
     out.iter().map(|t| t.id()).collect()
 }
 
@@ -96,7 +96,7 @@ fn reused_scratch_matches_fresh() {
     let mut scratch = model.init_scratch();
     for input in ["hello", "hell", "helo", "oleh", "hello", "", "hxe"] {
         let mut out = Vec::new();
-        pipeline::Tokenize::tokenize_pipeline(&model, input, &mut scratch, &mut out).unwrap();
+        pipeline::Tokenize::tokenize(&model, input, &mut scratch, &mut out).unwrap();
         let got: Vec<u32> = out.iter().map(|t| t.id()).collect();
         assert_eq!(got, pipeline_ids(&model, input), "{input:?}");
     }
@@ -126,7 +126,7 @@ fn cached_ids_match_uncached() {
             "hxe",
         ] {
             let mut out = Vec::new();
-            pipeline::Tokenize::tokenize_pipeline(&cached, word, &mut scratch, &mut out).unwrap();
+            pipeline::Tokenize::tokenize(&cached, word, &mut scratch, &mut out).unwrap();
             let got: Vec<u32> = out.iter().map(|t| t.id()).collect();
             assert_eq!(got, pipeline_ids(&uncached, word), "{word:?}");
         }

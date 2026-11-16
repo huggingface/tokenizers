@@ -1030,7 +1030,7 @@ impl DecodeStream {
 pub trait Tokenize {
     type Scratch;
 
-    fn tokenize_pipeline(
+    fn tokenize(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
@@ -1053,7 +1053,7 @@ pub trait Tokenize {
         output: &mut Vec<Token>,
     ) -> Result<()> {
         for span in spans {
-            self.tokenize_pipeline(&chunk[span.range()], scratch, output)?;
+            self.tokenize(&chunk[span.range()], scratch, output)?;
         }
         Ok(())
     }
@@ -1134,7 +1134,7 @@ impl Model {
 impl Tokenize for Model {
     type Scratch = ModelScratch;
 
-    fn tokenize_pipeline(
+    fn tokenize(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
@@ -1142,19 +1142,19 @@ impl Tokenize for Model {
     ) -> Result<()> {
         match (self, scratch) {
             (Self::BPE(model), ModelScratch::BPE(scratch)) => {
-                model.tokenize_pipeline(sequence, scratch, output)
+                model.tokenize(sequence, scratch, output)
             }
             #[cfg(feature = "unigram")]
             (Self::Unigram(model), ModelScratch::Unigram(scratch)) => {
-                model.tokenize_pipeline(sequence, scratch, output)
+                model.tokenize(sequence, scratch, output)
             }
             #[cfg(feature = "wordlevel")]
             (Self::WordLevel(model), ModelScratch::WordLevel(scratch)) => {
-                model.tokenize_pipeline(sequence, scratch, output)
+                model.tokenize(sequence, scratch, output)
             }
             #[cfg(feature = "wordpiece")]
             (Self::WordPiece(model), ModelScratch::WordPiece(scratch)) => {
-                model.tokenize_pipeline(sequence, scratch, output)
+                model.tokenize(sequence, scratch, output)
             }
             _ => unreachable!(),
         }

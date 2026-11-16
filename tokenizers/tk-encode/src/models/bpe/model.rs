@@ -205,7 +205,7 @@ pub struct BpeScratch {
 impl pipeline::Tokenize for BPE {
     type Scratch = BpeScratch;
 
-    fn tokenize_pipeline(
+    fn tokenize(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
@@ -267,7 +267,7 @@ impl pipeline::Tokenize for BPE {
 
     /// Every pre-token of a chunk in one call.
     ///
-    /// Same work per word as [`Self::tokenize_pipeline`]; what changes is what is *not* repeated.
+    /// Same work per word as [`Self::tokenize`]; what changes is what is *not* repeated.
     /// The scratch is destructured once instead of once per word, the output is grown once for the
     /// whole batch instead of being capacity-checked on every push, and the virtual call, the
     /// slice and the `Result` happen once per chunk rather than once per pre-token.
