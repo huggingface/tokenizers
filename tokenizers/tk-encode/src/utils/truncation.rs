@@ -39,7 +39,7 @@ impl Default for TruncationParams {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum TruncationError {
+pub(crate) enum TruncationError {
     /// We are supposed to truncate the pair sequence, but it has not been provided.
     #[error("Truncation error: Second sequence not provided")]
     SecondSequenceNotProvided,
