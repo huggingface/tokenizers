@@ -8,7 +8,7 @@ use std::{
 
 use bitcannon::Span;
 
-use crate::pipeline::{Model, PipelineModel, PipelineModelScratch, PreTokenizerScratch};
+use crate::pipeline::{PipelineModel, PipelineModelScratch, PreTokenizerScratch, Tokenize};
 
 #[derive(Default)]
 pub(crate) struct EncodeScratch {

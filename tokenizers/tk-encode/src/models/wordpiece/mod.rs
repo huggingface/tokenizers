@@ -327,7 +327,7 @@ impl PipelineWordPiece {
     }
 }
 
-impl pipeline::Model for PipelineWordPiece {
+impl pipeline::Tokenize for PipelineWordPiece {
     type Scratch = WordPieceScratch;
 
     fn init_scratch(&self) -> Self::Scratch {
@@ -406,14 +406,14 @@ mod tests {
         scratch: &mut WordPieceScratch,
     ) -> Vec<u32> {
         let mut output = vec![];
-        pipeline::Model::tokenize_pipeline(model, sequence, scratch, &mut output).unwrap();
+        pipeline::Tokenize::tokenize_pipeline(model, sequence, scratch, &mut output).unwrap();
         output.iter().map(|token| token.id()).collect()
     }
 
     #[test]
     fn pipeline_remembers_what_a_word_encoded_to() {
         let model = pipeline_wordpiece();
-        let mut scratch = pipeline::Model::init_scratch(&model);
+        let mut scratch = pipeline::Tokenize::init_scratch(&model);
 
         let ids = pipeline_ids(&model, "hello", &mut scratch);
 
@@ -442,10 +442,10 @@ mod tests {
             long.as_str(),
         ];
 
-        let mut warm_scratch = pipeline::Model::init_scratch(&model);
+        let mut warm_scratch = pipeline::Tokenize::init_scratch(&model);
         let warm = corpus.map(|sequence| pipeline_ids(&model, sequence, &mut warm_scratch));
         let cold = corpus.map(|sequence| {
-            let mut scratch = pipeline::Model::init_scratch(&model);
+            let mut scratch = pipeline::Tokenize::init_scratch(&model);
             pipeline_ids(&model, sequence, &mut scratch)
         });
 
@@ -461,7 +461,7 @@ mod tests {
             .collect();
         let model = WordPiece::builder().vocab(vocab).build().unwrap();
         let model = PipelineWordPiece::try_from(model).unwrap();
-        let mut scratch = pipeline::Model::init_scratch(&model);
+        let mut scratch = pipeline::Tokenize::init_scratch(&model);
 
         assert_eq!(pipeline_ids(&model, "hello", &mut scratch), [2]);
         assert_eq!(pipeline_ids(&model, "world", &mut scratch), [1]);
@@ -481,7 +481,7 @@ mod tests {
         vocab.insert("[UNK]".to_string(), 0);
         let model = WordPiece::builder().vocab(vocab).build().unwrap();
         let model = PipelineWordPiece::try_from(model).unwrap();
-        let mut scratch = pipeline::Model::init_scratch(&model);
+        let mut scratch = pipeline::Tokenize::init_scratch(&model);
 
         for (c, id) in chars.iter().zip(1u32..) {
             let token = c.to_string();
@@ -504,7 +504,7 @@ mod tests {
         .collect();
         let model = WordPiece::builder().vocab(vocab).build().unwrap();
         let model = PipelineWordPiece::try_from(model).unwrap();
-        let mut scratch = pipeline::Model::init_scratch(&model);
+        let mut scratch = pipeline::Tokenize::init_scratch(&model);
 
         assert_eq!(pipeline_ids(&model, "a\0a", &mut scratch), [1, 3, 4]);
         assert_eq!(pipeline_ids(&model, "\0", &mut scratch), [2]);
@@ -545,10 +545,10 @@ mod tests {
         // Every word the pipeline hands the model appends to one output buffer,
         // so a word has to remember its own ids, not everything the buffer holds.
         let model = pipeline_wordpiece();
-        let mut scratch = pipeline::Model::init_scratch(&model);
+        let mut scratch = pipeline::Tokenize::init_scratch(&model);
         let mut output = vec![];
-        pipeline::Model::tokenize_pipeline(&model, "hello", &mut scratch, &mut output).unwrap();
-        pipeline::Model::tokenize_pipeline(&model, "world", &mut scratch, &mut output).unwrap();
+        pipeline::Tokenize::tokenize_pipeline(&model, "hello", &mut scratch, &mut output).unwrap();
+        pipeline::Tokenize::tokenize_pipeline(&model, "world", &mut scratch, &mut output).unwrap();
 
         let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
         assert_eq!(ids, [3, 4]);

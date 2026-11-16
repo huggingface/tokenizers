@@ -835,7 +835,7 @@ impl PipelineTokenizer {
                                         self.inner.pre_tokenizer,
                                     );
                                 }
-                                // The whole span list at once; see Model::tokenize_spans.
+                                // The whole span list at once; see Tokenize::tokenize_spans.
                                 // SAFETY: `PreTokenize` guarantees every span is a valid range of
                                 // `normalized_chunk`, which is what lets the model slice it unchecked.
                                 self.inner.model.tokenize_spans(
@@ -1035,7 +1035,8 @@ impl PipelineDecodeStream {
     }
 }
 
-pub trait Model {
+/// Turns pre-tokens into tokens. Every model (BPE, Unigram, WordPiece, WordLevel) implements it.
+pub trait Tokenize {
     type Scratch;
 
     fn tokenize_pipeline(
@@ -1139,7 +1140,7 @@ impl PipelineModel {
 /// reused among calls to [`PipelineTokenizer::encode`].
 ///
 /// Each model gets its own variant.
-impl Model for PipelineModel {
+impl Tokenize for PipelineModel {
     type Scratch = PipelineModelScratch;
 
     fn tokenize_pipeline(

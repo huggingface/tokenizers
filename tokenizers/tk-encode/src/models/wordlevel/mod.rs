@@ -139,7 +139,7 @@ impl WordLevel {
     }
 }
 
-impl pipeline::Model for WordLevel {
+impl pipeline::Tokenize for WordLevel {
     type Scratch = ();
     fn init_scratch(&self) -> Self::Scratch {}
     fn tokenize_pipeline(
@@ -165,7 +165,7 @@ mod tests {
 
     fn tokenize(wordlevel: &WordLevel, sequence: &str) -> Result<Vec<u32>> {
         let mut output = Vec::new();
-        pipeline::Model::tokenize_pipeline(wordlevel, sequence, &mut (), &mut output)?;
+        pipeline::Tokenize::tokenize_pipeline(wordlevel, sequence, &mut (), &mut output)?;
         Ok(output.iter().map(|token| token.id()).collect())
     }
 
@@ -182,7 +182,8 @@ mod tests {
         for (c, id) in chars.iter().zip(0u32..) {
             let token = c.to_string();
             let mut output = Vec::new();
-            pipeline::Model::tokenize_pipeline(&wordlevel, &token, &mut (), &mut output).unwrap();
+            pipeline::Tokenize::tokenize_pipeline(&wordlevel, &token, &mut (), &mut output)
+                .unwrap();
             let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
             assert_eq!(ids, [id], "{c:?}");
             assert_eq!(wordlevel.token_to_id(&token), Some(id), "{c:?}");
