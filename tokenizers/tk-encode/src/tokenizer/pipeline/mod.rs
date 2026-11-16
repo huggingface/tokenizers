@@ -32,8 +32,6 @@ pub mod encode_options;
 mod parallel;
 mod scratch_pool;
 
-pub use scratch_pool::ModelScratch;
-
 pub use bitcannon::Span;
 
 mod normalizer;
@@ -1038,7 +1036,7 @@ impl PipelineDecodeStream {
 }
 
 pub trait Model {
-    type Scratch: ModelScratch;
+    type Scratch;
 
     fn tokenize_pipeline(
         &self,
@@ -1224,8 +1222,6 @@ pub enum PipelineModelScratch {
     #[default]
     None,
 }
-
-impl ModelScratch for PipelineModelScratch {}
 
 #[cfg(test)]
 mod tests {

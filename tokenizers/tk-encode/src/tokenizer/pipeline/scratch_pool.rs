@@ -10,8 +10,6 @@ use bitcannon::Span;
 
 use crate::pipeline::{Model, PipelineModel, PipelineModelScratch, PreTokenizerScratch};
 
-pub trait ModelScratch {}
-
 #[derive(Default)]
 pub(crate) struct EncodeScratch {
     pub(crate) model: PipelineModelScratch,
