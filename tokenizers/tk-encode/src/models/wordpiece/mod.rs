@@ -21,7 +21,6 @@ pub enum Error {
 }
 
 type Vocab = AHashMap<String, u32>;
-type VocabR = AHashMap<u32, String>;
 
 struct Config {
     vocab: Vocab,
@@ -84,16 +83,8 @@ impl WordPieceBuilder {
 
     /// Constructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
     pub fn build(self) -> Result<WordPiece> {
-        let vocab_r = self
-            .config
-            .vocab
-            .iter()
-            .map(|(key, val)| (*val, key.to_owned()))
-            .collect();
-
         Ok(WordPiece {
             vocab: self.config.vocab,
-            vocab_r,
             unk_token: self.config.unk_token,
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             max_input_chars_per_word: self.config.max_input_chars_per_word,
@@ -107,7 +98,6 @@ impl WordPieceBuilder {
 #[derive(Clone, PartialEq, Eq)]
 pub struct WordPiece {
     pub vocab: Vocab,
-    pub vocab_r: VocabR,
     pub unk_token: String,
     pub continuing_subword_prefix: String,
     pub max_input_chars_per_word: usize,
@@ -128,7 +118,6 @@ impl Default for WordPiece {
     fn default() -> Self {
         Self {
             vocab: AHashMap::new(),
-            vocab_r: AHashMap::new(),
             unk_token: String::from("[UNK]"),
             continuing_subword_prefix: String::from("##"),
             max_input_chars_per_word: 100,
@@ -152,20 +141,12 @@ impl WordPiece {
 /// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
 /// plain inherent methods now and every call site is unchanged.
 impl WordPiece {
-    pub fn get_vocab(&self) -> HashMap<String, u32> {
-        self.vocab.clone().into_iter().collect()
-    }
-
     pub fn get_vocab_size(&self) -> usize {
         self.vocab.len()
     }
 
     pub fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab.get(token).copied()
-    }
-
-    pub fn id_to_token(&self, id: u32) -> Option<String> {
-        self.vocab_r.get(&id).cloned()
     }
 }
 

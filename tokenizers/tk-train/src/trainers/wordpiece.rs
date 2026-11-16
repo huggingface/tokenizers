@@ -141,7 +141,6 @@ impl WordPieceTrainer {
         // vocabulary without building anything.
         let (vocab, _merges, special_tokens) = self.bpe_trainer.train_vocab()?;
 
-        model.vocab_r = vocab.iter().map(|(t, id)| (*id, t.clone())).collect();
         model.vocab = vocab;
         // The continuing_subword_prefix is the only other option to be overridden by the trainer
         if let Some(prefix) = &self.bpe_trainer.continuing_subword_prefix {
