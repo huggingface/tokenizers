@@ -1,30 +1,30 @@
-use crate::pipeline::{self, PipelinePreTokenizer};
+use crate::pipeline::{self, PreTokenizer};
 use crate::tokenizer::Result;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sequence {
-    pre_tokenizers: Vec<PipelinePreTokenizer>,
+    pre_tokenizers: Vec<PreTokenizer>,
 }
 
 impl Sequence {
-    pub fn new(pre_tokenizers: Vec<PipelinePreTokenizer>) -> Self {
+    pub fn new(pre_tokenizers: Vec<PreTokenizer>) -> Self {
         Self { pre_tokenizers }
     }
 
     /// The members, in order. For a writer, which has to spell the `Sequence` back out.
-    pub fn pre_tokenizers(&self) -> &[PipelinePreTokenizer] {
+    pub fn pre_tokenizers(&self) -> &[PreTokenizer] {
         &self.pre_tokenizers
     }
 
     /// Same recognition as [`crate::utils::is_deepseek`], on the converted children: the first three are
     /// Isolated, non-inverted `Split`s carrying deepseek's `[\p{N}{1,3}, CJK, big]` regexes (the trailing
-    /// byte-map `ByteLevel` converts to `PipelinePreTokenizer::None`). Routes the whole split to one
+    /// byte-map `ByteLevel` converts to `PreTokenizer::None`). Routes the whole split to one
     /// `fsm_deepseek` pass.
     fn is_deepseek(&self) -> bool {
         use crate::pre_tokenizers::split::SplitPattern;
         use crate::tokenizer::SplitDelimiterBehavior::Isolated;
         let regex = |i: usize| match self.pre_tokenizers.get(i) {
-            Some(PipelinePreTokenizer::Split(s)) if s.behavior == Isolated && !s.invert => {
+            Some(PreTokenizer::Split(s)) if s.behavior == Isolated && !s.invert => {
                 match &s.pattern {
                     SplitPattern::Regex(r) => Some(r.as_str()),
                     SplitPattern::String(_) => None,
@@ -75,14 +75,14 @@ unsafe impl pipeline::PreTokenize for Sequence {
         }
 
         // Fuse Split+ByteLevel: a byte-map `ByteLevel` (use_regex=false) converts to
-        // `PipelinePreTokenizer::None`, a pure identity pass. Skipping the `None`s collapses the
+        // `PreTokenizer::None`, a pure identity pass. Skipping the `None`s collapses the
         // dominant `Sequence[Split(regex), ByteLevel]` archetype (~40% of Hub usage) to a lone child we
         // run straight into `out` — no double-buffer, no rebase, no redundant identity pass over every
         // token. Sequences with ≥2 real children (or none) fall through to the generic loop unchanged.
         let mut work = self
             .pre_tokenizers
             .iter()
-            .filter(|c| !matches!(c, PipelinePreTokenizer::None));
+            .filter(|c| !matches!(c, PreTokenizer::None));
         if let (Some(only), None) = (work.next(), work.next()) {
             return pipeline::PreTokenize::pre_tokenize(only, text, scratch, out);
         }

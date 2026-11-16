@@ -303,7 +303,7 @@ fn byte_level_is_a_model_field_not_a_pre_tokenizer() {
     )]);
     let doc = Json::parse(&json).unwrap();
     let pretok = read_pre_tokenizer(doc.field("pre_tokenizer")).unwrap();
-    assert!(matches!(pretok, PipelinePreTokenizer::None));
+    assert!(matches!(pretok, PreTokenizer::None));
     assert_eq!(ids(&json, "abab"), vec![3]);
     assert_eq!(ids(&json, "ab-ab"), vec![3]);
 }

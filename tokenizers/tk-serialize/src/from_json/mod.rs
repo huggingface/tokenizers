@@ -33,9 +33,7 @@ use self::truncation::read_truncation;
 use crate::json::Json;
 use std::collections::BTreeMap;
 use tk_encode::models::bpe::BPE;
-use tk_encode::pipeline::{
-    Normalizer, NormalizerChain, PipelineModel, PipelinePreTokenizer, Tokenizer,
-};
+use tk_encode::pipeline::{Normalizer, NormalizerChain, PipelineModel, PreTokenizer, Tokenizer};
 use tk_encode::tokenizer::Result;
 use tk_encode::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
 
@@ -180,7 +178,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<Tokenizer> {
 fn build<M>(
     doc: &Json<'_>,
     normalizers: Vec<Normalizer>,
-    pre_tokenizer: PipelinePreTokenizer,
+    pre_tokenizer: PreTokenizer,
     concrete: M,
     vocab_size: impl FnOnce(&M) -> usize,
     token_to_id: impl Fn(&M, &str) -> Option<u32>,

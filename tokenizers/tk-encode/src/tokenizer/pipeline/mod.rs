@@ -40,7 +40,7 @@ mod pre_tokenizer;
 
 pub use normalizer::{Normalize, Normalizer, NormalizerChain, normalize_all};
 pub use post_processor::{PostProcessor, Template};
-pub use pre_tokenizer::{PipelinePreTokenizer, PreTokenize, PreTokenizerScratch};
+pub use pre_tokenizer::{PreTokenize, PreTokenizer, PreTokenizerScratch};
 pub(crate) use pre_tokenizer::{split_delimiter, split_matches};
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
@@ -213,7 +213,7 @@ impl<'a, 'b, M: PatternMatcher> Iterator for SpecialSegmentIterator<'a, 'b, M> {
 struct TokenizerInner {
     added_vocabulary: BucketAddedVocabulary,
     normalizers: Vec<Normalizer>,
-    pre_tokenizer: PipelinePreTokenizer,
+    pre_tokenizer: PreTokenizer,
     model: PipelineModel,
     post_processor: PostProcessor,
     decoder: Option<DecoderRuntime>,
@@ -257,7 +257,7 @@ impl Tokenizer {
     pub fn from_parts(
         added_vocabulary: BucketAddedVocabulary,
         normalizers: Vec<Normalizer>,
-        pre_tokenizer: PipelinePreTokenizer,
+        pre_tokenizer: PreTokenizer,
         model: PipelineModel,
         post_processor: PostProcessor,
         decoder: Option<DecoderRuntime>,
@@ -563,7 +563,7 @@ impl Tokenizer {
         &self.inner.model
     }
 
-    pub fn get_pre_tokenizer(&self) -> &PipelinePreTokenizer {
+    pub fn get_pre_tokenizer(&self) -> &PreTokenizer {
         &self.inner.pre_tokenizer
     }
 
@@ -1831,7 +1831,7 @@ mod tests {
         Tokenizer::from_parts(
             BucketAddedVocabulary::new(),
             Vec::new(),
-            PipelinePreTokenizer::None,
+            PreTokenizer::None,
             PipelineModel::BPE(hello_bpe()),
             post_processor,
             None,
@@ -1864,7 +1864,7 @@ mod tests {
         let pipeline = Tokenizer::from_parts(
             added,
             Vec::new(),
-            PipelinePreTokenizer::None,
+            PreTokenizer::None,
             PipelineModel::BPE(hello_bpe()),
             PostProcessor::default(),
             None,
@@ -1935,7 +1935,7 @@ mod tests {
         let pipeline = Tokenizer::from_parts(
             added,
             Vec::new(),
-            PipelinePreTokenizer::None,
+            PreTokenizer::None,
             PipelineModel::BPE(bpe),
             PostProcessor::default(),
             None,
@@ -2003,7 +2003,7 @@ mod tests {
         Tokenizer::from_parts(
             added_vocabulary,
             Vec::new(),
-            PipelinePreTokenizer::None,
+            PreTokenizer::None,
             PipelineModel::BPE(hello_bpe()),
             PostProcessor::default(),
             None,

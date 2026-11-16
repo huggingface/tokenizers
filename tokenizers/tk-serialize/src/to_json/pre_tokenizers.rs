@@ -1,15 +1,15 @@
 //! The `pre_tokenizer` object, reassembled from the shapes the reader lowered it into.
 
 use super::writer::Out;
-use tk_encode::pipeline::PipelinePreTokenizer;
+use tk_encode::pipeline::PreTokenizer;
 use tk_encode::pre_tokenizers::split::SplitPattern;
 use tk_encode::tokenizer::Result;
 
 /// The `pre_tokenizer` value.
-pub(super) fn write_pre_tokenizer(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {
+pub(super) fn write_pre_tokenizer(out: &mut Out, pretok: &PreTokenizer) -> Result<()> {
     match pretok {
         // No pre-tokenizer. A missing `pre_tokenizer` reads back as exactly this.
-        PipelinePreTokenizer::None => {
+        PreTokenizer::None => {
             out.null();
             Ok(())
         }
@@ -17,7 +17,7 @@ pub(super) fn write_pre_tokenizer(out: &mut Out, pretok: &PipelinePreTokenizer) 
     }
 }
 
-fn write_one(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {
+fn write_one(out: &mut Out, pretok: &PreTokenizer) -> Result<()> {
     /// A field-less pre-tokenizer.
     fn bare(out: &mut Out, tag: &str) {
         out.obj_open();
@@ -28,10 +28,10 @@ fn write_one(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {
     match pretok {
         // `None` is the whole slot being empty, which the caller writes as `null`. A `Sequence`
         // member cannot be one: nothing lowers to nothing inside a sequence.
-        PipelinePreTokenizer::None => {
+        PreTokenizer::None => {
             return Err("a `Sequence` pre-tokenizer has an empty member".into());
         }
-        PipelinePreTokenizer::Split(split) => {
+        PreTokenizer::Split(split) => {
             out.obj_open();
             out.type_tag("Split");
             out.key("pattern");
@@ -50,36 +50,36 @@ fn write_one(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {
             out.field_bool("invert", split.invert);
             out.obj_close();
         }
-        PipelinePreTokenizer::Whitespace(_) => bare(out, "Whitespace"),
-        PipelinePreTokenizer::WhitespaceSplit(_) => bare(out, "WhitespaceSplit"),
-        PipelinePreTokenizer::Bert(_) => bare(out, "BertPreTokenizer"),
+        PreTokenizer::Whitespace(_) => bare(out, "Whitespace"),
+        PreTokenizer::WhitespaceSplit(_) => bare(out, "WhitespaceSplit"),
+        PreTokenizer::Bert(_) => bare(out, "BertPreTokenizer"),
         #[cfg(feature = "unicode-scripts")]
-        PipelinePreTokenizer::UnicodeScripts(_) => bare(out, "UnicodeScripts"),
-        PipelinePreTokenizer::Digits(digits) => {
+        PreTokenizer::UnicodeScripts(_) => bare(out, "UnicodeScripts"),
+        PreTokenizer::Digits(digits) => {
             out.obj_open();
             out.type_tag("Digits");
             out.field_bool("individual_digits", digits.individual_digits);
             out.obj_close();
         }
-        PipelinePreTokenizer::Punctuation(punctuation) => {
+        PreTokenizer::Punctuation(punctuation) => {
             out.obj_open();
             out.type_tag("Punctuation");
             out.field_str("behavior", &punctuation.behavior.to_string());
             out.obj_close();
         }
-        PipelinePreTokenizer::Delimiter(delimiter) => {
+        PreTokenizer::Delimiter(delimiter) => {
             out.obj_open();
             out.type_tag("CharDelimiterSplit");
             out.field_str("delimiter", delimiter.delimiter.encode_utf8(&mut [0; 4]));
             out.obj_close();
         }
-        PipelinePreTokenizer::FixedLength(fixed) => {
+        PreTokenizer::FixedLength(fixed) => {
             out.obj_open();
             out.type_tag("FixedLength");
             out.field_usize("length", fixed.length);
             out.obj_close();
         }
-        PipelinePreTokenizer::Sequence(sequence) => {
+        PreTokenizer::Sequence(sequence) => {
             out.obj_open();
             out.type_tag("Sequence");
             out.key("pretokenizers");

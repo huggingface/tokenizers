@@ -1,5 +1,5 @@
 //! The pre-tokenizer half of the pipeline: the [`PreTokenize`] trait, its scratch
-//! buffers, the [`PipelinePreTokenizer`] enum, and the shared `split*` primitives
+//! buffers, the [`PreTokenizer`] enum, and the shared `split*` primitives
 //! the concrete pre-tokenizers are built from.
 
 use crate::pre_tokenizers::{
@@ -142,7 +142,7 @@ impl PreTokenizerScratch {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
-pub enum PipelinePreTokenizer {
+pub enum PreTokenizer {
     Bert(BertPreTokenizer),
     Delimiter(CharDelimiterSplit),
     Digits(Digits),
@@ -159,7 +159,7 @@ pub enum PipelinePreTokenizer {
 
 // SAFETY: every arm but `None` forwards to another `PreTokenize` impl, which upholds the contract itself.
 // `None` emits the single span covering all of `text`, whose ends are `0` and `text.len()`.
-unsafe impl PreTokenize for PipelinePreTokenizer {
+unsafe impl PreTokenize for PreTokenizer {
     fn pre_tokenize(
         &self,
         text: &str,
@@ -404,20 +404,20 @@ mod tests {
     use crate::pre_tokenizers::split::SplitPattern;
     use crate::utils::byte_level::GPT2_REGEX_STR;
 
-    fn variant_name(pre_tokenizer: &PipelinePreTokenizer) -> &'static str {
+    fn variant_name(pre_tokenizer: &PreTokenizer) -> &'static str {
         match pre_tokenizer {
-            PipelinePreTokenizer::Bert(_) => "Bert",
-            PipelinePreTokenizer::Delimiter(_) => "Delimiter",
-            PipelinePreTokenizer::Digits(_) => "Digits",
-            PipelinePreTokenizer::FixedLength(_) => "FixedLength",
-            PipelinePreTokenizer::Punctuation(_) => "Punctuation",
-            PipelinePreTokenizer::Sequence(_) => "Sequence",
-            PipelinePreTokenizer::Split(_) => "Split",
+            PreTokenizer::Bert(_) => "Bert",
+            PreTokenizer::Delimiter(_) => "Delimiter",
+            PreTokenizer::Digits(_) => "Digits",
+            PreTokenizer::FixedLength(_) => "FixedLength",
+            PreTokenizer::Punctuation(_) => "Punctuation",
+            PreTokenizer::Sequence(_) => "Sequence",
+            PreTokenizer::Split(_) => "Split",
             #[cfg(feature = "unicode-scripts")]
-            PipelinePreTokenizer::UnicodeScripts(_) => "UnicodeScripts",
-            PipelinePreTokenizer::Whitespace(_) => "Whitespace",
-            PipelinePreTokenizer::WhitespaceSplit(_) => "WhitespaceSplit",
-            PipelinePreTokenizer::None => "None",
+            PreTokenizer::UnicodeScripts(_) => "UnicodeScripts",
+            PreTokenizer::Whitespace(_) => "Whitespace",
+            PreTokenizer::WhitespaceSplit(_) => "WhitespaceSplit",
+            PreTokenizer::None => "None",
         }
     }
 
@@ -464,32 +464,32 @@ mod tests {
         // expression position are not stable.
         #[allow(unused_mut)]
         let mut cases = vec![
-            PipelinePreTokenizer::Bert(BertPreTokenizer),
-            PipelinePreTokenizer::Delimiter(CharDelimiterSplit::new(' ')),
-            PipelinePreTokenizer::Delimiter(CharDelimiterSplit::new('▁')),
-            PipelinePreTokenizer::Digits(Digits::new(true)),
-            PipelinePreTokenizer::Digits(Digits::new(false)),
-            PipelinePreTokenizer::FixedLength(FixedLength::new(3)),
-            PipelinePreTokenizer::FixedLength(FixedLength::new(0)),
-            PipelinePreTokenizer::Punctuation(Punctuation::new(Removed)),
-            PipelinePreTokenizer::Punctuation(Punctuation::new(Isolated)),
-            PipelinePreTokenizer::Punctuation(Punctuation::new(Contiguous)),
-            PipelinePreTokenizer::Punctuation(Punctuation::new(MergedWithPrevious)),
-            PipelinePreTokenizer::Punctuation(Punctuation::new(MergedWithNext)),
-            PipelinePreTokenizer::Sequence(Sequence::new(vec![
-                PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
-                PipelinePreTokenizer::Punctuation(Punctuation::new(Isolated)),
+            PreTokenizer::Bert(BertPreTokenizer),
+            PreTokenizer::Delimiter(CharDelimiterSplit::new(' ')),
+            PreTokenizer::Delimiter(CharDelimiterSplit::new('▁')),
+            PreTokenizer::Digits(Digits::new(true)),
+            PreTokenizer::Digits(Digits::new(false)),
+            PreTokenizer::FixedLength(FixedLength::new(3)),
+            PreTokenizer::FixedLength(FixedLength::new(0)),
+            PreTokenizer::Punctuation(Punctuation::new(Removed)),
+            PreTokenizer::Punctuation(Punctuation::new(Isolated)),
+            PreTokenizer::Punctuation(Punctuation::new(Contiguous)),
+            PreTokenizer::Punctuation(Punctuation::new(MergedWithPrevious)),
+            PreTokenizer::Punctuation(Punctuation::new(MergedWithNext)),
+            PreTokenizer::Sequence(Sequence::new(vec![
+                PreTokenizer::WhitespaceSplit(WhitespaceSplit),
+                PreTokenizer::Punctuation(Punctuation::new(Isolated)),
             ])),
-            PipelinePreTokenizer::Split(gpt2_split),
-            PipelinePreTokenizer::Split(literal_split("▁", MergedWithPrevious)),
-            PipelinePreTokenizer::Split(literal_split("▁", MergedWithNext)),
-            PipelinePreTokenizer::Split(literal_split(" ", Removed)),
-            PipelinePreTokenizer::Whitespace(Whitespace),
-            PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
-            PipelinePreTokenizer::None,
+            PreTokenizer::Split(gpt2_split),
+            PreTokenizer::Split(literal_split("▁", MergedWithPrevious)),
+            PreTokenizer::Split(literal_split("▁", MergedWithNext)),
+            PreTokenizer::Split(literal_split(" ", Removed)),
+            PreTokenizer::Whitespace(Whitespace),
+            PreTokenizer::WhitespaceSplit(WhitespaceSplit),
+            PreTokenizer::None,
         ];
         #[cfg(feature = "unicode-scripts")]
-        cases.push(PipelinePreTokenizer::UnicodeScripts(
+        cases.push(PreTokenizer::UnicodeScripts(
             crate::pre_tokenizers::unicode_scripts::UnicodeScripts::new(),
         ));
 
@@ -514,7 +514,7 @@ mod tests {
         expected.sort_unstable();
         assert_eq!(
             covered, expected,
-            "every PipelinePreTokenizer variant needs a case above",
+            "every PreTokenizer variant needs a case above",
         );
 
         let mut scratch = PreTokenizerScratch::default();
