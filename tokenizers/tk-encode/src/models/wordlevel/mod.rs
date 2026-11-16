@@ -77,9 +77,10 @@ impl WordLevelBuilder {
 
 #[derive(PartialEq, Clone, Eq)]
 pub struct WordLevel {
-    pub vocab: AHashMap<String, u32>,
-    pub vocab_r: AHashMap<u32, String>,
-    pub unk_token: String,
+    vocab: AHashMap<String, u32>,
+    /// The inverse of `vocab`, which [`WordLevelBuilder::build`] derives from it.
+    vocab_r: AHashMap<u32, String>,
+    unk_token: String,
 }
 
 impl std::fmt::Debug for WordLevel {
@@ -94,6 +95,16 @@ impl std::fmt::Debug for WordLevel {
 impl WordLevel {
     pub fn builder() -> WordLevelBuilder {
         WordLevelBuilder::new()
+    }
+
+    /// The token to id mapping.
+    pub fn vocab(&self) -> &AHashMap<String, u32> {
+        &self.vocab
+    }
+
+    /// The token a word outside the vocabulary encodes to.
+    pub fn unk_token(&self) -> &str {
+        &self.unk_token
     }
 }
 
