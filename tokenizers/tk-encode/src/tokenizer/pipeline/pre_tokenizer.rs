@@ -61,30 +61,6 @@ pub struct PreTokenizerScratch {
 }
 
 impl PreTokenizerScratch {
-    /// Tag every byte of `bytes` with its [`bitcannon`] atom class, run `fsm` over the tags, and
-    /// append the spans to `out`.
-    pub fn split_on_tags(
-        &mut self,
-        bytes: &[u8],
-        fsm: impl FnOnce(&[u8], &[u8], &mut [Span]) -> usize,
-        out: &mut Vec<Span>,
-    ) {
-        let n = bytes.len();
-        let Self { tags, spans, .. } = self;
-        if tags.len() < n {
-            tags.resize(n, 0);
-        }
-        if spans.len() < n + 1 {
-            spans.resize(n + 1, Span::default());
-        }
-        // Assign a tag to each byte
-        classify(bytes, &mut tags[..n]);
-        // Run the fsm on the tags to determine where to cut
-        let k = fsm(bytes, &tags[..n], &mut spans[..n + 1]);
-        // Copy spans to output
-        out.extend_from_slice(&spans[..k]);
-    }
-
     /// Run `fsm` over `bytes` and append the spans it cut to `out`, for an FSM that scans the bytes
     /// itself and so has no use for the atom tags. Skips the [`classify`]
     pub fn split_on_bytes(
@@ -102,8 +78,9 @@ impl PreTokenizerScratch {
         out.extend_from_slice(&spans[..k]);
     }
 
-    /// [`Self::split_on_tags`] for a splitter that works off bitstreams: it needs three `u64` bitmaps
-    /// (token starts, the flags its operators key on, and the fold scratch) alongside the tags.
+    /// Tag every byte of `bytes` with its [`bitcannon`] atom class, run `split` over the tags, and
+    /// append the spans to `out`. `split` works off bitstreams, so it also gets three `u64` bitmaps:
+    /// token starts, the flags its operators key on, and the fold scratch.
     pub fn split_on_bits(
         &mut self,
         bytes: &[u8],
@@ -133,7 +110,7 @@ impl PreTokenizerScratch {
         classify(bytes, &mut tags[..n]);
         let base = out.len();
         out.reserve(n + 1);
-        // SAFETY: as in `split_on_tags` -- `reserve` covers the splitter's worst case of one
+        // SAFETY: `reserve` covers the splitter's worst case of one
         // span per byte plus one, `Span` has no drop glue, and `set_len` counts only what was written.
         let k = unsafe {
             split(
