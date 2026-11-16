@@ -49,7 +49,7 @@ impl Default for WordPieceBuilder {
 
 impl WordPieceBuilder {
     /// Construct a new `WordPieceBuilder`.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
@@ -100,7 +100,7 @@ pub struct WordPiece {
     pub vocab: Vocab,
     pub unk_token: String,
     pub continuing_subword_prefix: String,
-    pub max_input_chars_per_word: usize,
+    pub(crate) max_input_chars_per_word: usize,
 }
 
 impl std::fmt::Debug for WordPiece {

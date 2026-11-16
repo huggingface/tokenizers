@@ -39,7 +39,7 @@ impl Default for WordLevelBuilder {
 
 impl WordLevelBuilder {
     /// Construct a new `WordLevelBuilder`.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
