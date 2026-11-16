@@ -15,7 +15,7 @@ static KEY_HASHER: RandomState = RandomState::with_seeds(
 );
 
 /// Bit 31 of a stored id: the token provably encodes to itself, so a pretoken equal to it can be
-/// emitted without running the merge loop. See `PipelineBPE::prove_fold`.
+/// emitted without running the merge loop. See `BPE::prove_fold`.
 ///
 /// Packed into the id rather than kept beside it, following the same convention as a packed merge
 /// value, where the low bits are the product id and the high bits are a flag field (`SAFE_MASK`).
