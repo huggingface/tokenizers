@@ -25,6 +25,7 @@ use crate::trainers::WordPieceTrainer;
 /// that crate's strip, and that a trainer never needed.
 /// No `Debug`/`Clone`: `PipelineBPE` derives neither, and no caller needs them.
 #[allow(clippy::large_enum_variant)]
+#[non_exhaustive]
 pub enum ModelWrapper {
     #[cfg(feature = "bpe")]
     BPE(PipelineBPE),

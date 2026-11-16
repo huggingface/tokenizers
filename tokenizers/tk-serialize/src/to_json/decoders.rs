@@ -11,12 +11,12 @@ pub(super) fn write_decoder(out: &mut Out, decoder: Option<&DecoderRuntime>) -> 
     match decoder {
         // A missing `decoder` reads back as `None`, so absent is exact.
         None => out.null(),
-        Some(decoder) => write_one(out, decoder),
+        Some(decoder) => write_one(out, decoder)?,
     }
     Ok(())
 }
 
-fn write_one(out: &mut Out, decoder: &DecoderRuntime) {
+fn write_one(out: &mut Out, decoder: &DecoderRuntime) -> Result<()> {
     match decoder {
         DecoderRuntime::ByteLevel(_) => {
             out.obj_open();
@@ -92,10 +92,12 @@ fn write_one(out: &mut Out, decoder: &DecoderRuntime) {
             out.key("decoders");
             out.arr_open();
             for member in members {
-                write_one(out, member);
+                write_one(out, member)?;
             }
             out.arr_close();
             out.obj_close();
         }
+        _ => return Err("to_json cannot write this decoder".into()),
     }
+    Ok(())
 }

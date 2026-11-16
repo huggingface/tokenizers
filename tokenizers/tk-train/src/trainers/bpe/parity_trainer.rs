@@ -42,6 +42,7 @@ impl Ord for PairMerge {
 
 /// Parity selection variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum ParityVariant {
     /// At each step, pick the language with the longest total dev-set token length.
     Base,

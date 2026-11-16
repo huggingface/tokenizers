@@ -33,6 +33,7 @@ fn digamma(mut x: f64) -> f64 {
 }
 
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum UnigramTrainerError {
     #[error("The vocabulary is not large enough to contain all chars")]
     VocabularyTooSmall,

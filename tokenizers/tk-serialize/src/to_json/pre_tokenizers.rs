@@ -87,6 +87,7 @@ fn write_one(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {
             out.arr_close();
             out.obj_close();
         }
+        _ => return Err("to_json cannot write this pre-tokenizer".into()),
     }
     Ok(())
 }
