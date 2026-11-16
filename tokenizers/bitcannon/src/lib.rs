@@ -730,13 +730,6 @@ pub(crate) fn contr_len(text: &[u8], i: usize, ci: bool) -> usize {
     }
 }
 
-/// Convenience wrapper: classify + deepseek bitcannon over caller-owned scratch.
-#[must_use]
-pub fn pre_tokenize(text: &[u8], tags: &mut [u8], starts: &mut [u64], out: &mut [Span]) -> usize {
-    classify::classify(text, tags);
-    bitcannon_deepseek(text, tags, starts, out)
-}
-
 #[cfg(test)]
 mod op_tests {
     use super::{fill_to_last, scanthru};
