@@ -430,10 +430,6 @@ impl Buckets {
     pub fn is_empty(&self) -> bool {
         self.vocab.is_empty()
     }
-    /// first byte -> bucket index (0xFF = none). The builder reads this to extend buckets.
-    pub fn first_byte_to_bucket_id(&self) -> &[u8; 256] {
-        &self.first_byte_to_bucket_id
-    }
     /// Every token's bytes with its internal id.
     pub fn token_bytes(&self) -> Vec<(Vec<u8>, u32)> {
         self.vocab.byte_content()
