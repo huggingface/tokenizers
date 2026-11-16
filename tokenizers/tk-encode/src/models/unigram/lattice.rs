@@ -240,13 +240,6 @@ impl<'a> Lattice<'a> {
         self.sentence[node.pos..node.pos + node.length].to_owned()
     }
 
-    pub fn tokens(&mut self) -> Vec<String> {
-        self.viterbi()
-            .iter()
-            .map(|node| self.piece(&node.borrow()))
-            .collect()
-    }
-
     pub fn nbest(&mut self, n: usize) -> Vec<Vec<NodeRef>> {
         match n {
             0 => vec![],
@@ -322,16 +315,6 @@ impl<'a> Lattice<'a> {
     }
     pub fn eos_node(&self) -> NodeRef {
         Rc::clone(&self.begin_nodes[self.len][0])
-    }
-
-    pub fn surface(&self, n: usize) -> &str {
-        match self.sentence.char_indices().nth(n) {
-            Some((pos, _)) => &self.sentence[pos..],
-            None => "",
-        }
-    }
-    pub fn sentence(&self) -> &str {
-        self.sentence
     }
 
     pub fn populate_marginal(&self, freq: f64, expected: &mut [f64]) -> f64 {
@@ -463,16 +446,11 @@ mod tests {
 
         let lattice = Lattice::from("", 1, 2);
         assert_eq!(lattice.len(), 0);
-        assert_eq!(lattice.sentence(), "");
-        assert_eq!(lattice.surface(0), "");
+        assert_eq!(lattice.sentence, "");
 
         let lattice = Lattice::from("test", 1, 2);
         assert_eq!(lattice.len(), 4);
-        assert_eq!(lattice.sentence(), "test");
-        assert_eq!(lattice.surface(0), "test");
-        assert_eq!(lattice.surface(1), "est");
-        assert_eq!(lattice.surface(2), "st");
-        assert_eq!(lattice.surface(3), "t");
+        assert_eq!(lattice.sentence, "test");
 
         let bos = lattice.bos_node();
         let eos = lattice.eos_node();
@@ -490,12 +468,7 @@ mod tests {
 
         let lattice = Lattice::from("テストab", 1, 2);
         assert_eq!(lattice.len(), 11);
-        assert_eq!(lattice.sentence(), "テストab");
-        assert_eq!(lattice.surface(0), "テストab");
-        assert_eq!(lattice.surface(1), "ストab");
-        assert_eq!(lattice.surface(2), "トab");
-        assert_eq!(lattice.surface(3), "ab");
-        assert_eq!(lattice.surface(4), "b");
+        assert_eq!(lattice.sentence, "テストab");
     }
 
     #[test]
@@ -610,16 +583,16 @@ mod tests {
         lattice.insert(1, 1, 0.0, 4);
         lattice.insert(2, 1, 0.0, 5);
 
-        assert_eq!(lattice.tokens(), ["A", "B", "C"]);
+        assert_eq!(tokens(&mut lattice), ["A", "B", "C"]);
 
         lattice.insert(0, 2, 2.0, 6);
-        assert_eq!(lattice.tokens(), ["AB", "C"]);
+        assert_eq!(tokens(&mut lattice), ["AB", "C"]);
 
         lattice.insert(1, 2, 5.0, 7);
-        assert_eq!(lattice.tokens(), ["A", "BC"]);
+        assert_eq!(tokens(&mut lattice), ["A", "BC"]);
 
         lattice.insert(0, 3, 10.0, 8);
-        assert_eq!(lattice.tokens(), ["ABC"]);
+        assert_eq!(tokens(&mut lattice), ["ABC"]);
     }
 
     #[test]
@@ -639,6 +612,15 @@ mod tests {
             .unwrap()
             .join()
             .unwrap();
+    }
+
+    fn tokens(lattice: &mut Lattice) -> Vec<String> {
+        let path = lattice.viterbi();
+        let mut pieces = Vec::with_capacity(path.len());
+        for node in &path {
+            pieces.push(lattice.piece(&node.borrow()));
+        }
+        pieces
     }
 
     fn nbest_tokens(lattice: &mut Lattice, n: usize) -> Vec<Vec<String>> {
