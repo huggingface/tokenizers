@@ -19,7 +19,6 @@ pub(crate) type Vocab = Vec<(String, f64)>;
 pub struct Unigram {
     token_to_ids: BucketVocabStore,
     pub(crate) vocab: Vocab,
-    cache_capacity: usize,
     trie: Trie<u8>,
     pub min_score: f64,
     pub(super) unk_id: Option<usize>,
@@ -120,7 +119,6 @@ impl Unigram {
             eos_id,
             unk_id,
             fuse_unk,
-            cache_capacity: DEFAULT_CACHE_CAPACITY,
             is_optimized,
             byte_fallback,
             alpha: None,
@@ -349,12 +347,6 @@ impl Unigram {
     pub fn vocab(&self) -> &[(String, f64)] {
         &self.vocab
     }
-
-    /// Sets how many words the word cache of each new [`UnigramScratch`] holds. Zero turns the
-    /// cache off.
-    pub fn resize_cache(&mut self, capacity: usize) {
-        self.cache_capacity = capacity;
-    }
 }
 
 /// Iterator to iterate of vocabulary of the model, and their relative score.
@@ -401,7 +393,7 @@ impl Unigram {
 
 pub struct UnigramScratch {
     /// Outlives the encode call that fills it, or it would never see a word twice.
-    pub(crate) word_cache: Option<WordCache>,
+    pub(crate) word_cache: WordCache,
 }
 
 impl pipeline::ModelScratch for UnigramScratch {}
@@ -411,10 +403,7 @@ impl pipeline::Model for Unigram {
 
     fn init_scratch(&self) -> Self::Scratch {
         Self::Scratch {
-            word_cache: match self.cache_capacity {
-                0 => None,
-                capacity => Some(WordCache::new(capacity)),
-            },
+            word_cache: WordCache::new(DEFAULT_CACHE_CAPACITY),
         }
     }
 
@@ -430,10 +419,8 @@ impl pipeline::Model for Unigram {
             return Ok(());
         }
         let mut placement = None;
-        if !self.samples()
-            && let Some(cache) = scratch.word_cache.as_mut()
-        {
-            match cache.lookup(sequence.as_bytes()) {
+        if !self.samples() {
+            match scratch.word_cache.lookup(sequence.as_bytes()) {
                 Lookup::Hit(ids) => {
                     output.extend(ids.iter().copied().map(PipelineToken::from));
                     return Ok(());
@@ -471,10 +458,10 @@ impl pipeline::Model for Unigram {
 
         // Sampling skipped the lookup, so `placement` is `None` and this stores
         // nothing, which is what `samples` says has to happen.
-        if let Some(cache) = scratch.word_cache.as_mut()
-            && let Some(at) = placement
-        {
-            cache.insert(at, output[start..].iter().map(|token| token.id()));
+        if let Some(at) = placement {
+            scratch
+                .word_cache
+                .insert(at, output[start..].iter().map(|token| token.id()));
         }
         Ok(())
     }
