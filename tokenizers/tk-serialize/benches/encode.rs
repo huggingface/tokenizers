@@ -151,7 +151,7 @@ pub fn encode(c: &mut Criterion) {
         }
 
         // No `stage/post-process` row: `PipelineTokenizer::post_process` is private and
-        // `PipelinePostProcessor` exposes only its templates, so that stage shows up today only
+        // `PostProcessor` exposes only its templates, so that stage shows up today only
         // inside the fused rows.
     }
 }

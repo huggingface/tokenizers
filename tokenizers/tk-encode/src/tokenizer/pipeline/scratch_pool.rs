@@ -143,8 +143,7 @@ mod tests {
     use super::*;
     use crate::models::bpe::PipelineBPE;
     use crate::pipeline::{
-        EncodeOptions, PipelineModel, PipelinePostProcessor, PipelinePreTokenizer,
-        PipelineTokenizer,
+        EncodeOptions, PipelineModel, PipelinePreTokenizer, PipelineTokenizer, PostProcessor,
     };
     use crate::pre_tokenizers::sequence::Sequence;
     use crate::pre_tokenizers::whitespace::Whitespace;
@@ -189,7 +188,7 @@ mod tests {
             Vec::new(),
             pre_tokenizer,
             PipelineModel::BPE(hello_bpe()),
-            PipelinePostProcessor::default(),
+            PostProcessor::default(),
             None,
             Default::default(),
             None,

@@ -1,12 +1,9 @@
 //! The `post_processor` object, written back out of the two `Template`s it was lowered into.
 use super::writer::Out;
-use tk_encode::pipeline::{PipelinePostProcessor, PipelineToken, Template};
+use tk_encode::pipeline::{PipelineToken, PostProcessor, Template};
 use tk_encode::tokenizer::Result;
 
-pub(super) fn write_post_processor(
-    out: &mut Out,
-    post_processor: &PipelinePostProcessor,
-) -> Result<()> {
+pub(super) fn write_post_processor(out: &mut Out, post_processor: &PostProcessor) -> Result<()> {
     let (single, pair) = (post_processor.single(), post_processor.pair());
     if is_default(single, pair) {
         out.null();
@@ -22,7 +19,7 @@ pub(super) fn write_post_processor(
 }
 
 /// Whether these two templates are the frame that does nothing: `$A`, and `$A $B` with the default
-/// type ids. That is [`PipelinePostProcessor::default`], which is what a missing `post_processor`
+/// type ids. That is [`PostProcessor::default`], which is what a missing `post_processor`
 /// and a `ByteLevel` both produce.
 fn is_default(single: &Template, pair: &Template) -> bool {
     single.n_special() == 0

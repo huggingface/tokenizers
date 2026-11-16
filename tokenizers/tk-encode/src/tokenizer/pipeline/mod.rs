@@ -39,7 +39,7 @@ mod post_processor;
 mod pre_tokenizer;
 
 pub use normalizer::{Normalize, NormalizerChain, PipelineNormalizer, normalize_all};
-pub use post_processor::{PipelinePostProcessor, Template};
+pub use post_processor::{PostProcessor, Template};
 pub use pre_tokenizer::{PipelinePreTokenizer, PreTokenize, PreTokenizerScratch};
 pub(crate) use pre_tokenizer::{split_delimiter, split_matches};
 
@@ -215,7 +215,7 @@ struct TokenizerInner {
     normalizers: Vec<PipelineNormalizer>,
     pre_tokenizer: PipelinePreTokenizer,
     model: PipelineModel,
-    post_processor: PipelinePostProcessor,
+    post_processor: PostProcessor,
     decoder: Option<DecoderRuntime>,
     /// Lowest id owned by the added vocabulary, or `u32::MAX` when there is none.
     /// Allows to skip the added vocabulary lookup if the token id is lower than this value.
@@ -259,7 +259,7 @@ impl PipelineTokenizer {
         normalizers: Vec<PipelineNormalizer>,
         pre_tokenizer: PipelinePreTokenizer,
         model: PipelineModel,
-        post_processor: PipelinePostProcessor,
+        post_processor: PostProcessor,
         decoder: Option<DecoderRuntime>,
         role_to_token: BTreeMap<String, String>,
         padding: Option<PaddingParams>,
@@ -567,7 +567,7 @@ impl PipelineTokenizer {
         &self.inner.pre_tokenizer
     }
 
-    pub fn get_post_processor(&self) -> &PipelinePostProcessor {
+    pub fn get_post_processor(&self) -> &PostProcessor {
         &self.inner.post_processor
     }
 
@@ -1439,7 +1439,7 @@ mod tests {
     #[test]
     fn configured_truncation_runs_before_configured_padding() {
         let pipeline = hello_pipeline_with(
-            PipelinePostProcessor::default(),
+            PostProcessor::default(),
             Some(pad_to(8)),
             Some(truncate_to(2)),
         );
@@ -1502,7 +1502,7 @@ mod tests {
     #[test]
     fn padding_off_keeps_the_configured_truncation() {
         let pipeline = hello_pipeline_with(
-            PipelinePostProcessor::default(),
+            PostProcessor::default(),
             Some(pad_to(8)),
             Some(truncate_to(2)),
         );
@@ -1517,7 +1517,7 @@ mod tests {
     #[test]
     fn truncation_off_keeps_the_configured_padding() {
         let pipeline = hello_pipeline_with(
-            PipelinePostProcessor::default(),
+            PostProcessor::default(),
             Some(pad_to(8)),
             Some(truncate_to(2)),
         );
@@ -1707,7 +1707,7 @@ mod tests {
     #[test]
     fn test_empty_template() {
         let pipeline = pipeline_with(
-            PipelinePostProcessor::default(),
+            PostProcessor::default(),
             truncation(3, TruncationStrategy::LongestFirst),
         );
 
@@ -1723,7 +1723,7 @@ mod tests {
     #[test]
     fn test_template_type_ids() {
         let pipeline = pipeline_with(
-            PipelinePostProcessor::new(
+            PostProcessor::new(
                 Template {
                     a_type_id: 1,
                     ..Template::default()
@@ -1749,7 +1749,7 @@ mod tests {
     // no assertion on the ids can catch.
     #[test]
     fn test_fast_path_buffer() {
-        let pipeline = pipeline_with(PipelinePostProcessor::default(), None);
+        let pipeline = pipeline_with(PostProcessor::default(), None);
         let sequence = tokens(1..=8);
         let address = sequence.as_ptr();
 
@@ -1766,7 +1766,7 @@ mod tests {
     #[test]
     fn test_encode_into() {
         let pipeline = pipeline_with(
-            PipelinePostProcessor::default(),
+            PostProcessor::default(),
             truncation(2, TruncationStrategy::LongestFirst),
         );
         let mut out = Vec::new();
@@ -1795,8 +1795,8 @@ mod tests {
     }
 
     /// `[CLS] $A [SEP]` and `[CLS] $A [SEP] $B:1 [SEP]:1`, the arrangement BERT's config declares.
-    fn bert_post_processor() -> PipelinePostProcessor {
-        PipelinePostProcessor::new(
+    fn bert_post_processor() -> PostProcessor {
+        PostProcessor::new(
             Template {
                 prefix: Box::new([(CLS.into(), 0)]),
                 suffix: Box::new([(SEP.into(), 0)]),
@@ -1822,14 +1822,14 @@ mod tests {
     }
 
     fn pipeline_with(
-        post_processor: PipelinePostProcessor,
+        post_processor: PostProcessor,
         truncation: Option<TruncationParams>,
     ) -> PipelineTokenizer {
         hello_pipeline_with(post_processor, None, truncation)
     }
 
     fn hello_pipeline_with(
-        post_processor: PipelinePostProcessor,
+        post_processor: PostProcessor,
         padding: Option<PaddingParams>,
         truncation: Option<TruncationParams>,
     ) -> PipelineTokenizer {
@@ -1871,7 +1871,7 @@ mod tests {
             Vec::new(),
             PipelinePreTokenizer::None,
             PipelineModel::BPE(hello_bpe()),
-            PipelinePostProcessor::default(),
+            PostProcessor::default(),
             None,
             Default::default(),
             None,
@@ -1942,7 +1942,7 @@ mod tests {
             Vec::new(),
             PipelinePreTokenizer::None,
             PipelineModel::BPE(bpe),
-            PipelinePostProcessor::default(),
+            PostProcessor::default(),
             None,
             Default::default(),
             None,
@@ -1992,7 +1992,7 @@ mod tests {
     }
 
     fn hello_pipeline() -> PipelineTokenizer {
-        hello_pipeline_with(PipelinePostProcessor::default(), None, None)
+        hello_pipeline_with(PostProcessor::default(), None, None)
     }
 
     fn hello_pipeline_with_special(content: &str) -> PipelineTokenizer {
@@ -2010,7 +2010,7 @@ mod tests {
             Vec::new(),
             PipelinePreTokenizer::None,
             PipelineModel::BPE(hello_bpe()),
-            PipelinePostProcessor::default(),
+            PostProcessor::default(),
             None,
             Default::default(),
             None,
@@ -2019,10 +2019,10 @@ mod tests {
     }
 
     fn hello_pipeline_with_padding(padding: PaddingParams) -> PipelineTokenizer {
-        hello_pipeline_with(PipelinePostProcessor::default(), Some(padding), None)
+        hello_pipeline_with(PostProcessor::default(), Some(padding), None)
     }
 
     fn hello_pipeline_with_truncation(truncation: TruncationParams) -> PipelineTokenizer {
-        hello_pipeline_with(PipelinePostProcessor::default(), None, Some(truncation))
+        hello_pipeline_with(PostProcessor::default(), None, Some(truncation))
     }
 }

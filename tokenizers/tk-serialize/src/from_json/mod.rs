@@ -75,10 +75,10 @@ pub fn from_json_file(path: impl AsRef<std::path::Path>) -> Result<PipelineToken
 ///
 /// The bindings hold a post-processor on its own, so they need this half of the reader; going
 /// through it is what keeps one parser for the canonical spelling.
-pub fn post_processor_from_json(text: &str) -> Result<tk_encode::pipeline::PipelinePostProcessor> {
+pub fn post_processor_from_json(text: &str) -> Result<tk_encode::pipeline::PostProcessor> {
     let text = text.trim();
     if text.is_empty() || text == "null" {
-        return Ok(tk_encode::pipeline::PipelinePostProcessor::default());
+        return Ok(tk_encode::pipeline::PostProcessor::default());
     }
     let doc = Json::parse(text).map_err(|e| -> tk_encode::Error { e.to_string().into() })?;
     read_post_processor(Some(&doc))
