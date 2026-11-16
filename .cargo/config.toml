@@ -1,0 +1,2 @@
+[patch.crates-io]
+ptr_hash = { git = "https://github.com/RagnarGrootKoerkamp/ptrhash", rev = "9cd6e8e" }
