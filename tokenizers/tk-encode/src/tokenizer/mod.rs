@@ -15,7 +15,6 @@ pub use crate::utils::truncation::{
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
-pub type Offsets = (usize, usize);
 
 /// Defines the expected behavior for the delimiter of a Split Pattern
 /// When splitting on `'-'` for example, with input `the-final--countdown`:

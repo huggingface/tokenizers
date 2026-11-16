@@ -1,5 +1,5 @@
+use crate::Result;
 use crate::utils::SysRegex;
-use crate::{Offsets, Result};
 use bitcannon::literal::Literal;
 
 /// Pattern used by `Split` and `Replace` to find the spans to split on or replace.
@@ -9,12 +9,12 @@ pub trait Pattern {
     ///
     /// This method *must* cover the whole string in its outputs, with
     /// contiguous ordered slices.
-    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>>;
+    fn find_matches(&self, inside: &str) -> Result<Vec<((usize, usize), bool)>>;
 }
 
 /// Searching for a plain string, does not need a regex engine: [`Literal`] scans the bytes.
 impl Pattern for &Literal {
-    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+    fn find_matches(&self, inside: &str) -> Result<Vec<((usize, usize), bool)>> {
         if inside.is_empty() {
             return Ok(vec![((0, 0), false)]);
         }
@@ -37,7 +37,7 @@ impl Pattern for &Literal {
 }
 
 impl Pattern for &SysRegex {
-    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+    fn find_matches(&self, inside: &str) -> Result<Vec<((usize, usize), bool)>> {
         if inside.is_empty() {
             return Ok(vec![((0, 0), false)]);
         }
@@ -63,7 +63,7 @@ impl Pattern for &SysRegex {
 /// and we want to match the delimiter.
 pub struct Invert<P: Pattern>(pub P);
 impl<P: Pattern> Pattern for Invert<P> {
-    fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
+    fn find_matches(&self, inside: &str) -> Result<Vec<((usize, usize), bool)>> {
         Ok(self
             .0
             .find_matches(inside)?
@@ -87,7 +87,7 @@ mod tests {
                 Invert($pattern).find_matches($inside).unwrap(),
                 $result
                     .into_iter()
-                    .map(|v: (Offsets, bool)| (v.0, !v.1))
+                    .map(|v: ((usize, usize), bool)| (v.0, !v.1))
                     .collect::<Vec<_>>()
             );
         };
