@@ -1,5 +1,4 @@
 pub mod bert;
-pub mod byte_level;
 pub mod delimiter;
 pub mod digits;
 pub mod fixed_length;
