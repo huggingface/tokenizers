@@ -9,8 +9,7 @@
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use tokenizers::pipeline::{EncodeOptions as PipelineEncodeOptions, Override};
-use tokenizers::tokenizer::pipeline::Tokenizer as Pipeline;
+use tokenizers::pipeline::{self, Override};
 use tokenizers::{
   PaddingDirection, PaddingParams, PaddingStrategy, TruncationDirection, TruncationParams,
   TruncationStrategy,
@@ -158,9 +157,9 @@ impl TruncationOptions {
 }
 
 impl PipelineTokenizer {
-  fn encode_options(options: Option<EncodeOptions>) -> Result<PipelineEncodeOptions> {
+  fn encode_options(options: Option<EncodeOptions>) -> Result<pipeline::EncodeOptions> {
     let options = options.unwrap_or_default();
-    let mut encode_options = PipelineEncodeOptions::default();
+    let mut encode_options = pipeline::EncodeOptions::default();
     encode_options.add_special_tokens = options.add_special_tokens.unwrap_or(true);
     encode_options.encode_special_tokens = options.encode_special_tokens.unwrap_or(false);
     encode_options.padding = override_with(options.padding, PaddingOptions::params)?;
@@ -170,7 +169,7 @@ impl PipelineTokenizer {
 }
 
 #[napi]
-pub struct PipelineTokenizer(Pipeline);
+pub struct PipelineTokenizer(pipeline::Tokenizer);
 
 #[napi]
 impl PipelineTokenizer {
