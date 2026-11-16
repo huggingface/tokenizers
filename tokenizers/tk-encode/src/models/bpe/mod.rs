@@ -19,7 +19,7 @@ pub type Vocab = AHashMap<String, u32>;
 /// Merge pairs as token strings, highest priority first.
 pub type Merges = Vec<(String, String)>;
 /// Merge pair (external ids) -> (rank, external id of the merged token).
-pub type MergeMap = AHashMap<Pair, (u32, u32)>;
+pub(crate) type MergeMap = AHashMap<Pair, (u32, u32)>;
 
 /// The word cache's default size, which [`BpeConfig::cache_capacity`] starts from.
 pub use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
@@ -58,7 +58,7 @@ pub enum Error {
 /// and every table index is masked to that table's fixed size (`& 0x0F` << 6 | `& 0x3F` <= 1023,
 /// `& 0x3F` < 64, a `u8` into `[_; 256]`). It exists because bounds-checked indexing measured
 /// 25-44% slower on conversion.
-pub trait At {
+pub(crate) trait At {
     type Out;
     fn at(&self, index: usize) -> Self::Out;
 }
