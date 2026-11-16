@@ -39,6 +39,9 @@ fn write_one(out: &mut Out, pretok: &PipelinePreTokenizer) -> Result<()> {
             match &split.pattern {
                 SplitPattern::String(s) => out.field_str("String", s),
                 SplitPattern::Regex(r) => out.field_str("Regex", r),
+                other => {
+                    return Err(format!("to_json cannot write the Split pattern {other:?}").into());
+                }
             }
             out.obj_close();
             // `Display` rather than a second table of names; `display_matches_serde` in `tk-encode`

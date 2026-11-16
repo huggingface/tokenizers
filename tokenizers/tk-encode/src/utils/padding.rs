@@ -18,6 +18,7 @@ impl std::convert::AsRef<str> for PaddingDirection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct PaddingParams {
     pub strategy: PaddingStrategy,
     pub direction: PaddingDirection,
@@ -41,6 +42,7 @@ impl Default for PaddingParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum PaddingStrategy {
     BatchLongest,
     Fixed(usize),

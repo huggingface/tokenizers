@@ -7,11 +7,12 @@ use tk_encode::normalizers::replace::{Replace, ReplacePattern};
 use tk_encode::pipeline::PipelineNormalizer;
 use tk_encode::tokenizer::Result;
 
-pub(super) fn prepend_scheme_name(scheme: PrependScheme) -> &'static str {
+pub(super) fn prepend_scheme_name(scheme: PrependScheme) -> Result<&'static str> {
     match scheme {
-        PrependScheme::Always => "always",
-        PrependScheme::First => "first",
-        PrependScheme::Never => "never",
+        PrependScheme::Always => Ok("always"),
+        PrependScheme::First => Ok("first"),
+        PrependScheme::Never => Ok("never"),
+        other => Err(format!("to_json cannot write the prepend_scheme {other:?}").into()),
     }
 }
 
@@ -53,11 +54,11 @@ fn write_one(out: &mut Out, normalizer: &PipelineNormalizer) -> Result<()> {
                 "replacement",
                 metaspace.delimiter().encode_utf8(&mut [0; 4]),
             );
-            out.field_str("prepend", prepend_scheme_name(metaspace.prepend()));
+            out.field_str("prepend", prepend_scheme_name(metaspace.prepend())?);
             out.field_bool("drop_whitespace", metaspace.drop_whitespace());
             out.obj_close();
         }
-        PipelineNormalizer::Replace(replace) => write_replace(out, replace),
+        PipelineNormalizer::Replace(replace) => write_replace(out, replace)?,
         PipelineNormalizer::Prepend(prepend) => {
             out.obj_open();
             out.type_tag("Prepend");
@@ -122,21 +123,24 @@ fn write_one(out: &mut Out, normalizer: &PipelineNormalizer) -> Result<()> {
 }
 
 /// A `Replace`, whose JSON shape the decoder of the same name shares.
-pub(super) fn write_replace(out: &mut Out, replace: &Replace) {
+pub(super) fn write_replace(out: &mut Out, replace: &Replace) -> Result<()> {
     out.obj_open();
     out.type_tag("Replace");
-    write_replace_pattern(out, replace.pattern());
+    write_replace_pattern(out, replace.pattern())?;
     out.field_str("content", &replace.content);
     out.obj_close();
+    Ok(())
 }
 
 /// `{"String": "..."}` or `{"Regex": "..."}`: externally tagged, as the reader expects.
-pub(super) fn write_replace_pattern(out: &mut Out, pattern: &ReplacePattern) {
+pub(super) fn write_replace_pattern(out: &mut Out, pattern: &ReplacePattern) -> Result<()> {
     out.key("pattern");
     out.obj_open();
     match pattern {
         ReplacePattern::String(s) => out.field_str("String", s),
         ReplacePattern::Regex(r) => out.field_str("Regex", r),
+        other => return Err(format!("to_json cannot write the Replace pattern {other:?}").into()),
     }
     out.obj_close();
+    Ok(())
 }

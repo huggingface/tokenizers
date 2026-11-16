@@ -20,6 +20,7 @@ use crate::tokenizer::{Result, pipeline};
 /// Whether a `Metaspace` writes the delimiter at the start of a text that has no leading space.
 /// [`First`](Self::First) writes it only at the start of the sequence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PrependScheme {
     Always,
     First,

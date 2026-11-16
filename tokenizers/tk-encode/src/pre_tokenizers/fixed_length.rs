@@ -2,6 +2,7 @@ use crate::pipeline;
 use crate::tokenizer::Result;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct FixedLength {
     /// Absent from a config means 5, which is also `FixedLength::default()`.
     pub length: usize,

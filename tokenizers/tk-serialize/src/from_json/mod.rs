@@ -32,7 +32,7 @@ use self::pre_tokenizers::read_pre_tokenizer;
 use self::truncation::read_truncation;
 use crate::json::Json;
 use std::collections::BTreeMap;
-use tk_encode::models::bpe::{BpeConfig, PipelineBPE};
+use tk_encode::models::bpe::PipelineBPE;
 use tk_encode::pipeline::{
     NormalizerChain, PipelineModel, PipelineNormalizer, PipelinePreTokenizer, PipelineTokenizer,
 };
@@ -129,11 +129,10 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
                 |v| v.len(),
                 |v, t| v.get(t).copied(),
                 |vocab| {
-                    Ok(PipelineModel::BPE(PipelineBPE::from_config(BpeConfig {
-                        vocab,
-                        merges,
-                        ..options
-                    })?))
+                    let mut config = options;
+                    config.vocab = vocab;
+                    config.merges = merges;
+                    Ok(PipelineModel::BPE(PipelineBPE::from_config(config)?))
                 },
             )
         }

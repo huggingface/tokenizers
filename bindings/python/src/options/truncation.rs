@@ -135,13 +135,11 @@ impl Truncation {
     #[new]
     #[pyo3(signature = (max_length, strategy=Strategy(TruncationStrategy::LongestFirst), direction=Direction(TruncationDirection::Right)))]
     fn new(max_length: usize, strategy: Strategy, direction: Direction) -> Self {
-        Self(TruncationParams {
-            max_length,
-            strategy: strategy.0,
-            direction: direction.0,
-            // TODO: Stride is not implemented yet
-            stride: 0,
-        })
+        let mut params = TruncationParams::default();
+        params.max_length = max_length;
+        params.strategy = strategy.0;
+        params.direction = direction.0;
+        Self(params)
     }
 
     /// The maximum number of tokens, including special tokens, to keep. Encodings with more tokens will get truncated.

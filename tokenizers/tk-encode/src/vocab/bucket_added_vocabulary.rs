@@ -14,6 +14,7 @@ use std::fmt;
 ///   - Whether they should only match single words
 ///   - Whether to include any whitespace on its left or right
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct AddedToken {
     /// The content of the added token (original, as provided by the user)
     pub content: String,

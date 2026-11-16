@@ -63,12 +63,12 @@ fn encode_options(
     padding: OverrideSentinel<PaddingParams>,
     truncation: OverrideSentinel<TruncationParams>,
 ) -> EncodeOptions {
-    EncodeOptions {
-        add_special_tokens,
-        encode_special_tokens,
-        padding: padding.into(),
-        truncation: truncation.into(),
-    }
+    let mut options = EncodeOptions::default();
+    options.add_special_tokens = add_special_tokens;
+    options.encode_special_tokens = encode_special_tokens;
+    options.padding = padding.into();
+    options.truncation = truncation.into();
+    options
 }
 
 #[pymethods]
@@ -378,6 +378,6 @@ impl CompiledTokenizer {
         // py.detach releases the GIL while the Rust code runs.
         let json = py.detach(|| to_json(&self.pipeline)).map_err(err)?;
         let spec = TokenizerSpec::from_json(&json).map_err(err)?;
-        Ok(spec.repr("CompiledTokenizer"))
+        spec.repr("CompiledTokenizer")
     }
 }

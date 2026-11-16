@@ -10,6 +10,7 @@ pub(crate) fn is_punc(x: char) -> bool {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Punctuation {
     /// An absent `behavior` means `Isolated`, which is also `Punctuation::default()`.
     pub behavior: SplitDelimiterBehavior,

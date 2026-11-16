@@ -11,6 +11,7 @@ use crate::tokenizer::{
 ///
 /// Written down externally tagged: `{"String":"..."}` / `{"Regex":"..."}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SplitPattern {
     String(String),
     Regex(String),

@@ -207,7 +207,10 @@ impl BpeTrainerBuilder {
 /// // `PipelineBPE` has no empty state to train *into* -- it only exists once there is a
 /// // vocabulary and a merge list -- so take the parts and build it.
 /// let (vocab, merges, special_tokens) = trainer.train_vocab().unwrap();
-/// let model = PipelineBPE::from_config(BpeConfig { vocab, merges, ..BpeConfig::default() }).unwrap();
+/// let mut config = BpeConfig::default();
+/// config.vocab = vocab;
+/// config.merges = merges;
+/// let model = PipelineBPE::from_config(config).unwrap();
 /// ```
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
@@ -480,11 +483,10 @@ impl BpeTrainer {
     /// [`BpeConfig`] describes how to *read* a model (unknown-token handling, dropout,
     /// caching) and is the reader's business, not the trainer's, so it stays at its default.
     fn model_options(&self) -> BpeConfig {
-        BpeConfig {
-            continuing_subword_prefix: self.continuing_subword_prefix.clone(),
-            end_of_word_suffix: self.end_of_word_suffix.clone(),
-            ..Default::default()
-        }
+        let mut config = BpeConfig::default();
+        config.continuing_subword_prefix = self.continuing_subword_prefix.clone();
+        config.end_of_word_suffix = self.end_of_word_suffix.clone();
+        config
     }
 
     /// Runs the training and returns the vocabulary and merge list it produced, plus the special
@@ -679,11 +681,10 @@ impl Trainer for BpeTrainer {
     /// Train a BPE model
     fn train(&self, model: &mut PipelineBPE) -> Result<Vec<AddedToken>> {
         let (vocab, merges, special_tokens) = self.do_train(&self.words)?;
-        *model = PipelineBPE::from_config(BpeConfig {
-            vocab,
-            merges,
-            ..self.model_options()
-        })?;
+        let mut config = self.model_options();
+        config.vocab = vocab;
+        config.merges = merges;
+        *model = PipelineBPE::from_config(config)?;
         Ok(special_tokens)
     }
 

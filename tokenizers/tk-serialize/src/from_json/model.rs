@@ -26,38 +26,36 @@ pub(super) fn read_bpe(cfg: &Json<'_>) -> Result<(Vocab, Merges, BpeConfig)> {
     }
 
     // Each option is left at its default unless the config names it, which is what the builder's
-    let options = BpeConfig {
-        dropout: cfg
-            .field("dropout")
-            .and_then(Json::as_f64)
-            .map(|v| v as f32),
-        unk_token: cfg
-            .field("unk_token")
-            .and_then(Json::as_str)
-            .map(str::to_string),
-        continuing_subword_prefix: cfg
-            .field("continuing_subword_prefix")
-            .and_then(Json::as_str)
-            .map(str::to_string),
-        end_of_word_suffix: cfg
-            .field("end_of_word_suffix")
-            .and_then(Json::as_str)
-            .map(str::to_string),
-        fuse_unk: cfg
-            .field("fuse_unk")
-            .and_then(Json::as_bool)
-            .unwrap_or_default(),
-        byte_fallback: cfg
-            .field("byte_fallback")
-            .and_then(Json::as_bool)
-            .unwrap_or_default(),
-        ignore_merges: cfg
-            .field("ignore_merges")
-            .and_then(Json::as_bool)
-            .unwrap_or_default(),
-        byte_level,
-        ..BpeConfig::default()
-    };
+    let mut options = BpeConfig::default();
+    options.dropout = cfg
+        .field("dropout")
+        .and_then(Json::as_f64)
+        .map(|v| v as f32);
+    options.unk_token = cfg
+        .field("unk_token")
+        .and_then(Json::as_str)
+        .map(str::to_string);
+    options.continuing_subword_prefix = cfg
+        .field("continuing_subword_prefix")
+        .and_then(Json::as_str)
+        .map(str::to_string);
+    options.end_of_word_suffix = cfg
+        .field("end_of_word_suffix")
+        .and_then(Json::as_str)
+        .map(str::to_string);
+    options.fuse_unk = cfg
+        .field("fuse_unk")
+        .and_then(Json::as_bool)
+        .unwrap_or_default();
+    options.byte_fallback = cfg
+        .field("byte_fallback")
+        .and_then(Json::as_bool)
+        .unwrap_or_default();
+    options.ignore_merges = cfg
+        .field("ignore_merges")
+        .and_then(Json::as_bool)
+        .unwrap_or_default();
+    options.byte_level = byte_level;
     Ok((vocab, merges, options))
 }
 
