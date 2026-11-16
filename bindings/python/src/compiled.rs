@@ -9,8 +9,8 @@ use tk::pipeline::EncodeOptions;
 use tk::pipeline::Encoding as PipelineEncoding;
 use tk::pipeline::Input;
 use tk::pipeline::Inputs;
-use tk::pipeline::PipelineTokenizer;
 use tk::pipeline::Token;
+use tk::pipeline::Tokenizer;
 use tk::{from_json, to_json};
 
 use crate::added_token::AddedToken;
@@ -30,13 +30,13 @@ use crate::type_hints::TokenIds;
 /// again from that JSON config.
 #[pyclass(frozen, dict, module = "tokenizers")]
 pub struct CompiledTokenizer {
-    pipeline: PipelineTokenizer,
+    pipeline: Tokenizer,
     /// The `added_tokens` dict, built on first read.
     added_tokens: PyOnceLock<Py<PyDict>>,
 }
 
 impl CompiledTokenizer {
-    pub(crate) fn pipeline(&self) -> &PipelineTokenizer {
+    pub(crate) fn pipeline(&self) -> &Tokenizer {
         &self.pipeline
     }
 

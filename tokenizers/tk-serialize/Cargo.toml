@@ -43,11 +43,11 @@ tk-encode = { path = "../tk-encode", version = "0.1.0-dev.2", default-features =
 bitcannon = { path = "../bitcannon", version = "0.1.0-dev.2" }
 
 [features]
-# Reading a canonical `tokenizer.json` into a `PipelineTokenizer`. On by default -- it is what the
+# Reading a canonical `tokenizer.json` into a `Tokenizer`. On by default -- it is what the
 # crate is for, and an inference build wants exactly this and nothing else.
 default = ["deserialize"]
 deserialize = []
-# Writing a `PipelineTokenizer` back out as a canonical `tokenizer.json`. Off by default: an
+# Writing a `Tokenizer` back out as a canonical `tokenizer.json`. Off by default: an
 # inference build never writes a config, and the writer is the only reason the pipeline has to keep
 # anything it does not read -- the `Precompiled` charsmap being the one such thing.
 serialize = []
@@ -64,7 +64,7 @@ fancy-regex = ["tk-encode/fancy-regex"]
 parallelism = ["tk-encode/parallelism"]
 
 [dev-dependencies]
-# The benches. `tk-serialize` hosts them because a bench needs a `PipelineTokenizer` and
+# The benches. `tk-serialize` hosts them because a bench needs a `Tokenizer` and
 # `from_json_file` is the only way to build one -- the bigger cross-engine benchmarks live in
 # huggingface/tokbench.
 criterion = "0.8"

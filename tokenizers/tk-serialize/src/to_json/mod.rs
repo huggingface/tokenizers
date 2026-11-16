@@ -1,4 +1,4 @@
-//! Write a [`PipelineTokenizer`] back out as a `tokenizer.json`.
+//! Write a [`Tokenizer`] back out as a `tokenizer.json`.
 //!
 //! ```no_run
 //! let tokenizer = tk_serialize::from_json_file("./tokenizer.json")?;
@@ -28,7 +28,7 @@ use self::post_processors::write_post_processor;
 use self::pre_tokenizers::write_pre_tokenizer;
 use self::truncation::write_truncation;
 use self::writer::{Out, escape_into};
-use tk_encode::pipeline::PipelineTokenizer;
+use tk_encode::pipeline::Tokenizer;
 use tk_encode::tokenizer::Result;
 
 /// Write a lone `post_processor` -- the value of that one key -- rather than a whole
@@ -72,7 +72,7 @@ pub fn str_to_json(value: &str) -> String {
 }
 
 /// Write a `tokenizer.json` as a string.
-pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
+pub fn to_json(tokenizer: &Tokenizer) -> Result<String> {
     let mut out = Out::new();
     let model = tokenizer.get_model();
     let normalizers = tokenizer.get_normalizers();

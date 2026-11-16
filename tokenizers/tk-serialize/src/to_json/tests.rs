@@ -56,7 +56,7 @@ fn json(text: &str) -> serde_json::Value {
     serde_json::from_str(text).expect("a test expectation is valid JSON")
 }
 
-fn ids(tokenizer: &PipelineTokenizer, text: &str, options: &EncodeOptions) -> Vec<u32> {
+fn ids(tokenizer: &Tokenizer, text: &str, options: &EncodeOptions) -> Vec<u32> {
     let encoded = tokenizer
         .encode(text, options)
         .wait()
@@ -70,7 +70,7 @@ fn ids(tokenizer: &PipelineTokenizer, text: &str, options: &EncodeOptions) -> Ve
 
 /// Every `data/*.json` the reader accepts, built. A refusal is a skip; `tokenizer.json` is another
 /// test binary's output, written in parallel with this one.
-fn fixtures() -> Vec<(String, PipelineTokenizer)> {
+fn fixtures() -> Vec<(String, Tokenizer)> {
     let Ok(entries) = std::fs::read_dir("../data") else {
         return Vec::new();
     };

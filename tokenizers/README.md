@@ -23,7 +23,7 @@ The implementation is split across crates (each built on internal engines — `t
 - [`tk_encode`] — inference: the model engines and the full pipeline components
   ([`Normalizer`], [`PreTokenizer`], [`Model`], [`PostProcessor`], [`Decoder`]).
 - `tk_serialize` — the reader: `from_json_file` turns a canonical `tokenizer.json` into a
-  [`pipeline::PipelineTokenizer`], with no serde anywhere.
+  [`pipeline::Tokenizer`], with no serde anywhere.
 - [`tk_convert`] — the upgrade pass: [`canonicalize_file`] rewrites a `tokenizer.json` written by
   an older version into the canonical form that reader accepts.
 - `tk_train` — Types and traits to train tokenizers (gated by the `train` feature).
@@ -77,7 +77,7 @@ tokenizers = { version = "1.0.0", default-features = false, features = ["bpe"] }
 
 The `Tokenizer` object model — `Tokenizer::new`, the component setters, `add_tokens`,
 `save`, `from_pretrained`, truncation and padding — is **not** in this release.
-[`pipeline::PipelineTokenizer`] is read-only: it encodes and decodes what a `tokenizer.json`
+[`pipeline::Tokenizer`] is read-only: it encodes and decodes what a `tokenizer.json`
 describes and has no way to be built up or written back out. See
 `REQUIRED_FOR_V1.md` at the repository root for the full list and why each one is deferred.
 

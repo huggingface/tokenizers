@@ -1,4 +1,4 @@
-//! Build a [`PipelineTokenizer`] from a `tokenizer.json`.
+//! Build a [`Tokenizer`] from a `tokenizer.json`.
 //!
 //! Reads the canonical `2.0` format and nothing else. A legacy file is tk-convert's input, not
 //! this reader's: it produces a `2.0` file, and only then does this run.
@@ -34,7 +34,7 @@ use crate::json::Json;
 use std::collections::BTreeMap;
 use tk_encode::models::bpe::BPE;
 use tk_encode::pipeline::{
-    NormalizerChain, PipelineModel, PipelineNormalizer, PipelinePreTokenizer, PipelineTokenizer,
+    NormalizerChain, PipelineModel, PipelineNormalizer, PipelinePreTokenizer, Tokenizer,
 };
 use tk_encode::tokenizer::Result;
 use tk_encode::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
@@ -55,16 +55,16 @@ fn needs_feature(what: &str, feature: &str) -> tk_encode::Error {
     format!("reading {what} needs the `{feature}` feature, which is off in this build").into()
 }
 
-// Free functions rather than inherent methods: `PipelineTokenizer` is defined in `tk-encode`, and
+// Free functions rather than inherent methods: `Tokenizer` is defined in `tk-encode`, and
 // reading a `tokenizer.json` is this crate's whole job.
 /// Read a `tokenizer.json` from a string.
-pub fn from_json(text: &str) -> Result<PipelineTokenizer> {
+pub fn from_json(text: &str) -> Result<Tokenizer> {
     let doc = Json::parse(text).map_err(|e| -> tk_encode::Error { e.to_string().into() })?;
     from_json_value(&doc)
 }
 
 /// Read a `tokenizer.json` from a file.
-pub fn from_json_file(path: impl AsRef<std::path::Path>) -> Result<PipelineTokenizer> {
+pub fn from_json_file(path: impl AsRef<std::path::Path>) -> Result<Tokenizer> {
     let text = std::fs::read_to_string(path)?;
     from_json(&text)
 }
@@ -96,7 +96,7 @@ pub fn truncation_from_json(text: &str) -> Result<Option<tk_encode::tokenizer::T
     read_truncation(Some(&doc).filter(|doc| !doc.is_null()))
 }
 
-fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
+fn from_json_value(doc: &Json<'_>) -> Result<Tokenizer> {
     // `2.0` is the canonical format this crate reads and writes. A `1.0` file is a legacy file:
     // tk-convert turns one into a `2.0` file, and this reader never sees it.
     match doc.field("version").and_then(Json::as_str) {
@@ -185,7 +185,7 @@ fn build<M>(
     vocab_size: impl FnOnce(&M) -> usize,
     token_to_id: impl Fn(&M, &str) -> Option<u32>,
     lower: impl FnOnce(M) -> Result<PipelineModel>,
-) -> Result<PipelineTokenizer> {
+) -> Result<Tokenizer> {
     let added = read_added_tokens(doc.field("added_tokens"))?;
 
     let mut added_vocabulary = BucketAddedVocabulary::new();
@@ -203,7 +203,7 @@ fn build<M>(
     )?;
     let model = lower(concrete)?;
 
-    Ok(PipelineTokenizer::from_parts(
+    Ok(Tokenizer::from_parts(
         added_vocabulary,
         normalizers,
         pre_tokenizer,

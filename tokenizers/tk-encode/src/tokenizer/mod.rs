@@ -1,6 +1,6 @@
 //! Represents a tokenization pipeline.
 //!
-//! The components a [`pipeline::PipelineTokenizer`] is built out of. Normalization,
+//! The components a [`pipeline::Tokenizer`] is built out of. Normalization,
 //! pre-tokenization and post-processing are defined by the traits in [`pipeline`]; what stays here
 //! is the input/output vocabulary they are written against.
 

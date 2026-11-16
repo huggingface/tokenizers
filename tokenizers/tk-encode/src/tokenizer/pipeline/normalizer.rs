@@ -23,7 +23,7 @@ pub trait Normalize {
     fn normalize<'a>(&self, input: &'a str, offset: usize) -> Result<Cow<'a, str>>;
 }
 
-/// One normalization step of a [`PipelineTokenizer`].
+/// One normalization step of a [`Tokenizer`].
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum PipelineNormalizer {

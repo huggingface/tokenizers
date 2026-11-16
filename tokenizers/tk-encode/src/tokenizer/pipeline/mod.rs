@@ -237,17 +237,17 @@ struct TokenizerInner {
 /// Experimental encode-only pipeline built from a [`Tokenizer`]. Runs the same
 /// stages over borrowed ranges to avoid the reference path's allocations.
 #[derive(Clone)]
-pub struct PipelineTokenizer {
+pub struct Tokenizer {
     inner: Arc<TokenizerInner>,
 }
 
-// comptime verification that PipelineTokenizer is Send + Sync
+// comptime verification that Tokenizer is Send + Sync
 const _: fn() = || {
     fn assert_send_sync<T: Send + Sync>() {}
-    assert_send_sync::<PipelineTokenizer>();
+    assert_send_sync::<Tokenizer>();
 };
 
-impl PipelineTokenizer {
+impl Tokenizer {
     /// This is the new "constructor" we expose.
     ///
     /// `added_vocabulary` must already have had its tokens replayed *against the concrete model and
@@ -558,7 +558,7 @@ impl IntoIterator for EncodeHandle {
     }
 }
 
-impl PipelineTokenizer {
+impl Tokenizer {
     pub fn get_model(&self) -> &PipelineModel {
         &self.inner.model
     }
@@ -993,7 +993,7 @@ impl DecodeStream {
     ///
     /// Returns `None` while the text ends with an incomplete character. Fails when the decode
     /// changes text that an earlier step already returned.
-    pub fn step(&mut self, tokenizer: &PipelineTokenizer, ids: &[u32]) -> Result<Option<String>> {
+    pub fn step(&mut self, tokenizer: &Tokenizer, ids: &[u32]) -> Result<Option<String>> {
         // `new` has no tokenizer, so the first step decodes the prompt.
         if self.prefix.is_empty() && !self.ids.is_empty() {
             let new_prefix = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
@@ -1077,7 +1077,7 @@ pub enum PipelineModel {
 }
 
 impl PipelineModel {
-    /// `id -> token` used by [`PipelineTokenizer::decode`]
+    /// `id -> token` used by [`Tokenizer::decode`]
     pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         match self {
             Self::BPE(model) => model.id_to_token(id),
@@ -1128,7 +1128,7 @@ impl PipelineModel {
 }
 
 /// A set of buffers and other state the model needs to encode efficiently,
-/// reused among calls to [`PipelineTokenizer::encode`].
+/// reused among calls to [`Tokenizer::encode`].
 ///
 /// Each model gets its own variant.
 impl Tokenize for PipelineModel {
@@ -1394,7 +1394,7 @@ mod tests {
         }
     }
 
-    fn encode_six_tokens(pipeline: &PipelineTokenizer, options: &EncodeOptions) -> Encoding {
+    fn encode_six_tokens(pipeline: &Tokenizer, options: &EncodeOptions) -> Encoding {
         pipeline
             .encode(SIX_TOKENS, options)
             .wait()
@@ -1819,7 +1819,7 @@ mod tests {
     fn pipeline_with(
         post_processor: PostProcessor,
         truncation: Option<TruncationParams>,
-    ) -> PipelineTokenizer {
+    ) -> Tokenizer {
         hello_pipeline_with(post_processor, None, truncation)
     }
 
@@ -1827,8 +1827,8 @@ mod tests {
         post_processor: PostProcessor,
         padding: Option<PaddingParams>,
         truncation: Option<TruncationParams>,
-    ) -> PipelineTokenizer {
-        PipelineTokenizer::from_parts(
+    ) -> Tokenizer {
+        Tokenizer::from_parts(
             BucketAddedVocabulary::new(),
             Vec::new(),
             PipelinePreTokenizer::None,
@@ -1861,7 +1861,7 @@ mod tests {
                 None::<&PipelineNormalizer>,
             )
             .unwrap();
-        let pipeline = PipelineTokenizer::from_parts(
+        let pipeline = Tokenizer::from_parts(
             added,
             Vec::new(),
             PipelinePreTokenizer::None,
@@ -1932,7 +1932,7 @@ mod tests {
                 None::<&PipelineNormalizer>,
             )
             .unwrap();
-        let pipeline = PipelineTokenizer::from_parts(
+        let pipeline = Tokenizer::from_parts(
             added,
             Vec::new(),
             PipelinePreTokenizer::None,
@@ -1986,11 +1986,11 @@ mod tests {
         .unwrap()
     }
 
-    fn hello_pipeline() -> PipelineTokenizer {
+    fn hello_pipeline() -> Tokenizer {
         hello_pipeline_with(PostProcessor::default(), None, None)
     }
 
-    fn hello_pipeline_with_special(content: &str) -> PipelineTokenizer {
+    fn hello_pipeline_with_special(content: &str) -> Tokenizer {
         let mut added_vocabulary = BucketAddedVocabulary::new();
         added_vocabulary
             .add_tokens(
@@ -2000,7 +2000,7 @@ mod tests {
                 None::<&PipelineNormalizer>,
             )
             .unwrap();
-        PipelineTokenizer::from_parts(
+        Tokenizer::from_parts(
             added_vocabulary,
             Vec::new(),
             PipelinePreTokenizer::None,
@@ -2013,11 +2013,11 @@ mod tests {
         )
     }
 
-    fn hello_pipeline_with_padding(padding: PaddingParams) -> PipelineTokenizer {
+    fn hello_pipeline_with_padding(padding: PaddingParams) -> Tokenizer {
         hello_pipeline_with(PostProcessor::default(), Some(padding), None)
     }
 
-    fn hello_pipeline_with_truncation(truncation: TruncationParams) -> PipelineTokenizer {
+    fn hello_pipeline_with_truncation(truncation: TruncationParams) -> Tokenizer {
         hello_pipeline_with(PostProcessor::default(), None, Some(truncation))
     }
 }

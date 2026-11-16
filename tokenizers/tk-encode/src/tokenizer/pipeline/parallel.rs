@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::parallelism::pool;
 use crate::pipeline::scratch_pool::{EncodeScratch, ScratchGuard};
 use crate::pipeline::{
-    EncodeHandle, EncodeOptions, Encoding, Input, Inputs, PipelineTokenizer, Segment,
-    SpecialSegmentIterator, Token,
+    EncodeHandle, EncodeOptions, Encoding, Input, Inputs, Segment, SpecialSegmentIterator, Token,
+    Tokenizer,
 };
 
 /// Which half of an [`Input::Pair`] a chunk was cut from. [`Input::Single`] is all `A`.
@@ -117,7 +117,7 @@ struct EncodeBatch {
     cancelled: AtomicBool,
     /// Cursor for threads to pick up the next task (group of sequence chunks) to work on
     next_task: CachePadded<AtomicUsize>,
-    tokenizer: PipelineTokenizer,
+    tokenizer: Tokenizer,
     options: EncodeOptions,
     /// Completion queue containing the list of chunks (inserted as their sequence idx) that have finished, in completion order
     /// This enables us to track the number of remaining chunks, to know when we can return a result
@@ -294,7 +294,7 @@ fn drain(results: &[ChunkResult]) -> Result<Vec<Token>> {
     Ok(out.concat())
 }
 
-impl PipelineTokenizer {
+impl Tokenizer {
     fn get_scratch(&self) -> ScratchGuard<'_> {
         self.inner.scratch_pool.get(&self.inner.model)
     }
@@ -439,11 +439,7 @@ impl PipelineTokenizer {
     }
 }
 
-pub(crate) fn encode(
-    tok: &PipelineTokenizer,
-    inputs: Inputs,
-    options: &EncodeOptions,
-) -> EncodeHandle {
+pub(crate) fn encode(tok: &Tokenizer, inputs: Inputs, options: &EncodeOptions) -> EncodeHandle {
     if inputs.size_bytes() < PARALLEL_MIN_BYTES {
         return EncodeHandle::blocking(
             tok.encode_serial(inputs, options),
