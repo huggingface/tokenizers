@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use numpy::PyArray1;
 use pyo3::prelude::*;
-use tk::pipeline::{Encoding as PipelineEncoding, PipelineToken};
+use tk::pipeline::{Encoding as PipelineEncoding, Token};
 
 use crate::type_hints::{NDArray, U32Array};
 
@@ -26,7 +26,7 @@ impl From<PipelineEncoding> for Encoding {
 
 impl Encoding {
     pub(crate) fn get_ids(&self) -> &[u32] {
-        PipelineToken::cast_slice(self.inner.ids())
+        Token::cast_slice(self.inner.ids())
     }
 }
 
@@ -115,7 +115,7 @@ impl Encoding {
     fn _unpickle(ids: Vec<u32>, type_ids: Vec<u8>, attention_mask: Vec<u8>) -> Self {
         Self {
             inner: PipelineEncoding::new(
-                ids.into_iter().map(PipelineToken::from).collect(),
+                ids.into_iter().map(Token::from).collect(),
                 Some(type_ids),
                 Some(attention_mask),
             ),

@@ -1,7 +1,7 @@
 //! [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 //! model.
 
-use crate::pipeline::{self, PipelineToken};
+use crate::pipeline::{self, Token};
 use crate::tokenizer::Result;
 use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::utils::word_cache::{Lookup, WordCache};
@@ -236,14 +236,14 @@ impl PipelineWordPiece {
         &self,
         sequence: &str,
         candidate: &mut Vec<u8>,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<Token>,
     ) -> Result<()> {
         let checkpoint = output.len();
 
         let char_len = sequence.chars().count();
         if char_len > self.max_input_chars_per_word {
             let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
-            output.push(PipelineToken::from(unk_id));
+            output.push(Token::from(unk_id));
             return Ok(());
         }
 
@@ -271,10 +271,10 @@ impl PipelineWordPiece {
             else {
                 let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
                 output.truncate(checkpoint);
-                output.push(PipelineToken::from(unk_id));
+                output.push(Token::from(unk_id));
                 return Ok(());
             };
-            output.push(PipelineToken::from(token_id));
+            output.push(Token::from(token_id));
             start += match_len - prefix_len;
         }
         Ok(())
@@ -343,7 +343,7 @@ impl pipeline::Tokenize for PipelineWordPiece {
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<pipeline::PipelineToken>,
+        output: &mut Vec<pipeline::Token>,
     ) -> Result<()> {
         if sequence.is_empty() {
             return Ok(());
@@ -355,7 +355,7 @@ impl pipeline::Tokenize for PipelineWordPiece {
 
         let placement = match word_cache.lookup(sequence.as_bytes()) {
             Lookup::Hit(ids) => {
-                output.extend(ids.iter().copied().map(PipelineToken::from));
+                output.extend(ids.iter().copied().map(Token::from));
                 return Ok(());
             }
             Lookup::Miss(at) => at,

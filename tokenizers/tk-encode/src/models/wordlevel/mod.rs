@@ -1,4 +1,4 @@
-use crate::pipeline::{self, PipelineToken};
+use crate::pipeline::{self, Token};
 use crate::tokenizer::Result;
 use ahash::AHashMap;
 use std::collections::HashMap;
@@ -146,12 +146,12 @@ impl pipeline::Tokenize for WordLevel {
         &self,
         sequence: &str,
         _scratch: &mut Self::Scratch,
-        output: &mut Vec<pipeline::PipelineToken>,
+        output: &mut Vec<pipeline::Token>,
     ) -> Result<()> {
         if let Some(&id) = self.vocab.get(sequence) {
-            output.push(PipelineToken::from(id))
+            output.push(Token::from(id))
         } else if let Some(&unk_id) = self.vocab.get(&self.unk_token) {
-            output.push(PipelineToken::from(unk_id));
+            output.push(Token::from(unk_id));
         } else {
             return Err(Box::new(Error::MissingUnkToken));
         }

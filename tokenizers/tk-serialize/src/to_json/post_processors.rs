@@ -1,6 +1,6 @@
 //! The `post_processor` object, written back out of the two `Template`s it was lowered into.
 use super::writer::Out;
-use tk_encode::pipeline::{PipelineToken, PostProcessor, Template};
+use tk_encode::pipeline::{PostProcessor, Template, Token};
 use tk_encode::tokenizer::Result;
 
 pub(super) fn write_post_processor(out: &mut Out, post_processor: &PostProcessor) -> Result<()> {
@@ -57,7 +57,7 @@ fn write_seq(out: &mut Out, seq: &str, type_id: u8) {
 ///
 /// The ids are all the pipeline kept. The strings behind them are in the vocabulary, so a name
 /// here would only repeat it -- and a name needs a table.
-fn write_specials(out: &mut Out, specials: &[(PipelineToken, u8)]) {
+fn write_specials(out: &mut Out, specials: &[(Token, u8)]) {
     let mut rest = specials;
     while let Some(&(_, type_id)) = rest.first() {
         let n = rest.iter().take_while(|&&(_, id)| id == type_id).count();

@@ -4,7 +4,7 @@ use super::{
 };
 use crate::utils::word_cache::{Lookup, WordCache};
 use crate::{
-    pipeline::{self, PipelineToken},
+    pipeline::{self, Token},
     tokenizer::Result,
 };
 use crate::{utils::cache::DEFAULT_CACHE_CAPACITY, vocab::bucket_vocab_store::BucketVocabStore};
@@ -411,7 +411,7 @@ impl pipeline::Tokenize for Unigram {
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<pipeline::PipelineToken>,
+        output: &mut Vec<pipeline::Token>,
     ) -> Result<()> {
         if sequence.is_empty() {
             return Ok(());
@@ -420,7 +420,7 @@ impl pipeline::Tokenize for Unigram {
         if !self.samples() {
             match scratch.word_cache.lookup(sequence.as_bytes()) {
                 Lookup::Hit(ids) => {
-                    output.extend(ids.iter().copied().map(PipelineToken::from));
+                    output.extend(ids.iter().copied().map(Token::from));
                     return Ok(());
                 }
                 Lookup::Miss(at) => placement = Some(at),
@@ -431,7 +431,7 @@ impl pipeline::Tokenize for Unigram {
         for string in self.encode(sequence)? {
             match self.token_to_ids.token_to_id(&string) {
                 Some(id) => {
-                    output.push(PipelineToken::from(id));
+                    output.push(Token::from(id));
                 }
                 None => {
                     if self.byte_fallback {
@@ -443,12 +443,12 @@ impl pipeline::Tokenize for Unigram {
                             })
                             .collect();
                         if let Some(token_ids) = byte_token_ids {
-                            output.extend(token_ids.iter().copied().map(PipelineToken::from));
+                            output.extend(token_ids.iter().copied().map(Token::from));
                             continue;
                         }
                     }
-                    output.push(PipelineToken::from(
-                        self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32,
+                    output.push(Token::from(
+                        self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32
                     ));
                 }
             };

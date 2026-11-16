@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::parallelism::pool;
 use crate::pipeline::scratch_pool::{EncodeScratch, ScratchGuard};
 use crate::pipeline::{
-    EncodeHandle, EncodeOptions, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer,
-    Segment, SpecialSegmentIterator,
+    EncodeHandle, EncodeOptions, Encoding, Input, Inputs, PipelineTokenizer, Segment,
+    SpecialSegmentIterator, Token,
 };
 
 /// Which half of an [`Input::Pair`] a chunk was cut from. [`Input::Single`] is all `A`.
@@ -70,7 +70,7 @@ impl<T> Slot<T> {
     }
 }
 
-type ChunkResult = Slot<Result<Vec<PipelineToken>>>;
+type ChunkResult = Slot<Result<Vec<Token>>>;
 /// SAFETY: we make sure each chunk's result is set by only one given thread thanks to
 /// [`EncodeBatch::next_task`]
 unsafe impl Sync for ChunkResult {}
@@ -273,7 +273,7 @@ impl Drop for StreamingIter {
     }
 }
 
-fn drain(results: &[ChunkResult]) -> Result<Vec<PipelineToken>> {
+fn drain(results: &[ChunkResult]) -> Result<Vec<Token>> {
     if let [only] = results {
         return only
             .take()
@@ -330,7 +330,7 @@ impl PipelineTokenizer {
             let idx = seq_outputs.len();
             let (segment, offset) = match segment {
                 Segment::SpecialToken(id) => {
-                    let token = PipelineToken::from(id);
+                    let token = Token::from(id);
                     seq_outputs.push(ChunkResult::new(Some(Ok(vec![token]))));
                     continue;
                 }
