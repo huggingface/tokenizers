@@ -64,7 +64,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use serde_json::Value;
 
-use tk::pipeline::PipelineTokenizer;
+use tk::pipeline;
 use tk::vocab::bucket_added_vocabulary::AddedToken;
 use tk::{
     PaddingParams, Result, TruncationParams, canonicalize_value, from_json, padding_from_json,
@@ -536,8 +536,8 @@ impl TokenizerSpec {
         }
     }
 
-    /// Builds a new [`PipelineTokenizer`] from the current spec, padding and truncation included.
-    pub(crate) fn compile(&self) -> Result<PipelineTokenizer> {
+    /// Builds a new [`pipeline::Tokenizer`] from the current spec, padding and truncation included.
+    pub(crate) fn compile(&self) -> Result<pipeline::Tokenizer> {
         from_json(&self.to_json()?)
     }
 

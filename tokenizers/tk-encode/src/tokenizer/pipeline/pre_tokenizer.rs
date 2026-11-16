@@ -21,8 +21,8 @@ use bitcannon::classify::classify;
 ///
 /// # Safety
 ///
-/// [`PreTokenize::pre_tokenize`] produces [`Span`] objects that are later consumed by [`PipelineTokenizer::encode_sequence`].
-/// For performance reasons, [`PipelineTokenizer::encode_sequence`] turns every span into a `&str` with [`str::get_unchecked`].
+/// [`PreTokenize::pre_tokenize`] produces [`Span`] objects that are later consumed by [`Tokenizer::encode_sequence`].
+/// For performance reasons, [`Tokenizer::encode_sequence`] turns every span into a `&str` with [`str::get_unchecked`].
 /// As a consequence, every implementation of this trait *MUST* ensure the following invariants for each [`Span`]:
 ///
 /// * `span.end <= text.len()`: the span is inside the text
@@ -138,7 +138,7 @@ impl PreTokenizerScratch {
     }
 }
 
-/// The pre-tokenizers a [`PipelineTokenizer`] can run.
+/// The pre-tokenizers a [`Tokenizer`] can run.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -441,7 +441,7 @@ mod tests {
         "Ⓘ\u{200D}x_y a-b'c",
     ];
 
-    /// Every variant must produce spans that [`PipelineTokenizer::encode_sequence`] can hand to `str::get_unchecked`
+    /// Every variant must produce spans that [`Tokenizer::encode_sequence`] can hand to `str::get_unchecked`
     #[test]
     fn every_pre_tokenizer_emits_sliceable_spans() {
         use crate::pre_tokenizers::digits::Digits;

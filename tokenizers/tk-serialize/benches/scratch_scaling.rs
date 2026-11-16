@@ -1,4 +1,4 @@
-//! Does `PipelineTokenizer::encode` scale with thread count?
+//! Does `Tokenizer::encode` scale with thread count?
 //!
 //! N threads calling `encode` on one shared tokenizer, one row per thread count. Criterion
 //! times the whole barrier-synced batch and `Throughput::Elements(threads)` turns that into
@@ -23,7 +23,7 @@ use criterion::{
     BenchmarkId, Criterion, SamplingMode, Throughput, criterion_group, criterion_main,
 };
 use tk_encode::pipeline::EncodeOptions;
-use tk_encode::pipeline::PipelineTokenizer;
+use tk_encode::pipeline::Tokenizer;
 
 /// Roughly the prompt size the sharded pool was measured at in #2365.
 const PROMPT_BYTES: usize = 12_000;
@@ -34,7 +34,7 @@ const FIXTURE: &str = "../data/deepseek-v4.json";
 
 /// Read a real config from `../data`. They are all still version `1.0`, so run the upgrade pass
 /// first -- the reader only accepts canonical `2.0`.
-fn load(path: &str) -> PipelineTokenizer {
+fn load(path: &str) -> Tokenizer {
     let canonical = tk_convert::canonicalize_file(path).unwrap();
     tk_serialize::from_json(&canonical).unwrap()
 }
@@ -74,7 +74,7 @@ fn prompt(text: &str, repeated: bool) -> String {
 
 /// `iters` encodes on each of `threads` threads, all released together, timed as one batch.
 fn encode_on(
-    tokenizer: &Arc<PipelineTokenizer>,
+    tokenizer: &Arc<Tokenizer>,
     prompt: &Arc<String>,
     threads: usize,
     iters: u64,

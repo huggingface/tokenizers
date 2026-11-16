@@ -32,7 +32,7 @@ fn config<'a>(overrides: &'a [(&'a str, &'a str)]) -> String {
     )
 }
 
-/// The message from a config the reader must refuse. Not `unwrap_err`: `PipelineTokenizer` has no
+/// The message from a config the reader must refuse. Not `unwrap_err`: `Tokenizer` has no
 /// `Debug`, which is what that would need on the `Ok` side.
 fn read_err(text: &str) -> String {
     match from_json(text) {

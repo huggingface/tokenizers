@@ -1,10 +1,10 @@
-//! Minimal encode program measured by CI for binary size: the `PipelineTokenizer` encode path.
+//! Minimal encode program measured by CI for binary size: the `Tokenizer` encode path.
 //! Kept structurally identical to `binsize_baseline.rs` so the stripped sizes compare like for
 //! like. Built WITHOUT `bench-baseline` (unlike the baseline example), so the size is tk-encode's
 //! real shipping footprint — none of the benchmark-only reference-regex deps.
 //!
 //! One read path only, the hand-rolled reader: the config layer lives in another crate, so there is
-//! no `Tokenizer` here to deserialize into.
+//! no serde type here to deserialize into.
 
 use tk_encode::pipeline::EncodeOptions;
 

@@ -8,7 +8,7 @@ canonical `tokenizer.json` upgrade, 1,207 lines whose only dependencies are `std
 `serde_json` and a `thiserror` derive on `ConvertError`. Everything else in that crate —
 `Tokenizer`, `TokenizerImpl`, `TokenizerBuilder`, the five wrapper enums, the config models,
 `added_vocabulary.rs`, `lowering.rs` — is deleted, 9,369 lines of the crate's 12,979. The runtime is
-`tk_encode::pipeline::PipelineTokenizer`; the reader is `tk-serialize`.
+`tk_encode::pipeline::Tokenizer`; the reader is `tk-serialize`.
 
 The crate's dependency graph goes with it: `tk-convert` no longer depends on `tk-encode`, nor on
 `serde`, `ahash`, `daachorse`, `dary_heap`, `rand`, `regex`, `log` or `paste`. `cargo tree
@@ -31,7 +31,7 @@ Test count across `cargo test --workspace`: **544 → 373 passing**, 32 → 19 s
 
 ## 1. An authoring surface (the setters)
 
-**What breaks:** the Python bindings. `PipelineTokenizer` has **0** setters — it is read-only. The
+**What breaks:** the Python bindings. `Tokenizer` has **0** setters — it is read-only. The
 bindings hold config wrapper enums in **195** places:
 
 | type | references in `bindings/` |
@@ -70,7 +70,7 @@ tokenizer, so until they run again those are untested.
 For the **benches** it is not: they are not coming back in this shape. The cross-engine benchmarks
 live in [tokbench](https://github.com/huggingface/tokbench), and what stays in-tree is two criterion
 files against the pipeline (`tk-serialize/benches/{encode,decode}.rs`) — the only crate that can
-build a `PipelineTokenizer`. Nothing about them waits on the builder.
+build a `Tokenizer`. Nothing about them waits on the builder.
 
 ## 2. Trainers
 

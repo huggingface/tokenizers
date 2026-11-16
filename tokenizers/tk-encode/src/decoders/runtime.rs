@@ -1,4 +1,4 @@
-//! The decoder a [`PipelineTokenizer`](crate::pipeline::PipelineTokenizer) actually holds.
+//! The decoder a [`Tokenizer`](crate::pipeline::Tokenizer) actually holds.
 use crate::decoders::bpe::BPEDecoder;
 use crate::decoders::byte_fallback::ByteFallback;
 use crate::decoders::byte_level::ByteLevelDecoder;

@@ -33,7 +33,7 @@ fn scratch_shard() -> usize {
 ///
 /// Sharding the thread pool considerably reduces contention on machines with a very high number of threads (NVIDIA Vera, Intel GNR, AMD Turin) - see https://github.com/huggingface/tokenizers/pull/2365
 ///
-/// When calling [`PipelineTokenizer::encode`], an instance of [`PipelineModelScratch`] is taken out of this pool
+/// When calling [`Tokenizer::encode`], an instance of [`PipelineModelScratch`] is taken out of this pool
 /// and given to the tokenizer. When the encoding is done, the scratch buffer is returned to the pool and can be
 /// reused by later calls.
 ///
@@ -99,7 +99,7 @@ impl ScratchPool {
 /// Implements [`Deref`] and [`DerefMut`], so it behaves as [`PipelineModelScratch`].
 ///
 /// When it gets dropped, it pushes [`Self::scratch`] back into the shared [`Self::pool`] so it can
-/// get reused by a later call to [`PipelineTokenizer::encode`].
+/// get reused by a later call to [`Tokenizer::encode`].
 ///
 pub(super) struct ScratchGuard<'a> {
     scratch: EncodeScratch,
@@ -143,7 +143,7 @@ mod tests {
     use super::*;
     use crate::models::bpe::BPE;
     use crate::pipeline::{
-        EncodeOptions, PipelineModel, PipelinePreTokenizer, PipelineTokenizer, PostProcessor,
+        EncodeOptions, PipelineModel, PipelinePreTokenizer, PostProcessor, Tokenizer,
     };
     use crate::pre_tokenizers::sequence::Sequence;
     use crate::pre_tokenizers::whitespace::Whitespace;
@@ -182,8 +182,8 @@ mod tests {
 
     /// Assembled through `from_parts` rather than from a `Tokenizer`: the config layer lives in
     /// `tk-convert` now, and the scratch pool does not care which reader filled the parts.
-    fn hello_pipeline_with(pre_tokenizer: PipelinePreTokenizer) -> PipelineTokenizer {
-        PipelineTokenizer::from_parts(
+    fn hello_pipeline_with(pre_tokenizer: PipelinePreTokenizer) -> Tokenizer {
+        Tokenizer::from_parts(
             BucketAddedVocabulary::new(),
             Vec::new(),
             pre_tokenizer,
@@ -196,21 +196,21 @@ mod tests {
         )
     }
 
-    fn hello_pipeline() -> PipelineTokenizer {
+    fn hello_pipeline() -> Tokenizer {
         hello_pipeline_with(PipelinePreTokenizer::None)
     }
 
     /// The same model, with a pre-tokenizer that cuts one span per word. A pipeline with no
     /// pre-tokenizer leaves the whole chunk as a single span, which barely exercises
     /// [`EncodeScratch::pre_tokens`].
-    fn hello_pipeline_split_on_words() -> PipelineTokenizer {
+    fn hello_pipeline_split_on_words() -> Tokenizer {
         hello_pipeline_with(PipelinePreTokenizer::Whitespace(Whitespace))
     }
 
     /// The same model, with a `Sequence` of two real children: the shape that runs
     /// [`Sequence`]'s child loop, where a single child or a recognized deepseek
     /// composition would take a fast path above it instead.
-    fn hello_pipeline_sequence() -> PipelineTokenizer {
+    fn hello_pipeline_sequence() -> Tokenizer {
         use crate::pre_tokenizers::digits::Digits;
         use crate::pre_tokenizers::whitespace::WhitespaceSplit;
 
@@ -355,7 +355,7 @@ mod tests {
         symbols: (usize, usize),
     }
 
-    fn pooled_buffers(pipeline: &PipelineTokenizer) -> Buffers {
+    fn pooled_buffers(pipeline: &Tokenizer) -> Buffers {
         let scratch = pipeline.inner.scratch_pool.get(&pipeline.inner.model);
         let PipelineModelScratch::BPE(bpe) = &scratch.model else {
             panic!("a BPE pipeline encodes with a BPE scratch");
@@ -410,7 +410,7 @@ mod tests {
     }
 
     /// The addresses of the three span buffers a sequence encode rotates between.
-    fn pooled_span_buffers(pipeline: &PipelineTokenizer) -> BTreeSet<usize> {
+    fn pooled_span_buffers(pipeline: &Tokenizer) -> BTreeSet<usize> {
         let scratch = pipeline.inner.scratch_pool.get(&pipeline.inner.model);
         let [first, second] = &scratch.split.pair;
         [&scratch.pre_tokens, first, second]

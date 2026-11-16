@@ -24,7 +24,7 @@ The various steps of the pipeline are:
 
 This crate is the runtime only: it knows how to *encode*, not what a `tokenizer.json` looks
 like. Reading one is `tk-serialize`'s job — `tk_serialize::from_json_file` returns the
-[`pipeline::PipelineTokenizer`] built here, parsed with `hifijson`, a JSON lexer with no
+[`pipeline::Tokenizer`] built here, parsed with `hifijson`, a JSON lexer with no
 required dependencies, rather than `serde_json`. (The example lives there, because only that
 crate can compile it.)
 
@@ -38,9 +38,9 @@ today — so a parser that converts numbers to floats its own way moves them, an
 accurate is a bug, not a fix. `hifijson` never parses a float at all: its `Num` is the raw
 `&str`, which is what lets `tk-serialize` reassemble the `f64` to match `serde_json` bit for bit.
 
-There is no `Tokenizer` type here to build up and mutate. What you get is a finished
-[`pipeline::PipelineTokenizer`] — from `tk_serialize::from_json_file`, or from
-[`pipeline::PipelineTokenizer::from_parts`] if you assemble the components yourself — and once
+There is no builder here to mutate a tokenizer through. What you get is a finished
+[`pipeline::Tokenizer`] — from `tk_serialize::from_json_file`, or from
+[`pipeline::Tokenizer::from_parts`] if you assemble the components yourself — and once
 built it is read-only: getters, `encode` and `decode`, but no setters, no `save`, and no
 `from_pretrained` constructor. Upgrading a config written by an older version is `tk-convert`'s
 one remaining job (`canonicalize_file`, re-exported by the `tokenizers` umbrella crate). What an

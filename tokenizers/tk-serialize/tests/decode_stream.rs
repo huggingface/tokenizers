@@ -1,9 +1,9 @@
 //! Tests [`DecodeStream`] on real tokenizer configs. The expected values are what the
 //! released 0.23.3 `DecodeStream` returns for the same ids.
 
-use tk_encode::pipeline::{DecodeStream, PipelineTokenizer};
+use tk_encode::pipeline::{DecodeStream, Tokenizer};
 
-fn load(name: &str) -> PipelineTokenizer {
+fn load(name: &str) -> Tokenizer {
     let canonical = tk_convert::canonicalize_file(format!("../data/{name}")).unwrap();
     tk_serialize::from_json(&canonical).unwrap()
 }

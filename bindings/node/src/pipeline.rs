@@ -10,7 +10,7 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use tokenizers::pipeline::{EncodeOptions as PipelineEncodeOptions, Override};
-use tokenizers::tokenizer::pipeline::PipelineTokenizer as Pipeline;
+use tokenizers::tokenizer::pipeline::Tokenizer as Pipeline;
 use tokenizers::{
   PaddingDirection, PaddingParams, PaddingStrategy, TruncationDirection, TruncationParams,
   TruncationStrategy,

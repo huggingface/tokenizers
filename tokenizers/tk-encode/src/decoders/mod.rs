@@ -17,7 +17,7 @@ use crate::tokenizer::Result;
 ///
 /// This lives here, with its implementors, rather than in `tokenizer` alongside the encode-side
 /// traits: those were the legacy `NormalizedString` pipeline and are gone, while this one is what
-/// `PipelineTokenizer::decode` actually dispatches through.
+/// `Tokenizer::decode` actually dispatches through.
 pub trait Decoder {
     fn decode(&self, tokens: Vec<String>) -> Result<String> {
         let results = self.decode_chain(tokens)?;

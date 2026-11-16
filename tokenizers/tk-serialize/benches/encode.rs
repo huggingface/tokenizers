@@ -14,8 +14,8 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use tk_encode::pipeline::{
-    EncodeOptions, PipelineModel, PipelineTokenizer, PreTokenize, PreTokenizerScratch, Span,
-    SpecialSegmentIterator, Tokenize, normalize_all,
+    EncodeOptions, PipelineModel, PreTokenize, PreTokenizerScratch, Span, SpecialSegmentIterator,
+    Tokenize, Tokenizer, normalize_all,
 };
 
 const BATCH_SIZE: usize = 1_000;
@@ -29,12 +29,12 @@ const FIXTURES: [(&str, &str); 1] = [("encode-deepseek", "../data/deepseek-v4.js
 
 /// Read a real config from `../data`. They are all still version `1.0`, so run the upgrade pass
 /// first -- the reader only accepts canonical `2.0`.
-fn load(path: &str) -> PipelineTokenizer {
+fn load(path: &str) -> Tokenizer {
     let canonical = tk_convert::canonicalize_file(path).unwrap();
     tk_serialize::from_json(&canonical).unwrap()
 }
 
-fn pre_tokenize(tokenizer: &PipelineTokenizer, text: &str, spans: &mut Vec<Span>) {
+fn pre_tokenize(tokenizer: &Tokenizer, text: &str, spans: &mut Vec<Span>) {
     let mut scratch = PreTokenizerScratch::default();
     spans.clear();
     tokenizer
@@ -150,7 +150,7 @@ pub fn encode(c: &mut Criterion) {
             });
         }
 
-        // No `stage/post-process` row: `PipelineTokenizer::post_process` is private and
+        // No `stage/post-process` row: `Tokenizer::post_process` is private and
         // `PostProcessor` exposes only its templates, so that stage shows up today only
         // inside the fused rows.
     }
