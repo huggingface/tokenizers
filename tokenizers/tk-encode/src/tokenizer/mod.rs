@@ -15,7 +15,6 @@ pub mod pipeline;
 // stays here is the vocabulary of traits every component implements, plus the input/output types
 // they are written against.
 pub use crate::decoders::{Decoder, DecoderRuntime};
-pub use crate::utils::iter::LinesWithEnding;
 pub use crate::utils::padding::{PaddingDirection, PaddingParams, PaddingStrategy, pad_encodings};
 pub use crate::utils::truncation::{
     TruncationDirection, TruncationParams, TruncationStrategy, truncate_pair,
