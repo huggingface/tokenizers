@@ -5,7 +5,7 @@ use super::{
 use crate::utils::word_cache::{Lookup, WordCache};
 use crate::{
     pipeline::{self, PipelineToken},
-    tokenizer::{Result, Token},
+    tokenizer::Result,
 };
 use crate::{
     utils::cache::{Cache, MAX_LENGTH},
@@ -455,42 +455,6 @@ impl Unigram {
 
     pub fn get_vocab_size(&self) -> usize {
         self.vocab.len()
-    }
-
-    pub fn tokenize(&self, sentence: &str) -> Result<Vec<Token>> {
-        let str_tokens = self.encode(sentence)?;
-        let mut offset = 0;
-        let mut tokens = Vec::with_capacity(str_tokens.len());
-        for string in str_tokens {
-            let len = string.len();
-            let offsets = (offset, offset + len);
-            let id: u32 = match self.token_to_ids.token_to_id(&string) {
-                Some(id) => id,
-                None => {
-                    if self.byte_fallback {
-                        let byte_tokens: Option<Vec<_>> = string
-                            .bytes()
-                            .map(|byte| -> Option<Token> {
-                                let byte_string = format!("<0x{byte:02X}>");
-                                let id = self.token_to_ids.token_to_id(&byte_string);
-                                id.map(|id| Token::new(id, byte_string, (offset, offset + len)))
-                            })
-                            .collect();
-                        if let Some(byte_tokens) = byte_tokens {
-                            for token in byte_tokens {
-                                tokens.push(token);
-                            }
-                            offset += len;
-                            continue;
-                        }
-                    }
-                    self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32
-                }
-            };
-            offset += len;
-            tokens.push(Token::new(id, string, offsets));
-        }
-        Ok(tokens)
     }
 
     pub fn token_to_id(&self, token: &str) -> Option<u32> {

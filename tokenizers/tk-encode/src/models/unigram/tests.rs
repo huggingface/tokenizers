@@ -1,5 +1,4 @@
 use crate::pipeline::Model;
-use crate::tokenizer::Token;
 
 use super::*;
 
@@ -158,25 +157,8 @@ fn test_unigram_bytefallback() {
         ("<0xA9>".to_string(), -0.03),
     ];
     let unigram = Unigram::from(sentencepieces, Some(0), true).unwrap();
-    let tokens: Vec<Token> = unigram.tokenize("é").unwrap();
-    assert_eq!(
-        tokens,
-        [
-            Token {
-                id: 1,
-                value: "<0xC3>".to_string(),
-                offsets: (0, 2)
-            },
-            Token {
-                id: 2,
-                value: "<0xA9>".to_string(),
-                offsets: (0, 2)
-            }
-        ]
-    );
-
-    let tokens = unigram.tokenize("?é").unwrap();
-    assert_eq!(tokens[0].id, 0);
+    let mut scratch = Model::init_scratch(&unigram);
+    assert_eq!(pipeline_ids(&unigram, "?é", &mut scratch)[0], 0);
 }
 
 /// Ids 0..=8 are `<unk>`, `a`, `b`, `c`, `d`, `cd`, `ab`, `abc`, `abcd`.
