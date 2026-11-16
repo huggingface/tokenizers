@@ -3170,7 +3170,6 @@ dependencies = [
  "rand 0.10.2",
  "rayon",
  "rayon-cond",
- "regex",
  "serde_json",
  "spm_precompiled",
  "tempfile",
