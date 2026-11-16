@@ -41,11 +41,6 @@ impl PrecompiledNormalizer {
     pub fn charsmap(&self) -> Option<&[u8]> {
         self.charsmap.as_deref()
     }
-
-    /// The parsed value, for anything that wants to normalize with it directly.
-    pub fn parsed(&self) -> &Precompiled {
-        &self.parsed
-    }
 }
 
 impl pipeline::Normalizer for PrecompiledNormalizer {
