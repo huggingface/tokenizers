@@ -44,7 +44,7 @@ static BMP_SCRIPT: LazyLock<[Script; 0x10000]> = LazyLock::new(|| {
 
 // SAFETY: every offset is one `str::char_indices` yielded, or `text.len()`, and they are pushed in
 // increasing order.
-unsafe impl pipeline::PreTokenizer for UnicodeScripts {
+unsafe impl pipeline::PreTokenize for UnicodeScripts {
     fn pre_tokenize(
         &self,
         text: &str,
@@ -95,7 +95,7 @@ mod tests {
         let pretok = UnicodeScripts;
         let mut scratch = pipeline::PreTokenizerScratch::default();
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+        crate::pipeline::PreTokenize::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
             .unwrap();
         splits
             .iter()

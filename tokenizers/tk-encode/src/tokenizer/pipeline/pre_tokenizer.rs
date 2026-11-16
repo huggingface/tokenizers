@@ -1,4 +1,4 @@
-//! The pre-tokenizer half of the pipeline: the [`PreTokenizer`] trait, its scratch
+//! The pre-tokenizer half of the pipeline: the [`PreTokenize`] trait, its scratch
 //! buffers, the [`PipelinePreTokenizer`] enum, and the shared `split*` primitives
 //! the concrete pre-tokenizers are built from.
 
@@ -21,7 +21,7 @@ use bitcannon::classify::classify;
 ///
 /// # Safety
 ///
-/// [`PreTokenizer::pre_tokenize`] produces [`Span`] objects that are later consumed by [`PipelineTokenizer::encode_sequence`].
+/// [`PreTokenize::pre_tokenize`] produces [`Span`] objects that are later consumed by [`PipelineTokenizer::encode_sequence`].
 /// For performance reasons, [`PipelineTokenizer::encode_sequence`] turns every span into a `&str` with [`str::get_unchecked`].
 /// As a consequence, every implementation of this trait *MUST* ensure the following invariants for each [`Span`]:
 ///
@@ -29,7 +29,7 @@ use bitcannon::classify::classify;
 /// * `span.start <= span.end`: the span is not reversed
 /// * `text.is_char_boundary(start)` and `text.is_char_boundary(end)`: the start and end offset must be UTF-8 char boundaries
 /// * The offsets are relative to the `text`.
-pub unsafe trait PreTokenizer {
+pub unsafe trait PreTokenize {
     /// Split `text` into pre-tokens, appending to `out`. Ranges are into `text`.
     /// `scratch` holds the working buffers, see [`PreTokenizerScratch`].
     fn pre_tokenize(
@@ -40,7 +40,7 @@ pub unsafe trait PreTokenizer {
     ) -> Result<()>;
 }
 
-/// The working buffers a [`PreTokenizer`] needs to split a text into pre-tokens.
+/// The working buffers a [`PreTokenize`] impl needs to split a text into pre-tokens.
 #[derive(Default)]
 pub struct PreTokenizerScratch {
     /// One [`bitcannon`] atom tag per input byte, what [`bitcannon::classify::classify`] writes
@@ -157,9 +157,9 @@ pub enum PipelinePreTokenizer {
     None,
 }
 
-// SAFETY: every arm but `None` forwards to another `PreTokenizer`, which upholds the contract itself.
+// SAFETY: every arm but `None` forwards to another `PreTokenize` impl, which upholds the contract itself.
 // `None` emits the single span covering all of `text`, whose ends are `0` and `text.len()`.
-unsafe impl PreTokenizer for PipelinePreTokenizer {
+unsafe impl PreTokenize for PipelinePreTokenizer {
     fn pre_tokenize(
         &self,
         text: &str,
