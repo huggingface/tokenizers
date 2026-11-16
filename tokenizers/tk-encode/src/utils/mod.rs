@@ -1,5 +1,4 @@
 pub(crate) mod cache;
-// `pub` because `Tokenizer::from_pretrained` — the only caller — lives in `tk-convert`.
 #[cfg(feature = "http")]
 pub mod from_pretrained;
 pub(crate) mod word_cache;

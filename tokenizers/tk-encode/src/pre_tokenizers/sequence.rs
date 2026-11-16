@@ -1,10 +1,6 @@
 use crate::pipeline::{self, PipelinePreTokenizer};
 use crate::tokenizer::Result;
 
-// The `Sequence` pre-tokenizer is a `Vec<PreTokenizerWrapper>`, so it lives in `tk-convert`
-// with the wrapper it is parameterised by, together with the `TryFrom<Sequence>` that lowers it
-// into the `PipelineSequence` below.
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct PipelineSequence {
     pre_tokenizers: Vec<PipelinePreTokenizer>,
