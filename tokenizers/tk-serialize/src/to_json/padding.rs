@@ -1,13 +1,13 @@
 //! The `padding` object, written back from the `PaddingParams` the tokenizer pads with.
 
 use super::writer::Out;
-use tk_encode::tokenizer::{PaddingDirection, PaddingParams, PaddingStrategy};
+use tk_encode::tokenizer::{PaddingDirection, PaddingParams, PaddingStrategy, Result};
 
-pub(super) fn write_padding(out: &mut Out, padding: Option<&PaddingParams>) {
+pub(super) fn write_padding(out: &mut Out, padding: Option<&PaddingParams>) -> Result<()> {
     // A missing `padding` reads back as `None`, so absent is exact.
     let Some(padding) = padding else {
         out.null();
-        return;
+        return Ok(());
     };
     out.obj_open();
     out.key("strategy");
@@ -17,6 +17,9 @@ pub(super) fn write_padding(out: &mut Out, padding: Option<&PaddingParams>) {
             out.obj_open();
             out.field_usize("Fixed", size);
             out.obj_close();
+        }
+        ref other => {
+            return Err(format!("to_json cannot write the padding strategy {other:?}").into());
         }
     }
     // Not `PaddingDirection`'s `AsRef<str>`: that one is lowercase, and the file spells the
@@ -37,4 +40,5 @@ pub(super) fn write_padding(out: &mut Out, padding: Option<&PaddingParams>) {
     out.field_u32("pad_type_id", padding.pad_type_id);
     out.field_str("pad_token", &padding.pad_token);
     out.obj_close();
+    Ok(())
 }

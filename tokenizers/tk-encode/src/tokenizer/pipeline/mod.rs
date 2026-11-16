@@ -1209,6 +1209,7 @@ impl Model for PipelineModel {
 }
 
 #[derive(Default)]
+#[non_exhaustive]
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
     #[cfg(feature = "wordlevel")]

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 /// Defines the additional parameters available for the `from_pretrained` function
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct FromPretrainedParameters {
     pub revision: String,
     pub user_agent: HashMap<String, String>,

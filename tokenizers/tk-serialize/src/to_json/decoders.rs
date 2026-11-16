@@ -25,7 +25,7 @@ fn write_one(out: &mut Out, decoder: &DecoderRuntime) -> Result<()> {
         DecoderRuntime::Replace(replace) => {
             out.obj_open();
             out.type_tag("Replace");
-            write_replace_pattern(out, replace.pattern());
+            write_replace_pattern(out, replace.pattern())?;
             out.field_str("content", replace.content());
             out.obj_close();
         }
@@ -69,7 +69,7 @@ fn write_one(out: &mut Out, decoder: &DecoderRuntime) -> Result<()> {
             );
             out.field_str(
                 "prepend_scheme",
-                prepend_scheme_name(metaspace.prepend_scheme),
+                prepend_scheme_name(metaspace.prepend_scheme)?,
             );
             out.obj_close();
         }

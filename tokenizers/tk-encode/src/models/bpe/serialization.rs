@@ -14,6 +14,7 @@ use std::str::from_utf8_unchecked;
 /// Every byte a `&str` can hold except 0xF1 | 0xF2, which are UTF-8 lead bytes that prefix unassigned codepoints
 const VALID_UTF8_BYTES: [RangeInclusive<u8>; 3] = [0x00..=0xBF, 0xC2..=0xF0, 0xF3..=0xF4];
 
+#[non_exhaustive]
 pub struct BpeConfig {
     /// `{"token": id}`, in no particular order.
     pub vocab: Vocab,

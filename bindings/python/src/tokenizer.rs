@@ -203,13 +203,13 @@ impl Tokenizer {
     ///     pretty: bool
     ///         Whether to indent the JSON. Defaults to `False`.
     #[pyo3(signature = (pretty=false))]
-    fn to_str(&self, pretty: bool) -> String {
-        let json = self.spec().to_json();
+    fn to_str(&self, pretty: bool) -> PyResult<String> {
+        let json = self.spec().to_json().map_err(err)?;
         if !pretty {
-            return json;
+            return Ok(json);
         }
         let value: Value = serde_json::from_str(&json).expect("the spec writes valid JSON");
-        serde_json::to_string_pretty(&value).expect("a serde_json::Value always serializes")
+        Ok(serde_json::to_string_pretty(&value).expect("a serde_json::Value always serializes"))
     }
 
     /// Saves the tokenizer to a file as JSON, for example `tokenizer.json`
@@ -221,7 +221,7 @@ impl Tokenizer {
     ///         Whether to indent the JSON. Defaults to `True`.
     #[pyo3(signature = (path, pretty=true))]
     fn save(&self, path: PathBuf, pretty: bool) -> PyResult<()> {
-        std::fs::write(&path, self.to_str(pretty)).map_err(|e| {
+        std::fs::write(&path, self.to_str(pretty)?).map_err(|e| {
             std::io::Error::new(e.kind(), format!("cannot write {}: {e}", path.display()))
         })?;
         Ok(())
@@ -452,7 +452,7 @@ impl Tokenizer {
         &self,
         py: Python<'py>,
     ) -> PyResult<(Bound<'py, PyAny>, (Bound<'py, PyBytes>,))> {
-        let json = self.spec().to_json();
+        let json = self.spec().to_json().map_err(err)?;
         // Bytes, not str: a non-ASCII str isn't stored as UTF-8, so each pickle step re-encodes it.
         // https://docs.python.org/3.14/c-api/unicode.html#unicode-objects
         let json = PyBytes::new(py, json.as_bytes());
@@ -467,7 +467,7 @@ impl Tokenizer {
         ))
     }
 
-    fn __repr__(&self) -> String {
+    fn __repr__(&self) -> PyResult<String> {
         self.spec().repr("Tokenizer")
     }
 }
@@ -538,7 +538,7 @@ impl TokenizerSpec {
 
     /// Builds a new [`PipelineTokenizer`] from the current spec, padding and truncation included.
     pub(crate) fn compile(&self) -> Result<PipelineTokenizer> {
-        from_json(&self.to_json())
+        from_json(&self.to_json()?)
     }
 
     /// Adds `tokens`, or updates the flags of those with the same content, and returns how many
@@ -591,23 +591,23 @@ impl TokenizerSpec {
     }
 
     /// Renders the spec as `name(...)`, one line per top-level key.
-    pub(crate) fn repr(&self, name: &str) -> String {
+    pub(crate) fn repr(&self, name: &str) -> PyResult<String> {
         repr::tokenizer(name, self.fields())
     }
 
     /// Writes the spec as a `tokenizer.json` in the 2.0 format.
-    fn to_json(&self) -> String {
+    fn to_json(&self) -> Result<String> {
         let mut out = String::from("{");
         for (key, field) in self.fields() {
             out.push('"');
             out.push_str(key);
             out.push_str("\":");
-            out.push_str(&field.to_json());
+            out.push_str(&field.to_json()?);
             out.push(',');
         }
         out.pop();
         out.push('}');
-        out
+        Ok(out)
     }
 }
 
@@ -620,11 +620,11 @@ pub(crate) enum Field<'spec> {
 }
 
 impl Field<'_> {
-    fn to_json(&self) -> String {
+    fn to_json(&self) -> Result<String> {
         match self {
-            Field::JsonValue(value) => value.to_string(),
-            Field::JsonObject(json) => serde_json::to_string(&**json)
-                .expect("a JSON object with string keys always writes"),
+            Field::JsonValue(value) => Ok(value.to_string()),
+            Field::JsonObject(json) => Ok(serde_json::to_string(&**json)
+                .expect("a JSON object with string keys always writes")),
             Field::Padding(padding) => padding_to_json(*padding),
             Field::Truncation(truncation) => truncation_to_json(*truncation),
         }
