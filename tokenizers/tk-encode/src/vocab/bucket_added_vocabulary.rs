@@ -1,7 +1,7 @@
 use super::super::Result;
 use super::buckets::{AddedTokenFlags, Buckets};
 use crate::pipeline::Normalize;
-use crate::pipeline::PipelinePatternMatcher;
+use crate::pipeline::PatternMatcher;
 use crate::pre_tokenizers::whitespace::is_word_char;
 use crate::utils::perfect_hash::{Mphf, splitmix64};
 use ahash::AHashMap;
@@ -432,7 +432,7 @@ impl AddedVocabulary {
     }
 }
 
-impl PipelinePatternMatcher for AddedVocabulary {
+impl PatternMatcher for AddedVocabulary {
     fn extract_next(
         &self,
         bytes: &[u8],
