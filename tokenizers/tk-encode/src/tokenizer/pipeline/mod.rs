@@ -42,10 +42,8 @@ mod pre_tokenizer;
 
 pub use normalizer::{Normalizer, NormalizerChain, PipelineNormalizer, normalize_all};
 pub use post_processor::{PipelinePostProcessor, Template};
-pub use pre_tokenizer::{
-    PipelinePreTokenizer, PreTokenizer, PreTokenizerScratch, SplitPolicy, split, split_delimiter,
-    split_matches,
-};
+pub use pre_tokenizer::{PipelinePreTokenizer, PreTokenizer, PreTokenizerScratch};
+pub(crate) use pre_tokenizer::{split_delimiter, split_matches};
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.

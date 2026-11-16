@@ -190,7 +190,7 @@ unsafe impl PreTokenizer for PipelinePreTokenizer {
 
 /// What [`split`] does with each split it forms
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SplitPolicy {
+pub(crate) enum SplitPolicy {
     /// Drop it, emit no split
     Remove,
     /// Emit it whole as one split
@@ -207,7 +207,7 @@ pub enum SplitPolicy {
 /// class), and `policy` decides what becomes of it. Ranges are byte offsets
 /// into `text`.
 #[inline(always)]
-pub fn split<C: Copy + PartialEq>(
+pub(crate) fn split<C: Copy + PartialEq>(
     text: &str,
     out: &mut Vec<Span>,
     classify: impl Fn(char) -> C,
@@ -252,7 +252,7 @@ pub fn split<C: Copy + PartialEq>(
 ///   joins the run before it (`"the-final"` -> `["the-", "final"]`).
 /// - `MergedWithNext` cuts *before* each delimiter, so it joins the run after it
 ///   (`"the-final"` -> `["the", "-final"]`).
-pub fn split_delimiter(
+pub(crate) fn split_delimiter(
     text: &str,
     out: &mut Vec<Span>,
     is_delim: impl Fn(char) -> bool,
@@ -316,7 +316,7 @@ pub fn split_delimiter(
 /// `Pattern::find_matches` produces). This is the pipeline-side equivalent of
 /// the fold in `NormalizedString::split`; the arms mirror it exactly. Empty and
 /// removed pieces are dropped.
-pub fn split_matches(
+pub(crate) fn split_matches(
     out: &mut Vec<Span>,
     matches: Vec<((usize, usize), bool)>,
     behavior: SplitDelimiterBehavior,
