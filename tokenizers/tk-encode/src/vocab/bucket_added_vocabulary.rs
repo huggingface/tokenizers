@@ -343,7 +343,8 @@ impl AddedVocabulary {
         self.add_tokens(tokens, model_vocab_size, model_token_to_id, normalizer)
     }
 
-    /// Add some tokens to the vocabulary
+    /// Add some tokens to the vocabulary. `model_vocab_size` is the first ID above
+    /// the model vocabulary, which can exceed its number of entries for sparse IDs.
     pub fn add_tokens<N: Normalizer>(
         &mut self,
         tokens: impl IntoIterator<Item = AddedToken>,
@@ -357,11 +358,11 @@ impl AddedVocabulary {
         // Two possible IDs for an added token:
         //   - if the token is already in the model vocabulary, reuse the model's id
         //   - if it's not in the model vocab, use the next id above model vocab and all previously added ids
-        let model_size = model_vocab_size as u32;
+        let model_size = model_vocab_size as u64;
         let mut next_id = self
             .ids
             .highest_vocab_id()
-            .map_or(0, |id| id + 1)
+            .map_or(0, |id| u64::from(id) + 1)
             .max(model_size);
 
         let mut entries: BTreeMap<u32, (Vec<u8>, AddedTokenFlags)> = BTreeMap::new();
@@ -411,11 +412,15 @@ impl AddedVocabulary {
                 ignored += 1;
                 continue;
             }
-            let id = existing.unwrap_or_else(|| {
-                let i = next_id;
-                next_id += 1;
-                i
-            });
+            let id = match existing {
+                Some(id) => id,
+                None => {
+                    let id = u32::try_from(next_id)
+                        .map_err(|_| "added tokens exhaust the available ID space")?;
+                    next_id += 1;
+                    id
+                }
+            };
             entries.insert(id, (form, flags));
             seen.insert(token.content.clone(), id);
         }
