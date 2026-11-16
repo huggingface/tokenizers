@@ -1,11 +1,11 @@
 //! The `model` object, with an explicit `"type"` on every one of them.
 use super::writer::Out;
-use tk_encode::pipeline::PipelineModel;
+use tk_encode::pipeline::Model;
 use tk_encode::tokenizer::Result;
 
-pub(super) fn write_model(out: &mut Out, model: &PipelineModel) -> Result<()> {
+pub(super) fn write_model(out: &mut Out, model: &Model) -> Result<()> {
     match model {
-        PipelineModel::BPE(bpe) => {
+        Model::BPE(bpe) => {
             let config = bpe.to_config()?;
             out.obj_open();
             out.type_tag("BPE");
@@ -36,7 +36,7 @@ pub(super) fn write_model(out: &mut Out, model: &PipelineModel) -> Result<()> {
             out.obj_close();
         }
         #[cfg(feature = "unigram")]
-        PipelineModel::Unigram(unigram) => {
+        Model::Unigram(unigram) => {
             out.obj_open();
             out.type_tag("Unigram");
             match unigram.unk_id() {
@@ -59,7 +59,7 @@ pub(super) fn write_model(out: &mut Out, model: &PipelineModel) -> Result<()> {
             out.obj_close();
         }
         #[cfg(feature = "wordpiece")]
-        PipelineModel::WordPiece(wordpiece) => {
+        Model::WordPiece(wordpiece) => {
             out.obj_open();
             out.type_tag("WordPiece");
             // The reader requires all four fields, so a missing `unk_token` is an error rather than
@@ -82,7 +82,7 @@ pub(super) fn write_model(out: &mut Out, model: &PipelineModel) -> Result<()> {
             out.obj_close();
         }
         #[cfg(feature = "wordlevel")]
-        PipelineModel::WordLevel(wordlevel) => {
+        Model::WordLevel(wordlevel) => {
             out.obj_open();
             out.type_tag("WordLevel");
             out.field_str("unk_token", wordlevel.unk_token());

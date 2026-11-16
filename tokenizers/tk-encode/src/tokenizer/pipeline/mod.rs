@@ -214,7 +214,7 @@ struct TokenizerInner {
     added_vocabulary: BucketAddedVocabulary,
     normalizers: Vec<Normalizer>,
     pre_tokenizer: PreTokenizer,
-    model: PipelineModel,
+    model: Model,
     post_processor: PostProcessor,
     decoder: Option<DecoderRuntime>,
     /// Lowest id owned by the added vocabulary, or `u32::MAX` when there is none.
@@ -258,7 +258,7 @@ impl Tokenizer {
         added_vocabulary: BucketAddedVocabulary,
         normalizers: Vec<Normalizer>,
         pre_tokenizer: PreTokenizer,
-        model: PipelineModel,
+        model: Model,
         post_processor: PostProcessor,
         decoder: Option<DecoderRuntime>,
         role_to_token: BTreeMap<String, String>,
@@ -559,7 +559,7 @@ impl IntoIterator for EncodeHandle {
 }
 
 impl Tokenizer {
-    pub fn get_model(&self) -> &PipelineModel {
+    pub fn get_model(&self) -> &Model {
         &self.inner.model
     }
 
@@ -902,11 +902,11 @@ impl Tokenizer {
     ///
     /// [`byte_level::transform_vocab`]: crate::utils::byte_level::transform_vocab
     pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
-        // Irrefutable in a `bpe`-only build, where `PipelineModel` has exactly one variant, and
+        // Irrefutable in a `bpe`-only build, where `Model` has exactly one variant, and
         // nightly lints a leading irrefutable pattern in a let chain. Nesting the `if` instead
         // would trade this for `collapsible_if` on every build that has more than one model.
         #[allow(irrefutable_let_patterns)]
-        if let PipelineModel::BPE(bpe) = &self.inner.model
+        if let Model::BPE(bpe) = &self.inner.model
             && bpe.is_byte_level()
         {
             return Ok(self.decode_byte_level(bpe, ids, skip_special_tokens));
@@ -1066,7 +1066,7 @@ pub trait Tokenize {
     reason = "BPE holds a 1kB byte -> id lookup table"
 )]
 #[non_exhaustive]
-pub enum PipelineModel {
+pub enum Model {
     BPE(BPE),
     #[cfg(feature = "unigram")]
     Unigram(Unigram),
@@ -1076,7 +1076,7 @@ pub enum PipelineModel {
     WordPiece(PipelineWordPiece),
 }
 
-impl PipelineModel {
+impl Model {
     /// `id -> token` used by [`Tokenizer::decode`]
     pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         match self {
@@ -1131,7 +1131,7 @@ impl PipelineModel {
 /// reused among calls to [`Tokenizer::encode`].
 ///
 /// Each model gets its own variant.
-impl Tokenize for PipelineModel {
+impl Tokenize for Model {
     type Scratch = ModelScratch;
 
     fn tokenize_pipeline(
@@ -1832,7 +1832,7 @@ mod tests {
             BucketAddedVocabulary::new(),
             Vec::new(),
             PreTokenizer::None,
-            PipelineModel::BPE(hello_bpe()),
+            Model::BPE(hello_bpe()),
             post_processor,
             None,
             Default::default(),
@@ -1865,7 +1865,7 @@ mod tests {
             added,
             Vec::new(),
             PreTokenizer::None,
-            PipelineModel::BPE(hello_bpe()),
+            Model::BPE(hello_bpe()),
             PostProcessor::default(),
             None,
             Default::default(),
@@ -1936,7 +1936,7 @@ mod tests {
             added,
             Vec::new(),
             PreTokenizer::None,
-            PipelineModel::BPE(bpe),
+            Model::BPE(bpe),
             PostProcessor::default(),
             None,
             Default::default(),
@@ -2004,7 +2004,7 @@ mod tests {
             added_vocabulary,
             Vec::new(),
             PreTokenizer::None,
-            PipelineModel::BPE(hello_bpe()),
+            Model::BPE(hello_bpe()),
             PostProcessor::default(),
             None,
             Default::default(),

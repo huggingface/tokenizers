@@ -189,7 +189,7 @@ Everything above is dropped but recoverable from code still in the tree. These a
 | `tk-convert/tests/lowering.rs` | 707 | 26 tests of `lowering.rs`, the config→pipeline lowering. There is no config to lower. |
 | `tk-convert/tests/lowering_pre_tokenizers.rs` | 584 | 18 tests of `to_normalizer_and_split` over `PreTokenizerWrapper`. |
 | `tk-convert/tests/bpe_pipeline_oracle.rs` | 221 | 6 tests whose *oracle* was the legacy engine — "the legacy engine is the oracle: it is the code main runs". The oracle itself is deleted, so this is not repointable the way §7's two are. Its coverage (10 corpora × 4 BPE models, incl. llama-2's non-byte-level `Atoms::Chars` path and the unsafe-to-batch merges the `SAFE` flag exists for) is the largest single verification loss of the strip, and `pipeline_oracle.rs` does not replace it: that one runs 9 configs over fixture windows, not 400 kB per corpus. |
-| `tk-convert/benches/bpe_model_benchmark.rs` | 321 | Benched `ModelWrapper` and the config-shaped `BPE` against `PipelineModel`. Both operands are half gone. |
+| `tk-convert/benches/bpe_model_benchmark.rs` | 321 | Benched `ModelWrapper` and the config-shaped `BPE` against `Model`. Both operands are half gone. |
 
 `tk-convert/src/**` beyond `convert.rs` — 63 unit tests across the wrapper enums, the config `BPE`
 (`models/bpe/tests.rs` alone had 25, including the `legacy_parity` set pinning the two BPE engines

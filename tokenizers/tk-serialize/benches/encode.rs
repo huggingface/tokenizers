@@ -14,8 +14,8 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use tk_encode::pipeline::{
-    EncodeOptions, PipelineModel, PreTokenize, PreTokenizerScratch, Span, SpecialSegmentIterator,
-    Tokenize, Tokenizer, normalize_all,
+    EncodeOptions, Model, PreTokenize, PreTokenizerScratch, Span, SpecialSegmentIterator, Tokenize,
+    Tokenizer, normalize_all,
 };
 
 const BATCH_SIZE: usize = 1_000;
@@ -132,11 +132,11 @@ pub fn encode(c: &mut Criterion) {
         // ---- stage 4: the model, one call per pre-token ----
         let words: Vec<&str> = spans.iter().map(|span| &normalized[span.range()]).collect();
 
-        // `tokenize_pipeline` lives on the concrete model, not on the `PipelineModel` enum, so the
+        // `tokenize_pipeline` lives on the concrete model, not on the `Model` enum, so the
         // row exists per model kind. Both fixtures here are BPE.
-        // Irrefutable in a `bpe`-only build, where `PipelineModel` has exactly one variant.
+        // Irrefutable in a `bpe`-only build, where `Model` has exactly one variant.
         #[allow(irrefutable_let_patterns)]
-        if let PipelineModel::BPE(bpe) = tokenizer.get_model() {
+        if let Model::BPE(bpe) = tokenizer.get_model() {
             group.bench_function("stage/model", |b| {
                 let mut scratch = bpe.init_scratch();
                 let mut out = Vec::new();
