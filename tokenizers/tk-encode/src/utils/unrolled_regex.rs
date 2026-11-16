@@ -13,7 +13,7 @@ use bitcannon::regexes::CL100K;
 /// `Isolated` split byte-for-byte. One variant per distinct regex; models sharing a regex share a
 /// variant (o200k covers Llama-4, gpt-oss and MiniMax-M2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Grammar {
+pub(crate) enum Grammar {
     /// GPT-2 / ByteLevel.
     Gpt2,
     /// cl100k family. `digit_cap` is rule 3's `\p{N}{1,cap}` bound: 3 = cl100k / Llama-3 / GLM-4.6,

@@ -18,8 +18,8 @@ pub use no_regex::SysRegex;
 
 // Recognize known GPT pre-tokenization regexes and route them to bitcannon's native (unrolled) FSM.
 mod unrolled_regex;
-pub use unrolled_regex::{DEEPSEEK_PATTERNS, Grammar};
-pub(crate) use unrolled_regex::{is_deepseek, recognize};
+pub use unrolled_regex::DEEPSEEK_PATTERNS;
+pub(crate) use unrolled_regex::{Grammar, is_deepseek, recognize};
 
 pub mod byte_level;
 pub mod padding;
