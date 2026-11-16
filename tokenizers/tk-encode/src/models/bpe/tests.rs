@@ -262,8 +262,6 @@ fn fuse_unk_applies_to_models_with_affixes() {
 
 #[test]
 fn rejects_unsupported_configs() {
-    // no merges: the merge-map derivation underflows on merges whose right token
-    // is shorter than continuing_subword_prefix (pre-existing, unrelated)
     let build = |options: BpeConfig| {
         BPE::from_config(BpeConfig {
             vocab: v(HELLO_VOCAB),
@@ -431,6 +429,25 @@ fn rejects_merge_token_out_of_vocabulary() {
     match err.downcast_ref::<Error>() {
         Some(Error::MergeTokenOutOfVocabulary(token)) => assert_eq!(token, "z"),
         other => panic!("expected MergeTokenOutOfVocabulary, got {other:?}"),
+    }
+}
+
+#[test]
+fn rejects_merge_token_without_prefix() {
+    // Cutting the prefix's length off "xé" would split the "é".
+    let err = BPE::from_config(BpeConfig {
+        vocab: v(&[("a", 0), ("xé", 1)]),
+        merges: m(&[("a", "xé")]),
+        continuing_subword_prefix: Some("##".into()),
+        ..BpeConfig::default()
+    })
+    .err()
+    .unwrap();
+    match err.downcast_ref::<Error>() {
+        Some(Error::MergeTokenWithoutPrefix { token, prefix }) => {
+            assert_eq!((token.as_str(), prefix.as_str()), ("xé", "##"));
+        }
+        other => panic!("expected MergeTokenWithoutPrefix, got {other:?}"),
     }
 }
 
