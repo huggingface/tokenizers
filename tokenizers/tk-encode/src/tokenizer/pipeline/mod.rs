@@ -738,7 +738,7 @@ impl PipelineTokenizer {
         options: &EncodeOptions,
     ) -> Result<Encoding> {
         let pp = &self.inner.post_processor;
-        let template = if s2.is_some() { &pp.pair } else { &pp.single };
+        let template = if s2.is_some() { pp.pair() } else { pp.single() };
         let num_added_specials = if options.add_special_tokens {
             template.n_special()
         } else {
@@ -883,7 +883,7 @@ impl PipelineTokenizer {
         out: &mut Vec<PipelineToken>,
     ) -> Result<()> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
-        let template = &self.inner.post_processor.single;
+        let template = self.inner.post_processor.single();
         let reproduces_sequence = self.resolve_truncation(&options.truncation).is_none()
             && !template.has_type_ids()
             && (!options.add_special_tokens || template.n_special() == 0);
@@ -1730,16 +1730,17 @@ mod tests {
     #[test]
     fn test_template_type_ids() {
         let pipeline = pipeline_with(
-            PipelinePostProcessor {
-                single: Template {
+            PipelinePostProcessor::new(
+                Template {
                     a_type_id: 1,
                     ..Template::default()
                 },
-                pair: Template {
+                Template {
                     b_type_id: Some(1),
                     ..Template::default()
                 },
-            },
+            )
+            .expect("a single template over A and a pair template over A and B"),
             truncation(3, TruncationStrategy::LongestFirst),
         );
 
@@ -1802,20 +1803,21 @@ mod tests {
 
     /// `[CLS] $A [SEP]` and `[CLS] $A [SEP] $B:1 [SEP]:1`, the arrangement BERT's config declares.
     fn bert_post_processor() -> PipelinePostProcessor {
-        PipelinePostProcessor {
-            single: Template {
+        PipelinePostProcessor::new(
+            Template {
                 prefix: Box::new([(CLS.into(), 0)]),
                 suffix: Box::new([(SEP.into(), 0)]),
                 ..Template::default()
             },
-            pair: Template {
+            Template {
                 prefix: Box::new([(CLS.into(), 0)]),
                 infix: Box::new([(SEP.into(), 0)]),
                 suffix: Box::new([(SEP.into(), 1)]),
                 b_type_id: Some(1),
                 ..Template::default()
             },
-        }
+        )
+        .expect("BERT's single and pair templates follow the template rules")
     }
 
     fn truncation(max_length: usize, strategy: TruncationStrategy) -> Option<TruncationParams> {
