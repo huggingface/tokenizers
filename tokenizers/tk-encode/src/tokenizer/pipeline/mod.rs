@@ -8,7 +8,7 @@ use crate::models::unigram::{Unigram, UnigramScratch};
 #[cfg(feature = "wordlevel")]
 use crate::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
-use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
+use crate::models::wordpiece::{WordPiece, WordPieceScratch};
 pub use crate::pipeline::encode_options::EncodeOptions;
 pub use crate::pipeline::encode_options::Override;
 use crate::utils::truncation::truncate_pair;
@@ -1073,7 +1073,7 @@ pub enum Model {
     #[cfg(feature = "wordlevel")]
     WordLevel(WordLevel),
     #[cfg(feature = "wordpiece")]
-    WordPiece(PipelineWordPiece),
+    WordPiece(WordPiece),
 }
 
 impl Model {
