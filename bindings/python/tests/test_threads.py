@@ -44,4 +44,4 @@ def test_read_array_while_decoding_it(gpt2):
 # `sys._is_gil_enabled` exists on every build from 3.13 on, so only the config var tells the two apart.
 @pytest.mark.skipif(not sysconfig.get_config_var("Py_GIL_DISABLED"), reason="only meaningful on a free-threaded build")
 def test_gil_disabled():
-    assert sys._is_gil_enabled() is False  # ty: ignore[unresolved-attribute]
+    assert sys._is_gil_enabled() is False  # ty: ignore[missing-attribute]

@@ -64,7 +64,24 @@ streams!(
     /// own code, so it is not in `u`/`l`/`c` to begin with (kimi's classes are literally
     /// `[…&&[^\p{Han}]]`). `han` is every Han byte; `dual` the ones ALSO in `oth` / `n`. `slash` is
     /// the only remaining AUX stream.
-    Cls { lead, cont, u, l, c, mark, n, nl, sp, ws, oth, apo, letter, slash, han, dual }
+    Cls {
+        lead,
+        cont,
+        u,
+        l,
+        c,
+        mark,
+        n,
+        nl,
+        sp,
+        ws,
+        oth,
+        apo,
+        letter,
+        slash,
+        han,
+        dual
+    }
 );
 
 /// Cross-block state that is not a stream.
