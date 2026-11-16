@@ -14,8 +14,8 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use tk_encode::pipeline::{
-    EncodeOptions, Model, PipelineModel, PipelineTokenizer, PreTokenize, PreTokenizerScratch, Span,
-    SpecialSegmentIterator, normalize_all,
+    EncodeOptions, PipelineModel, PipelineTokenizer, PreTokenize, PreTokenizerScratch, Span,
+    SpecialSegmentIterator, Tokenize, normalize_all,
 };
 
 const BATCH_SIZE: usize = 1_000;

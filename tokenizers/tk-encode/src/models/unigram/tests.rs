@@ -1,4 +1,4 @@
-use crate::pipeline::Model;
+use crate::pipeline::Tokenize;
 
 use super::*;
 
@@ -157,7 +157,7 @@ fn test_unigram_bytefallback() {
         ("<0xA9>".to_string(), -0.03),
     ];
     let unigram = Unigram::from(sentencepieces, Some(0), true).unwrap();
-    let mut scratch = Model::init_scratch(&unigram);
+    let mut scratch = Tokenize::init_scratch(&unigram);
     assert_eq!(pipeline_ids(&unigram, "?é", &mut scratch)[0], 0);
 }
 
@@ -178,14 +178,14 @@ fn abcd_vocab() -> Vocab {
 
 fn pipeline_ids(model: &Unigram, sequence: &str, scratch: &mut UnigramScratch) -> Vec<u32> {
     let mut output = vec![];
-    Model::tokenize_pipeline(model, sequence, scratch, &mut output).unwrap();
+    Tokenize::tokenize_pipeline(model, sequence, scratch, &mut output).unwrap();
     output.iter().map(|token| token.id()).collect()
 }
 
 #[test]
 fn pipeline_remembers_what_a_sequence_encoded_to() {
     let model = Unigram::from(abcd_vocab(), Some(0), false).unwrap();
-    let mut scratch = Model::init_scratch(&model);
+    let mut scratch = Tokenize::init_scratch(&model);
 
     let ids = pipeline_ids(&model, "abcd", &mut scratch);
 
@@ -208,10 +208,10 @@ fn cache_hits_agree_with_a_cold_run() {
         "abcdacdxx",
     ];
 
-    let mut warm_scratch = Model::init_scratch(&model);
+    let mut warm_scratch = Tokenize::init_scratch(&model);
     let warm = corpus.map(|sequence| pipeline_ids(&model, sequence, &mut warm_scratch));
     let cold = corpus.map(|sequence| {
-        let mut scratch = Model::init_scratch(&model);
+        let mut scratch = Tokenize::init_scratch(&model);
         pipeline_ids(&model, sequence, &mut scratch)
     });
 
@@ -223,10 +223,10 @@ fn caches_only_the_ids_this_sequence_produced() {
     // Every sequence the pipeline hands the model appends to one output buffer,
     // so a sequence has to remember its own ids, not everything the buffer holds.
     let model = Unigram::from(abcd_vocab(), Some(0), false).unwrap();
-    let mut scratch = Model::init_scratch(&model);
+    let mut scratch = Tokenize::init_scratch(&model);
     let mut output = vec![];
-    Model::tokenize_pipeline(&model, "ab", &mut scratch, &mut output).unwrap();
-    Model::tokenize_pipeline(&model, "cd", &mut scratch, &mut output).unwrap();
+    Tokenize::tokenize_pipeline(&model, "ab", &mut scratch, &mut output).unwrap();
+    Tokenize::tokenize_pipeline(&model, "cd", &mut scratch, &mut output).unwrap();
 
     let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
     assert_eq!(ids, [6, 5]);
@@ -243,7 +243,7 @@ fn byte_fallback_ids_survive_the_cache() {
         ("<0xA9>".to_string(), -0.03),
     ];
     let model = Unigram::from(vocab, Some(0), true).unwrap();
-    let mut scratch = Model::init_scratch(&model);
+    let mut scratch = Tokenize::init_scratch(&model);
 
     let ids = pipeline_ids(&model, "é", &mut scratch);
 
@@ -257,7 +257,7 @@ fn sampling_is_never_cached() {
     // every later call on the same text into that same draw.
     let mut model = Unigram::from(abcd_vocab(), Some(0), false).unwrap();
     model.alpha = Some(0.5);
-    let mut scratch = Model::init_scratch(&model);
+    let mut scratch = Tokenize::init_scratch(&model);
 
     pipeline_ids(&model, "abcd", &mut scratch);
 

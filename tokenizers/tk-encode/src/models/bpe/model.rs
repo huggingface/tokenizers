@@ -202,7 +202,7 @@ pub struct BpeScratch {
     pub(crate) word_cache: Option<WordCache>,
 }
 
-impl pipeline::Model for PipelineBPE {
+impl pipeline::Tokenize for PipelineBPE {
     type Scratch = BpeScratch;
 
     fn tokenize_pipeline(

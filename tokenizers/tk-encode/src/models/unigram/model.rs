@@ -396,7 +396,7 @@ pub struct UnigramScratch {
     pub(crate) word_cache: WordCache,
 }
 
-impl pipeline::Model for Unigram {
+impl pipeline::Tokenize for Unigram {
     type Scratch = UnigramScratch;
 
     fn init_scratch(&self) -> Self::Scratch {
