@@ -1,5 +1,5 @@
 use crate::Trainer;
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::convert::Infallible;
@@ -96,6 +96,9 @@ impl WordLevelTrainer {
 
         ordered_counts.sort_by(cmp);
 
+        // A word that is also a special token must keep the special token's id instead of
+        // taking a second one, otherwise the vocab ends up with unused ids.
+        let mut seen = AHashSet::new();
         let word_level = WordLevel::builder()
             .vocab(
                 self.special_tokens
@@ -107,6 +110,7 @@ impl WordLevelTrainer {
                             .filter(|(_, n)| **n >= self.min_frequency)
                             .map(|(w, _)| w.to_owned()),
                     )
+                    .filter(|w| seen.insert(w.clone()))
                     .take(self.vocab_size)
                     .enumerate()
                     .map(|(i, w)| (w, i as u32))
@@ -219,6 +223,40 @@ mod tests {
         .cloned()
         .collect();
 
+        assert_eq!(model.vocab, expected_vocab);
+    }
+
+    #[test]
+    fn test_train_special_tokens_in_corpus() {
+        let word_counts: AHashMap<String, u64> = [
+            ("the".into(), 25),
+            ("[UNK]".into(), 3),
+            ("roses".into(), 22),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+
+        let trainer = WordLevelTrainer {
+            special_tokens: vec![
+                AddedToken::from("[UNK]", true),
+                AddedToken::from("[PAD]", true),
+                AddedToken::from("[UNK]", true),
+            ],
+            ..Default::default()
+        };
+
+        let mut model = WordLevel::default();
+        trainer.do_train(&word_counts, &mut model).unwrap();
+        let expected_vocab: AHashMap<String, u32> = [
+            ("[UNK]".into(), 0),
+            ("[PAD]".into(), 1),
+            ("the".into(), 2),
+            ("roses".into(), 3),
+        ]
+        .iter()
+        .cloned()
+        .collect();
         assert_eq!(model.vocab, expected_vocab);
     }
 }
