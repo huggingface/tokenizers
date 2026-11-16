@@ -69,7 +69,7 @@ impl MetaspaceNormalizer {
     }
 }
 
-impl pipeline::Normalizer for MetaspaceNormalizer {
+impl pipeline::Normalize for MetaspaceNormalizer {
     fn normalize<'a>(&self, input: &'a str, offset: usize) -> Result<Cow<'a, str>> {
         // Return empty input as is
         if input.is_empty() {
@@ -116,7 +116,7 @@ impl pipeline::Normalizer for MetaspaceNormalizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tokenizer::pipeline::Normalizer as _;
+    use crate::tokenizer::pipeline::Normalize as _;
 
     /// `(prepend, drop_whitespace, offset, input, output)`, every expectation read off released
     /// `tokenizers` 0.23.1. `offset` is where `input` starts in its sequence.
