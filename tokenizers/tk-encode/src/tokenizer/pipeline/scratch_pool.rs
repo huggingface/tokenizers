@@ -142,9 +142,7 @@ mod tests {
 
     use super::*;
     use crate::models::bpe::BPE;
-    use crate::pipeline::{
-        EncodeOptions, PipelineModel, PipelinePreTokenizer, PostProcessor, Tokenizer,
-    };
+    use crate::pipeline::{EncodeOptions, PipelineModel, PostProcessor, PreTokenizer, Tokenizer};
     use crate::pre_tokenizers::sequence::Sequence;
     use crate::pre_tokenizers::whitespace::Whitespace;
     use crate::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
@@ -182,7 +180,7 @@ mod tests {
 
     /// Assembled through `from_parts` rather than from a `Tokenizer`: the config layer lives in
     /// `tk-convert` now, and the scratch pool does not care which reader filled the parts.
-    fn hello_pipeline_with(pre_tokenizer: PipelinePreTokenizer) -> Tokenizer {
+    fn hello_pipeline_with(pre_tokenizer: PreTokenizer) -> Tokenizer {
         Tokenizer::from_parts(
             BucketAddedVocabulary::new(),
             Vec::new(),
@@ -197,14 +195,14 @@ mod tests {
     }
 
     fn hello_pipeline() -> Tokenizer {
-        hello_pipeline_with(PipelinePreTokenizer::None)
+        hello_pipeline_with(PreTokenizer::None)
     }
 
     /// The same model, with a pre-tokenizer that cuts one span per word. A pipeline with no
     /// pre-tokenizer leaves the whole chunk as a single span, which barely exercises
     /// [`EncodeScratch::pre_tokens`].
     fn hello_pipeline_split_on_words() -> Tokenizer {
-        hello_pipeline_with(PipelinePreTokenizer::Whitespace(Whitespace))
+        hello_pipeline_with(PreTokenizer::Whitespace(Whitespace))
     }
 
     /// The same model, with a `Sequence` of two real children: the shape that runs
@@ -214,9 +212,9 @@ mod tests {
         use crate::pre_tokenizers::digits::Digits;
         use crate::pre_tokenizers::whitespace::WhitespaceSplit;
 
-        hello_pipeline_with(PipelinePreTokenizer::Sequence(Sequence::new(vec![
-            PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
-            PipelinePreTokenizer::Digits(Digits::default()),
+        hello_pipeline_with(PreTokenizer::Sequence(Sequence::new(vec![
+            PreTokenizer::WhitespaceSplit(WhitespaceSplit),
+            PreTokenizer::Digits(Digits::default()),
         ])))
     }
 

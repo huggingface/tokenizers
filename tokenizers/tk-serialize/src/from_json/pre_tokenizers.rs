@@ -4,7 +4,7 @@
 use super::needs_feature;
 use super::unsupported;
 use crate::json::Json;
-use tk_encode::pipeline::PipelinePreTokenizer;
+use tk_encode::pipeline::PreTokenizer;
 use tk_encode::pre_tokenizers::bert::BertPreTokenizer;
 use tk_encode::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk_encode::pre_tokenizers::digits::Digits;
@@ -17,9 +17,9 @@ use tk_encode::pre_tokenizers::unicode_scripts::UnicodeScripts;
 use tk_encode::pre_tokenizers::whitespace::{Whitespace, WhitespaceSplit};
 use tk_encode::tokenizer::{Result, SplitDelimiterBehavior};
 
-pub(super) fn read_pre_tokenizer(cfg: Option<&Json<'_>>) -> Result<PipelinePreTokenizer> {
+pub(super) fn read_pre_tokenizer(cfg: Option<&Json<'_>>) -> Result<PreTokenizer> {
     let Some(cfg) = cfg else {
-        return Ok(PipelinePreTokenizer::None);
+        return Ok(PreTokenizer::None);
     };
     let kind = cfg
         .type_tag()
@@ -37,13 +37,13 @@ pub(super) fn read_pre_tokenizer(cfg: Option<&Json<'_>>) -> Result<PipelinePreTo
         for member in members {
             built.push(read_one_pre_tokenizer(member)?);
         }
-        return Ok(PipelinePreTokenizer::Sequence(Sequence::new(built)));
+        return Ok(PreTokenizer::Sequence(Sequence::new(built)));
     }
 
     read_one_pre_tokenizer(cfg)
 }
 
-fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
+fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PreTokenizer> {
     let kind = cfg
         .type_tag()
         .ok_or_else(|| unsupported("a pre-tokenizer with no `type`"))?;
@@ -52,12 +52,12 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
     Ok(match kind {
         "Metaspace" => return Err(unsupported("a `Metaspace` pre-tokenizer")),
         "ByteLevel" => return Err(unsupported("a `ByteLevel` pre-tokenizer")),
-        "Split" => PipelinePreTokenizer::Split(read_split(cfg)?),
-        "Whitespace" => PipelinePreTokenizer::Whitespace(Whitespace),
-        "WhitespaceSplit" => PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
-        "BertPreTokenizer" => PipelinePreTokenizer::Bert(BertPreTokenizer),
+        "Split" => PreTokenizer::Split(read_split(cfg)?),
+        "Whitespace" => PreTokenizer::Whitespace(Whitespace),
+        "WhitespaceSplit" => PreTokenizer::WhitespaceSplit(WhitespaceSplit),
+        "BertPreTokenizer" => PreTokenizer::Bert(BertPreTokenizer),
         #[cfg(feature = "unicode-scripts")]
-        "UnicodeScripts" => PipelinePreTokenizer::UnicodeScripts(UnicodeScripts::new()),
+        "UnicodeScripts" => PreTokenizer::UnicodeScripts(UnicodeScripts::new()),
         #[cfg(not(feature = "unicode-scripts"))]
         "UnicodeScripts" => {
             return Err(needs_feature(
@@ -65,8 +65,8 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
                 "unicode-scripts",
             ));
         }
-        "Digits" => PipelinePreTokenizer::Digits(Digits::new(b("individual_digits", false))),
-        "Punctuation" => PipelinePreTokenizer::Punctuation(Punctuation::new(read_behavior(
+        "Digits" => PreTokenizer::Digits(Digits::new(b("individual_digits", false))),
+        "Punctuation" => PreTokenizer::Punctuation(Punctuation::new(read_behavior(
             cfg,
             SplitDelimiterBehavior::Isolated,
         )?)),
@@ -78,11 +78,11 @@ fn read_one_pre_tokenizer(cfg: &Json<'_>) -> Result<PipelinePreTokenizer> {
                 .ok_or_else(|| -> tk_encode::Error {
                     "CharDelimiterSplit has no `delimiter`".into()
                 })?;
-            PipelinePreTokenizer::Delimiter(CharDelimiterSplit::new(d))
+            PreTokenizer::Delimiter(CharDelimiterSplit::new(d))
         }
         "FixedLength" => {
             let n = cfg.need("FixedLength", "length", Json::as_usize)?;
-            PipelinePreTokenizer::FixedLength(FixedLength::new(n))
+            PreTokenizer::FixedLength(FixedLength::new(n))
         }
 
         other => return Err(unsupported(&format!("the `{other}` pre-tokenizer"))),
