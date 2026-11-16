@@ -269,8 +269,10 @@ impl AddedVocabulary {
             .token_to_internal_id(token)
             .or_else(|| self.normalized_vocab.token_to_internal_id(token))
     }
+
     /// Size of the additional vocabulary
-    pub fn len(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
         self.vocab.len() + self.normalized_vocab.len()
     }
 
@@ -281,7 +283,7 @@ impl AddedVocabulary {
 
     /// Get the additional vocabulary (union of both matchers; normalized tokens appear by their
     /// normalized form, since the original content isn't retained after partitioning).
-    pub fn get_vocab(&self) -> AHashMap<String, u32> {
+    pub(crate) fn get_vocab(&self) -> AHashMap<String, u32> {
         self.tokens()
             .map(|(token, internal_id)| (token, self.ids.vocab_id(internal_id)))
             .collect::<AHashMap<String, u32>>()
@@ -309,7 +311,7 @@ impl AddedVocabulary {
     }
 
     /// Get the id matching one of our token if it exists
-    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+    pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
         self.token_to_internal_id(token)
             .map(|internal_id| self.ids.vocab_id(internal_id))
     }
@@ -319,7 +321,7 @@ impl AddedVocabulary {
     ///
     /// A token added with `normalized` gives its normalized form (e.g. byte-level encoding), so
     /// the configured `Decoder` can invert the normalization. Any other token gives its `content`.
-    pub fn id_to_token_bytes(&self, id: u32) -> Option<(&[u8], &AddedTokenFlags)> {
+    pub(crate) fn id_to_token_bytes(&self, id: u32) -> Option<(&[u8], &AddedTokenFlags)> {
         let internal_id = self.ids.internal_id(id)?;
         let flags = &self.token_metadata[internal_id as usize];
         let bytes = self

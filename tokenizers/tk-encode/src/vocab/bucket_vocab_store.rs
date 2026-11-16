@@ -40,7 +40,7 @@ pub(crate) const INLINE_KEY_BYTES: usize = 7;
 /// span loop while the hash stays a call -- which is also the shape it wants, since the long arm is
 /// already dominated by hashing rather than by call overhead.
 #[inline(always)]
-pub fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) {
+pub(crate) fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) {
     let len = word.len();
     if len > INLINE_KEY_BYTES || readable < 8 {
         return key_and_hash(word);
@@ -73,7 +73,7 @@ fn key_and_hash_long(word: &[u8]) -> (u64, u64) {
 }
 
 #[inline(always)]
-pub fn key_and_hash(word: &[u8]) -> (u64, u64) {
+pub(crate) fn key_and_hash(word: &[u8]) -> (u64, u64) {
     let len = word.len();
     if len > INLINE_KEY_BYTES {
         return key_and_hash_long(word);
@@ -147,21 +147,8 @@ struct Span {
 /// the `id_to_slot` the same index.
 ///
 /// Entries store start, len and the actual `id` of the token.
-/// Example:
-///
-/// ```
-/// use tk_encode::vocab::bucket_vocab_store::BucketVocabStore;
-/// let vocab = BucketVocabStore::build(vec![
-///     (b"a".to_vec(), 0),
-///     (b"bb".to_vec(), 5),
-///     (b"ccc".to_vec(), 100),
-/// ])
-/// .unwrap();
-/// vocab.token_to_id("a");
-/// vocab.id_to_token(100);
-/// ```
 #[derive(Clone)]
-pub struct BucketVocabStore {
+pub(crate) struct BucketVocabStore {
     mphf: Mphf,
     /// All token bytes, concatenated. Ordered by MPHF slot.
     bytes: Box<[u8]>,
@@ -206,7 +193,7 @@ impl Default for BucketVocabStore {
 }
 
 impl BucketVocabStore {
-    pub fn build(tokens: Vec<(Vec<u8>, u32)>) -> Result<Self> {
+    pub(crate) fn build(tokens: Vec<(Vec<u8>, u32)>) -> Result<Self> {
         let n = tokens.len();
 
         let keys: Vec<u64> = tokens
@@ -297,7 +284,7 @@ impl BucketVocabStore {
         })
     }
 
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         // convenient to build empty edit later.
         let empty: [u64; 0] = [];
         Self {
@@ -315,7 +302,7 @@ impl BucketVocabStore {
     /// whether the token indexed by that slot actually match the query. We don't
     /// care about collisions on query because of this!
     #[inline]
-    pub fn get_bytes(&self, q: &[u8]) -> Option<u32> {
+    pub(crate) fn get_bytes(&self, q: &[u8]) -> Option<u32> {
         if self.entries.is_empty() {
             return None;
         }
@@ -326,7 +313,7 @@ impl BucketVocabStore {
     }
 
     #[inline]
-    pub fn get_keyed_foldable(&self, key: u64, hash: u64) -> Option<(u32, bool)> {
+    pub(crate) fn get_keyed_foldable(&self, key: u64, hash: u64) -> Option<(u32, bool)> {
         let _ = key;
         if self.entries.is_empty() {
             return None;
@@ -337,7 +324,7 @@ impl BucketVocabStore {
     }
 
     /// Records that this token folds to itself. Called once per entry at load, after the proof.
-    pub fn set_foldable(&mut self, id: u32) {
+    pub(crate) fn set_foldable(&mut self, id: u32) {
         if let Some(&slot) = self.id_to_slot.get(id as usize)
             && slot != u32::MAX
         {
@@ -346,13 +333,13 @@ impl BucketVocabStore {
     }
 
     #[inline]
-    pub fn token_to_id(&self, s: &str) -> Option<u32> {
+    pub(crate) fn token_to_id(&self, s: &str) -> Option<u32> {
         self.get_bytes(s.as_bytes())
     }
 
     /// `id -> token bytes`, borrowing from the slab (no allocation).
     #[inline]
-    pub fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
+    pub(crate) fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
         let slot = *self.id_to_slot.get(id as usize)?;
         if slot == u32::MAX {
             return None; // id is within range but absent from the vocab
@@ -363,13 +350,13 @@ impl BucketVocabStore {
     }
 
     #[inline]
-    pub fn id_to_token(&self, id: u32) -> Option<String> {
+    pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         // we are not sure its a valid utf8 so if not, adds replacement char
         self.id_to_token_bytes(id)
             .map(|b| String::from_utf8_lossy(b).into_owned())
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.n
     }
 
@@ -378,7 +365,7 @@ impl BucketVocabStore {
     /// Ids are not dense: a config may leave gaps, so [`Self::len`] counts entries and is *not* an
     /// id bound. Anything that walks ids has to bound itself by this and skip the holes, which
     /// [`Self::id_to_token_bytes`] reports as `None`.
-    pub fn id_space(&self) -> usize {
+    pub(crate) fn id_space(&self) -> usize {
         self.id_to_slot.len()
     }
 
@@ -392,7 +379,7 @@ impl BucketVocabStore {
     /// otherwise only the entries that proved they reduce to themselves earn it. That makes this
     /// the question a writer asks to decide whether to spell the flag: if every entry folds, either
     /// answer rebuilds the same table, and if any does not, the flag was off.
-    pub fn all_foldable(&self) -> bool {
+    pub(crate) fn all_foldable(&self) -> bool {
         self.entries
             .iter()
             .zip(self.spans.iter())
@@ -412,12 +399,12 @@ impl BucketVocabStore {
     }
 
     /// Alias for `content` — kept so `Model::get_vocab` call sites resolve.
-    pub fn get_vocab(&self) -> Vec<(String, u32)> {
+    pub(crate) fn get_vocab(&self) -> Vec<(String, u32)> {
         self.content()
     }
 
     /// convenient when we want to re-build a vocab
-    pub fn byte_content(&self) -> Vec<(Vec<u8>, u32)> {
+    pub(crate) fn byte_content(&self) -> Vec<(Vec<u8>, u32)> {
         self.entries
             .iter()
             .zip(self.spans.iter())
