@@ -68,7 +68,7 @@ impl Atom {
     /// class.
     /// This atom's bit in a `u16` class mask.
     #[inline]
-    pub const fn bit(self) -> u16 {
+    pub(crate) const fn bit(self) -> u16 {
         1u16 << (self as u16)
     }
 }
@@ -110,7 +110,7 @@ pub mod mask {
 }
 
 pub const CONT: u8 = Atom::Cont as u8;
-pub const MB: u8 = Atom::MultiByte as u8;
+pub(crate) const MB: u8 = Atom::MultiByte as u8;
 
 /// Classify `text` under scheme `S` into `tags` (`tags.len() == text.len()`) — the single arch
 /// dispatcher. aarch64: NEON at compile time (baseline). x86_64: AVX-512 VBMI → SSE4.1 → scalar,
