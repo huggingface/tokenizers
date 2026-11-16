@@ -3,7 +3,6 @@ use std::borrow::Cow;
 use crate::pipeline;
 use crate::tokenizer::Result;
 use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
-use ahash::AHashSet;
 
 #[derive(Clone, Debug)]
 pub struct ByteLevel;
@@ -17,10 +16,6 @@ impl Default for ByteLevel {
 impl ByteLevel {
     pub fn new() -> Self {
         Self {}
-    }
-
-    pub fn alphabet() -> AHashSet<char> {
-        BYTES_CHAR_LOOKUP.iter().copied().collect()
     }
 }
 
