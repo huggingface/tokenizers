@@ -281,11 +281,11 @@ impl PipelineWordPiece {
         Ok(())
     }
 
-    pub fn id_to_token(&self, id: u32) -> Option<String> {
+    pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(id as usize)?.as_deref().map(str::to_owned)
     }
 
-    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+    pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
         // The trie leaves the empty token out, because yada cannot hold it.
         if token.is_empty() {
             let id = self.vocab_r.iter().position(|t| t.as_deref() == Some(""))?;
@@ -295,11 +295,11 @@ impl PipelineWordPiece {
             .exact_match_search(trie_key(token.as_bytes()))
     }
 
-    pub fn get_vocab(&self) -> HashMap<String, u32> {
+    pub(crate) fn get_vocab(&self) -> HashMap<String, u32> {
         self.vocab().into_iter().collect()
     }
 
-    pub fn get_vocab_size(&self) -> usize {
+    pub(crate) fn get_vocab_size(&self) -> usize {
         self.vocab_size
     }
 

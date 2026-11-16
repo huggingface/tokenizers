@@ -114,11 +114,11 @@ impl WordLevel {
         self.vocab.get(token).copied()
     }
 
-    pub fn id_to_token(&self, id: u32) -> Option<String> {
+    pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(&id).cloned()
     }
 
-    pub fn get_vocab(&self) -> HashMap<String, u32> {
+    pub(crate) fn get_vocab(&self) -> HashMap<String, u32> {
         self.vocab.clone().into_iter().collect()
     }
 

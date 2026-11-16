@@ -1087,7 +1087,7 @@ pub enum PipelineModel {
 
 impl PipelineModel {
     /// `id -> token` used by [`PipelineTokenizer::decode`]
-    pub fn id_to_token(&self, id: u32) -> Option<String> {
+    pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         match self {
             Self::BPE(model) => model.id_to_token(id),
             #[cfg(feature = "unigram")]
@@ -1099,7 +1099,7 @@ impl PipelineModel {
         }
     }
 
-    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+    pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
         match self {
             Self::BPE(model) => model.token_to_id(token),
             #[cfg(feature = "unigram")]
@@ -1111,7 +1111,7 @@ impl PipelineModel {
         }
     }
 
-    pub fn get_vocab(&self) -> HashMap<String, u32> {
+    pub(crate) fn get_vocab(&self) -> HashMap<String, u32> {
         match self {
             Self::BPE(model) => model.get_vocab(),
             #[cfg(feature = "unigram")]
@@ -1123,7 +1123,7 @@ impl PipelineModel {
         }
     }
 
-    pub fn get_vocab_size(&self) -> usize {
+    pub(crate) fn get_vocab_size(&self) -> usize {
         match self {
             Self::BPE(model) => model.get_vocab_size(),
             #[cfg(feature = "unigram")]

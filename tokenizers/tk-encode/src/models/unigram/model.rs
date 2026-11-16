@@ -374,7 +374,7 @@ impl<'a> Iterator for UnigramIterator<'a> {
 /// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
 /// plain inherent methods now and every call site is unchanged.
 impl Unigram {
-    pub fn get_vocab(&self) -> HashMap<String, u32> {
+    pub(crate) fn get_vocab(&self) -> HashMap<String, u32> {
         self.token_to_ids.get_vocab().into_iter().collect()
     }
 
@@ -386,7 +386,7 @@ impl Unigram {
         self.token_to_ids.token_to_id(token)
     }
 
-    pub fn id_to_token(&self, id: u32) -> Option<String> {
+    pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab.get(id as usize).map(|item| item.0.clone())
     }
 }
