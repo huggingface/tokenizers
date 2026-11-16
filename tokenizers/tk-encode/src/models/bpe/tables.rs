@@ -35,6 +35,7 @@
 use ahash::{AHashMap, HashSet};
 use std::cmp;
 
+use crate::Result;
 use crate::models::bpe::fold::{self, SparseFold};
 use crate::models::bpe::pair_map::MphfMap;
 use crate::models::bpe::{At, MergeMap, Vocab};
@@ -76,7 +77,11 @@ pub(crate) struct BpeTables {
 impl BpeTables {
     /// Returns the tables plus the dense `external id -> internal id` map built along the way.
     /// Callers that do not need the map just drop it; it is ~4 bytes per vocab entry.
-    pub(crate) fn build(vocab: &Vocab, merges: MergeMap, byte_level: bool) -> (Self, Vec<u32>) {
+    pub(crate) fn build(
+        vocab: &Vocab,
+        merges: MergeMap,
+        byte_level: bool,
+    ) -> Result<(Self, Vec<u32>)> {
         // 1. We build the internal id map. This sorts the merges by their ranks so frequent pairs
         //    get a smaller rank.
         let rev_merge = merges
@@ -205,13 +210,13 @@ impl BpeTables {
         drop(top_merges);
         let top_index = top_index.into_boxed_slice();
         let top_values = top_values.into_boxed_slice();
-        let pair_table = MphfMap::build(keys, values);
+        let pair_table = MphfMap::build(keys, values)?;
         info!(
             "bpe tables: {base} alphabet + {} products (unique merges), {} merge in the dense grid, {dropped} merges dropped, {unsafe_merges} merges unsafe to batch",
             products.len(),
             top_values.len()
         );
-        (
+        Ok((
             Self {
                 unmap,
                 pair_table,
@@ -222,7 +227,7 @@ impl BpeTables {
                 any_unsafe: unsafe_merges > 0,
             },
             internal_id_map,
-        )
+        ))
     }
     /// Every merge these tables hold, as `(rank, left internal id, right internal id)`, in rank
     /// order.
@@ -294,7 +299,7 @@ mod test {
         let mut merges = MergeMap::new();
         merges.insert((0, 1), (0, 2));
         merges.insert((3, 0), (1, 3));
-        let (tables, _) = BpeTables::build(&vocab, merges, true);
+        let (tables, _) = BpeTables::build(&vocab, merges, true).unwrap();
         // there are only 4 elements because ab and aba are part of the vocab
         // so the alphabet is a,b and the ranks are ab and aba.
         // Both operands are < 512, so the merge lives in the dense grid, not the MPHF.

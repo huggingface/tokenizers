@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
 use ahash::RandomState;
-use ptr_hash::PtrHashParams;
 use std::fmt;
 
 use crate::Result;
-use crate::utils::perfect_hash::{Mphf, mix, mphf_params};
+use crate::utils::perfect_hash::{Mphf, mix};
 
 static KEY_HASHER: RandomState = RandomState::with_seeds(
     0x243F_6A88_85A3_08D3,
@@ -250,8 +249,8 @@ impl BucketVocabStore {
         }
 
         // 3. Build the (non-minimal) `FastPtrHash`; query with `.index()`.
-        let params = mphf_params(unique_entries.len());
-        let mphf = Mphf::new(&unique_entries.into_keys().collect::<Vec<u64>>(), params);
+        let unique_keys: Vec<u64> = unique_entries.into_keys().collect();
+        let mphf = Mphf::try_new(&unique_keys)?;
 
         // FastPtrHash is non-minimal: `index()` may return a slot up to `max_index()` (>= n),
         // so `entries` must be sized to cover the whole slot range. Slots never written by the
@@ -280,7 +279,7 @@ impl BucketVocabStore {
                 "token id {id} needs bit 31, which holds FOLD_BIT"
             );
             let (_, hash) = key_and_hash(s.as_slice());
-            let slot = mphf.index(&hash);
+            let slot = mphf.index(hash);
             entries[slot] = Entry {
                 digest: digest_of(hash),
                 id: *id,
@@ -305,9 +304,8 @@ impl BucketVocabStore {
 
     pub fn new() -> Self {
         // convenient to build empty edit later.
-        let empty: [u64; 0] = [];
         Self {
-            mphf: Mphf::new(&empty, PtrHashParams::default_fast()),
+            mphf: Mphf::try_new(&[]).expect("ptr_hash builds a perfect hash over no keys"),
             bytes: Box::new([]),
             entries: Box::new([]),
             spans: Box::new([]),
@@ -326,7 +324,7 @@ impl BucketVocabStore {
             return None;
         }
         let (_, hash) = key_and_hash(q);
-        let slot = self.mphf.index(&hash);
+        let slot = self.mphf.index(hash);
         let e = self.entries[slot];
         (e.digest == digest_of(hash)).then_some(e.id & VOCAB_ID_MASK)
     }
@@ -341,7 +339,7 @@ impl BucketVocabStore {
 
     #[inline(always)]
     pub fn probe_slot(&self, hash: u64) -> usize {
-        self.mphf.index(&hash)
+        self.mphf.index(hash)
     }
 
     #[inline(always)]
@@ -362,7 +360,7 @@ impl BucketVocabStore {
         if self.entries.is_empty() {
             return None;
         }
-        let slot = self.mphf.index(&hash);
+        let slot = self.mphf.index(hash);
         let e = self.entries[slot];
         (e.digest == digest_of(hash)).then_some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
     }

@@ -1,5 +1,4 @@
 use crate::utils::perfect_hash::{Mphf, mix};
-use ptr_hash::PtrHashParams;
 
 const _: () = assert!(
     matches!(unicode_normalization::UNICODE_VERSION, (17, 0, 0)),
@@ -24,16 +23,17 @@ impl Unicode9IgnoredCombiningMarks {
             .iter()
             .map(|&c| mix(c as u64))
             .collect();
-        let mphf = Mphf::new(&keys, PtrHashParams::default_fast());
+        let mphf = Mphf::try_new(&keys)
+            .expect("MARKS_ONLY_IN_UNICODE_17 is a set of distinct chars, and building is tested below");
         let mut slots = vec![u32::MAX; mphf.max_index()].into_boxed_slice();
         for &c in &MARKS_ONLY_IN_UNICODE_17 {
-            slots[mphf.index(&mix(c as u64))] = c as u32;
+            slots[mphf.index(mix(c as u64))] = c as u32;
         }
         Self { mphf, slots }
     }
 
     pub(crate) fn contains(&self, c: char) -> bool {
-        self.slots[self.mphf.index(&mix(c as u64))] == c as u32
+        self.slots[self.mphf.index(mix(c as u64))] == c as u32
     }
 }
 

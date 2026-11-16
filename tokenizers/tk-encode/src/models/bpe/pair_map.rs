@@ -1,7 +1,8 @@
 //! Merge lookup for pairs outside the dense grid: a perfect-hash map from a packed
 //! `(left, right)` pair of internal ids to the pair's packed merge value. The `tables` module
 //! documents the value layout.
-use crate::utils::perfect_hash::{Mphf, mphf_params};
+use crate::Result;
+use crate::utils::perfect_hash::Mphf;
 use ahash::RandomState;
 use std::cmp;
 
@@ -28,7 +29,7 @@ pub struct MphfMap {
 }
 
 impl MphfMap {
-    pub fn build(keys: Vec<(u32, u32)>, values: Vec<u64>) -> Self {
+    pub fn build(keys: Vec<(u32, u32)>, values: Vec<u64>) -> Result<Self> {
         assert!(
             keys.len() == values.len(),
             "Keys and values must be of same lengths"
@@ -41,18 +42,14 @@ impl MphfMap {
             .map(|(a, b)| hasher.hash_one((*a as u64) << 32 | *b as u64))
             .collect();
 
-        // 2. A perfect hash needs distinct keys. Collisions are astronomically unlikely
-        //    (~n^2/2^65); if one ever fires, switch the key type to u128. The byte check below makes
-        //    a collision a correct miss at query time, but it would drop a token at build, so guard.
-        // TODO: check for collisions.
-
-        // 3. Build the (non-minimal) `FastPtrHash`; query with `.index()`.
-        let mphf = Mphf::new(&h_keys, mphf_params(h_keys.len()));
+        // 2. Build the (non-minimal) perfect hash. Two pairs with the same hash make it fail, which
+        //    is astronomically unlikely (~n^2/2^65); if one ever fires, switch the key type to u128.
+        let mphf = Mphf::try_new(&h_keys)?;
         // At least one slot: a small vocab can have every merge inside the dense grid, and an
         // empty slab would make `get` index out of bounds. u64::MAX is never a real key (that
         // needs both operands to be u32::MAX), so the lone slot always misses.
         let n_slots = cmp::max(mphf.max_index(), 1);
-        // 4. Place each token at its MPHF slot; build the slab and the id->slot reverse table.
+        // 3. Place each token at its MPHF slot; build the slab and the id->slot reverse table.
         let mut entries = vec![
             Slot {
                 key: u64::MAX,
@@ -62,7 +59,7 @@ impl MphfMap {
         ];
         for (pos, (a, b)) in keys.iter().enumerate() {
             let hash = h_keys[pos];
-            let slot = mphf.index(&hash);
+            let slot = mphf.index(hash);
             let val = values[pos];
             entries[slot] = Slot {
                 key: (*a as u64) << 32 | *b as u64,
@@ -84,7 +81,7 @@ impl MphfMap {
                 "The values stored for one of the keys is wrong. This probably means a wrong index in values"
             );
         }
-        new
+        Ok(new)
     }
     /// Every live entry, as `(packed key, packed value)`.
     ///
@@ -103,7 +100,7 @@ impl MphfMap {
     #[inline]
     // from the key pair, returns the rank, the flags and the new id.
     pub fn get(&self, key: u64) -> u64 {
-        let slot = self.mphf.index(&self.hasher.hash_one(key));
+        let slot = self.mphf.index(self.hasher.hash_one(key));
         let e = &self.entries[slot];
         if e.key == key { e.val } else { u64::MAX }
     }
@@ -123,7 +120,7 @@ mod test {
             .iter()
             .map(|((a, b), (rank, id))| ((*a, *b), (*rank as u64) << 32 | (*id as u64)))
             .unzip();
-        let pair_table = MphfMap::build(keys, values);
+        let pair_table = MphfMap::build(keys, values).unwrap();
         let value = 1u64 << 32 | 5_u64;
         assert_eq!(pair_table.get(1u64 << 32 | 2u64), value);
     }

@@ -214,7 +214,7 @@ impl PipelineBPE {
             return Err("BPE affixes too long: raise AFFIX_BUF".into());
         }
 
-        let (tables, external_to_internal) = BpeTables::build(&vocab, merges, byte_level);
+        let (tables, external_to_internal) = BpeTables::build(&vocab, merges, byte_level)?;
         // the symbol stream is internal ids, mapped back through `unmap` at the very end
         let to_internal = |external: u32| -> Option<u32> {
             external_to_internal

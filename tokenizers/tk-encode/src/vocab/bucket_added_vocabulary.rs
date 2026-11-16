@@ -3,7 +3,7 @@ use super::buckets::{AddedTokenFlags, Buckets};
 use crate::pipeline::Normalizer;
 use crate::pipeline::PipelinePatternMatcher;
 use crate::pre_tokenizers::whitespace::is_word_char;
-use crate::utils::perfect_hash::{Mphf, mphf_params, splitmix64};
+use crate::utils::perfect_hash::{Mphf, splitmix64};
 use ahash::AHashMap;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -188,7 +188,7 @@ struct InternalIds {
 }
 
 impl InternalIds {
-    fn new(sorted_vocab_ids: Box<[u32]>) -> Self {
+    fn try_new(sorted_vocab_ids: Box<[u32]>) -> Result<Self> {
         debug_assert!(
             sorted_vocab_ids.is_sorted(),
             "add_tokens collects the vocab ids from a BTreeMap, which yields them in order"
@@ -197,17 +197,17 @@ impl InternalIds {
             .iter()
             .map(|&id| splitmix64(id as u64))
             .collect();
-        let mphf = Mphf::new(&keys, mphf_params(keys.len()));
+        let mphf = Mphf::try_new(&keys)?;
         // Unused slots hold 0 - `internal_id` rejects them by comparing the vocab id.
         let mut internal_ids = vec![0; mphf.max_index()].into_boxed_slice();
-        for (internal_id, key) in keys.iter().enumerate() {
+        for (internal_id, &key) in keys.iter().enumerate() {
             internal_ids[mphf.index(key)] = internal_id as u32;
         }
-        Self {
+        Ok(Self {
             vocab_ids: sorted_vocab_ids,
             mphf,
             internal_ids,
-        }
+        })
     }
 
     fn vocab_id(&self, internal_id: u32) -> u32 {
@@ -218,7 +218,7 @@ impl InternalIds {
         // An empty vocabulary has no slots.
         let internal_id = *self
             .internal_ids
-            .get(self.mphf.index(&splitmix64(vocab_id as u64)))?;
+            .get(self.mphf.index(splitmix64(vocab_id as u64)))?;
         (self.vocab_id(internal_id) == vocab_id).then_some(internal_id)
     }
 
@@ -242,7 +242,8 @@ impl fmt::Debug for AddedVocabulary {
 impl AddedVocabulary {
     pub fn new() -> Self {
         Self {
-            ids: InternalIds::new(Box::new([])),
+            ids: InternalIds::try_new(Box::new([]))
+                .expect("ptr_hash builds a perfect hash over no keys"),
             token_metadata: Box::new([]),
             normalized_vocab: Buckets::new(),
             vocab: Buckets::new(),
@@ -434,7 +435,7 @@ impl AddedVocabulary {
         }
         let vocab = Buckets::from_tokens(raw_tokens)?;
         let normalized_vocab = Buckets::from_tokens(norm_tokens)?;
-        self.ids = InternalIds::new(vocab_ids.into());
+        self.ids = InternalIds::try_new(vocab_ids.into())?;
         self.token_metadata = token_metadata.into();
         self.vocab = vocab;
         self.normalized_vocab = normalized_vocab;
