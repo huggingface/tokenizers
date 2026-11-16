@@ -46,7 +46,7 @@ impl PipelineSequence {
 //
 // The deepseek fast path has no children to run: it calls an `bitcannon` fsm, which splits only at
 // character boundaries of `text`. See the `bitcannon` docs.
-unsafe impl pipeline::PreTokenizer for PipelineSequence {
+unsafe impl pipeline::PreTokenize for PipelineSequence {
     /// Runs each child in turn, where every child subdivides the spans produced
     /// so far. A child sees only the text of a span (`&text[span]`) and returns
     /// offsets relative to it, which we rebase to absolute mirroring how the
@@ -84,7 +84,7 @@ unsafe impl pipeline::PreTokenizer for PipelineSequence {
             .iter()
             .filter(|c| !matches!(c, PipelinePreTokenizer::None));
         if let (Some(only), None) = (work.next(), work.next()) {
-            return pipeline::PreTokenizer::pre_tokenize(only, text, scratch, out);
+            return pipeline::PreTokenize::pre_tokenize(only, text, scratch, out);
         }
 
         let [mut current, mut next] = scratch.take_pair();
@@ -101,7 +101,7 @@ unsafe impl pipeline::PreTokenizer for PipelineSequence {
                 // The child appends span-relative spans straight into `next`;
                 // rebase just those to absolute in place — no scratch buffer.
                 let from = next.len();
-                pipeline::PreTokenizer::pre_tokenize(
+                pipeline::PreTokenize::pre_tokenize(
                     child,
                     &text[span.range()],
                     scratch,

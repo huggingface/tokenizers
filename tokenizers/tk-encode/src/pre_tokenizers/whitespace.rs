@@ -17,7 +17,7 @@ pub struct WhitespaceSplit;
 
 // SAFETY: the spans come from an `bitcannon` fsm, which cuts only at character boundaries of `text`.
 // See "What the spans guarantee" in the `bitcannon` docs.
-unsafe impl pipeline::PreTokenizer for WhitespaceSplit {
+unsafe impl pipeline::PreTokenize for WhitespaceSplit {
     fn pre_tokenize(
         &self,
         text: &str,
@@ -53,7 +53,7 @@ pub(crate) fn is_word_char(ch: char) -> bool {
 
 // SAFETY: the spans come from an `bitcannon` fsm, which splits only at character boundaries of `text`.
 // See `bitcannon` docs.
-unsafe impl pipeline::PreTokenizer for Whitespace {
+unsafe impl pipeline::PreTokenize for Whitespace {
     #[inline(never)]
     fn pre_tokenize(
         &self,
@@ -84,7 +84,7 @@ mod tests {
         let pretok = Whitespace;
         let mut scratch = PreTokenizerScratch::default();
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+        crate::pipeline::PreTokenize::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
             .unwrap();
         splits
             .iter()
@@ -120,7 +120,7 @@ mod tests {
         let pretok = WhitespaceSplit;
         let mut scratch = PreTokenizerScratch::default();
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+        crate::pipeline::PreTokenize::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
             .unwrap();
         splits
             .iter()

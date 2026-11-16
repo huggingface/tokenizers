@@ -40,7 +40,7 @@ mod pre_tokenizer;
 
 pub use normalizer::{Normalize, NormalizerChain, PipelineNormalizer, normalize_all};
 pub use post_processor::{PipelinePostProcessor, Template};
-pub use pre_tokenizer::{PipelinePreTokenizer, PreTokenizer, PreTokenizerScratch};
+pub use pre_tokenizer::{PipelinePreTokenizer, PreTokenize, PreTokenizerScratch};
 pub(crate) use pre_tokenizer::{split_delimiter, split_matches};
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
@@ -799,7 +799,7 @@ impl PipelineTokenizer {
                                 text: normalized_chunk,
                                 ..
                             } => {
-                                // A [`Span`] holds `u32` offsets, which breaks the `PreTokenizer` contract the
+                                // A [`Span`] holds `u32` offsets, which breaks the `PreTokenize` contract the
                                 // `str::get_unchecked` below relies on.
                                 // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),
                                 // which is why this is checked here and not on `input`.
@@ -831,12 +831,12 @@ impl PipelineTokenizer {
                                         range.start <= range.end
                                             && normalized_chunk.is_char_boundary(range.start)
                                             && normalized_chunk.is_char_boundary(range.end),
-                                        "{:?} broke the PreTokenizer contract: emitted {pre_token:?} for {normalized_chunk:?}",
+                                        "{:?} broke the PreTokenize contract: emitted {pre_token:?} for {normalized_chunk:?}",
                                         self.inner.pre_tokenizer,
                                     );
                                 }
                                 // The whole span list at once; see Model::tokenize_spans.
-                                // SAFETY: `PreTokenizer` guarantees every span is a valid range of
+                                // SAFETY: `PreTokenize` guarantees every span is a valid range of
                                 // `normalized_chunk`, which is what lets the model slice it unchecked.
                                 self.inner.model.tokenize_spans(
                                     normalized_chunk,

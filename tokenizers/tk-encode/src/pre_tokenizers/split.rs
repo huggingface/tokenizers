@@ -156,7 +156,7 @@ impl Split {
 // `Pattern::find_matches` through `pipeline::split_matches`, and every `Pattern` here reports
 // boundaries: a regex matches on a `&str`, and `Literal` holds the bytes of a `&str` pattern, which
 // well-formed UTF-8 can only contain starting and ending on a boundary.
-unsafe impl pipeline::PreTokenizer for Split {
+unsafe impl pipeline::PreTokenize for Split {
     fn pre_tokenize(
         &self,
         text: &str,
@@ -259,7 +259,7 @@ mod tests {
         let pretok = Split::new(pattern, behavior, invert).unwrap();
         let mut scratch = pipeline::PreTokenizerScratch::default();
         let mut splits = Vec::with_capacity(text.len() / 5);
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+        crate::pipeline::PreTokenize::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
             .unwrap();
         splits
             .iter()
