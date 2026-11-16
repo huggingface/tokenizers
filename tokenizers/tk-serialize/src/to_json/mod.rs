@@ -37,7 +37,7 @@ use tk_encode::tokenizer::Result;
 /// The counterpart of [`post_processor_from_json`](crate::post_processor_from_json), for a caller
 /// holding a post-processor on its own.
 pub fn post_processor_to_json(
-    post_processor: &tk_encode::pipeline::PipelinePostProcessor,
+    post_processor: &tk_encode::pipeline::PostProcessor,
 ) -> Result<String> {
     let mut out = Out::new();
     write_post_processor(&mut out, post_processor)?;
