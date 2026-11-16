@@ -17,8 +17,10 @@ use std::borrow::Cow;
 
 use crate::tokenizer::{Result, pipeline};
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum PrependBehavior {
+/// Whether a `Metaspace` writes the delimiter at the start of a text that has no leading space.
+/// [`First`](Self::First) writes it only at the start of the sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrependScheme {
     Always,
     First,
     Never,
@@ -31,7 +33,7 @@ pub struct MetaspaceNormalizer {
     /// another character.
     delimiter: char,
     /// Write the delimiter at the start of every word, not only the words that followed a space.
-    prepend: PrependBehavior,
+    prepend: PrependScheme,
     /// Throw whitespace away instead of turning it into a delimiter: tabs, newlines and repeated
     /// spaces leave no trace, and each word keeps only the one delimiter `prepend` writes. This is
     /// the [`WhitespaceSplit`] that t5 and albert run in front of their `Metaspace`.
@@ -39,7 +41,7 @@ pub struct MetaspaceNormalizer {
 }
 
 impl MetaspaceNormalizer {
-    pub fn new(delimiter: char, prepend: PrependBehavior, drop_whitespace: bool) -> Self {
+    pub fn new(delimiter: char, prepend: PrependScheme, drop_whitespace: bool) -> Self {
         Self {
             delimiter,
             prepend,
@@ -55,7 +57,7 @@ impl MetaspaceNormalizer {
     }
 
     /// Whether the delimiter goes at the start of every word rather than only after a space.
-    pub fn prepend(&self) -> PrependBehavior {
+    pub fn prepend(&self) -> PrependScheme {
         self.prepend
     }
 
@@ -78,9 +80,9 @@ impl pipeline::Normalizer for MetaspaceNormalizer {
             let mut opens_the_sequence = offset == 0 && !input.starts_with(char::is_whitespace);
             for word in input.split_whitespace() {
                 let prepend = match self.prepend {
-                    PrependBehavior::Always => true,
-                    PrependBehavior::First => opens_the_sequence,
-                    PrependBehavior::Never => false,
+                    PrependScheme::Always => true,
+                    PrependScheme::First => opens_the_sequence,
+                    PrependScheme::Never => false,
                 };
                 if prepend && !word.starts_with(self.delimiter) {
                     rewritten.push(self.delimiter);
@@ -90,9 +92,9 @@ impl pipeline::Normalizer for MetaspaceNormalizer {
             }
         } else {
             let prepend = match self.prepend {
-                PrependBehavior::Always => true,
-                PrependBehavior::First => offset == 0,
-                PrependBehavior::Never => false,
+                PrependScheme::Always => true,
+                PrependScheme::First => offset == 0,
+                PrependScheme::Never => false,
             };
             if prepend && !input.starts_with(' ') && !input.starts_with(self.delimiter) {
                 rewritten.push(self.delimiter);
@@ -118,25 +120,25 @@ mod tests {
     /// `(prepend, drop_whitespace, offset, input, output)`, every expectation read off released
     /// `tokenizers` 0.23.1. `offset` is where `input` starts in its sequence.
     #[rustfmt::skip]
-    const CASES: &[(PrependBehavior, bool, usize, &str, &str)] = &[
-        (PrependBehavior::Always, false, 0, "aa bb cc",   "▁aa▁bb▁cc"),
-        (PrependBehavior::Always, false, 0, " aa bb",     "▁aa▁bb"),
-        (PrependBehavior::Always, false, 0, "aa\tbb  cc", "▁aa\tbb▁▁cc"),
-        (PrependBehavior::Always, false, 7, "aa bb cc",   "▁aa▁bb▁cc"),
-        (PrependBehavior::Never,  false, 0, "aa bb cc",   "aa▁bb▁cc"),
-        (PrependBehavior::Never,  false, 0, " aa bb",     "▁aa▁bb"),
-        (PrependBehavior::First,  false, 0, "aa bb cc",   "▁aa▁bb▁cc"),
-        (PrependBehavior::First,  false, 7, "aa bb cc",   "aa▁bb▁cc"),
-        (PrependBehavior::First,  false, 0, " aa bb",     "▁aa▁bb"),
+    const CASES: &[(PrependScheme, bool, usize, &str, &str)] = &[
+        (PrependScheme::Always, false, 0, "aa bb cc",   "▁aa▁bb▁cc"),
+        (PrependScheme::Always, false, 0, " aa bb",     "▁aa▁bb"),
+        (PrependScheme::Always, false, 0, "aa\tbb  cc", "▁aa\tbb▁▁cc"),
+        (PrependScheme::Always, false, 7, "aa bb cc",   "▁aa▁bb▁cc"),
+        (PrependScheme::Never,  false, 0, "aa bb cc",   "aa▁bb▁cc"),
+        (PrependScheme::Never,  false, 0, " aa bb",     "▁aa▁bb"),
+        (PrependScheme::First,  false, 0, "aa bb cc",   "▁aa▁bb▁cc"),
+        (PrependScheme::First,  false, 7, "aa bb cc",   "aa▁bb▁cc"),
+        (PrependScheme::First,  false, 0, " aa bb",     "▁aa▁bb"),
 
-        (PrependBehavior::Always, true,  0, "aa bb cc",   "▁aa▁bb▁cc"),
-        (PrependBehavior::Always, true,  0, "aa\tbb  cc", "▁aa▁bb▁cc"),
-        (PrependBehavior::Never,  true,  0, "aa bb cc",   "aabbcc"),
+        (PrependScheme::Always, true,  0, "aa bb cc",   "▁aa▁bb▁cc"),
+        (PrependScheme::Always, true,  0, "aa\tbb  cc", "▁aa▁bb▁cc"),
+        (PrependScheme::Never,  true,  0, "aa bb cc",   "aabbcc"),
         // A sequence opening with whitespace gets none: `WhitespaceSplit` removes it, moving the
         // first word off byte zero.
-        (PrependBehavior::First,  true,  0, "aa bb cc",   "▁aabbcc"),
-        (PrependBehavior::First,  true,  7, "aa bb cc",   "aabbcc"),
-        (PrependBehavior::First,  true,  0, " aa bb",     "aabb"),
+        (PrependScheme::First,  true,  0, "aa bb cc",   "▁aabbcc"),
+        (PrependScheme::First,  true,  7, "aa bb cc",   "aabbcc"),
+        (PrependScheme::First,  true,  0, " aa bb",     "aabb"),
     ];
 
     #[test]

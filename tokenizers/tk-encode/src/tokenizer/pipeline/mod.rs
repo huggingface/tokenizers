@@ -757,7 +757,7 @@ impl PipelineTokenizer {
     /// the ids -- [`Self::encode_into`] -- pays neither an allocation nor a copy for them.
     ///
     /// `offset` is where `input` starts in its sequence: the parallel encoder hands over slices of
-    /// a longer sequence, and `PrependBehavior::First` needs to know which slice opens it.
+    /// a longer sequence, and `PrependScheme::First` needs to know which slice opens it.
     fn encode_sequence_into(
         &self,
         input: &str,
