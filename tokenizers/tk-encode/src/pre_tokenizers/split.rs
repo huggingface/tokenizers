@@ -134,11 +134,6 @@ impl Split {
         })
     }
 
-    /// The native FSM family this pattern was recognised as, if any.
-    pub fn grammar(&self) -> Option<Grammar> {
-        self.fsm
-    }
-
     /// Pipeline canonicalization. A recognized whole-covering GPT regex shipped
     /// as `(invert=true, behavior=Removed)` — the tiktoken-conversion convention
     /// used by cl100k/o200k — is byte-exactly equivalent to `(invert=false,
@@ -221,7 +216,7 @@ mod tests {
             )
             .expect("native must not need a regex backend");
             assert!(
-                split.grammar().is_none(),
+                split.fsm.is_none(),
                 "deepseek's patterns are not individually FSM-recognised"
             );
         }
@@ -247,7 +242,7 @@ mod tests {
             false,
         )
         .unwrap();
-        assert_eq!(gpt2.grammar(), Some(Grammar::Gpt2));
+        assert_eq!(gpt2.fsm, Some(Grammar::Gpt2));
     }
 
     #[cfg(feature = "fancy-regex")]
