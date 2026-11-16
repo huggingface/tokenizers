@@ -267,34 +267,6 @@ where
     }
 }
 
-/// Exclusive reference version of MaybeParallelIterator, works the same but returns an iterator
-/// over mutable references, does not consume self
-pub trait MaybeParallelRefMutIterator<'data, P, S>
-where
-    P: ParallelIterator,
-    S: Iterator<Item = P::Item>,
-    P::Item: 'data,
-{
-    fn maybe_par_iter_mut(&'data mut self) -> CondIterator<P, S>;
-    fn maybe_par_iter_mut_cond(&'data mut self, cond: bool) -> CondIterator<P, S>;
-}
-
-impl<'data, P, S, I: 'data + ?Sized> MaybeParallelRefMutIterator<'data, P, S> for I
-where
-    &'data mut I: MaybeParallelIterator<P, S>,
-    P: ParallelIterator,
-    S: Iterator<Item = P::Item>,
-    P::Item: 'data,
-{
-    fn maybe_par_iter_mut(&'data mut self) -> CondIterator<P, S> {
-        self.into_maybe_par_iter()
-    }
-
-    fn maybe_par_iter_mut_cond(&'data mut self, cond: bool) -> CondIterator<P, S> {
-        self.into_maybe_par_iter_cond(cond)
-    }
-}
-
 /// Converts any serial iterator into a CondIterator, that can either run parallelly or serially.
 pub trait MaybeParallelBridge<T, S>
 where
@@ -385,20 +357,10 @@ mod tests {
 
     #[test]
     fn test_maybe_parallel_iterator() {
-        let mut v = vec![1u32, 2, 3, 4, 5, 6];
+        let v = vec![1u32, 2, 3, 4, 5, 6];
 
         assert_eq!(v.maybe_par_iter().sum::<u32>(), 21);
-        assert_eq!(
-            v.maybe_par_iter_mut()
-                .map(|v| {
-                    *v *= 2;
-                    *v
-                })
-                .sum::<u32>(),
-            42
-        );
-        assert_eq!(v.maybe_par_iter().sum::<u32>(), 42);
-        assert_eq!(v.into_maybe_par_iter().sum::<u32>(), 42);
+        assert_eq!(v.into_maybe_par_iter().sum::<u32>(), 21);
     }
 
     /// Contended callers must reuse the cached pool, not build their own.
