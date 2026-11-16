@@ -92,7 +92,7 @@ impl PartialEq<PipelineToken> for u32 {
 
 /// Finds special/added tokens in a text segment so the pipeline can carve them
 /// out before running the model.
-pub trait PipelinePatternMatcher {
+pub trait PatternMatcher {
     /// Return the first special or added token in `input` as `Some(((start, end), id))`, where
     /// `start..end` is its byte range.
     ///
@@ -121,7 +121,7 @@ pub enum Segment<'a> {
 
 /// Splits `input` into [`Segment`]s, in order: runs of ordinary text
 /// ([`Segment::Text`]) interleaved with the special tokens
-/// ([`Segment::SpecialToken`]) matched by the [`PipelinePatternMatcher`].
+/// ([`Segment::SpecialToken`]) matched by the [`PatternMatcher`].
 ///
 /// ```ignore
 /// for segment in SpecialSegmentIterator::new(input, pattern_matcher, false, false) {
@@ -131,11 +131,11 @@ pub enum Segment<'a> {
 ///     }
 /// }
 /// ```
-pub struct SpecialSegmentIterator<'a, 'b, PatternMatcher: PipelinePatternMatcher> {
+pub struct SpecialSegmentIterator<'a, 'b, M: PatternMatcher> {
     /// The chunk of text from which we want to extract special tokens
     input: &'a str,
-    /// Implementor of [`PipelinePatternMatcher`] - the engine to match special tokens
-    pattern_matcher: &'b PatternMatcher,
+    /// Implementor of [`PatternMatcher`] - the engine to match special tokens
+    pattern_matcher: &'b M,
     /// Whether the input is normalized
     normalized: bool,
     /// [`EncodeOptions::encode_special_tokens`], forwarded to `extract_next` on every match
@@ -144,14 +144,12 @@ pub struct SpecialSegmentIterator<'a, 'b, PatternMatcher: PipelinePatternMatcher
     pending: Option<u32>,
 }
 
-impl<'a, 'b, PatternMatcher: PipelinePatternMatcher>
-    SpecialSegmentIterator<'a, 'b, PatternMatcher>
-{
+impl<'a, 'b, M: PatternMatcher> SpecialSegmentIterator<'a, 'b, M> {
     /// Create a new iterator over [`Segment`] of the [`input`].
     /// This iterator will yield [`Segment`] in order.
     pub fn new(
         input: &'a str,
-        pattern_matcher: &'b PatternMatcher,
+        pattern_matcher: &'b M,
         normalized: bool,
         encode_special_tokens: bool,
     ) -> Self {
@@ -166,9 +164,7 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher>
     }
 }
 
-impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
-    for SpecialSegmentIterator<'a, 'b, PatternMatcher>
-{
+impl<'a, 'b, M: PatternMatcher> Iterator for SpecialSegmentIterator<'a, 'b, M> {
     type Item = Segment<'a>;
 
     /// Get the next segment of the input.
@@ -1233,7 +1229,7 @@ mod tests {
     use crate::vocab::bucket_added_vocabulary::AddedToken;
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
-    impl PipelinePatternMatcher for FixedMatcher {
+    impl PatternMatcher for FixedMatcher {
         fn extract_next(
             &self,
             _bytes: &[u8],
