@@ -8,7 +8,7 @@ use std::{
 
 use bitcannon::Span;
 
-use crate::pipeline::{ModelScratch, PipelineModel, PreTokenizerScratch, Tokenize};
+use crate::pipeline::{Model, ModelScratch, PreTokenizerScratch, Tokenize};
 
 #[derive(Default)]
 pub(crate) struct EncodeScratch {
@@ -52,7 +52,7 @@ impl ScratchPool {
 
     /// Get a scratch buffer from the pool, wrapped in a [`ScratchGuard`].
     /// When the [`ScratchGuard`] gets dropped, the scratch buffer is pushed back to the pool.
-    pub(crate) fn get<'a>(&'a self, model: &PipelineModel) -> ScratchGuard<'a> {
+    pub(crate) fn get<'a>(&'a self, model: &Model) -> ScratchGuard<'a> {
         self.get_with(|| EncodeScratch {
             model: model.init_scratch(),
             split: PreTokenizerScratch::default(),
@@ -142,7 +142,7 @@ mod tests {
 
     use super::*;
     use crate::models::bpe::BPE;
-    use crate::pipeline::{EncodeOptions, PipelineModel, PostProcessor, PreTokenizer, Tokenizer};
+    use crate::pipeline::{EncodeOptions, Model, PostProcessor, PreTokenizer, Tokenizer};
     use crate::pre_tokenizers::sequence::Sequence;
     use crate::pre_tokenizers::whitespace::Whitespace;
     use crate::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
@@ -185,7 +185,7 @@ mod tests {
             BucketAddedVocabulary::new(),
             Vec::new(),
             pre_tokenizer,
-            PipelineModel::BPE(hello_bpe()),
+            Model::BPE(hello_bpe()),
             PostProcessor::default(),
             None,
             Default::default(),
@@ -328,7 +328,7 @@ mod tests {
     // EncodeScratch, holding the None model variant, behind in the guard. The pool must end up
     // holding the scratch the model used: if the default leftover were pushed instead, the pool
     // would still count one scratch, and the next encode would take it and panic in
-    // PipelineModel::tokenize_pipeline.
+    // Model::tokenize_pipeline.
     #[test]
     fn the_pool_gets_back_the_used_scratch_not_the_none_leftover() {
         let pipeline = hello_pipeline();

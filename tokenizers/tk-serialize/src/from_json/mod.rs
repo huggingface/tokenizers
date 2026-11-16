@@ -33,7 +33,7 @@ use self::truncation::read_truncation;
 use crate::json::Json;
 use std::collections::BTreeMap;
 use tk_encode::models::bpe::BPE;
-use tk_encode::pipeline::{Normalizer, NormalizerChain, PipelineModel, PreTokenizer, Tokenizer};
+use tk_encode::pipeline::{Model, Normalizer, NormalizerChain, PreTokenizer, Tokenizer};
 use tk_encode::tokenizer::Result;
 use tk_encode::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
 
@@ -130,7 +130,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<Tokenizer> {
                     let mut config = options;
                     config.vocab = vocab;
                     config.merges = merges;
-                    Ok(PipelineModel::BPE(BPE::from_config(config)?))
+                    Ok(Model::BPE(BPE::from_config(config)?))
                 },
             )
         }
@@ -142,7 +142,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<Tokenizer> {
             read_wordpiece(model_cfg)?,
             tk_encode::models::wordpiece::WordPiece::get_vocab_size,
             tk_encode::models::wordpiece::WordPiece::token_to_id,
-            |wp| Ok(PipelineModel::WordPiece(wp.try_into()?)),
+            |wp| Ok(Model::WordPiece(wp.try_into()?)),
         ),
         #[cfg(feature = "unigram")]
         "Unigram" => build(
@@ -152,7 +152,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<Tokenizer> {
             read_unigram(model_cfg)?,
             tk_encode::models::unigram::Unigram::get_vocab_size,
             tk_encode::models::unigram::Unigram::token_to_id,
-            |u| Ok(PipelineModel::Unigram(u)),
+            |u| Ok(Model::Unigram(u)),
         ),
         #[cfg(feature = "wordlevel")]
         "WordLevel" => build(
@@ -162,7 +162,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<Tokenizer> {
             read_wordlevel(model_cfg)?,
             tk_encode::models::wordlevel::WordLevel::get_vocab_size,
             tk_encode::models::wordlevel::WordLevel::token_to_id,
-            |wl| Ok(PipelineModel::WordLevel(wl)),
+            |wl| Ok(Model::WordLevel(wl)),
         ),
         // Covers both an unrecognised `"type"` and a known one whose per-model feature is off,
         // because from here the two are indistinguishable: the arm simply is not compiled.
@@ -182,7 +182,7 @@ fn build<M>(
     concrete: M,
     vocab_size: impl FnOnce(&M) -> usize,
     token_to_id: impl Fn(&M, &str) -> Option<u32>,
-    lower: impl FnOnce(M) -> Result<PipelineModel>,
+    lower: impl FnOnce(M) -> Result<Model>,
 ) -> Result<Tokenizer> {
     let added = read_added_tokens(doc.field("added_tokens"))?;
 
