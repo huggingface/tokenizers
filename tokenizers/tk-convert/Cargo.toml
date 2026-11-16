@@ -32,12 +32,9 @@ thiserror = "2"
 # the FSM fast path without changing any test.
 bitcannon = { path = "../bitcannon", version = "0.1.0-dev.2" }
 
-# Latest released tokenizers, the independent id/decode oracle `tests/oracle.rs` compares against.
-tokenizers-release = { package = "tokenizers", version = "=0.23.2", optional = true }
-
 [features]
 default = []
-bench-baseline = ["dep:tokenizers-release"]
+bench-baseline = []
 
 [dev-dependencies]
 # No version pins on these two: cargo strips path dev-deps when packaging, and tk-serialize
@@ -58,3 +55,5 @@ tk-encode = { path = "../tk-encode", default-features = false, features = [
   # The oracle's long case must reach the parallel encoder, not the serial path.
   "parallelism",
 ] }
+# Latest released tokenizers, the independent id/decode oracle `tests/oracle.rs` compares against.
+tokenizers-release = { package = "tokenizers", version = "=0.23.2" }
