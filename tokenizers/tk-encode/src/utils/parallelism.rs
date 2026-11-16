@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::sync::TryLockError;
-use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -19,9 +18,6 @@ pub use rayon::current_num_threads;
 
 /// TODO: deprecate
 pub const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
-
-/// TODO: deprecate
-static USED_PARALLELISM: AtomicBool = AtomicBool::new(false);
 
 /// TODO: deprecate
 static PARALLELISM: AtomicU8 = AtomicU8::new(0);
@@ -151,16 +147,6 @@ pub fn set_num_threads(n: usize) {
     invalidate();
 }
 
-/// Check if the TOKENIZERS_PARALLELISM env variable has been explicitly set
-pub fn is_parallelism_configured() -> bool {
-    std::env::var(ENV_VARIABLE).is_ok() || get_override_parallelism().is_some()
-}
-
-/// Check if at some point we used a parallel iterator
-pub fn has_parallelism_been_used() -> bool {
-    USED_PARALLELISM.load(Ordering::SeqCst)
-}
-
 /// Get internally set parallelism
 fn get_override_parallelism() -> Option<bool> {
     match PARALLELISM.load(Ordering::SeqCst) {
@@ -219,11 +205,7 @@ where
     S: Iterator<Item = P::Item>,
 {
     fn into_maybe_par_iter(self) -> CondIterator<P, S> {
-        let parallelism = get_parallelism();
-        if parallelism {
-            USED_PARALLELISM.store(true, Ordering::SeqCst);
-        }
-        CondIterator::new(self, parallelism)
+        CondIterator::new(self, get_parallelism())
     }
 }
 
@@ -268,7 +250,6 @@ where
         let iter = CondIterator::from_serial(self);
 
         if get_parallelism() {
-            USED_PARALLELISM.store(true, Ordering::SeqCst);
             CondIterator::from_parallel(iter.into_parallel().right().unwrap())
         } else {
             iter
