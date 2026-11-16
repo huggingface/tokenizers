@@ -210,10 +210,6 @@ where
     /// Convert ourself in a CondIterator, that will be executed either in parallel or serially,
     /// based solely on the `TOKENIZERS_PARALLELISM` environment variable
     fn into_maybe_par_iter(self) -> CondIterator<P, S>;
-    /// Convert ourself in a CondIterator, that will be executed either in parallel or serially,
-    /// based on both the `TOKENIZERS_PARALLELISM` environment variable and the provided bool.
-    /// Both must be true to run with parallelism activated.
-    fn into_maybe_par_iter_cond(self, cond: bool) -> CondIterator<P, S>;
 }
 
 impl<P, S, I> MaybeParallelIterator<P, S> for I
@@ -229,14 +225,6 @@ where
         }
         CondIterator::new(self, parallelism)
     }
-
-    fn into_maybe_par_iter_cond(self, cond: bool) -> CondIterator<P, S> {
-        if cond {
-            self.into_maybe_par_iter()
-        } else {
-            CondIterator::from_serial(self)
-        }
-    }
 }
 
 /// Shared reference version of MaybeParallelIterator, works the same but returns an iterator
@@ -248,7 +236,6 @@ where
     P::Item: 'data,
 {
     fn maybe_par_iter(&'data self) -> CondIterator<P, S>;
-    fn maybe_par_iter_cond(&'data self, cond: bool) -> CondIterator<P, S>;
 }
 
 impl<'data, P, S, I: 'data + ?Sized> MaybeParallelRefIterator<'data, P, S> for I
@@ -261,10 +248,6 @@ where
     fn maybe_par_iter(&'data self) -> CondIterator<P, S> {
         self.into_maybe_par_iter()
     }
-
-    fn maybe_par_iter_cond(&'data self, cond: bool) -> CondIterator<P, S> {
-        self.into_maybe_par_iter_cond(cond)
-    }
 }
 
 /// Converts any serial iterator into a CondIterator, that can either run parallelly or serially.
@@ -274,7 +257,6 @@ where
     T: Send,
 {
     fn maybe_par_bridge(self) -> CondIterator<IterBridge<S>, S>;
-    fn maybe_par_bridge_cond(self, cond: bool) -> CondIterator<IterBridge<S>, S>;
 }
 
 impl<T, S> MaybeParallelBridge<T, S> for S
@@ -292,14 +274,6 @@ where
             iter
         }
     }
-
-    fn maybe_par_bridge_cond(self, cond: bool) -> CondIterator<IterBridge<S>, S> {
-        if cond {
-            self.maybe_par_bridge()
-        } else {
-            CondIterator::from_serial(self)
-        }
-    }
 }
 
 /// Allows to convert into `chunks` that can be executed either parallelly or serially.
@@ -311,14 +285,6 @@ where
     /// based solely on the `TOKENIZERS_PARALLELISM` environment variable
     fn maybe_par_chunks(
         &'_ self,
-        chunk_size: usize,
-    ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>>;
-    /// Create a CondIterator, that will be executed either in parallel or serially,
-    /// based on both the `TOKENIZERS_PARALLELISM` environment variable and the provided bool.
-    /// Both must be true to run with parallelism activated.
-    fn maybe_par_chunks_cond(
-        &'_ self,
-        cond: bool,
         chunk_size: usize,
     ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>>;
 }
@@ -334,17 +300,6 @@ where
         let parallelism = get_parallelism();
         if parallelism {
             CondIterator::from_parallel(self.par_chunks(chunk_size))
-        } else {
-            CondIterator::from_serial(self.chunks(chunk_size))
-        }
-    }
-    fn maybe_par_chunks_cond(
-        &'_ self,
-        cond: bool,
-        chunk_size: usize,
-    ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>> {
-        if cond {
-            self.maybe_par_chunks(chunk_size)
         } else {
             CondIterator::from_serial(self.chunks(chunk_size))
         }
