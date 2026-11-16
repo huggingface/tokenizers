@@ -25,7 +25,6 @@ tk-encode = { path = "../tk-encode", version = "0.1.0-dev.2", default-features =
   "parallelism",
 ] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 ahash = { version = "0.8.11", features = ["serde"] }
 compact_str = { version = "0.9", features = ["serde"] }
 dary_heap = { version = "0.3.6", features = ["serde"] }
