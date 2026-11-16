@@ -115,6 +115,7 @@ fn write_one(out: &mut Out, normalizer: &PipelineNormalizer) -> Result<()> {
             out.field_str("precompiled_charsmap", &crate::BASE64.encode(charsmap));
             out.obj_close();
         }
+        _ => return Err("to_json cannot write this normalizer".into()),
     }
     Ok(())
 }

@@ -11,6 +11,7 @@ use crate::decoders::wordpiece::WordPiece;
 use crate::{Decoder, Result};
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum DecoderRuntime {
     BPE(BPEDecoder),
     ByteLevel(ByteLevelDecoder),

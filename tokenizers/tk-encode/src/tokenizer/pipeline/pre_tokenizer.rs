@@ -141,6 +141,7 @@ impl PreTokenizerScratch {
 /// The pre-tokenizers a [`PipelineTokenizer`] can run.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum PipelinePreTokenizer {
     Bert(BertPreTokenizer),
     Delimiter(CharDelimiterSplit),

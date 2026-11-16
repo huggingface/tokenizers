@@ -8,6 +8,7 @@ use std::collections::HashMap;
 type Vocab = AHashMap<String, u32>;
 
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum Error {
     #[error("WordLevel error: Missing [UNK] token from the vocabulary")]
     MissingUnkToken,

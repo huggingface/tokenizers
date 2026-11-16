@@ -1073,6 +1073,7 @@ pub trait Model {
     clippy::large_enum_variant,
     reason = "PipelineBPE holds a 1kB byte -> id lookup table"
 )]
+#[non_exhaustive]
 pub enum PipelineModel {
     BPE(PipelineBPE),
     #[cfg(feature = "unigram")]

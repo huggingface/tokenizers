@@ -96,6 +96,7 @@ pub(super) fn write_model(out: &mut Out, model: &PipelineModel) -> Result<()> {
             );
             out.obj_close();
         }
+        _ => return Err("to_json cannot write this model".into()),
     }
     Ok(())
 }
