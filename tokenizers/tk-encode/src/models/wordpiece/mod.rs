@@ -23,90 +23,27 @@ pub enum Error {
 
 type Vocab = AHashMap<String, u32>;
 
-struct Config {
-    vocab: Vocab,
-    unk_token: String,
-    continuing_subword_prefix: String,
-    max_input_chars_per_word: usize,
-}
-
-/// A `WordPieceBuilder` can be used to create a `WordPiece` model with a custom configuration.
-pub struct WordPieceBuilder {
-    config: Config,
-}
-
-impl Default for WordPieceBuilder {
-    fn default() -> Self {
-        Self {
-            config: Config {
-                vocab: AHashMap::new(),
-                unk_token: String::from("[UNK]"),
-                continuing_subword_prefix: String::from("##"),
-                max_input_chars_per_word: 100,
-            },
-        }
-    }
-}
-
-impl WordPieceBuilder {
-    /// Construct a new `WordPieceBuilder`.
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
-    /// Set the vocab (token -> ID) mapping.
-    #[must_use]
-    pub fn vocab<V: Into<AHashMap<String, u32>>>(mut self, vocab: V) -> Self {
-        self.config.vocab = vocab.into();
-        self
-    }
-
-    /// The the `UNK` token for the vocab.
-    #[must_use]
-    pub fn unk_token(mut self, unk_token: String) -> Self {
-        self.config.unk_token = unk_token;
-        self
-    }
-
-    /// Set the prefix for continuing subwords.
-    #[must_use]
-    pub fn continuing_subword_prefix(mut self, continuing_subword_prefix: String) -> Self {
-        self.config.continuing_subword_prefix = continuing_subword_prefix;
-        self
-    }
-
-    /// Set the maximum number of input characters per word.
-    #[must_use]
-    pub fn max_input_chars_per_word(mut self, max_input_chars_per_word: usize) -> Self {
-        self.config.max_input_chars_per_word = max_input_chars_per_word;
-        self
-    }
-
-    /// Constructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
-    pub fn build(self) -> Result<WordPiece> {
-        Ok(WordPiece {
-            vocab: self.config.vocab,
-            unk_token: self.config.unk_token,
-            continuing_subword_prefix: self.config.continuing_subword_prefix,
-            max_input_chars_per_word: self.config.max_input_chars_per_word,
-        })
-    }
-}
-
-/// A
-/// [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
-/// model.
+/// The fields of a `WordPiece` model in `tokenizer.json`.
+// There is no way to load a vocabulary from its own files in rc0, in any spelling: `read_file` /
+// `read_bytes` / `from_file` for a `vocab.txt`, `from_bytes` for a serialized model (which needs
+// serde), and `from_bpe` all lived in the config layer, which is deleted. A `tokenizer.json`
+// read by `tk-serialize` is the only route to a model now. See `REQUIRED_FOR_V1.md` §4.
 #[derive(Clone, PartialEq, Eq)]
-pub struct WordPiece {
+#[non_exhaustive]
+pub struct WordPieceConfig {
+    /// `{"token": id}`, in no particular order.
     pub vocab: Vocab,
+    /// The token to emit for a word that cannot be split into vocabulary entries.
     pub unk_token: String,
+    /// Prefix carried by every piece that is not the first of its word.
     pub continuing_subword_prefix: String,
-    pub(crate) max_input_chars_per_word: usize,
+    /// A word longer than this, in characters, becomes one unk token.
+    pub max_input_chars_per_word: usize,
 }
 
-impl std::fmt::Debug for WordPiece {
+impl std::fmt::Debug for WordPieceConfig {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        fmt.debug_struct("WordPiece")
+        fmt.debug_struct("WordPieceConfig")
             .field("unk_token", &self.unk_token)
             .field("continuing_subword_prefix", &self.continuing_subword_prefix)
             .field("max_input_chars_per_word", &self.max_input_chars_per_word)
@@ -115,7 +52,7 @@ impl std::fmt::Debug for WordPiece {
     }
 }
 
-impl Default for WordPiece {
+impl Default for WordPieceConfig {
     fn default() -> Self {
         Self {
             vocab: AHashMap::new(),
@@ -123,31 +60,6 @@ impl Default for WordPiece {
             continuing_subword_prefix: String::from("##"),
             max_input_chars_per_word: 100,
         }
-    }
-}
-
-impl WordPiece {
-    /// Get a `WordPieceBuilder`.
-    pub fn builder() -> WordPieceBuilder {
-        WordPieceBuilder::new()
-    }
-
-    // There is no way to load a vocabulary from its own files in rc0, in any spelling: `read_file` /
-    // `read_bytes` / `from_file` for a `vocab.txt`, `from_bytes` for a serialized model (which needs
-    // serde), and `from_bpe` all lived in the config layer, which is deleted. A `tokenizer.json`
-    // read by `tk-serialize` is the only route to a model now. See `REQUIRED_FOR_V1.md` §4.
-}
-
-/// The model methods the pipeline and the readers call. These used to be the legacy
-/// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
-/// plain inherent methods now and every call site is unchanged.
-impl WordPiece {
-    pub fn get_vocab_size(&self) -> usize {
-        self.vocab.len()
-    }
-
-    pub fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.vocab.get(token).copied()
     }
 }
 
@@ -182,10 +94,10 @@ pub struct PipelineWordPiece {
     max_input_chars_per_word: usize,
 }
 
-impl TryFrom<WordPiece> for PipelineWordPiece {
+impl TryFrom<WordPieceConfig> for PipelineWordPiece {
     type Error = crate::Error;
-    fn try_from(value: WordPiece) -> Result<Self> {
-        let WordPiece {
+    fn try_from(value: WordPieceConfig) -> Result<Self> {
+        let WordPieceConfig {
             vocab,
             unk_token,
             continuing_subword_prefix,
@@ -392,11 +304,11 @@ mod tests {
         .into_iter()
         .map(|(token, id)| (token.to_string(), id))
         .collect();
-        let model = WordPiece::builder()
-            .vocab(vocab)
-            .max_input_chars_per_word(8)
-            .build()
-            .unwrap();
+        let model = WordPieceConfig {
+            vocab,
+            max_input_chars_per_word: 8,
+            ..Default::default()
+        };
         PipelineWordPiece::try_from(model).unwrap()
     }
 
@@ -459,7 +371,10 @@ mod tests {
             .into_iter()
             .map(|(token, id)| (token.to_string(), id))
             .collect();
-        let model = WordPiece::builder().vocab(vocab).build().unwrap();
+        let model = WordPieceConfig {
+            vocab,
+            ..Default::default()
+        };
         let model = PipelineWordPiece::try_from(model).unwrap();
         let mut scratch = pipeline::Tokenize::init_scratch(&model);
 
@@ -479,7 +394,10 @@ mod tests {
             .map(|(c, id)| (c.to_string(), id))
             .collect();
         vocab.insert("[UNK]".to_string(), 0);
-        let model = WordPiece::builder().vocab(vocab).build().unwrap();
+        let model = WordPieceConfig {
+            vocab,
+            ..Default::default()
+        };
         let model = PipelineWordPiece::try_from(model).unwrap();
         let mut scratch = pipeline::Tokenize::init_scratch(&model);
 
@@ -502,7 +420,10 @@ mod tests {
         .into_iter()
         .map(|(token, id)| (token.to_string(), id))
         .collect();
-        let model = WordPiece::builder().vocab(vocab).build().unwrap();
+        let model = WordPieceConfig {
+            vocab,
+            ..Default::default()
+        };
         let model = PipelineWordPiece::try_from(model).unwrap();
         let mut scratch = pipeline::Tokenize::init_scratch(&model);
 
@@ -531,7 +452,10 @@ mod tests {
     fn refuses_a_vocab_with_only_empty_token() {
         for tokens in [&[][..], &[""]] {
             let vocab: Vocab = tokens.iter().map(|token| (token.to_string(), 0)).collect();
-            let model = WordPiece::builder().vocab(vocab).build().unwrap();
+            let model = WordPieceConfig {
+                vocab,
+                ..Default::default()
+            };
             let err = PipelineWordPiece::try_from(model).err().unwrap();
             assert!(
                 matches!(err.downcast_ref(), Some(Error::EmptyVocab)),
