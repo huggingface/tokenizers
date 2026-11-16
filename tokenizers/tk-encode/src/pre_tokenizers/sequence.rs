@@ -2,11 +2,11 @@ use crate::pipeline::{self, PipelinePreTokenizer};
 use crate::tokenizer::Result;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct PipelineSequence {
+pub struct Sequence {
     pre_tokenizers: Vec<PipelinePreTokenizer>,
 }
 
-impl PipelineSequence {
+impl Sequence {
     pub fn new(pre_tokenizers: Vec<PipelinePreTokenizer>) -> Self {
         Self { pre_tokenizers }
     }
@@ -46,7 +46,7 @@ impl PipelineSequence {
 //
 // The deepseek fast path has no children to run: it calls an `bitcannon` fsm, which splits only at
 // character boundaries of `text`. See the `bitcannon` docs.
-unsafe impl pipeline::PreTokenize for PipelineSequence {
+unsafe impl pipeline::PreTokenize for Sequence {
     /// Runs each child in turn, where every child subdivides the spans produced
     /// so far. A child sees only the text of a span (`&text[span]`) and returns
     /// offsets relative to it, which we rebase to absolute mirroring how the

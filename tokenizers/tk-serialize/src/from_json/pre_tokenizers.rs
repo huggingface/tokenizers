@@ -10,7 +10,7 @@ use tk_encode::pre_tokenizers::delimiter::CharDelimiterSplit;
 use tk_encode::pre_tokenizers::digits::Digits;
 use tk_encode::pre_tokenizers::fixed_length::FixedLength;
 use tk_encode::pre_tokenizers::punctuation::Punctuation;
-use tk_encode::pre_tokenizers::sequence::PipelineSequence;
+use tk_encode::pre_tokenizers::sequence::Sequence;
 use tk_encode::pre_tokenizers::split::{Split as SplitPretok, SplitPattern};
 #[cfg(feature = "unicode-scripts")]
 use tk_encode::pre_tokenizers::unicode_scripts::UnicodeScripts;
@@ -37,7 +37,7 @@ pub(super) fn read_pre_tokenizer(cfg: Option<&Json<'_>>) -> Result<PipelinePreTo
         for member in members {
             built.push(read_one_pre_tokenizer(member)?);
         }
-        return Ok(PipelinePreTokenizer::Sequence(PipelineSequence::new(built)));
+        return Ok(PipelinePreTokenizer::Sequence(Sequence::new(built)));
     }
 
     read_one_pre_tokenizer(cfg)
