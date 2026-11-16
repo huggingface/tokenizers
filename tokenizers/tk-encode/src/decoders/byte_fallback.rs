@@ -13,6 +13,18 @@ impl ByteFallback {
     }
 }
 
+fn flush_byte_tokens(bytes: &[u8], out: &mut Vec<String>) {
+    for chunk in bytes.utf8_chunks() {
+        let valid = chunk.valid();
+        if !valid.is_empty() {
+            out.push(valid.to_owned());
+        }
+        for _ in chunk.invalid() {
+            out.push("�".into());
+        }
+    }
+}
+
 impl Decoder for ByteFallback {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         let mut new_tokens: Vec<String> = vec![];
@@ -28,26 +40,14 @@ impl Decoder for ByteFallback {
                 previous_byte_tokens.push(bytes);
             } else {
                 if !previous_byte_tokens.is_empty() {
-                    if let Ok(string) = String::from_utf8(previous_byte_tokens.clone()) {
-                        new_tokens.push(string);
-                    } else {
-                        for _ in 0..previous_byte_tokens.len() {
-                            new_tokens.push("�".into());
-                        }
-                    }
+                    flush_byte_tokens(&previous_byte_tokens, &mut new_tokens);
                     previous_byte_tokens.clear();
                 }
                 new_tokens.push(token);
             }
         }
         if !previous_byte_tokens.is_empty() {
-            if let Ok(string) = String::from_utf8(previous_byte_tokens.clone()) {
-                new_tokens.push(string);
-            } else {
-                for _ in 0..previous_byte_tokens.len() {
-                    new_tokens.push("�".into());
-                }
-            }
+            flush_byte_tokens(&previous_byte_tokens, &mut new_tokens);
         }
 
         Ok(new_tokens)
@@ -97,5 +97,19 @@ mod tests {
             .decode_chain(vec!["<0xE5>".into(), "<0x8f>".into(), "a".into()])
             .unwrap();
         assert_eq!(res, vec!["�", "�", "a"]);
+
+        // Valid 4-byte UTF-8 character followed by an invalid stray lead byte (#2625)
+        let res = decoder
+            .decode_chain(vec![
+                "a".into(),
+                "<0xF0>".into(),
+                "<0xA0>".into(),
+                "<0x80>".into(),
+                "<0x80>".into(),
+                "<0xE4>".into(),
+                "ok".into(),
+            ])
+            .unwrap();
+        assert_eq!(res, vec!["a", "𠀀", "�", "ok"]);
     }
 }
