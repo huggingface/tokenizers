@@ -50,42 +50,42 @@ pub(crate) use pre_tokenizer::{split_delimiter, split_matches};
 /// both be outputed by the pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct PipelineToken(u32);
+pub struct Token(u32);
 
-impl PipelineToken {
+impl Token {
     /// The vocabulary id this token stands for.
     pub const fn id(self) -> u32 {
         self.0
     }
 
     pub const fn cast_slice(slice: &[Self]) -> &[u32] {
-        // SAFETY: `PipelineToken` is `repr(transparent)` over u32
+        // SAFETY: `Token` is `repr(transparent)` over u32
         unsafe { std::slice::from_raw_parts(slice.as_ptr().cast::<u32>(), slice.len()) }
     }
 }
 
-impl From<u32> for PipelineToken {
+impl From<u32> for Token {
     fn from(value: u32) -> Self {
         Self(value)
     }
 }
 
-impl From<PipelineToken> for u32 {
-    fn from(value: PipelineToken) -> Self {
+impl From<Token> for u32 {
+    fn from(value: Token) -> Self {
         value.0
     }
 }
 
 /// Compares a token against a bare id, so a caller can assert against `[u32]`
 /// without mapping the ids out first.
-impl PartialEq<u32> for PipelineToken {
+impl PartialEq<u32> for Token {
     fn eq(&self, id: &u32) -> bool {
         self.0 == *id
     }
 }
 
-impl PartialEq<PipelineToken> for u32 {
-    fn eq(&self, token: &PipelineToken) -> bool {
+impl PartialEq<Token> for u32 {
+    fn eq(&self, token: &Token) -> bool {
         *self == token.0
     }
 }
@@ -481,7 +481,7 @@ impl EncodeHandle {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Encoding {
-    pub(crate) ids: Vec<PipelineToken>,
+    pub(crate) ids: Vec<Token>,
     /// `None` if every token has type id 0
     pub(crate) type_ids: Option<Vec<u8>>,
     /// `None` if the encoding is not padded (mask is all ones)
@@ -498,7 +498,7 @@ impl Encoding {
     }
 
     pub fn new(
-        ids: Vec<PipelineToken>,
+        ids: Vec<Token>,
         type_ids: Option<Vec<u8>>,
         attention_mask: Option<Vec<u8>>,
     ) -> Self {
@@ -520,7 +520,7 @@ impl Encoding {
         self.ids.len()
     }
 
-    pub fn ids(&self) -> &[PipelineToken] {
+    pub fn ids(&self) -> &[Token] {
         &self.ids
     }
 
@@ -727,8 +727,8 @@ impl PipelineTokenizer {
     /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside.
     fn post_process(
         &self,
-        s1: Vec<PipelineToken>,
-        s2: Option<Vec<PipelineToken>>,
+        s1: Vec<Token>,
+        s2: Option<Vec<Token>>,
         options: &EncodeOptions,
     ) -> Result<Encoding> {
         let pp = &self.inner.post_processor;
@@ -760,7 +760,7 @@ impl PipelineTokenizer {
         offset: usize,
         options: &EncodeOptions,
         scratch: &mut EncodeScratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<Token>,
     ) -> Result<()> {
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(
@@ -771,7 +771,7 @@ impl PipelineTokenizer {
         ) {
             match segment {
                 Segment::SpecialToken(token) => {
-                    output.push(PipelineToken::from(token));
+                    output.push(Token::from(token));
                 }
                 Segment::Text {
                     text: chunk,
@@ -789,7 +789,7 @@ impl PipelineTokenizer {
                     ) {
                         match segment {
                             Segment::SpecialToken(token) => {
-                                output.push(PipelineToken::from(token));
+                                output.push(Token::from(token));
                             }
                             Segment::Text {
                                 text: normalized_chunk,
@@ -856,7 +856,7 @@ impl PipelineTokenizer {
         offset: usize,
         options: &EncodeOptions,
         scratch: &mut EncodeScratch,
-    ) -> Result<Vec<PipelineToken>> {
+    ) -> Result<Vec<Token>> {
         let mut output = Vec::with_capacity(input.len() / 4);
         self.encode_sequence_into(input, offset, options, scratch, &mut output)?;
         Ok(output)
@@ -874,7 +874,7 @@ impl PipelineTokenizer {
         &self,
         input: &str,
         options: &EncodeOptions,
-        out: &mut Vec<PipelineToken>,
+        out: &mut Vec<Token>,
     ) -> Result<()> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         let template = self.inner.post_processor.single();
@@ -1034,7 +1034,7 @@ pub trait Tokenize {
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<Token>,
     ) -> Result<()>;
 
     /// Every pre-token of a chunk in one call.
@@ -1050,7 +1050,7 @@ pub trait Tokenize {
         chunk: &str,
         spans: &[Span],
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<Token>,
     ) -> Result<()> {
         for span in spans {
             self.tokenize_pipeline(&chunk[span.range()], scratch, output)?;
@@ -1138,7 +1138,7 @@ impl Tokenize for PipelineModel {
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<Token>,
     ) -> Result<()> {
         match (self, scratch) {
             (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
@@ -1165,7 +1165,7 @@ impl Tokenize for PipelineModel {
         chunk: &str,
         spans: &[Span],
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<Token>,
     ) -> Result<()> {
         match (self, scratch) {
             (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
@@ -1781,8 +1781,8 @@ mod tests {
     const CLS: u32 = 101;
     const SEP: u32 = 102;
 
-    fn tokens(sequence_ids: impl IntoIterator<Item = u32>) -> Vec<PipelineToken> {
-        sequence_ids.into_iter().map(PipelineToken::from).collect()
+    fn tokens(sequence_ids: impl IntoIterator<Item = u32>) -> Vec<Token> {
+        sequence_ids.into_iter().map(Token::from).collect()
     }
 
     fn ids(encoding: &Encoding) -> Vec<u32> {

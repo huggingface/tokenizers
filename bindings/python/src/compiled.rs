@@ -9,8 +9,8 @@ use tk::pipeline::EncodeOptions;
 use tk::pipeline::Encoding as PipelineEncoding;
 use tk::pipeline::Input;
 use tk::pipeline::Inputs;
-use tk::pipeline::PipelineToken;
 use tk::pipeline::PipelineTokenizer;
+use tk::pipeline::Token;
 use tk::{from_json, to_json};
 
 use crate::added_token::AddedToken;
@@ -160,7 +160,7 @@ impl CompiledTokenizer {
             let encoding = self.encode_one(input, &options)?;
             Ok(self
                 .pipeline
-                .decode_tokens(PipelineToken::cast_slice(encoding.ids()), false))
+                .decode_tokens(Token::cast_slice(encoding.ids()), false))
         })
         .map_err(err)
     }

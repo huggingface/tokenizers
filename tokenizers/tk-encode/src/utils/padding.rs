@@ -1,5 +1,5 @@
 use crate::tokenizer::Result;
-use crate::tokenizer::pipeline::{Encoding, PipelineToken};
+use crate::tokenizer::pipeline::{Encoding, Token};
 
 /// The various possible padding directions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -78,7 +78,7 @@ fn pad_one(encoding: &mut Encoding, target_length: usize, params: &PaddingParams
         return;
     }
     let pad_length = target_length - original_len;
-    let pad_id = PipelineToken::from(params.pad_id);
+    let pad_id = Token::from(params.pad_id);
     let pad_type_id = params.pad_type_id as u8;
 
     let mut ids = std::mem::take(&mut encoding.ids);
@@ -114,8 +114,8 @@ fn pad_one(encoding: &mut Encoding, target_length: usize, params: &PaddingParams
 mod tests {
     use super::*;
 
-    fn make_tokens(ids: impl IntoIterator<Item = u32>) -> Vec<PipelineToken> {
-        ids.into_iter().map(PipelineToken::from).collect()
+    fn make_tokens(ids: impl IntoIterator<Item = u32>) -> Vec<Token> {
+        ids.into_iter().map(Token::from).collect()
     }
 
     fn make_encoding(ids: impl IntoIterator<Item = u32>) -> Encoding {

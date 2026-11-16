@@ -2,7 +2,7 @@
 
 use super::unsupported;
 use crate::json::Json;
-use tk_encode::pipeline::{PipelineToken, PostProcessor, Template};
+use tk_encode::pipeline::{PostProcessor, Template, Token};
 use tk_encode::tokenizer::Result;
 
 pub(super) fn read_post_processor(cfg: Option<&Json<'_>>) -> Result<PostProcessor> {
@@ -55,7 +55,7 @@ fn read_template(cfg: &Json<'_>) -> Result<PostProcessor> {
                     let id = id.as_u32().ok_or_else(|| -> tk_encode::Error {
                         "a template piece has a bad id".into()
                     })?;
-                    dst.push((PipelineToken::from(id), type_id));
+                    dst.push((Token::from(id), type_id));
                 }
             } else {
                 // The `{"SpecialToken": {"id": ...}}` wrapper and its `special_tokens` table are a
