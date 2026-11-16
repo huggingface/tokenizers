@@ -16,8 +16,6 @@ mod tests;
 pub type Pair = (u32, u32);
 /// Token string -> external id, as the model file declares it.
 pub type Vocab = AHashMap<String, u32>;
-/// External id -> token string.
-pub type VocabR = AHashMap<u32, String>;
 /// Merge pairs as token strings, highest priority first.
 pub type Merges = Vec<(String, String)>;
 /// Merge pair (external ids) -> (rank, external id of the merged token).
