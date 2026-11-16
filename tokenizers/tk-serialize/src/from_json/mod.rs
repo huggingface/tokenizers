@@ -33,6 +33,8 @@ use self::truncation::read_truncation;
 use crate::json::Json;
 use std::collections::BTreeMap;
 use tk_encode::models::bpe::BPE;
+#[cfg(feature = "wordpiece")]
+use tk_encode::models::wordpiece::WordPiece;
 use tk_encode::pipeline::{Model, Normalizer, NormalizerChain, PreTokenizer, Tokenizer};
 use tk_encode::tokenizer::Result;
 use tk_encode::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
@@ -142,7 +144,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<Tokenizer> {
             read_wordpiece(model_cfg)?,
             |wp| wp.vocab.len(),
             |wp, t| wp.vocab.get(t).copied(),
-            |wp| Ok(Model::WordPiece(wp.try_into()?)),
+            |wp| Ok(Model::WordPiece(WordPiece::from_config(wp)?)),
         ),
         #[cfg(feature = "unigram")]
         "Unigram" => build(

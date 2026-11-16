@@ -8,7 +8,6 @@ use crate::utils::word_cache::{Lookup, WordCache};
 use ahash::AHashMap;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::convert::TryFrom;
 use yada::DoubleArray;
 use yada::builder::DoubleArrayBuilder;
 
@@ -23,7 +22,8 @@ pub enum Error {
 
 type Vocab = AHashMap<String, u32>;
 
-/// The fields of a `WordPiece` model in `tokenizer.json`.
+/// The fields of a [`WordPiece`] model in `tokenizer.json`. [`WordPiece::from_config`] builds the
+/// model from them.
 // There is no way to load a vocabulary from its own files in rc0, in any spelling: `read_file` /
 // `read_bytes` / `from_file` for a `vocab.txt`, `from_bytes` for a serialized model (which needs
 // serde), and `from_bpe` all lived in the config layer, which is deleted. A `tokenizer.json`
@@ -85,7 +85,7 @@ fn trie_key(bytes: &[u8]) -> Cow<'_, [u8]> {
     Cow::Owned(key)
 }
 
-pub struct PipelineWordPiece {
+pub struct WordPiece {
     vocab_trie: yada::DoubleArray<Vec<u8>>,
     vocab_r: Box<[Option<Box<str>>]>,
     vocab_size: usize,
@@ -94,16 +94,17 @@ pub struct PipelineWordPiece {
     max_input_chars_per_word: usize,
 }
 
-impl TryFrom<WordPieceConfig> for PipelineWordPiece {
-    type Error = crate::Error;
-    fn try_from(value: WordPieceConfig) -> Result<Self> {
+impl WordPiece {
+    /// Builds the model from its `tokenizer.json` fields. Fails if the vocabulary holds no
+    /// non-empty token.
+    pub fn from_config(config: WordPieceConfig) -> Result<Self> {
         let WordPieceConfig {
             vocab,
             unk_token,
             continuing_subword_prefix,
             max_input_chars_per_word,
             ..
-        } = value;
+        } = config;
         let unk_token = vocab.get(&unk_token).copied();
 
         let keyset: Vec<(String, u32)> = vocab.into_iter().collect();
@@ -137,9 +138,7 @@ impl TryFrom<WordPieceConfig> for PipelineWordPiece {
             vocab_size,
         })
     }
-}
 
-impl PipelineWordPiece {
     /// One word, greedily: the longest vocabulary entry it starts with, then the
     /// longest entry the rest of it starts with once the continuing-subword prefix
     /// is put in front, and so on. A piece with no entry at all anywhere in the
@@ -239,7 +238,7 @@ impl PipelineWordPiece {
     }
 }
 
-impl pipeline::Tokenize for PipelineWordPiece {
+impl pipeline::Tokenize for WordPiece {
     type Scratch = WordPieceScratch;
 
     fn init_scratch(&self) -> Self::Scratch {
@@ -293,7 +292,7 @@ mod tests {
     /// `hello` is in the vocabulary whole and as `hell` + `##o`, so the
     /// longest-match walk has something to choose; `world` gives a second
     /// one-token word.
-    fn pipeline_wordpiece() -> PipelineWordPiece {
+    fn pipeline_wordpiece() -> WordPiece {
         let vocab: Vocab = [
             ("[UNK]", 0u32),
             ("hell", 1),
@@ -309,14 +308,10 @@ mod tests {
             max_input_chars_per_word: 8,
             ..Default::default()
         };
-        PipelineWordPiece::try_from(model).unwrap()
+        WordPiece::from_config(model).unwrap()
     }
 
-    fn pipeline_ids(
-        model: &PipelineWordPiece,
-        sequence: &str,
-        scratch: &mut WordPieceScratch,
-    ) -> Vec<u32> {
+    fn pipeline_ids(model: &WordPiece, sequence: &str, scratch: &mut WordPieceScratch) -> Vec<u32> {
         let mut output = vec![];
         pipeline::Tokenize::tokenize_pipeline(model, sequence, scratch, &mut output).unwrap();
         output.iter().map(|token| token.id()).collect()
@@ -375,7 +370,7 @@ mod tests {
             vocab,
             ..Default::default()
         };
-        let model = PipelineWordPiece::try_from(model).unwrap();
+        let model = WordPiece::from_config(model).unwrap();
         let mut scratch = pipeline::Tokenize::init_scratch(&model);
 
         assert_eq!(pipeline_ids(&model, "hello", &mut scratch), [2]);
@@ -398,7 +393,7 @@ mod tests {
             vocab,
             ..Default::default()
         };
-        let model = PipelineWordPiece::try_from(model).unwrap();
+        let model = WordPiece::from_config(model).unwrap();
         let mut scratch = pipeline::Tokenize::init_scratch(&model);
 
         for (c, id) in chars.iter().zip(1u32..) {
@@ -424,7 +419,7 @@ mod tests {
             vocab,
             ..Default::default()
         };
-        let model = PipelineWordPiece::try_from(model).unwrap();
+        let model = WordPiece::from_config(model).unwrap();
         let mut scratch = pipeline::Tokenize::init_scratch(&model);
 
         assert_eq!(pipeline_ids(&model, "a\0a", &mut scratch), [1, 3, 4]);
@@ -456,7 +451,7 @@ mod tests {
                 vocab,
                 ..Default::default()
             };
-            let err = PipelineWordPiece::try_from(model).err().unwrap();
+            let err = WordPiece::from_config(model).err().unwrap();
             assert!(
                 matches!(err.downcast_ref(), Some(Error::EmptyVocab)),
                 "{err}"

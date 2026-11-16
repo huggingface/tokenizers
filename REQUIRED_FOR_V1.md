@@ -148,7 +148,7 @@ done; what is missing is only that both files sit behind the non-default `bench-
     cargo test -p tk-convert --features bench-baseline --test pipeline_decode_oracle
 
 Promoting them into the default gate needs the released crate to become a non-optional dev-dependency,
-and `pipeline_decode_oracle`'s `bert_wiki` is a known deliberate failure (`PipelineWordPiece` has no
+and `pipeline_decode_oracle`'s `bert_wiki` is a known deliberate failure (`WordPiece` has no
 id→token direction), so that has to land first.
 
 **One decode-oracle test did die:** `non_special_added_token_survives_skip`, which added the same
