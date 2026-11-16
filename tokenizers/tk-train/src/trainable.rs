@@ -1,5 +1,5 @@
 #[cfg(feature = "bpe")]
-use tk_encode::models::bpe::PipelineBPE;
+use tk_encode::models::bpe::BPE;
 #[cfg(feature = "unigram")]
 use tk_encode::models::unigram::Unigram;
 #[cfg(feature = "wordlevel")]
@@ -23,12 +23,12 @@ use crate::trainers::WordPieceTrainer;
 /// This is the dispatch half of what `tk-convert`'s `ModelWrapper` used to be. The other half was a
 /// hand-written `Deserialize` that read a legacy `model` object -- config-layer work that went with
 /// that crate's strip, and that a trainer never needed.
-/// No `Debug`/`Clone`: `PipelineBPE` derives neither, and no caller needs them.
+/// No `Debug`/`Clone`: `BPE` derives neither, and no caller needs them.
 #[allow(clippy::large_enum_variant)]
 #[non_exhaustive]
 pub enum ModelWrapper {
     #[cfg(feature = "bpe")]
-    BPE(PipelineBPE),
+    BPE(BPE),
     #[cfg(feature = "wordpiece")]
     WordPiece(WordPiece),
     #[cfg(feature = "wordlevel")]
@@ -38,8 +38,8 @@ pub enum ModelWrapper {
 }
 
 #[cfg(feature = "bpe")]
-impl From<PipelineBPE> for ModelWrapper {
-    fn from(m: PipelineBPE) -> Self {
+impl From<BPE> for ModelWrapper {
+    fn from(m: BPE) -> Self {
         Self::BPE(m)
     }
 }
@@ -74,7 +74,7 @@ pub trait Trainable {
 }
 
 #[cfg(feature = "bpe")]
-impl Trainable for PipelineBPE {
+impl Trainable for BPE {
     type Trainer = BpeTrainer;
     fn get_trainer(&self) -> BpeTrainer {
         BpeTrainer::default()

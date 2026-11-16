@@ -1532,7 +1532,7 @@ impl ParityBpeTrainer {
 mod tests {
     use super::*;
     use std::assert_matches;
-    use tk_encode::models::bpe::{BpeConfig, PipelineBPE};
+    use tk_encode::models::bpe::{BPE, BpeConfig};
 
     /// The trained vocabulary, and each merge written as `"a b"`.
     fn train(trainer: &ParityBpeTrainer) -> (Vocab, Vec<String>) {
@@ -2178,7 +2178,7 @@ mod tests {
         let mut config = BpeConfig::default();
         config.vocab = vocab.clone();
         config.merges = merges.clone();
-        let model = PipelineBPE::from_config(config).unwrap();
+        let model = BPE::from_config(config).unwrap();
 
         let config = model.to_config().unwrap();
         assert_eq!(config.vocab, vocab);
