@@ -34,7 +34,17 @@ pub(crate) const LUT: [u8; 64] = {
 streams!(
     /// One block's class streams. `other` folds the apostrophe code back in; only `l` needs the
     /// `valid` mask, since past the block end every plane reads 0, i.e. code 0.
-    Cls { lead, cont, l, n, other, nl, sp, ws, apo }
+    Cls {
+        lead,
+        cont,
+        l,
+        n,
+        other,
+        nl,
+        sp,
+        ws,
+        apo
+    }
 );
 
 /// Build one block's streams; returns the fill seed for the block after.

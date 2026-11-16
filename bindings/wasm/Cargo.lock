@@ -1185,7 +1185,6 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "serde",
- "serde_json",
  "thiserror",
  "tk-encode",
 ]

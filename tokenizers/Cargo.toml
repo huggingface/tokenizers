@@ -13,7 +13,6 @@ authors = [
 edition = "2024"
 name = "tokenizers"
 version = "1.0.0-dev.2"
-homepage = "https://github.com/huggingface/tokenizers"
 repository = "https://github.com/huggingface/tokenizers"
 documentation = "https://docs.rs/tokenizers/"
 license = "Apache-2.0"
