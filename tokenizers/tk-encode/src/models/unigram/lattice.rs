@@ -376,8 +376,8 @@ impl<'a> Lattice<'a> {
 
         let eos_id = self.begin_nodes[len][0].borrow().node_id;
         let z = alpha[eos_id];
-        for pos in 0..len {
-            for node in &self.begin_nodes[pos] {
+        for begin_nodes in self.begin_nodes.iter().take(len) {
+            for node in begin_nodes {
                 let node_id = node.borrow().node_id;
                 let id = node.borrow().id;
                 let a = alpha[node_id];

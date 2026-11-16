@@ -3145,8 +3145,6 @@ name = "tk-convert"
 version = "0.1.0-dev.2"
 dependencies = [
  "bitcannon",
- "criterion 0.8.2",
- "rayon",
  "serde_json",
  "thiserror",
  "tk-encode",
