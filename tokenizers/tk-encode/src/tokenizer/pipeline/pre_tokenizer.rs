@@ -63,7 +63,7 @@ pub struct PreTokenizerScratch {
 impl PreTokenizerScratch {
     /// Run `fsm` over `bytes` and append the spans it cut to `out`, for an FSM that scans the bytes
     /// itself and so has no use for the atom tags. Skips the [`classify`]
-    pub fn split_on_bytes(
+    pub(crate) fn split_on_bytes(
         &mut self,
         bytes: &[u8],
         fsm: impl FnOnce(&[u8], &mut [Span]) -> usize,
@@ -81,7 +81,7 @@ impl PreTokenizerScratch {
     /// Tag every byte of `bytes` with its [`bitcannon`] atom class, run `split` over the tags, and
     /// append the spans to `out`. `split` works off bitstreams, so it also gets three `u64` bitmaps:
     /// token starts, the flags its operators key on, and the fold scratch.
-    pub fn split_on_bits(
+    pub(crate) fn split_on_bits(
         &mut self,
         bytes: &[u8],
         split: impl FnOnce(&[u8], &[u8], &mut [u64], &mut [u64], &mut [u64], &mut [Span]) -> usize,
@@ -128,12 +128,12 @@ impl PreTokenizerScratch {
     }
 
     /// Take the sequence's two buffers, leaving empty ones behind.
-    pub fn take_pair(&mut self) -> [Vec<Span>; 2] {
+    pub(crate) fn take_pair(&mut self) -> [Vec<Span>; 2] {
         std::mem::take(&mut self.pair)
     }
 
     /// Give back what [`Self::take_pair`] handed out, so the next sequence reuses the allocations.
-    pub fn put_pair(&mut self, pair: [Vec<Span>; 2]) {
+    pub(crate) fn put_pair(&mut self, pair: [Vec<Span>; 2]) {
         self.pair = pair;
     }
 }

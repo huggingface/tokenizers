@@ -303,7 +303,7 @@ impl PipelineTokenizer {
         }
     }
 
-    pub fn resolve_padding<'a>(
+    pub(crate) fn resolve_padding<'a>(
         &'a self,
         padding_override: &'a Override<PaddingParams>,
     ) -> Option<&'a PaddingParams> {
@@ -314,7 +314,7 @@ impl PipelineTokenizer {
         }
     }
 
-    pub fn resolve_truncation<'a>(
+    pub(crate) fn resolve_truncation<'a>(
         &'a self,
         truncation_override: &'a Override<TruncationParams>,
     ) -> Option<&'a TruncationParams> {
