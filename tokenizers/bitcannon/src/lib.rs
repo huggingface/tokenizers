@@ -241,25 +241,6 @@ impl PartialEq<(u32, u32)> for Span {
     }
 }
 
-/// Whether this target builds its bitstreams with SIMD. Without it the builder is the portable
-/// byte-at-a-time reference, which is slower than the FSM this replaces -- so a caller should keep
-/// its FSM path rather than route here. On x86 the kernel needs SSSE3, so this is a runtime check.
-#[must_use]
-pub fn fast_builder() -> bool {
-    #[cfg(target_arch = "aarch64")]
-    {
-        true
-    }
-    #[cfg(target_arch = "x86_64")]
-    {
-        has_ssse3()
-    }
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
-    {
-        false
-    }
-}
-
 #[cfg(target_arch = "x86_64")]
 pub(crate) fn has_ssse3() -> bool {
     use std::sync::atomic::{AtomicU8, Ordering};
