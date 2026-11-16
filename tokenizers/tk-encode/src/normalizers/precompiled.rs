@@ -43,13 +43,13 @@ impl PrecompiledNormalizer {
     }
 }
 
-impl pipeline::Normalizer for PrecompiledNormalizer {
+impl pipeline::Normalize for PrecompiledNormalizer {
     fn normalize<'a>(&self, input: &'a str, offset: usize) -> Result<Cow<'a, str>> {
-        pipeline::Normalizer::normalize(&self.parsed, input, offset)
+        pipeline::Normalize::normalize(&self.parsed, input, offset)
     }
 }
 
-impl pipeline::Normalizer for Precompiled {
+impl pipeline::Normalize for Precompiled {
     fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
         let mut transformed: Option<String> = None;
         for (g_idx, grapheme) in input.grapheme_indices(true) {
