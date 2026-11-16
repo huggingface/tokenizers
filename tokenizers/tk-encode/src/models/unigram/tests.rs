@@ -13,9 +13,7 @@ fn encodes_a_vocab_holding_every_utf8_byte() {
     for (c, id) in chars.iter().zip(1u32..) {
         let token = c.to_string();
         let mut output = Vec::new();
-        model
-            .tokenize_pipeline(&token, &mut scratch, &mut output)
-            .unwrap();
+        model.tokenize(&token, &mut scratch, &mut output).unwrap();
         let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
         assert_eq!(ids, [id], "{c:?}");
         assert_eq!(model.token_to_id(&token), Some(id), "{c:?}");
@@ -178,7 +176,7 @@ fn abcd_vocab() -> Vocab {
 
 fn pipeline_ids(model: &Unigram, sequence: &str, scratch: &mut UnigramScratch) -> Vec<u32> {
     let mut output = vec![];
-    Tokenize::tokenize_pipeline(model, sequence, scratch, &mut output).unwrap();
+    Tokenize::tokenize(model, sequence, scratch, &mut output).unwrap();
     output.iter().map(|token| token.id()).collect()
 }
 
@@ -225,8 +223,8 @@ fn caches_only_the_ids_this_sequence_produced() {
     let model = Unigram::from(abcd_vocab(), Some(0), false).unwrap();
     let mut scratch = Tokenize::init_scratch(&model);
     let mut output = vec![];
-    Tokenize::tokenize_pipeline(&model, "ab", &mut scratch, &mut output).unwrap();
-    Tokenize::tokenize_pipeline(&model, "cd", &mut scratch, &mut output).unwrap();
+    Tokenize::tokenize(&model, "ab", &mut scratch, &mut output).unwrap();
+    Tokenize::tokenize(&model, "cd", &mut scratch, &mut output).unwrap();
 
     let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
     assert_eq!(ids, [6, 5]);

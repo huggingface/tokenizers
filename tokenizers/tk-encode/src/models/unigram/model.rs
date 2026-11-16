@@ -407,7 +407,7 @@ impl pipeline::Tokenize for Unigram {
 
     /// The word cache holds ids, not pieces. A hit skips the lattice, the `String` every piece
     /// is built into, and the vocabulary lookup that turns each one back into an id.
-    fn tokenize_pipeline(
+    fn tokenize(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,

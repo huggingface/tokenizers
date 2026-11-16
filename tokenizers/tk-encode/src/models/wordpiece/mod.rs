@@ -250,7 +250,7 @@ impl pipeline::Tokenize for WordPiece {
 
     /// A hit skips `tokenize_word`: one trie search per piece of the word,
     /// each over a fresh copy of what is left to match.
-    fn tokenize_pipeline(
+    fn tokenize(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
@@ -313,7 +313,7 @@ mod tests {
 
     fn pipeline_ids(model: &WordPiece, sequence: &str, scratch: &mut WordPieceScratch) -> Vec<u32> {
         let mut output = vec![];
-        pipeline::Tokenize::tokenize_pipeline(model, sequence, scratch, &mut output).unwrap();
+        pipeline::Tokenize::tokenize(model, sequence, scratch, &mut output).unwrap();
         output.iter().map(|token| token.id()).collect()
     }
 
@@ -466,8 +466,8 @@ mod tests {
         let model = pipeline_wordpiece();
         let mut scratch = pipeline::Tokenize::init_scratch(&model);
         let mut output = vec![];
-        pipeline::Tokenize::tokenize_pipeline(&model, "hello", &mut scratch, &mut output).unwrap();
-        pipeline::Tokenize::tokenize_pipeline(&model, "world", &mut scratch, &mut output).unwrap();
+        pipeline::Tokenize::tokenize(&model, "hello", &mut scratch, &mut output).unwrap();
+        pipeline::Tokenize::tokenize(&model, "world", &mut scratch, &mut output).unwrap();
 
         let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
         assert_eq!(ids, [3, 4]);

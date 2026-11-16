@@ -132,7 +132,7 @@ pub fn encode(c: &mut Criterion) {
         // ---- stage 4: the model, one call per pre-token ----
         let words: Vec<&str> = spans.iter().map(|span| &normalized[span.range()]).collect();
 
-        // `tokenize_pipeline` lives on the concrete model, not on the `Model` enum, so the
+        // `tokenize` lives on the concrete model, not on the `Model` enum, so the
         // row exists per model kind. Both fixtures here are BPE.
         // Irrefutable in a `bpe`-only build, where `Model` has exactly one variant.
         #[allow(irrefutable_let_patterns)]
@@ -143,7 +143,7 @@ pub fn encode(c: &mut Criterion) {
                 b.iter(|| {
                     out.clear();
                     for word in &words {
-                        bpe.tokenize_pipeline(word, &mut scratch, &mut out).unwrap();
+                        bpe.tokenize(word, &mut scratch, &mut out).unwrap();
                     }
                     black_box(out.len())
                 })

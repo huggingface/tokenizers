@@ -328,7 +328,7 @@ mod tests {
     // EncodeScratch, holding the None model variant, behind in the guard. The pool must end up
     // holding the scratch the model used: if the default leftover were pushed instead, the pool
     // would still count one scratch, and the next encode would take it and panic in
-    // Model::tokenize_pipeline.
+    // Model::tokenize.
     #[test]
     fn the_pool_gets_back_the_used_scratch_not_the_none_leftover() {
         let pipeline = hello_pipeline();
