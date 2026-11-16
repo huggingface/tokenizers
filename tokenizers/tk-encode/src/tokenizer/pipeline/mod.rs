@@ -103,7 +103,7 @@ pub trait PatternMatcher {
     /// Returns `None` if there are no added tokens left in `input`.
     fn extract_next(
         &self,
-        full_input: &[u8],
+        full_input: &str,
         search_offset: usize,
         normalized: bool,
         encode_special_tokens: bool,
@@ -180,7 +180,7 @@ impl<'a, 'b, M: PatternMatcher> Iterator for SpecialSegmentIterator<'a, 'b, M> {
             return None;
         }
         if let Some(((start, end), token)) = self.pattern_matcher.extract_next(
-            self.input.as_bytes(),
+            self.input,
             self.offset,
             self.normalized,
             self.encode_special_tokens,
@@ -1236,7 +1236,7 @@ mod tests {
     impl PatternMatcher for FixedMatcher {
         fn extract_next(
             &self,
-            _bytes: &[u8],
+            _input: &str,
             search_offset: usize,
             _normalized: bool,
             _encode_special_tokens: bool,
