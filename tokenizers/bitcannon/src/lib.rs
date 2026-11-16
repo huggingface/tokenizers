@@ -730,31 +730,6 @@ pub(crate) fn contr_len(text: &[u8], i: usize, ci: bool) -> usize {
     }
 }
 
-/// Builder-only cost probe: runs just the byte→bitstream transpose over every block and folds the
-/// streams so nothing is optimised away. The difference against a full grammar is what the
-/// bitstream program itself costs.
-#[doc(hidden)]
-#[must_use]
-pub fn build_only(text: &[u8], tags: &[u8]) -> u64 {
-    let (mut acc, mut code, mut cjk) = (0u64, CODE_CONT, false);
-    for base in (0..text.len()).step_by(64) {
-        let len = (text.len() - base).min(64);
-        let (b, c) = build_block::<{ AUX_CJK }, false>(
-            text,
-            tags,
-            base,
-            len,
-            &models::deepseek::LUT,
-            code,
-            cjk,
-        );
-        code = c;
-        cjk = b.aux >> (len - 1) & 1 != 0;
-        acc ^= b.cont ^ b.p0 ^ b.p1 ^ b.p2 ^ b.aux;
-    }
-    acc
-}
-
 /// Convenience wrapper: classify + deepseek bitcannon over caller-owned scratch.
 #[must_use]
 pub fn pre_tokenize(text: &[u8], tags: &mut [u8], starts: &mut [u64], out: &mut [Span]) -> usize {
