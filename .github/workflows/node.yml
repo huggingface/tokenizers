@@ -115,6 +115,16 @@ jobs:
       - name: Lint TS
         run: yarn lint
 
+      - name: Minimum Node is still supported upstream
+        run: |
+          floor=$(jq -r .engines.node package.json | grep -oE '[0-9]+' | head -1)
+          eol=$(curl -fsSL https://raw.githubusercontent.com/nodejs/Release/main/schedule.json \
+            | jq -er --arg v "v$floor" '.[$v].end')
+          if [[ "$(date -u +%F)" > "$eol" ]]; then
+            echo "::error::Node $floor reached end of life on $eol: raise engines.node in package.json and the minimum Node test in node.yml"
+            exit 1
+          fi
+
   audit:
     permissions:
       contents: read
