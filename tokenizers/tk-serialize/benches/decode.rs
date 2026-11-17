@@ -7,9 +7,9 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use tk_encode::pipeline::DecodeStream;
 use tk_encode::pipeline::EncodeOptions;
-use tk_encode::pipeline::PipelineDecodeStream;
-use tk_encode::pipeline::PipelineTokenizer;
+use tk_encode::pipeline::Tokenizer;
 
 const BATCH_SIZE: usize = 1_000;
 // How many tokens to run through streaming decode pipeline
@@ -17,7 +17,7 @@ const STREAM_TOKEN_BUDGET: usize = 300_000;
 
 /// Read a real config from `../data`. They are all still version `1.0`, so run the upgrade pass
 /// first -- the reader only accepts canonical `2.0`.
-fn load(path: &str) -> PipelineTokenizer {
+fn load(path: &str) -> Tokenizer {
     let canonical = tk_convert::canonicalize_file(path).unwrap();
     tk_serialize::from_json(&canonical).unwrap()
 }
@@ -35,7 +35,7 @@ fn take_token_budget(token_sequences: &[Vec<u32>], budget: usize) -> &[Vec<u32>]
 }
 
 /// Encode `data` line by line, so the decode benches have real id sequences to chew on.
-fn encode_lines(tokenizer: &PipelineTokenizer, data: &str) -> Vec<Vec<u32>> {
+fn encode_lines(tokenizer: &Tokenizer, data: &str) -> Vec<Vec<u32>> {
     let lines: Vec<&str> = data.lines().collect();
     tokenizer
         .encode(lines.as_slice(), &EncodeOptions::no_specials())
@@ -102,7 +102,7 @@ pub fn decode(c: &mut Criterion) {
         group.bench_function("decode_stream, short lines", |bencher| {
             bencher.iter(|| {
                 for line in stream_lines {
-                    let mut stream = PipelineDecodeStream::new(Vec::new(), false);
+                    let mut stream = DecodeStream::new(Vec::new(), false);
                     for &id in line {
                         black_box(stream.step(&tokenizer, &[id]).unwrap());
                     }
@@ -116,7 +116,7 @@ pub fn decode(c: &mut Criterion) {
         group.bench_function("decode_stream, long lines", |bencher| {
             bencher.iter(|| {
                 for line in stream_fused {
-                    let mut stream = PipelineDecodeStream::new(Vec::new(), false);
+                    let mut stream = DecodeStream::new(Vec::new(), false);
                     for &id in line {
                         black_box(stream.step(&tokenizer, &[id]).unwrap());
                     }

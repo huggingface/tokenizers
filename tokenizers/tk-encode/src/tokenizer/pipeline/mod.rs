@@ -8,16 +8,16 @@ use crate::models::unigram::{Unigram, UnigramScratch};
 #[cfg(feature = "wordlevel")]
 use crate::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
-use crate::models::wordpiece::{PipelineWordPiece, WordPieceScratch};
+use crate::models::wordpiece::{WordPiece, WordPieceScratch};
 pub use crate::pipeline::encode_options::EncodeOptions;
 pub use crate::pipeline::encode_options::Override;
 use crate::utils::truncation::truncate_pair;
 use crate::{
-    DecoderRuntime, PaddingParams, TruncationParams,
-    models::bpe::{BpeScratch, PipelineBPE},
+    Decoder, PaddingParams, TruncationParams,
+    models::bpe::{BPE, BpeScratch},
     pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
-    tokenizer::Decoder as _,
+    tokenizer::Decode as _,
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
 };
 #[cfg(feature = "parallelism")]
@@ -32,17 +32,15 @@ pub mod encode_options;
 mod parallel;
 mod scratch_pool;
 
-pub use scratch_pool::ModelScratch;
-
 pub use bitcannon::Span;
 
 mod normalizer;
 mod post_processor;
 mod pre_tokenizer;
 
-pub use normalizer::{Normalizer, NormalizerChain, PipelineNormalizer, normalize_all};
-pub use post_processor::{PipelinePostProcessor, Template};
-pub use pre_tokenizer::{PipelinePreTokenizer, PreTokenizer, PreTokenizerScratch};
+pub use normalizer::{Normalize, Normalizer, NormalizerChain, normalize_all};
+pub use post_processor::{PostProcessor, Template};
+pub use pre_tokenizer::{PreTokenize, PreTokenizer, PreTokenizerScratch};
 pub(crate) use pre_tokenizer::{split_delimiter, split_matches};
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
@@ -52,49 +50,49 @@ pub(crate) use pre_tokenizer::{split_delimiter, split_matches};
 /// both be outputed by the pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct PipelineToken(u32);
+pub struct Token(u32);
 
-impl PipelineToken {
+impl Token {
     /// The vocabulary id this token stands for.
     pub const fn id(self) -> u32 {
         self.0
     }
 
     pub const fn cast_slice(slice: &[Self]) -> &[u32] {
-        // SAFETY: `PipelineToken` is `repr(transparent)` over u32
+        // SAFETY: `Token` is `repr(transparent)` over u32
         unsafe { std::slice::from_raw_parts(slice.as_ptr().cast::<u32>(), slice.len()) }
     }
 }
 
-impl From<u32> for PipelineToken {
+impl From<u32> for Token {
     fn from(value: u32) -> Self {
         Self(value)
     }
 }
 
-impl From<PipelineToken> for u32 {
-    fn from(value: PipelineToken) -> Self {
+impl From<Token> for u32 {
+    fn from(value: Token) -> Self {
         value.0
     }
 }
 
 /// Compares a token against a bare id, so a caller can assert against `[u32]`
 /// without mapping the ids out first.
-impl PartialEq<u32> for PipelineToken {
+impl PartialEq<u32> for Token {
     fn eq(&self, id: &u32) -> bool {
         self.0 == *id
     }
 }
 
-impl PartialEq<PipelineToken> for u32 {
-    fn eq(&self, token: &PipelineToken) -> bool {
+impl PartialEq<Token> for u32 {
+    fn eq(&self, token: &Token) -> bool {
         *self == token.0
     }
 }
 
 /// Finds special/added tokens in a text segment so the pipeline can carve them
 /// out before running the model.
-pub trait PipelinePatternMatcher {
+pub trait PatternMatcher {
     /// Return the first special or added token in `input` as `Some(((start, end), id))`, where
     /// `start..end` is its byte range.
     ///
@@ -123,7 +121,7 @@ pub enum Segment<'a> {
 
 /// Splits `input` into [`Segment`]s, in order: runs of ordinary text
 /// ([`Segment::Text`]) interleaved with the special tokens
-/// ([`Segment::SpecialToken`]) matched by the [`PipelinePatternMatcher`].
+/// ([`Segment::SpecialToken`]) matched by the [`PatternMatcher`].
 ///
 /// ```ignore
 /// for segment in SpecialSegmentIterator::new(input, pattern_matcher, false, false) {
@@ -133,11 +131,11 @@ pub enum Segment<'a> {
 ///     }
 /// }
 /// ```
-pub struct SpecialSegmentIterator<'a, 'b, PatternMatcher: PipelinePatternMatcher> {
+pub struct SpecialSegmentIterator<'a, 'b, M: PatternMatcher> {
     /// The chunk of text from which we want to extract special tokens
     input: &'a str,
-    /// Implementor of [`PipelinePatternMatcher`] - the engine to match special tokens
-    pattern_matcher: &'b PatternMatcher,
+    /// Implementor of [`PatternMatcher`] - the engine to match special tokens
+    pattern_matcher: &'b M,
     /// Whether the input is normalized
     normalized: bool,
     /// [`EncodeOptions::encode_special_tokens`], forwarded to `extract_next` on every match
@@ -146,14 +144,12 @@ pub struct SpecialSegmentIterator<'a, 'b, PatternMatcher: PipelinePatternMatcher
     pending: Option<u32>,
 }
 
-impl<'a, 'b, PatternMatcher: PipelinePatternMatcher>
-    SpecialSegmentIterator<'a, 'b, PatternMatcher>
-{
+impl<'a, 'b, M: PatternMatcher> SpecialSegmentIterator<'a, 'b, M> {
     /// Create a new iterator over [`Segment`] of the [`input`].
     /// This iterator will yield [`Segment`] in order.
     pub fn new(
         input: &'a str,
-        pattern_matcher: &'b PatternMatcher,
+        pattern_matcher: &'b M,
         normalized: bool,
         encode_special_tokens: bool,
     ) -> Self {
@@ -168,9 +164,7 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher>
     }
 }
 
-impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
-    for SpecialSegmentIterator<'a, 'b, PatternMatcher>
-{
+impl<'a, 'b, M: PatternMatcher> Iterator for SpecialSegmentIterator<'a, 'b, M> {
     type Item = Segment<'a>;
 
     /// Get the next segment of the input.
@@ -218,11 +212,11 @@ impl<'a, 'b, PatternMatcher: PipelinePatternMatcher> Iterator
 
 struct TokenizerInner {
     added_vocabulary: BucketAddedVocabulary,
-    normalizers: Vec<PipelineNormalizer>,
-    pre_tokenizer: PipelinePreTokenizer,
-    model: PipelineModel,
-    post_processor: PipelinePostProcessor,
-    decoder: Option<DecoderRuntime>,
+    normalizers: Vec<Normalizer>,
+    pre_tokenizer: PreTokenizer,
+    model: Model,
+    post_processor: PostProcessor,
+    decoder: Option<Decoder>,
     /// Lowest id owned by the added vocabulary, or `u32::MAX` when there is none.
     /// Allows to skip the added vocabulary lookup if the token id is lower than this value.
     added_id_min: u32,
@@ -243,17 +237,17 @@ struct TokenizerInner {
 /// Experimental encode-only pipeline built from a [`Tokenizer`]. Runs the same
 /// stages over borrowed ranges to avoid the reference path's allocations.
 #[derive(Clone)]
-pub struct PipelineTokenizer {
+pub struct Tokenizer {
     inner: Arc<TokenizerInner>,
 }
 
-// comptime verification that PipelineTokenizer is Send + Sync
+// comptime verification that Tokenizer is Send + Sync
 const _: fn() = || {
     fn assert_send_sync<T: Send + Sync>() {}
-    assert_send_sync::<PipelineTokenizer>();
+    assert_send_sync::<Tokenizer>();
 };
 
-impl PipelineTokenizer {
+impl Tokenizer {
     /// This is the new "constructor" we expose.
     ///
     /// `added_vocabulary` must already have had its tokens replayed *against the concrete model and
@@ -262,11 +256,11 @@ impl PipelineTokenizer {
     #[allow(clippy::too_many_arguments)]
     pub fn from_parts(
         added_vocabulary: BucketAddedVocabulary,
-        normalizers: Vec<PipelineNormalizer>,
-        pre_tokenizer: PipelinePreTokenizer,
-        model: PipelineModel,
-        post_processor: PipelinePostProcessor,
-        decoder: Option<DecoderRuntime>,
+        normalizers: Vec<Normalizer>,
+        pre_tokenizer: PreTokenizer,
+        model: Model,
+        post_processor: PostProcessor,
+        decoder: Option<Decoder>,
         role_to_token: BTreeMap<String, String>,
         padding: Option<PaddingParams>,
         truncation: Option<TruncationParams>,
@@ -487,7 +481,7 @@ impl EncodeHandle {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Encoding {
-    pub(crate) ids: Vec<PipelineToken>,
+    pub(crate) ids: Vec<Token>,
     /// `None` if every token has type id 0
     pub(crate) type_ids: Option<Vec<u8>>,
     /// `None` if the encoding is not padded (mask is all ones)
@@ -504,7 +498,7 @@ impl Encoding {
     }
 
     pub fn new(
-        ids: Vec<PipelineToken>,
+        ids: Vec<Token>,
         type_ids: Option<Vec<u8>>,
         attention_mask: Option<Vec<u8>>,
     ) -> Self {
@@ -526,7 +520,7 @@ impl Encoding {
         self.ids.len()
     }
 
-    pub fn ids(&self) -> &[PipelineToken] {
+    pub fn ids(&self) -> &[Token] {
         &self.ids
     }
 
@@ -564,16 +558,16 @@ impl IntoIterator for EncodeHandle {
     }
 }
 
-impl PipelineTokenizer {
-    pub fn get_model(&self) -> &PipelineModel {
+impl Tokenizer {
+    pub fn get_model(&self) -> &Model {
         &self.inner.model
     }
 
-    pub fn get_pre_tokenizer(&self) -> &PipelinePreTokenizer {
+    pub fn get_pre_tokenizer(&self) -> &PreTokenizer {
         &self.inner.pre_tokenizer
     }
 
-    pub fn get_post_processor(&self) -> &PipelinePostProcessor {
+    pub fn get_post_processor(&self) -> &PostProcessor {
         &self.inner.post_processor
     }
 
@@ -581,12 +575,12 @@ impl PipelineTokenizer {
     ///
     /// This is for a writer, which needs the members themselves. A config `Sequence` was
     /// flattened on the way in, so what comes back is the concatenation, not the nesting.
-    pub fn get_normalizers(&self) -> &[PipelineNormalizer] {
+    pub fn get_normalizers(&self) -> &[Normalizer] {
         &self.inner.normalizers
     }
 
     /// The decoder, if the config declared one.
-    pub fn get_decoder(&self) -> Option<&DecoderRuntime> {
+    pub fn get_decoder(&self) -> Option<&Decoder> {
         self.inner.decoder.as_ref()
     }
 
@@ -733,8 +727,8 @@ impl PipelineTokenizer {
     /// Two instantiations, chosen here, so `add_special_tokens` is a constant inside.
     fn post_process(
         &self,
-        s1: Vec<PipelineToken>,
-        s2: Option<Vec<PipelineToken>>,
+        s1: Vec<Token>,
+        s2: Option<Vec<Token>>,
         options: &EncodeOptions,
     ) -> Result<Encoding> {
         let pp = &self.inner.post_processor;
@@ -766,7 +760,7 @@ impl PipelineTokenizer {
         offset: usize,
         options: &EncodeOptions,
         scratch: &mut EncodeScratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<Token>,
     ) -> Result<()> {
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(
@@ -777,7 +771,7 @@ impl PipelineTokenizer {
         ) {
             match segment {
                 Segment::SpecialToken(token) => {
-                    output.push(PipelineToken::from(token));
+                    output.push(Token::from(token));
                 }
                 Segment::Text {
                     text: chunk,
@@ -795,13 +789,13 @@ impl PipelineTokenizer {
                     ) {
                         match segment {
                             Segment::SpecialToken(token) => {
-                                output.push(PipelineToken::from(token));
+                                output.push(Token::from(token));
                             }
                             Segment::Text {
                                 text: normalized_chunk,
                                 ..
                             } => {
-                                // A [`Span`] holds `u32` offsets, which breaks the `PreTokenizer` contract the
+                                // A [`Span`] holds `u32` offsets, which breaks the `PreTokenize` contract the
                                 // `str::get_unchecked` below relies on.
                                 // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),
                                 // which is why this is checked here and not on `input`.
@@ -833,12 +827,12 @@ impl PipelineTokenizer {
                                         range.start <= range.end
                                             && normalized_chunk.is_char_boundary(range.start)
                                             && normalized_chunk.is_char_boundary(range.end),
-                                        "{:?} broke the PreTokenizer contract: emitted {pre_token:?} for {normalized_chunk:?}",
+                                        "{:?} broke the PreTokenize contract: emitted {pre_token:?} for {normalized_chunk:?}",
                                         self.inner.pre_tokenizer,
                                     );
                                 }
-                                // The whole span list at once; see Model::tokenize_spans.
-                                // SAFETY: `PreTokenizer` guarantees every span is a valid range of
+                                // The whole span list at once; see Tokenize::tokenize_spans.
+                                // SAFETY: `PreTokenize` guarantees every span is a valid range of
                                 // `normalized_chunk`, which is what lets the model slice it unchecked.
                                 self.inner.model.tokenize_spans(
                                     normalized_chunk,
@@ -862,7 +856,7 @@ impl PipelineTokenizer {
         offset: usize,
         options: &EncodeOptions,
         scratch: &mut EncodeScratch,
-    ) -> Result<Vec<PipelineToken>> {
+    ) -> Result<Vec<Token>> {
         let mut output = Vec::with_capacity(input.len() / 4);
         self.encode_sequence_into(input, offset, options, scratch, &mut output)?;
         Ok(output)
@@ -880,7 +874,7 @@ impl PipelineTokenizer {
         &self,
         input: &str,
         options: &EncodeOptions,
-        out: &mut Vec<PipelineToken>,
+        out: &mut Vec<Token>,
     ) -> Result<()> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         let template = self.inner.post_processor.single();
@@ -908,11 +902,11 @@ impl PipelineTokenizer {
     ///
     /// [`byte_level::transform_vocab`]: crate::utils::byte_level::transform_vocab
     pub fn decode(&self, ids: &[u32], skip_special_tokens: bool) -> Result<String> {
-        // Irrefutable in a `bpe`-only build, where `PipelineModel` has exactly one variant, and
+        // Irrefutable in a `bpe`-only build, where `Model` has exactly one variant, and
         // nightly lints a leading irrefutable pattern in a let chain. Nesting the `if` instead
         // would trade this for `collapsible_if` on every build that has more than one model.
         #[allow(irrefutable_let_patterns)]
-        if let PipelineModel::BPE(bpe) = &self.inner.model
+        if let Model::BPE(bpe) = &self.inner.model
             && bpe.is_byte_level()
         {
             return Ok(self.decode_byte_level(bpe, ids, skip_special_tokens));
@@ -925,12 +919,7 @@ impl PipelineTokenizer {
     }
 
     /// Decode for a byte-level BPE, whose vocab entries are already decoded raw bytes.
-    fn decode_byte_level(
-        &self,
-        bpe: &PipelineBPE,
-        ids: &[u32],
-        skip_special_tokens: bool,
-    ) -> String {
+    fn decode_byte_level(&self, bpe: &BPE, ids: &[u32], skip_special_tokens: bool) -> String {
         // Byte-level tokens average ~4 bytes
         let mut out: Vec<u8> = Vec::with_capacity(ids.len() * 4);
         for &id in ids {
@@ -977,7 +966,7 @@ impl PipelineTokenizer {
 /// An incomplete character decodes to U+FFFD (`�`), so a step returns `None` while the text
 /// ends with one.
 #[derive(Clone)]
-pub struct PipelineDecodeStream {
+pub struct DecodeStream {
     skip_special_tokens: bool,
     ids: Vec<u32>,
     /// The text of `ids[..prefix_index]`. Each decode of `ids` must start with it, and the
@@ -987,7 +976,7 @@ pub struct PipelineDecodeStream {
     prefix_index: usize,
 }
 
-impl PipelineDecodeStream {
+impl DecodeStream {
     /// Creates a stream that continues `prompt`.
     ///
     /// The first steps decode the prompt ids as context, but never return their text.
@@ -1004,7 +993,7 @@ impl PipelineDecodeStream {
     ///
     /// Returns `None` while the text ends with an incomplete character. Fails when the decode
     /// changes text that an earlier step already returned.
-    pub fn step(&mut self, tokenizer: &PipelineTokenizer, ids: &[u32]) -> Result<Option<String>> {
+    pub fn step(&mut self, tokenizer: &Tokenizer, ids: &[u32]) -> Result<Option<String>> {
         // `new` has no tokenizer, so the first step decodes the prompt.
         if self.prefix.is_empty() && !self.ids.is_empty() {
             let new_prefix = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
@@ -1037,14 +1026,15 @@ impl PipelineDecodeStream {
     }
 }
 
-pub trait Model {
-    type Scratch: ModelScratch;
+/// Turns pre-tokens into tokens. Every model (BPE, Unigram, WordPiece, WordLevel) implements it.
+pub trait Tokenize {
+    type Scratch;
 
-    fn tokenize_pipeline(
+    fn tokenize(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<Token>,
     ) -> Result<()>;
 
     /// Every pre-token of a chunk in one call.
@@ -1060,10 +1050,10 @@ pub trait Model {
         chunk: &str,
         spans: &[Span],
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<Token>,
     ) -> Result<()> {
         for span in spans {
-            self.tokenize_pipeline(&chunk[span.range()], scratch, output)?;
+            self.tokenize(&chunk[span.range()], scratch, output)?;
         }
         Ok(())
     }
@@ -1073,21 +1063,21 @@ pub trait Model {
 
 #[allow(
     clippy::large_enum_variant,
-    reason = "PipelineBPE holds a 1kB byte -> id lookup table"
+    reason = "BPE holds a 1kB byte -> id lookup table"
 )]
 #[non_exhaustive]
-pub enum PipelineModel {
-    BPE(PipelineBPE),
+pub enum Model {
+    BPE(BPE),
     #[cfg(feature = "unigram")]
     Unigram(Unigram),
     #[cfg(feature = "wordlevel")]
     WordLevel(WordLevel),
     #[cfg(feature = "wordpiece")]
-    WordPiece(PipelineWordPiece),
+    WordPiece(WordPiece),
 }
 
-impl PipelineModel {
-    /// `id -> token` used by [`PipelineTokenizer::decode`]
+impl Model {
+    /// `id -> token` used by [`Tokenizer::decode`]
     pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         match self {
             Self::BPE(model) => model.id_to_token(id),
@@ -1138,33 +1128,33 @@ impl PipelineModel {
 }
 
 /// A set of buffers and other state the model needs to encode efficiently,
-/// reused among calls to [`PipelineTokenizer::encode`].
+/// reused among calls to [`Tokenizer::encode`].
 ///
 /// Each model gets its own variant.
-impl Model for PipelineModel {
-    type Scratch = PipelineModelScratch;
+impl Tokenize for Model {
+    type Scratch = ModelScratch;
 
-    fn tokenize_pipeline(
+    fn tokenize(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<Token>,
     ) -> Result<()> {
         match (self, scratch) {
-            (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
-                model.tokenize_pipeline(sequence, scratch, output)
+            (Self::BPE(model), ModelScratch::BPE(scratch)) => {
+                model.tokenize(sequence, scratch, output)
             }
             #[cfg(feature = "unigram")]
-            (Self::Unigram(model), PipelineModelScratch::Unigram(scratch)) => {
-                model.tokenize_pipeline(sequence, scratch, output)
+            (Self::Unigram(model), ModelScratch::Unigram(scratch)) => {
+                model.tokenize(sequence, scratch, output)
             }
             #[cfg(feature = "wordlevel")]
-            (Self::WordLevel(model), PipelineModelScratch::WordLevel(scratch)) => {
-                model.tokenize_pipeline(sequence, scratch, output)
+            (Self::WordLevel(model), ModelScratch::WordLevel(scratch)) => {
+                model.tokenize(sequence, scratch, output)
             }
             #[cfg(feature = "wordpiece")]
-            (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
-                model.tokenize_pipeline(sequence, scratch, output)
+            (Self::WordPiece(model), ModelScratch::WordPiece(scratch)) => {
+                model.tokenize(sequence, scratch, output)
             }
             _ => unreachable!(),
         }
@@ -1175,22 +1165,22 @@ impl Model for PipelineModel {
         chunk: &str,
         spans: &[Span],
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<Token>,
     ) -> Result<()> {
         match (self, scratch) {
-            (Self::BPE(model), PipelineModelScratch::BPE(scratch)) => {
+            (Self::BPE(model), ModelScratch::BPE(scratch)) => {
                 model.tokenize_spans(chunk, spans, scratch, output)
             }
             #[cfg(feature = "unigram")]
-            (Self::Unigram(model), PipelineModelScratch::Unigram(scratch)) => {
+            (Self::Unigram(model), ModelScratch::Unigram(scratch)) => {
                 model.tokenize_spans(chunk, spans, scratch, output)
             }
             #[cfg(feature = "wordlevel")]
-            (Self::WordLevel(model), PipelineModelScratch::WordLevel(scratch)) => {
+            (Self::WordLevel(model), ModelScratch::WordLevel(scratch)) => {
                 model.tokenize_spans(chunk, spans, scratch, output)
             }
             #[cfg(feature = "wordpiece")]
-            (Self::WordPiece(model), PipelineModelScratch::WordPiece(scratch)) => {
+            (Self::WordPiece(model), ModelScratch::WordPiece(scratch)) => {
                 model.tokenize_spans(chunk, spans, scratch, output)
             }
             _ => unreachable!(),
@@ -1199,7 +1189,7 @@ impl Model for PipelineModel {
 
     fn init_scratch(&self) -> Self::Scratch {
         match self {
-            Self::BPE(bpe) => PipelineModelScratch::BPE(bpe.init_scratch()),
+            Self::BPE(bpe) => ModelScratch::BPE(bpe.init_scratch()),
             #[cfg(feature = "wordlevel")]
             Self::WordLevel(_) => Self::Scratch::WordLevel(()),
             #[cfg(feature = "wordpiece")]
@@ -1212,7 +1202,7 @@ impl Model for PipelineModel {
 
 #[derive(Default)]
 #[non_exhaustive]
-pub enum PipelineModelScratch {
+pub enum ModelScratch {
     BPE(BpeScratch),
     #[cfg(feature = "wordlevel")]
     WordLevel(()),
@@ -1225,8 +1215,6 @@ pub enum PipelineModelScratch {
     None,
 }
 
-impl ModelScratch for PipelineModelScratch {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1236,7 +1224,7 @@ mod tests {
     use crate::vocab::bucket_added_vocabulary::AddedToken;
 
     struct FixedMatcher(Vec<((usize, usize), u32)>);
-    impl PipelinePatternMatcher for FixedMatcher {
+    impl PatternMatcher for FixedMatcher {
         fn extract_next(
             &self,
             _bytes: &[u8],
@@ -1406,7 +1394,7 @@ mod tests {
         }
     }
 
-    fn encode_six_tokens(pipeline: &PipelineTokenizer, options: &EncodeOptions) -> Encoding {
+    fn encode_six_tokens(pipeline: &Tokenizer, options: &EncodeOptions) -> Encoding {
         pipeline
             .encode(SIX_TOKENS, options)
             .wait()
@@ -1446,7 +1434,7 @@ mod tests {
     #[test]
     fn configured_truncation_runs_before_configured_padding() {
         let pipeline = hello_pipeline_with(
-            PipelinePostProcessor::default(),
+            PostProcessor::default(),
             Some(pad_to(8)),
             Some(truncate_to(2)),
         );
@@ -1509,7 +1497,7 @@ mod tests {
     #[test]
     fn padding_off_keeps_the_configured_truncation() {
         let pipeline = hello_pipeline_with(
-            PipelinePostProcessor::default(),
+            PostProcessor::default(),
             Some(pad_to(8)),
             Some(truncate_to(2)),
         );
@@ -1524,7 +1512,7 @@ mod tests {
     #[test]
     fn truncation_off_keeps_the_configured_padding() {
         let pipeline = hello_pipeline_with(
-            PipelinePostProcessor::default(),
+            PostProcessor::default(),
             Some(pad_to(8)),
             Some(truncate_to(2)),
         );
@@ -1714,7 +1702,7 @@ mod tests {
     #[test]
     fn test_empty_template() {
         let pipeline = pipeline_with(
-            PipelinePostProcessor::default(),
+            PostProcessor::default(),
             truncation(3, TruncationStrategy::LongestFirst),
         );
 
@@ -1730,7 +1718,7 @@ mod tests {
     #[test]
     fn test_template_type_ids() {
         let pipeline = pipeline_with(
-            PipelinePostProcessor::new(
+            PostProcessor::new(
                 Template {
                     a_type_id: 1,
                     ..Template::default()
@@ -1756,7 +1744,7 @@ mod tests {
     // no assertion on the ids can catch.
     #[test]
     fn test_fast_path_buffer() {
-        let pipeline = pipeline_with(PipelinePostProcessor::default(), None);
+        let pipeline = pipeline_with(PostProcessor::default(), None);
         let sequence = tokens(1..=8);
         let address = sequence.as_ptr();
 
@@ -1773,7 +1761,7 @@ mod tests {
     #[test]
     fn test_encode_into() {
         let pipeline = pipeline_with(
-            PipelinePostProcessor::default(),
+            PostProcessor::default(),
             truncation(2, TruncationStrategy::LongestFirst),
         );
         let mut out = Vec::new();
@@ -1793,8 +1781,8 @@ mod tests {
     const CLS: u32 = 101;
     const SEP: u32 = 102;
 
-    fn tokens(sequence_ids: impl IntoIterator<Item = u32>) -> Vec<PipelineToken> {
-        sequence_ids.into_iter().map(PipelineToken::from).collect()
+    fn tokens(sequence_ids: impl IntoIterator<Item = u32>) -> Vec<Token> {
+        sequence_ids.into_iter().map(Token::from).collect()
     }
 
     fn ids(encoding: &Encoding) -> Vec<u32> {
@@ -1802,8 +1790,8 @@ mod tests {
     }
 
     /// `[CLS] $A [SEP]` and `[CLS] $A [SEP] $B:1 [SEP]:1`, the arrangement BERT's config declares.
-    fn bert_post_processor() -> PipelinePostProcessor {
-        PipelinePostProcessor::new(
+    fn bert_post_processor() -> PostProcessor {
+        PostProcessor::new(
             Template {
                 prefix: Box::new([(CLS.into(), 0)]),
                 suffix: Box::new([(SEP.into(), 0)]),
@@ -1829,22 +1817,22 @@ mod tests {
     }
 
     fn pipeline_with(
-        post_processor: PipelinePostProcessor,
+        post_processor: PostProcessor,
         truncation: Option<TruncationParams>,
-    ) -> PipelineTokenizer {
+    ) -> Tokenizer {
         hello_pipeline_with(post_processor, None, truncation)
     }
 
     fn hello_pipeline_with(
-        post_processor: PipelinePostProcessor,
+        post_processor: PostProcessor,
         padding: Option<PaddingParams>,
         truncation: Option<TruncationParams>,
-    ) -> PipelineTokenizer {
-        PipelineTokenizer::from_parts(
+    ) -> Tokenizer {
+        Tokenizer::from_parts(
             BucketAddedVocabulary::new(),
             Vec::new(),
-            PipelinePreTokenizer::None,
-            PipelineModel::BPE(hello_bpe()),
+            PreTokenizer::None,
+            Model::BPE(hello_bpe()),
             post_processor,
             None,
             Default::default(),
@@ -1870,15 +1858,15 @@ mod tests {
                 [AddedToken::from("<s>", true)],
                 8,
                 |_| None,
-                None::<&PipelineNormalizer>,
+                None::<&Normalizer>,
             )
             .unwrap();
-        let pipeline = PipelineTokenizer::from_parts(
+        let pipeline = Tokenizer::from_parts(
             added,
             Vec::new(),
-            PipelinePreTokenizer::None,
-            PipelineModel::BPE(hello_bpe()),
-            PipelinePostProcessor::default(),
+            PreTokenizer::None,
+            Model::BPE(hello_bpe()),
+            PostProcessor::default(),
             None,
             Default::default(),
             None,
@@ -1926,7 +1914,7 @@ mod tests {
         let byte_atoms: Vocab = (0..=255u8)
             .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
             .collect();
-        let bpe = PipelineBPE::from_config(BpeConfig {
+        let bpe = BPE::from_config(BpeConfig {
             vocab: byte_atoms,
             byte_level: true,
             ..BpeConfig::default()
@@ -1941,15 +1929,15 @@ mod tests {
                 ],
                 256,
                 |_| None,
-                None::<&PipelineNormalizer>,
+                None::<&Normalizer>,
             )
             .unwrap();
-        let pipeline = PipelineTokenizer::from_parts(
+        let pipeline = Tokenizer::from_parts(
             added,
             Vec::new(),
-            PipelinePreTokenizer::None,
-            PipelineModel::BPE(bpe),
-            PipelinePostProcessor::default(),
+            PreTokenizer::None,
+            Model::BPE(bpe),
+            PostProcessor::default(),
             None,
             Default::default(),
             None,
@@ -1968,7 +1956,7 @@ mod tests {
         assert_eq!(pipeline.decode(&[7, 4], false).unwrap(), "hello he");
     }
 
-    fn hello_bpe() -> PipelineBPE {
+    fn hello_bpe() -> BPE {
         use crate::models::bpe::{BpeConfig, Merges, Vocab};
 
         let vocab: Vocab = [
@@ -1990,7 +1978,7 @@ mod tests {
             ("hel".to_string(), "l".to_string()),
             ("hell".to_string(), "o".to_string()),
         ];
-        PipelineBPE::from_config(BpeConfig {
+        BPE::from_config(BpeConfig {
             vocab,
             merges,
             ..BpeConfig::default()
@@ -1998,26 +1986,26 @@ mod tests {
         .unwrap()
     }
 
-    fn hello_pipeline() -> PipelineTokenizer {
-        hello_pipeline_with(PipelinePostProcessor::default(), None, None)
+    fn hello_pipeline() -> Tokenizer {
+        hello_pipeline_with(PostProcessor::default(), None, None)
     }
 
-    fn hello_pipeline_with_special(content: &str) -> PipelineTokenizer {
+    fn hello_pipeline_with_special(content: &str) -> Tokenizer {
         let mut added_vocabulary = BucketAddedVocabulary::new();
         added_vocabulary
             .add_tokens(
                 [AddedToken::from(content, true)],
                 8,
                 |_| None,
-                None::<&PipelineNormalizer>,
+                None::<&Normalizer>,
             )
             .unwrap();
-        PipelineTokenizer::from_parts(
+        Tokenizer::from_parts(
             added_vocabulary,
             Vec::new(),
-            PipelinePreTokenizer::None,
-            PipelineModel::BPE(hello_bpe()),
-            PipelinePostProcessor::default(),
+            PreTokenizer::None,
+            Model::BPE(hello_bpe()),
+            PostProcessor::default(),
             None,
             Default::default(),
             None,
@@ -2025,11 +2013,11 @@ mod tests {
         )
     }
 
-    fn hello_pipeline_with_padding(padding: PaddingParams) -> PipelineTokenizer {
-        hello_pipeline_with(PipelinePostProcessor::default(), Some(padding), None)
+    fn hello_pipeline_with_padding(padding: PaddingParams) -> Tokenizer {
+        hello_pipeline_with(PostProcessor::default(), Some(padding), None)
     }
 
-    fn hello_pipeline_with_truncation(truncation: TruncationParams) -> PipelineTokenizer {
-        hello_pipeline_with(PipelinePostProcessor::default(), None, Some(truncation))
+    fn hello_pipeline_with_truncation(truncation: TruncationParams) -> Tokenizer {
+        hello_pipeline_with(PostProcessor::default(), None, Some(truncation))
     }
 }

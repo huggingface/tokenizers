@@ -1,5 +1,5 @@
-//! The normalizer half of the pipeline: the [`Normalizer`] trait, the
-//! [`PipelineNormalizer`] enum of concrete steps, and the chain that runs them.
+//! The normalizer half of the pipeline: the [`Normalize`] trait, the
+//! [`Normalizer`] enum of concrete steps, and the chain that runs them.
 
 use std::borrow::Cow;
 
@@ -16,16 +16,17 @@ use crate::normalizers::{
 };
 use crate::tokenizer::Result;
 
-pub trait Normalizer {
+/// Rewrites a text before it is split into pre-tokens. Every normalizer implements it.
+pub trait Normalize {
     /// `offset` is where `input` starts in its sequence, in bytes. It is 0 when `input` opens the
     /// sequence, which is what `Metaspace` with `prepend: "first"` acts on.
     fn normalize<'a>(&self, input: &'a str, offset: usize) -> Result<Cow<'a, str>>;
 }
 
-/// One normalization step of a [`PipelineTokenizer`].
+/// One normalization step of a [`Tokenizer`].
 #[derive(Debug)]
 #[non_exhaustive]
-pub enum PipelineNormalizer {
+pub enum Normalizer {
     /// This used to be a pretokenizer, it makes more sense as a normalizer.
     Metaspace(MetaspaceNormalizer),
     Replace(Replace),
@@ -52,7 +53,7 @@ pub enum PipelineNormalizer {
 }
 
 // This replaces the previous normalizer sequence.
-pub struct NormalizerChain<'a>(pub &'a [PipelineNormalizer]);
+pub struct NormalizerChain<'a>(pub &'a [Normalizer]);
 
 /// Runs `normalizers` in order, each one seeing what the one before it produced.
 ///
@@ -63,7 +64,7 @@ pub struct NormalizerChain<'a>(pub &'a [PipelineNormalizer]);
 /// The next normalizer may hand back a borrow of that locally owned [`String`], and that borrow cannot outlive the `String`.
 ///
 /// Text no normalizer touches is never copied: it stays a borrow of `input` throughout.
-pub fn normalize_all<'a, N: Normalizer>(
+pub fn normalize_all<'a, N: Normalize>(
     normalizers: &[N],
     input: &'a str,
     offset: usize,
@@ -89,13 +90,13 @@ pub fn normalize_all<'a, N: Normalizer>(
     Ok(cow)
 }
 
-impl Normalizer for NormalizerChain<'_> {
+impl Normalize for NormalizerChain<'_> {
     fn normalize<'a>(&self, input: &'a str, offset: usize) -> Result<Cow<'a, str>> {
         normalize_all(self.0, input, offset)
     }
 }
 
-impl Normalizer for PipelineNormalizer {
+impl Normalize for Normalizer {
     fn normalize<'a>(&self, input: &'a str, offset: usize) -> Result<Cow<'a, str>> {
         match self {
             Self::Metaspace(normalizer) => normalizer.normalize(input, offset),

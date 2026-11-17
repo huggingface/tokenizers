@@ -25,7 +25,7 @@ impl Default for Digits {
 
 // SAFETY: the spans come from an `bitcannon` fsm, which splits only at character boundaries of `text`.
 // See `bitcannon` docs.
-unsafe impl pipeline::PreTokenizer for Digits {
+unsafe impl pipeline::PreTokenize for Digits {
     fn pre_tokenize(
         &self,
         text: &str,
@@ -58,7 +58,7 @@ mod tests {
         let pretok = Digits::new(individual_digits);
         let mut splits = Vec::new();
         let mut scratch = PreTokenizerScratch::default();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+        crate::pipeline::PreTokenize::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
             .unwrap();
         splits
             .iter()

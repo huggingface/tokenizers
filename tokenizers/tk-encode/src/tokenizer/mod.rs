@@ -1,13 +1,13 @@
 //! Represents a tokenization pipeline.
 //!
-//! The components a [`pipeline::PipelineTokenizer`] is built out of. Normalization,
+//! The components a [`pipeline::Tokenizer`] is built out of. Normalization,
 //! pre-tokenization and post-processing are defined by the traits in [`pipeline`]; what stays here
 //! is the input/output vocabulary they are written against.
 
 pub mod pattern;
 pub mod pipeline;
 
-pub use crate::decoders::{Decoder, DecoderRuntime};
+pub use crate::decoders::{Decode, Decoder};
 pub use crate::utils::padding::{PaddingDirection, PaddingParams, PaddingStrategy, pad_encodings};
 pub use crate::utils::truncation::{
     TruncationDirection, TruncationParams, TruncationStrategy, truncate_pair,

@@ -32,7 +32,7 @@ fn config<'a>(overrides: &'a [(&'a str, &'a str)]) -> String {
     )
 }
 
-/// The message from a config the reader must refuse. Not `unwrap_err`: `PipelineTokenizer` has no
+/// The message from a config the reader must refuse. Not `unwrap_err`: `Tokenizer` has no
 /// `Debug`, which is what that would need on the `Ok` side.
 fn read_err(text: &str) -> String {
     match from_json(text) {
@@ -303,7 +303,7 @@ fn byte_level_is_a_model_field_not_a_pre_tokenizer() {
     )]);
     let doc = Json::parse(&json).unwrap();
     let pretok = read_pre_tokenizer(doc.field("pre_tokenizer")).unwrap();
-    assert!(matches!(pretok, PipelinePreTokenizer::None));
+    assert!(matches!(pretok, PreTokenizer::None));
     assert_eq!(ids(&json, "abab"), vec![3]);
     assert_eq!(ids(&json, "ab-ab"), vec![3]);
 }

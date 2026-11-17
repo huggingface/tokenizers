@@ -9,7 +9,7 @@ use crate::models::bpe::convert::Affixes;
 use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_with_queue};
 use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
-use crate::pipeline::{self, PipelineToken, Span};
+use crate::pipeline::{self, Span, Token};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, char_to_byte};
 use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
@@ -46,12 +46,12 @@ fn content_start(bytes: &[u8]) -> usize {
     }
 }
 
-// The fused cache probe stores ids straight at a `*mut u32` pointing into the `Vec<PipelineToken>`
+// The fused cache probe stores ids straight at a `*mut u32` pointing into the `Vec<Token>`
 // the caller is filling. That is only sound while a token is layout-identical to its id.
-const _: () = assert!(size_of::<PipelineToken>() == size_of::<u32>());
-const _: () = assert!(align_of::<PipelineToken>() == align_of::<u32>());
+const _: () = assert!(size_of::<Token>() == size_of::<u32>());
+const _: () = assert!(align_of::<Token>() == align_of::<u32>());
 
-pub struct PipelineBPE {
+pub struct BPE {
     pub(super) atoms: Atoms,
     pub(super) tables: BpeTables,
     pub(super) affixes: Option<Affixes>,
@@ -61,7 +61,7 @@ pub struct PipelineBPE {
     pub(super) cache_capacity: Option<usize>,
 }
 
-// A `PipelineBPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
+// A `BPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
 #[allow(clippy::large_enum_variant)]
 pub(super) enum Atoms {
     /// The atoms are the 256 bytes; the symbol for each lives in `BpeTables::byte_internal`.
@@ -73,7 +73,7 @@ pub(super) enum Atoms {
     },
 }
 
-impl PipelineBPE {
+impl BPE {
     /// True when this model was built with `byte_level`, which means
     /// [`byte_level::transform_vocab`] already turned every vocabulary entry into its
     /// **decoded raw bytes** at load time. Decoding is then a concatenation, and running a
@@ -202,16 +202,14 @@ pub struct BpeScratch {
     pub(crate) word_cache: Option<WordCache>,
 }
 
-impl pipeline::ModelScratch for BpeScratch {}
-
-impl pipeline::Model for PipelineBPE {
+impl pipeline::Tokenize for BPE {
     type Scratch = BpeScratch;
 
-    fn tokenize_pipeline(
+    fn tokenize(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<Token>,
     ) -> Result<()> {
         if sequence.is_empty() {
             return Ok(());
@@ -231,7 +229,7 @@ impl pipeline::Model for PipelineBPE {
         let insert_at = if let Some(cache) = word_cache.as_mut() {
             match cache.lookup_keyed(key, hash) {
                 Lookup::Hit(ids) => {
-                    output.extend(ids.iter().copied().map(PipelineToken::from));
+                    output.extend(ids.iter().copied().map(Token::from));
                     return Ok(());
                 }
                 Lookup::Miss(at) => Some(at),
@@ -241,7 +239,7 @@ impl pipeline::Model for PipelineBPE {
         };
 
         if let Some(id) = self.fold_id_keyed(key, hash) {
-            output.push(PipelineToken::from(id));
+            output.push(Token::from(id));
             if let Some(cache) = word_cache.as_mut()
                 && let Some(at) = insert_at
             {
@@ -256,7 +254,7 @@ impl pipeline::Model for PipelineBPE {
         output.extend(
             symbols
                 .iter()
-                .map(|&symbol| PipelineToken::from(self.tables.unmap.at(symbol as usize))),
+                .map(|&symbol| Token::from(self.tables.unmap.at(symbol as usize))),
         );
         if let Some(cache) = word_cache.as_mut()
             && let Some(at) = insert_at
@@ -269,7 +267,7 @@ impl pipeline::Model for PipelineBPE {
 
     /// Every pre-token of a chunk in one call.
     ///
-    /// Same work per word as [`Self::tokenize_pipeline`]; what changes is what is *not* repeated.
+    /// Same work per word as [`Self::tokenize`]; what changes is what is *not* repeated.
     /// The scratch is destructured once instead of once per word, the output is grown once for the
     /// whole batch instead of being capacity-checked on every push, and the virtual call, the
     /// slice and the `Result` happen once per chunk rather than once per pre-token.
@@ -278,7 +276,7 @@ impl pipeline::Model for PipelineBPE {
         chunk: &str,
         spans: &[Span],
         scratch: &mut Self::Scratch,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<Token>,
     ) -> Result<()> {
         let BpeScratch {
             symbols,
@@ -352,7 +350,7 @@ impl pipeline::Model for PipelineBPE {
                     ProbeEmit::Hit(ids) => {
                         // SAFETY: `cursor` counts what has been written so far.
                         unsafe { output.set_len(cursor) };
-                        output.extend(ids.iter().map(|&id| PipelineToken::from(id)));
+                        output.extend(ids.iter().map(|&id| Token::from(id)));
                         cursor = output.len();
                         capacity = output.capacity();
                         // SAFETY: `cursor == output.len()`, inside the (possibly moved) allocation.
@@ -367,7 +365,7 @@ impl pipeline::Model for PipelineBPE {
             // probe, which beats running the merge engine for it.
             if let Some(id) = self.fold_id_keyed(key, hash) {
                 // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
-                unsafe { dst.write(PipelineToken::from(id)) };
+                unsafe { dst.write(Token::from(id)) };
                 cursor += 1;
                 // SAFETY: one id written, and the capacity check reserved MAX_INLINE_IDS >= 1.
                 dst = unsafe { dst.add(1) };
@@ -387,7 +385,7 @@ impl pipeline::Model for PipelineBPE {
             output.extend(
                 symbols
                     .iter()
-                    .map(|&symbol| PipelineToken::from(self.tables.unmap.at(symbol as usize))),
+                    .map(|&symbol| Token::from(self.tables.unmap.at(symbol as usize))),
             );
             if let Some(cache) = cache_slot.as_deref_mut()
                 && let Some(at) = placement

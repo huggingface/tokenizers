@@ -8,7 +8,7 @@ canonical `tokenizer.json` upgrade, 1,207 lines whose only dependencies are `std
 `serde_json` and a `thiserror` derive on `ConvertError`. Everything else in that crate —
 `Tokenizer`, `TokenizerImpl`, `TokenizerBuilder`, the five wrapper enums, the config models,
 `added_vocabulary.rs`, `lowering.rs` — is deleted, 9,369 lines of the crate's 12,979. The runtime is
-`tk_encode::pipeline::PipelineTokenizer`; the reader is `tk-serialize`.
+`tk_encode::pipeline::Tokenizer`; the reader is `tk-serialize`.
 
 The crate's dependency graph goes with it: `tk-convert` no longer depends on `tk-encode`, nor on
 `serde`, `ahash`, `daachorse`, `dary_heap`, `rand`, `regex`, `log` or `paste`. `cargo tree
@@ -31,7 +31,7 @@ Test count across `cargo test --workspace`: **544 → 373 passing**, 32 → 19 s
 
 ## 1. An authoring surface (the setters)
 
-**What breaks:** the Python bindings. `PipelineTokenizer` has **0** setters — it is read-only. The
+**What breaks:** the Python bindings. `Tokenizer` has **0** setters — it is read-only. The
 bindings hold config wrapper enums in **195** places:
 
 | type | references in `bindings/` |
@@ -70,12 +70,12 @@ tokenizer, so until they run again those are untested.
 For the **benches** it is not: they are not coming back in this shape. The cross-engine benchmarks
 live in [tokbench](https://github.com/huggingface/tokbench), and what stays in-tree is two criterion
 files against the pipeline (`tk-serialize/benches/{encode,decode}.rs`) — the only crate that can
-build a `PipelineTokenizer`. Nothing about them waits on the builder.
+build a `Tokenizer`. Nothing about them waits on the builder.
 
 ## 2. Trainers
 
 **Done.** `tk-train` is a workspace member again, and its trainers build pipeline models directly
-(`PipelineBPE`, `Unigram`, `WordPiece`, `WordLevel`). The `tokenizers` crate re-exports it behind
+(`BPE`, `Unigram`, `WordPiece`, `WordLevel`). The `tokenizers` crate re-exports it behind
 the `train` feature, which is off by default. The model features (`bpe`, `unigram`, `wordpiece`,
 `wordlevel`) pick which trainers compile, and the opt-in `esaxx_fast` switches Unigram training to
 the C++ suffix array.
@@ -148,7 +148,7 @@ done; what is missing is only that both files sit behind the non-default `bench-
     cargo test -p tk-convert --features bench-baseline --test pipeline_decode_oracle
 
 Promoting them into the default gate needs the released crate to become a non-optional dev-dependency,
-and `pipeline_decode_oracle`'s `bert_wiki` is a known deliberate failure (`PipelineWordPiece` has no
+and `pipeline_decode_oracle`'s `bert_wiki` is a known deliberate failure (`WordPiece` has no
 id→token direction), so that has to land first.
 
 **One decode-oracle test did die:** `non_special_added_token_survives_skip`, which added the same
@@ -189,7 +189,7 @@ Everything above is dropped but recoverable from code still in the tree. These a
 | `tk-convert/tests/lowering.rs` | 707 | 26 tests of `lowering.rs`, the config→pipeline lowering. There is no config to lower. |
 | `tk-convert/tests/lowering_pre_tokenizers.rs` | 584 | 18 tests of `to_normalizer_and_split` over `PreTokenizerWrapper`. |
 | `tk-convert/tests/bpe_pipeline_oracle.rs` | 221 | 6 tests whose *oracle* was the legacy engine — "the legacy engine is the oracle: it is the code main runs". The oracle itself is deleted, so this is not repointable the way §7's two are. Its coverage (10 corpora × 4 BPE models, incl. llama-2's non-byte-level `Atoms::Chars` path and the unsafe-to-batch merges the `SAFE` flag exists for) is the largest single verification loss of the strip, and `pipeline_oracle.rs` does not replace it: that one runs 9 configs over fixture windows, not 400 kB per corpus. |
-| `tk-convert/benches/bpe_model_benchmark.rs` | 321 | Benched `ModelWrapper` and the config-shaped `BPE` against `PipelineModel`. Both operands are half gone. |
+| `tk-convert/benches/bpe_model_benchmark.rs` | 321 | Benched `ModelWrapper` and the config-shaped `BPE` against `Model`. Both operands are half gone. |
 
 `tk-convert/src/**` beyond `convert.rs` — 63 unit tests across the wrapper enums, the config `BPE`
 (`models/bpe/tests.rs` alone had 25, including the `legacy_parity` set pinning the two BPE engines

@@ -1,4 +1,4 @@
-//! The decoder a [`PipelineTokenizer`](crate::pipeline::PipelineTokenizer) actually holds.
+//! The decoder a [`Tokenizer`](crate::pipeline::Tokenizer) actually holds.
 use crate::decoders::bpe::BPEDecoder;
 use crate::decoders::byte_fallback::ByteFallback;
 use crate::decoders::byte_level::ByteLevelDecoder;
@@ -8,24 +8,24 @@ use crate::decoders::metaspace::MetaspaceDecoder;
 use crate::decoders::replace::ReplaceDecoder;
 use crate::decoders::strip::Strip;
 use crate::decoders::wordpiece::WordPiece;
-use crate::{Decoder, Result};
+use crate::{Decode, Result};
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
-pub enum DecoderRuntime {
+pub enum Decoder {
     BPE(BPEDecoder),
     ByteLevel(ByteLevelDecoder),
     WordPiece(WordPiece),
     Metaspace(MetaspaceDecoder),
     CTC(CTC),
-    Sequence(Vec<DecoderRuntime>),
+    Sequence(Vec<Decoder>),
     Replace(ReplaceDecoder),
     Fuse(Fuse),
     Strip(Strip),
     ByteFallback(ByteFallback),
 }
 
-impl Decoder for DecoderRuntime {
+impl Decode for Decoder {
     fn decode_chain(&self, mut tokens: Vec<String>) -> Result<Vec<String>> {
         match self {
             Self::BPE(bpe) => bpe.decode_chain(tokens),

@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::parallelism::pool;
 use crate::pipeline::scratch_pool::{EncodeScratch, ScratchGuard};
 use crate::pipeline::{
-    EncodeHandle, EncodeOptions, Encoding, Input, Inputs, PipelineToken, PipelineTokenizer,
-    Segment, SpecialSegmentIterator,
+    EncodeHandle, EncodeOptions, Encoding, Input, Inputs, Segment, SpecialSegmentIterator, Token,
+    Tokenizer,
 };
 
 /// Which half of an [`Input::Pair`] a chunk was cut from. [`Input::Single`] is all `A`.
@@ -70,7 +70,7 @@ impl<T> Slot<T> {
     }
 }
 
-type ChunkResult = Slot<Result<Vec<PipelineToken>>>;
+type ChunkResult = Slot<Result<Vec<Token>>>;
 /// SAFETY: we make sure each chunk's result is set by only one given thread thanks to
 /// [`EncodeBatch::next_task`]
 unsafe impl Sync for ChunkResult {}
@@ -117,7 +117,7 @@ struct EncodeBatch {
     cancelled: AtomicBool,
     /// Cursor for threads to pick up the next task (group of sequence chunks) to work on
     next_task: CachePadded<AtomicUsize>,
-    tokenizer: PipelineTokenizer,
+    tokenizer: Tokenizer,
     options: EncodeOptions,
     /// Completion queue containing the list of chunks (inserted as their sequence idx) that have finished, in completion order
     /// This enables us to track the number of remaining chunks, to know when we can return a result
@@ -273,7 +273,7 @@ impl Drop for StreamingIter {
     }
 }
 
-fn drain(results: &[ChunkResult]) -> Result<Vec<PipelineToken>> {
+fn drain(results: &[ChunkResult]) -> Result<Vec<Token>> {
     if let [only] = results {
         return only
             .take()
@@ -294,7 +294,7 @@ fn drain(results: &[ChunkResult]) -> Result<Vec<PipelineToken>> {
     Ok(out.concat())
 }
 
-impl PipelineTokenizer {
+impl Tokenizer {
     fn get_scratch(&self) -> ScratchGuard<'_> {
         self.inner.scratch_pool.get(&self.inner.model)
     }
@@ -330,7 +330,7 @@ impl PipelineTokenizer {
             let idx = seq_outputs.len();
             let (segment, offset) = match segment {
                 Segment::SpecialToken(id) => {
-                    let token = PipelineToken::from(id);
+                    let token = Token::from(id);
                     seq_outputs.push(ChunkResult::new(Some(Ok(vec![token]))));
                     continue;
                 }
@@ -439,11 +439,7 @@ impl PipelineTokenizer {
     }
 }
 
-pub(crate) fn encode(
-    tok: &PipelineTokenizer,
-    inputs: Inputs,
-    options: &EncodeOptions,
-) -> EncodeHandle {
+pub(crate) fn encode(tok: &Tokenizer, inputs: Inputs, options: &EncodeOptions) -> EncodeHandle {
     if inputs.size_bytes() < PARALLEL_MIN_BYTES {
         return EncodeHandle::blocking(
             tok.encode_serial(inputs, options),

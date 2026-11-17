@@ -1,30 +1,30 @@
-use crate::pipeline::{self, PipelinePreTokenizer};
+use crate::pipeline::{self, PreTokenizer};
 use crate::tokenizer::Result;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct PipelineSequence {
-    pre_tokenizers: Vec<PipelinePreTokenizer>,
+pub struct Sequence {
+    pre_tokenizers: Vec<PreTokenizer>,
 }
 
-impl PipelineSequence {
-    pub fn new(pre_tokenizers: Vec<PipelinePreTokenizer>) -> Self {
+impl Sequence {
+    pub fn new(pre_tokenizers: Vec<PreTokenizer>) -> Self {
         Self { pre_tokenizers }
     }
 
     /// The members, in order. For a writer, which has to spell the `Sequence` back out.
-    pub fn pre_tokenizers(&self) -> &[PipelinePreTokenizer] {
+    pub fn pre_tokenizers(&self) -> &[PreTokenizer] {
         &self.pre_tokenizers
     }
 
     /// Same recognition as [`crate::utils::is_deepseek`], on the converted children: the first three are
     /// Isolated, non-inverted `Split`s carrying deepseek's `[\p{N}{1,3}, CJK, big]` regexes (the trailing
-    /// byte-map `ByteLevel` converts to `PipelinePreTokenizer::None`). Routes the whole split to one
+    /// byte-map `ByteLevel` converts to `PreTokenizer::None`). Routes the whole split to one
     /// `fsm_deepseek` pass.
     fn is_deepseek(&self) -> bool {
         use crate::pre_tokenizers::split::SplitPattern;
         use crate::tokenizer::SplitDelimiterBehavior::Isolated;
         let regex = |i: usize| match self.pre_tokenizers.get(i) {
-            Some(PipelinePreTokenizer::Split(s)) if s.behavior == Isolated && !s.invert => {
+            Some(PreTokenizer::Split(s)) if s.behavior == Isolated && !s.invert => {
                 match &s.pattern {
                     SplitPattern::Regex(r) => Some(r.as_str()),
                     SplitPattern::String(_) => None,
@@ -46,7 +46,7 @@ impl PipelineSequence {
 //
 // The deepseek fast path has no children to run: it calls an `bitcannon` fsm, which splits only at
 // character boundaries of `text`. See the `bitcannon` docs.
-unsafe impl pipeline::PreTokenizer for PipelineSequence {
+unsafe impl pipeline::PreTokenize for Sequence {
     /// Runs each child in turn, where every child subdivides the spans produced
     /// so far. A child sees only the text of a span (`&text[span]`) and returns
     /// offsets relative to it, which we rebase to absolute mirroring how the
@@ -75,16 +75,16 @@ unsafe impl pipeline::PreTokenizer for PipelineSequence {
         }
 
         // Fuse Split+ByteLevel: a byte-map `ByteLevel` (use_regex=false) converts to
-        // `PipelinePreTokenizer::None`, a pure identity pass. Skipping the `None`s collapses the
+        // `PreTokenizer::None`, a pure identity pass. Skipping the `None`s collapses the
         // dominant `Sequence[Split(regex), ByteLevel]` archetype (~40% of Hub usage) to a lone child we
         // run straight into `out` — no double-buffer, no rebase, no redundant identity pass over every
         // token. Sequences with ≥2 real children (or none) fall through to the generic loop unchanged.
         let mut work = self
             .pre_tokenizers
             .iter()
-            .filter(|c| !matches!(c, PipelinePreTokenizer::None));
+            .filter(|c| !matches!(c, PreTokenizer::None));
         if let (Some(only), None) = (work.next(), work.next()) {
-            return pipeline::PreTokenizer::pre_tokenize(only, text, scratch, out);
+            return pipeline::PreTokenize::pre_tokenize(only, text, scratch, out);
         }
 
         let [mut current, mut next] = scratch.take_pair();
@@ -101,7 +101,7 @@ unsafe impl pipeline::PreTokenizer for PipelineSequence {
                 // The child appends span-relative spans straight into `next`;
                 // rebase just those to absolute in place — no scratch buffer.
                 let from = next.len();
-                pipeline::PreTokenizer::pre_tokenize(
+                pipeline::PreTokenize::pre_tokenize(
                     child,
                     &text[span.range()],
                     scratch,

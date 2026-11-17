@@ -6,7 +6,7 @@ use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 pub trait Trainer {
     /// The model this trainer fills in.
     ///
-    /// Deliberately *not* bound by `tk_encode::Model`: `PipelineBPE` is the only BPE left and it
+    /// Deliberately *not* bound by `tk_encode::Model`: `BPE` is the only BPE left and it
     /// implements the pipeline's model trait, not that one -- the config-shaped `BPE` that did went
     /// with `tk-convert`'s strip. Nothing here calls a `Model` method on it anyway; a trainer only
     /// ever writes one.

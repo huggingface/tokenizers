@@ -1,5 +1,5 @@
-//! The pre-tokenizer half of the pipeline: the [`PreTokenizer`] trait, its scratch
-//! buffers, the [`PipelinePreTokenizer`] enum, and the shared `split*` primitives
+//! The pre-tokenizer half of the pipeline: the [`PreTokenize`] trait, its scratch
+//! buffers, the [`PreTokenizer`] enum, and the shared `split*` primitives
 //! the concrete pre-tokenizers are built from.
 
 use crate::pre_tokenizers::{
@@ -8,7 +8,7 @@ use crate::pre_tokenizers::{
     digits::Digits,
     fixed_length::FixedLength,
     punctuation::Punctuation,
-    sequence::PipelineSequence,
+    sequence::Sequence,
     split::Split as SplitPretok,
     whitespace::{Whitespace, WhitespaceSplit},
 };
@@ -21,15 +21,15 @@ use bitcannon::classify::classify;
 ///
 /// # Safety
 ///
-/// [`PreTokenizer::pre_tokenize`] produces [`Span`] objects that are later consumed by [`PipelineTokenizer::encode_sequence`].
-/// For performance reasons, [`PipelineTokenizer::encode_sequence`] turns every span into a `&str` with [`str::get_unchecked`].
+/// [`PreTokenize::pre_tokenize`] produces [`Span`] objects that are later consumed by [`Tokenizer::encode_sequence`].
+/// For performance reasons, [`Tokenizer::encode_sequence`] turns every span into a `&str` with [`str::get_unchecked`].
 /// As a consequence, every implementation of this trait *MUST* ensure the following invariants for each [`Span`]:
 ///
 /// * `span.end <= text.len()`: the span is inside the text
 /// * `span.start <= span.end`: the span is not reversed
 /// * `text.is_char_boundary(start)` and `text.is_char_boundary(end)`: the start and end offset must be UTF-8 char boundaries
 /// * The offsets are relative to the `text`.
-pub unsafe trait PreTokenizer {
+pub unsafe trait PreTokenize {
     /// Split `text` into pre-tokens, appending to `out`. Ranges are into `text`.
     /// `scratch` holds the working buffers, see [`PreTokenizerScratch`].
     fn pre_tokenize(
@@ -40,7 +40,7 @@ pub unsafe trait PreTokenizer {
     ) -> Result<()>;
 }
 
-/// The working buffers a [`PreTokenizer`] needs to split a text into pre-tokens.
+/// The working buffers a [`PreTokenize`] impl needs to split a text into pre-tokens.
 #[derive(Default)]
 pub struct PreTokenizerScratch {
     /// One [`bitcannon`] atom tag per input byte, what [`bitcannon::classify::classify`] writes
@@ -53,7 +53,7 @@ pub struct PreTokenizerScratch {
     starts: Vec<u64>,
     flags: Vec<u64>,
     later: Vec<u64>,
-    /// The two buffers a [`PipelineSequence`] reads and writes as each of its children subdivides
+    /// The two buffers a [`Sequence`] reads and writes as each of its children subdivides
     /// the spans the child before it produced. Handed out by [`Self::take_pair`] rather than
     /// borrowed, so the sequence can pass the rest of the scratch to its children while it holds
     /// them.
@@ -138,17 +138,17 @@ impl PreTokenizerScratch {
     }
 }
 
-/// The pre-tokenizers a [`PipelineTokenizer`] can run.
+/// The pre-tokenizers a [`Tokenizer`] can run.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
-pub enum PipelinePreTokenizer {
+pub enum PreTokenizer {
     Bert(BertPreTokenizer),
     Delimiter(CharDelimiterSplit),
     Digits(Digits),
     FixedLength(FixedLength),
     Punctuation(Punctuation),
-    Sequence(PipelineSequence),
+    Sequence(Sequence),
     Split(SplitPretok),
     #[cfg(feature = "unicode-scripts")]
     UnicodeScripts(crate::pre_tokenizers::unicode_scripts::UnicodeScripts),
@@ -157,9 +157,9 @@ pub enum PipelinePreTokenizer {
     None,
 }
 
-// SAFETY: every arm but `None` forwards to another `PreTokenizer`, which upholds the contract itself.
+// SAFETY: every arm but `None` forwards to another `PreTokenize` impl, which upholds the contract itself.
 // `None` emits the single span covering all of `text`, whose ends are `0` and `text.len()`.
-unsafe impl PreTokenizer for PipelinePreTokenizer {
+unsafe impl PreTokenize for PreTokenizer {
     fn pre_tokenize(
         &self,
         text: &str,
@@ -404,20 +404,20 @@ mod tests {
     use crate::pre_tokenizers::split::SplitPattern;
     use crate::utils::byte_level::GPT2_REGEX_STR;
 
-    fn variant_name(pre_tokenizer: &PipelinePreTokenizer) -> &'static str {
+    fn variant_name(pre_tokenizer: &PreTokenizer) -> &'static str {
         match pre_tokenizer {
-            PipelinePreTokenizer::Bert(_) => "Bert",
-            PipelinePreTokenizer::Delimiter(_) => "Delimiter",
-            PipelinePreTokenizer::Digits(_) => "Digits",
-            PipelinePreTokenizer::FixedLength(_) => "FixedLength",
-            PipelinePreTokenizer::Punctuation(_) => "Punctuation",
-            PipelinePreTokenizer::Sequence(_) => "Sequence",
-            PipelinePreTokenizer::Split(_) => "Split",
+            PreTokenizer::Bert(_) => "Bert",
+            PreTokenizer::Delimiter(_) => "Delimiter",
+            PreTokenizer::Digits(_) => "Digits",
+            PreTokenizer::FixedLength(_) => "FixedLength",
+            PreTokenizer::Punctuation(_) => "Punctuation",
+            PreTokenizer::Sequence(_) => "Sequence",
+            PreTokenizer::Split(_) => "Split",
             #[cfg(feature = "unicode-scripts")]
-            PipelinePreTokenizer::UnicodeScripts(_) => "UnicodeScripts",
-            PipelinePreTokenizer::Whitespace(_) => "Whitespace",
-            PipelinePreTokenizer::WhitespaceSplit(_) => "WhitespaceSplit",
-            PipelinePreTokenizer::None => "None",
+            PreTokenizer::UnicodeScripts(_) => "UnicodeScripts",
+            PreTokenizer::Whitespace(_) => "Whitespace",
+            PreTokenizer::WhitespaceSplit(_) => "WhitespaceSplit",
+            PreTokenizer::None => "None",
         }
     }
 
@@ -441,7 +441,7 @@ mod tests {
         "Ⓘ\u{200D}x_y a-b'c",
     ];
 
-    /// Every variant must produce spans that [`PipelineTokenizer::encode_sequence`] can hand to `str::get_unchecked`
+    /// Every variant must produce spans that [`Tokenizer::encode_sequence`] can hand to `str::get_unchecked`
     #[test]
     fn every_pre_tokenizer_emits_sliceable_spans() {
         use crate::pre_tokenizers::digits::Digits;
@@ -464,32 +464,32 @@ mod tests {
         // expression position are not stable.
         #[allow(unused_mut)]
         let mut cases = vec![
-            PipelinePreTokenizer::Bert(BertPreTokenizer),
-            PipelinePreTokenizer::Delimiter(CharDelimiterSplit::new(' ')),
-            PipelinePreTokenizer::Delimiter(CharDelimiterSplit::new('▁')),
-            PipelinePreTokenizer::Digits(Digits::new(true)),
-            PipelinePreTokenizer::Digits(Digits::new(false)),
-            PipelinePreTokenizer::FixedLength(FixedLength::new(3)),
-            PipelinePreTokenizer::FixedLength(FixedLength::new(0)),
-            PipelinePreTokenizer::Punctuation(Punctuation::new(Removed)),
-            PipelinePreTokenizer::Punctuation(Punctuation::new(Isolated)),
-            PipelinePreTokenizer::Punctuation(Punctuation::new(Contiguous)),
-            PipelinePreTokenizer::Punctuation(Punctuation::new(MergedWithPrevious)),
-            PipelinePreTokenizer::Punctuation(Punctuation::new(MergedWithNext)),
-            PipelinePreTokenizer::Sequence(PipelineSequence::new(vec![
-                PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
-                PipelinePreTokenizer::Punctuation(Punctuation::new(Isolated)),
+            PreTokenizer::Bert(BertPreTokenizer),
+            PreTokenizer::Delimiter(CharDelimiterSplit::new(' ')),
+            PreTokenizer::Delimiter(CharDelimiterSplit::new('▁')),
+            PreTokenizer::Digits(Digits::new(true)),
+            PreTokenizer::Digits(Digits::new(false)),
+            PreTokenizer::FixedLength(FixedLength::new(3)),
+            PreTokenizer::FixedLength(FixedLength::new(0)),
+            PreTokenizer::Punctuation(Punctuation::new(Removed)),
+            PreTokenizer::Punctuation(Punctuation::new(Isolated)),
+            PreTokenizer::Punctuation(Punctuation::new(Contiguous)),
+            PreTokenizer::Punctuation(Punctuation::new(MergedWithPrevious)),
+            PreTokenizer::Punctuation(Punctuation::new(MergedWithNext)),
+            PreTokenizer::Sequence(Sequence::new(vec![
+                PreTokenizer::WhitespaceSplit(WhitespaceSplit),
+                PreTokenizer::Punctuation(Punctuation::new(Isolated)),
             ])),
-            PipelinePreTokenizer::Split(gpt2_split),
-            PipelinePreTokenizer::Split(literal_split("▁", MergedWithPrevious)),
-            PipelinePreTokenizer::Split(literal_split("▁", MergedWithNext)),
-            PipelinePreTokenizer::Split(literal_split(" ", Removed)),
-            PipelinePreTokenizer::Whitespace(Whitespace),
-            PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit),
-            PipelinePreTokenizer::None,
+            PreTokenizer::Split(gpt2_split),
+            PreTokenizer::Split(literal_split("▁", MergedWithPrevious)),
+            PreTokenizer::Split(literal_split("▁", MergedWithNext)),
+            PreTokenizer::Split(literal_split(" ", Removed)),
+            PreTokenizer::Whitespace(Whitespace),
+            PreTokenizer::WhitespaceSplit(WhitespaceSplit),
+            PreTokenizer::None,
         ];
         #[cfg(feature = "unicode-scripts")]
-        cases.push(PipelinePreTokenizer::UnicodeScripts(
+        cases.push(PreTokenizer::UnicodeScripts(
             crate::pre_tokenizers::unicode_scripts::UnicodeScripts::new(),
         ));
 
@@ -514,7 +514,7 @@ mod tests {
         expected.sort_unstable();
         assert_eq!(
             covered, expected,
-            "every PipelinePreTokenizer variant needs a case above",
+            "every PreTokenizer variant needs a case above",
         );
 
         let mut scratch = PreTokenizerScratch::default();

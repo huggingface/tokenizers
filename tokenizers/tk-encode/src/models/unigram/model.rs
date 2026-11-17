@@ -4,7 +4,7 @@ use super::{
 };
 use crate::utils::word_cache::{Lookup, WordCache};
 use crate::{
-    pipeline::{self, PipelineToken},
+    pipeline::{self, Token},
     tokenizer::Result,
 };
 use crate::{utils::cache::DEFAULT_CACHE_CAPACITY, vocab::bucket_vocab_store::BucketVocabStore};
@@ -396,9 +396,7 @@ pub struct UnigramScratch {
     pub(crate) word_cache: WordCache,
 }
 
-impl pipeline::ModelScratch for UnigramScratch {}
-
-impl pipeline::Model for Unigram {
+impl pipeline::Tokenize for Unigram {
     type Scratch = UnigramScratch;
 
     fn init_scratch(&self) -> Self::Scratch {
@@ -409,11 +407,11 @@ impl pipeline::Model for Unigram {
 
     /// The word cache holds ids, not pieces. A hit skips the lattice, the `String` every piece
     /// is built into, and the vocabulary lookup that turns each one back into an id.
-    fn tokenize_pipeline(
+    fn tokenize(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<pipeline::PipelineToken>,
+        output: &mut Vec<pipeline::Token>,
     ) -> Result<()> {
         if sequence.is_empty() {
             return Ok(());
@@ -422,7 +420,7 @@ impl pipeline::Model for Unigram {
         if !self.samples() {
             match scratch.word_cache.lookup(sequence.as_bytes()) {
                 Lookup::Hit(ids) => {
-                    output.extend(ids.iter().copied().map(PipelineToken::from));
+                    output.extend(ids.iter().copied().map(Token::from));
                     return Ok(());
                 }
                 Lookup::Miss(at) => placement = Some(at),
@@ -433,7 +431,7 @@ impl pipeline::Model for Unigram {
         for string in self.encode(sequence)? {
             match self.token_to_ids.token_to_id(&string) {
                 Some(id) => {
-                    output.push(PipelineToken::from(id));
+                    output.push(Token::from(id));
                 }
                 None => {
                     if self.byte_fallback {
@@ -445,12 +443,12 @@ impl pipeline::Model for Unigram {
                             })
                             .collect();
                         if let Some(token_ids) = byte_token_ids {
-                            output.extend(token_ids.iter().copied().map(PipelineToken::from));
+                            output.extend(token_ids.iter().copied().map(Token::from));
                             continue;
                         }
                     }
-                    output.push(PipelineToken::from(
-                        self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32,
+                    output.push(Token::from(
+                        self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32
                     ));
                 }
             };

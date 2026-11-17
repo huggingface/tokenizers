@@ -163,7 +163,7 @@ The classes or tags each have a high and low nibble (encoded on a u8), and carry
 <details>
 <summary><b><code>tk-serialize</code></b> — the reader</summary>
 
-`from_json_file` turns a canonical `tokenizer.json` into a `PipelineTokenizer`.
+`from_json_file` turns a canonical `tokenizer.json` into a `Tokenizer`.
 
 **Why separate:** this just makes it optional for some usecases!
 </details>

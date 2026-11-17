@@ -3,16 +3,16 @@
 //! The reference is the released `tokenizers` 0.23.1 encoding of the same strings, captured as
 //! literals: the legacy in-crate engine these gates used to compare against is gone, and a gate
 //! that compares the pipeline to itself would bless its own regressions. It lives here rather
-//! than in `tk-encode` because building a `PipelineTokenizer` from `gpt2.json` needs this crate.
+//! than in `tk-encode` because building a `Tokenizer` from `gpt2.json` needs this crate.
 //!
 //! Run `make data/gpt2.json` first -- the fixture is fetched, not committed.
 
 use tk_encode::pipeline::EncodeOptions;
-use tk_encode::pipeline::PipelineTokenizer;
+use tk_encode::pipeline::Tokenizer;
 
 /// `data/gpt2.json` is still version `1.0`, so run the upgrade pass first -- the reader only
 /// accepts canonical `2.0`. Same as `benches/encode.rs`.
-fn load() -> PipelineTokenizer {
+fn load() -> Tokenizer {
     let canonical = tk_convert::canonicalize_file("../data/gpt2.json").unwrap();
     tk_serialize::from_json(&canonical).unwrap()
 }
@@ -55,7 +55,7 @@ const CASES: &[(&str, &[u32])] = &[
     ("", &[]),
 ];
 
-fn ids(pipe: &PipelineTokenizer, text: &str) -> Vec<u32> {
+fn ids(pipe: &Tokenizer, text: &str) -> Vec<u32> {
     pipe.encode(text, &EncodeOptions::no_specials())
         .wait()
         .unwrap()
