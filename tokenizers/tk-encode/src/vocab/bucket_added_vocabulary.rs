@@ -332,17 +332,6 @@ impl AddedVocabulary {
         Some((bytes, flags))
     }
 
-    /// Add some special tokens to the vocabulary
-    pub fn add_special_tokens<N: Normalizer>(
-        &mut self,
-        tokens: impl IntoIterator<Item = AddedToken>,
-        model_vocab_size: usize,
-        model_token_to_id: impl Fn(&str) -> Option<u32>,
-        normalizer: Option<&N>,
-    ) -> Result<usize> {
-        self.add_tokens(tokens, model_vocab_size, model_token_to_id, normalizer)
-    }
-
     /// Add some tokens to the vocabulary
     pub fn add_tokens<N: Normalizer>(
         &mut self,
@@ -681,7 +670,7 @@ mod tests {
         // Add tokens normally
         assert_eq!(
             vocab
-                .add_special_tokens(
+                .add_tokens(
                     [AddedToken::from("added_token_1", true)],
                     model.get_vocab_size(),
                     |t| model.token_to_id(t),
@@ -696,7 +685,7 @@ mod tests {
         // Does not add multiple time the same token
         assert_eq!(
             vocab
-                .add_special_tokens(
+                .add_tokens(
                     [
                         AddedToken::from("added_token_2", true),
                         AddedToken::from("added_token_2", true)
@@ -713,7 +702,7 @@ mod tests {
         // Can add tokens already covered by the model
         assert_eq!(
             vocab
-                .add_special_tokens(
+                .add_tokens(
                     [AddedToken::from("test", true)],
                     model.get_vocab_size(),
                     |t| model.token_to_id(t),
@@ -754,7 +743,7 @@ mod tests {
         // Let's add an already added token again, but change normalized
         assert_eq!(
             vocab
-                .add_special_tokens(
+                .add_tokens(
                     [AddedToken::from("another_two", true)],
                     model.get_vocab_size(),
                     |t| model.token_to_id(t),
@@ -811,7 +800,7 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer: Option<&Lowercase> = None;
         vocab
-            .add_special_tokens(
+            .add_tokens(
                 [AddedToken::from("<unk>", true).normalized(true)],
                 model.get_vocab_size(),
                 |t| model.token_to_id(t),
@@ -845,7 +834,7 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer: Option<&Lowercase> = None;
         vocab
-            .add_special_tokens(
+            .add_tokens(
                 [
                     AddedToken::from("[CLS]", true),
                     AddedToken::from("[SEP]", true),
@@ -965,7 +954,7 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer: Option<&Lowercase> = None;
         vocab
-            .add_special_tokens(
+            .add_tokens(
                 [AddedToken::from("[CLS]", true)],
                 model.get_vocab_size(),
                 |t| model.token_to_id(t),

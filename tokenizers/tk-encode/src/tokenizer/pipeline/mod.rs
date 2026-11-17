@@ -1862,7 +1862,7 @@ mod tests {
 
         let mut added = BucketAddedVocabulary::new();
         added
-            .add_special_tokens(
+            .add_tokens(
                 [AddedToken::from("<s>", true)],
                 8,
                 |_| None,
@@ -2001,7 +2001,7 @@ mod tests {
     fn hello_pipeline_with_special(content: &str) -> PipelineTokenizer {
         let mut added_vocabulary = BucketAddedVocabulary::new();
         added_vocabulary
-            .add_special_tokens(
+            .add_tokens(
                 [AddedToken::from(content, true)],
                 8,
                 |_| None,
