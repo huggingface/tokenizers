@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
-use numpy::{Element, PyArray1};
 use pyo3::buffer::PyBuffer;
 use pyo3::exceptions::PyTypeError;
 use pyo3::inspect::PyStaticExpr;
@@ -14,39 +13,8 @@ use pyo3::{Borrowed, PyTypeInfo, type_hint_identifier, type_hint_subscript, type
 use crate::added_token::AddedToken;
 use crate::encoding::Encoding;
 
-/// A 1-D numpy array, typed `NDArray[numpy.<dtype>]`.
-///
-/// rust-numpy has no pyo3 introspection, so a bare [`PyArray1`] in a signature is typed `Incomplete`.
-pub struct NDArray<'py, T: Dtype>(pub Bound<'py, PyArray1<T>>);
-
-pub type U32Array<'py> = NDArray<'py, u32>;
-
-/// An element type of [`NDArray`], with the numpy scalar type that names it in the type hints.
-pub trait Dtype: Element {
-    const TYPE_HINT: PyStaticExpr;
-}
-
-impl Dtype for u32 {
-    const TYPE_HINT: PyStaticExpr = type_hint_identifier!("numpy", "uint32");
-}
-
-impl<'py, T: Dtype> IntoPyObject<'py> for NDArray<'py, T> {
-    type Target = PyArray1<T>;
-    type Output = Bound<'py, PyArray1<T>>;
-    type Error = Infallible;
-
-    const OUTPUT_TYPE: PyStaticExpr = type_hint_subscript!(
-        type_hint_identifier!("numpy.typing", "NDArray"),
-        T::TYPE_HINT
-    );
-
-    fn into_pyobject(self, _py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        Ok(self.0)
-    }
-}
-
 /// The `ids` argument of `Tokenizer.decode` and `Tokenizer.decode_tokens`, typed
-/// `Encoding | Sequence[int] | NDArray[numpy.integer[Any]]`.
+/// `Encoding | Sequence[int] | Buffer`.
 ///
 /// An `Encoding` is read in place, no copy.
 /// A 1-D buffer of `uint32`, such as a numpy array, is copied in one block.
@@ -65,13 +33,8 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
             type_hint_identifier!("collections.abc", "Sequence"),
             type_hint_identifier!("builtins", "int")
         ),
-        type_hint_subscript!(
-            type_hint_identifier!("numpy.typing", "NDArray"),
-            type_hint_subscript!(
-                type_hint_identifier!("numpy", "integer"),
-                type_hint_identifier!("typing", "Any")
-            )
-        )
+        // `collections.abc.Buffer` needs Python 3.12. A numpy array is a buffer but not a `Sequence`.
+        type_hint_identifier!("typing_extensions", "Buffer")
     );
 
     fn extract(obj: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {

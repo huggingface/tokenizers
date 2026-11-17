@@ -5,36 +5,35 @@ import numpy as np
 from tokenizers import Padding
 
 
-def test_array_list_equivalence(bert):
+def test_buffer_list_equivalence(bert):
     encoding = bert.encode("Hello there", padding=Padding(length=8, pad_id=3))
 
-    assert encoding.ids_array.tolist() == encoding.ids == [1, 27462, 7495, 2, 3, 3, 3, 3]
-    assert encoding.type_ids_array.tolist() == encoding.type_ids
-    assert encoding.attention_mask_array.tolist() == encoding.attention_mask == [1, 1, 1, 1, 0, 0, 0, 0]
-    for field in (encoding.ids_array, encoding.type_ids_array, encoding.attention_mask_array):
-        assert field.dtype == np.uint32
+    assert encoding.ids_buffer.tolist() == encoding.ids == [1, 27462, 7495, 2, 3, 3, 3, 3]
+    assert encoding.type_ids_buffer.tolist() == encoding.type_ids
+    assert encoding.attention_mask_buffer.tolist() == encoding.attention_mask == [1, 1, 1, 1, 0, 0, 0, 0]
+    for field in (encoding.ids_buffer, encoding.type_ids_buffer, encoding.attention_mask_buffer):
+        assert np.asarray(field).dtype == np.uint32
         assert field.shape == (8,)
 
 
-def test_array_copy(bert):
+def test_buffer_copy(bert):
     encoding = bert.encode("Hello there")
 
-    assert not np.shares_memory(encoding.ids_array, encoding.ids_array)
-    assert encoding.ids_array.base is None
+    assert not np.shares_memory(encoding.ids_buffer, encoding.ids_buffer)
 
 
-def test_array_write_leaves_encoding_unchanged(bert):
+def test_buffer_write_leaves_encoding_unchanged(bert):
     encoding = bert.encode("Hello there")
-    ids = encoding.ids_array
+    ids = encoding.ids_buffer
 
     ids[0] = 0
 
     assert ids.tolist() == [0, 27462, 7495, 2]
-    assert encoding.ids == encoding.ids_array.tolist() == [1, 27462, 7495, 2]
+    assert encoding.ids == encoding.ids_buffer.tolist() == [1, 27462, 7495, 2]
 
 
-def test_array_outlives_encoding(bert):
-    ids = bert.encode("Hello there").ids_array
+def test_buffer_outlives_encoding(bert):
+    ids = bert.encode("Hello there").ids_buffer
 
     gc.collect()
 
@@ -44,8 +43,8 @@ def test_array_outlives_encoding(bert):
 def test_empty(gpt2):
     encoding = gpt2.encode("")
 
-    assert encoding.ids_array.shape == (0,)
-    assert encoding.ids_array.dtype == np.uint32
+    assert encoding.ids_buffer.shape == (0,)
+    assert np.asarray(encoding.ids_buffer).dtype == np.uint32
 
 
 def test_equality_ignores_which_fields_were_read(bert):

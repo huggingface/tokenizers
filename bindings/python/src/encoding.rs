@@ -1,10 +1,9 @@
+use std::mem;
 use std::sync::OnceLock;
 
-use numpy::PyArray1;
 use pyo3::prelude::*;
+use pyo3::types::{PyByteArray, PyMemoryView};
 use tk::pipeline::{self, Token};
-
-use crate::type_hints::{NDArray, U32Array};
 
 /// Text encoded to token ids by a tokenizer.
 #[pyclass(frozen, eq, module = "tokenizers")]
@@ -76,23 +75,23 @@ impl Encoding {
         })
     }
 
-    /// Returns a copy of the id of each token, as a `uint32` numpy array.
+    /// Returns a copy of the id of each token, as a `memoryview` of `uint32`.
     #[getter]
-    fn ids_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
-        NDArray(PyArray1::from_slice(py, self.ids()))
+    fn ids_buffer<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
+        u32_memoryview(py, self.ids())
     }
 
-    /// Returns a copy of the type id of each token, as a `uint32` numpy array.
+    /// Returns a copy of the type id of each token, as a `memoryview` of `uint32`.
     #[getter]
-    fn type_ids_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
-        NDArray(PyArray1::from_slice(py, self.type_ids()))
+    fn type_ids_buffer<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
+        u32_memoryview(py, self.type_ids())
     }
 
-    /// Returns a copy of the attention mask, as a `uint32` numpy array.
+    /// Returns a copy of the attention mask, as a `memoryview` of `uint32`.
     /// When the encoding is padded: 1 for token ids, 0 for padding tokens.
     #[getter]
-    fn attention_mask_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
-        NDArray(PyArray1::from_slice(py, self.attention_mask()))
+    fn attention_mask_buffer<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
+        u32_memoryview(py, self.attention_mask())
     }
 
     /// The number of tokens in the encoding
@@ -136,4 +135,20 @@ impl Encoding {
 
 fn bytes_slice_to_u32(slice: &[u8]) -> Vec<u32> {
     slice.iter().map(|&byte| byte as u32).collect()
+}
+
+/// Copies `values` into a new writable `memoryview` with format `"I"` (`uint32`).
+///
+/// `numpy.asarray` reads it without a copy.
+fn u32_memoryview<'py>(py: Python<'py>, values: &[u32]) -> PyResult<Bound<'py, PyMemoryView>> {
+    let bytes = PyByteArray::new_with(py, mem::size_of_val(values), |buffer| {
+        let (chunks, _) = buffer.as_chunks_mut();
+        for (chunk, value) in chunks.iter_mut().zip(values) {
+            *chunk = value.to_ne_bytes();
+        }
+        Ok(())
+    })?;
+    Ok(PyMemoryView::from(&bytes)?
+        .call_method1("cast", ("I",))?
+        .cast_into()?)
 }

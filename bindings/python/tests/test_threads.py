@@ -26,9 +26,9 @@ def test_concurrent_encode(gpt2):
     assert all(run == expected for run in results)
 
 
-def test_read_array_while_decoding_it(gpt2):
+def test_read_buffer_while_decoding_it(gpt2):
     encoding = gpt2.encode(GPT2.read_text()[:4000])
-    ids = encoding.ids_array
+    ids = encoding.ids_buffer
 
     def decode():
         for _ in range(100):
@@ -37,7 +37,7 @@ def test_read_array_while_decoding_it(gpt2):
     decoder = threading.Thread(target=decode)
     decoder.start()
     while decoder.is_alive():
-        encoding.ids_array
+        encoding.ids_buffer
     decoder.join()
 
 

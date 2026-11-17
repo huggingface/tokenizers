@@ -14,6 +14,7 @@ from tokenizers import Tokenizer
 gpt2 = Tokenizer.from_file({str(GPT2)!r}).compile()
 encoding = gpt2.encode("Hello there")
 assert gpt2.decode(encoding.ids) == gpt2.decode(encoding) == "Hello there"
+assert encoding.ids_buffer.tolist() == encoding.ids
 """
 
 

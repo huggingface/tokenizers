@@ -20,7 +20,7 @@ print(f"{len(encoding)} tokens")
 print("ids:            ", encoding.ids)
 print("type_ids:       ", encoding.type_ids)
 print("attention_mask: ", encoding.attention_mask)
-print("ids, as a numpy array:", encoding.ids_array)
+print("ids, as a uint32 memoryview:", encoding.ids_buffer.tolist())
 
 without_specials = tokenizer.encode(text, add_special_tokens=False)
 print("without special tokens:", without_specials.ids)
