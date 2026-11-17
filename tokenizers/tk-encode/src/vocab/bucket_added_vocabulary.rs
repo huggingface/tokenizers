@@ -127,8 +127,6 @@ impl Default for AddedToken {
     }
 }
 
-// TODO: remove this once we have the final saving format
-// its outside the scope of this PR and allows us to test
 impl From<&AddedToken> for AddedTokenFlags {
     fn from(token: &AddedToken) -> AddedTokenFlags {
         AddedTokenFlags {
