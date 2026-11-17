@@ -242,6 +242,16 @@ jobs:
       - name: Pack
         working-directory: ./bindings/node
         run: npm pack --ignore-scripts
+      - name: Verify package contents
+        working-directory: ./bindings/node
+        run: |
+          tar tzf tokenizers-*.tgz
+          expected=$(jq '.napi.targets | length' package.json)
+          actual=$(tar tzf tokenizers-*.tgz | grep -c '\.node$')
+          if [ "$actual" -ne "$expected" ]; then
+            echo "::error::package has $actual .node files, napi.targets lists $expected"
+            exit 1
+          fi
       - name: Upload package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
