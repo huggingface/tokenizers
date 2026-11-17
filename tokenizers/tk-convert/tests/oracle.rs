@@ -122,72 +122,46 @@ fn cases() -> Vec<String> {
 /// The encode settings each text is compared under. Truncating to 6 and then padding to 12 gives
 /// 12 ids, so a pass that padded first would show up as 6.
 fn cells() -> Vec<(&'static str, EncodeOptions)> {
-    let truncate = |direction| TruncationParams {
-        max_length: 6,
-        direction,
-        ..TruncationParams::default()
-    };
-    let pad = PaddingParams {
-        strategy: PaddingStrategy::Fixed(12),
-        pad_id: 7,
-        pad_type_id: 1,
-        ..PaddingParams::default()
-    };
+    fn truncate(direction: TruncationDirection) -> Override<TruncationParams> {
+        let mut truncation = TruncationParams::default();
+        truncation.max_length = 6;
+        truncation.direction = direction;
+        Override::With(truncation)
+    }
+    let mut pad = PaddingParams::default();
+    pad.strategy = PaddingStrategy::Fixed(12);
+    pad.pad_id = 7;
+    pad.pad_type_id = 1;
+    let pad = Override::With(pad);
+
+    let mut encode_specials = EncodeOptions::no_specials();
+    encode_specials.encode_special_tokens = true;
+    let mut truncate_right = EncodeOptions::default();
+    truncate_right.truncation = truncate(TruncationDirection::Right);
+    let mut truncate_left = EncodeOptions::default();
+    truncate_left.truncation = truncate(TruncationDirection::Left);
+    let mut padded = EncodeOptions::default();
+    padded.padding = pad.clone();
+    let mut truncate_and_pad = EncodeOptions::default();
+    truncate_and_pad.padding = pad.clone();
+    truncate_and_pad.truncation = truncate(TruncationDirection::Right);
+    let mut truncate_and_pad_no_specials = EncodeOptions::no_specials();
+    truncate_and_pad_no_specials.padding = pad;
+    truncate_and_pad_no_specials.truncation = truncate(TruncationDirection::Right);
+    let mut both_off = EncodeOptions::default();
+    both_off.padding = Override::Off;
+    both_off.truncation = Override::Off;
+
     vec![
         ("no specials", EncodeOptions::no_specials()),
         ("specials", EncodeOptions::default()),
-        (
-            "encode specials",
-            EncodeOptions {
-                encode_special_tokens: true,
-                ..EncodeOptions::no_specials()
-            },
-        ),
-        (
-            "truncate right",
-            EncodeOptions {
-                truncation: Override::With(truncate(TruncationDirection::Right)),
-                ..EncodeOptions::default()
-            },
-        ),
-        (
-            "truncate left",
-            EncodeOptions {
-                truncation: Override::With(truncate(TruncationDirection::Left)),
-                ..EncodeOptions::default()
-            },
-        ),
-        (
-            "pad",
-            EncodeOptions {
-                padding: Override::With(pad.clone()),
-                ..EncodeOptions::default()
-            },
-        ),
-        (
-            "truncate & pad",
-            EncodeOptions {
-                padding: Override::With(pad.clone()),
-                truncation: Override::With(truncate(TruncationDirection::Right)),
-                ..EncodeOptions::default()
-            },
-        ),
-        (
-            "truncate & pad, no specials",
-            EncodeOptions {
-                padding: Override::With(pad),
-                truncation: Override::With(truncate(TruncationDirection::Right)),
-                ..EncodeOptions::no_specials()
-            },
-        ),
-        (
-            "padding and truncation off",
-            EncodeOptions {
-                padding: Override::Off,
-                truncation: Override::Off,
-                ..EncodeOptions::default()
-            },
-        ),
+        ("encode specials", encode_specials),
+        ("truncate right", truncate_right),
+        ("truncate left", truncate_left),
+        ("pad", padded),
+        ("truncate & pad", truncate_and_pad),
+        ("truncate & pad, no specials", truncate_and_pad_no_specials),
+        ("padding and truncation off", both_off),
     ]
 }
 
@@ -222,9 +196,10 @@ fn released_with(base: &Released, options: &EncodeOptions) -> Released {
 
 fn released_padding(params: &PaddingParams) -> release::PaddingParams {
     release::PaddingParams {
-        strategy: match params.strategy {
+        strategy: match &params.strategy {
             PaddingStrategy::BatchLongest => release::PaddingStrategy::BatchLongest,
-            PaddingStrategy::Fixed(length) => release::PaddingStrategy::Fixed(length),
+            PaddingStrategy::Fixed(length) => release::PaddingStrategy::Fixed(*length),
+            other => panic!("0.23 has no padding strategy {other:?}"),
         },
         direction: match params.direction {
             PaddingDirection::Left => release::PaddingDirection::Left,
@@ -248,6 +223,7 @@ fn released_truncation(params: &TruncationParams) -> release::TruncationParams {
             TruncationStrategy::LongestFirst => release::TruncationStrategy::LongestFirst,
             TruncationStrategy::OnlyFirst => release::TruncationStrategy::OnlyFirst,
             TruncationStrategy::OnlySecond => release::TruncationStrategy::OnlySecond,
+            other => panic!("0.23 has no truncation strategy {other:?}"),
         },
         stride: params.stride,
     }

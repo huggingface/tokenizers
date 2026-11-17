@@ -85,19 +85,19 @@ pub struct PaddingOptions {
 
 impl PaddingOptions {
   fn params(self) -> Result<PaddingParams> {
-    Ok(PaddingParams {
-      strategy: self.length.map_or(PaddingStrategy::BatchLongest, |n| {
-        PaddingStrategy::Fixed(n as usize)
-      }),
-      direction: match self.direction {
-        Some(name) => padding_direction(&name)?,
-        None => PaddingDirection::Right,
-      },
-      pad_to_multiple_of: self.pad_to_multiple_of.map(|n| n as usize),
-      pad_id: self.pad_id.unwrap_or(0),
-      pad_type_id: self.pad_type_id.unwrap_or(0),
-      pad_token: self.pad_token.unwrap_or_else(|| "[PAD]".to_owned()),
-    })
+    let mut params = PaddingParams::default();
+    params.strategy = self.length.map_or(PaddingStrategy::BatchLongest, |n| {
+      PaddingStrategy::Fixed(n as usize)
+    });
+    params.direction = match self.direction {
+      Some(name) => padding_direction(&name)?,
+      None => PaddingDirection::Right,
+    };
+    params.pad_to_multiple_of = self.pad_to_multiple_of.map(|n| n as usize);
+    params.pad_id = self.pad_id.unwrap_or(0);
+    params.pad_type_id = self.pad_type_id.unwrap_or(0);
+    params.pad_token = self.pad_token.unwrap_or_else(|| "[PAD]".to_owned());
+    Ok(params)
   }
 }
 
@@ -141,31 +141,31 @@ pub struct TruncationOptions {
 
 impl TruncationOptions {
   fn params(self) -> Result<TruncationParams> {
-    Ok(TruncationParams {
-      max_length: self.max_length as usize,
-      strategy: match self.strategy {
-        Some(name) => truncation_strategy(&name)?,
-        None => TruncationStrategy::LongestFirst,
-      },
-      direction: match self.direction {
-        Some(name) => truncation_direction(&name)?,
-        None => TruncationDirection::Right,
-      },
-      // The pipeline keeps only the first window, so a stride changes nothing and is not exposed.
-      stride: 0,
-    })
+    let mut params = TruncationParams::default();
+    params.max_length = self.max_length as usize;
+    params.strategy = match self.strategy {
+      Some(name) => truncation_strategy(&name)?,
+      None => TruncationStrategy::LongestFirst,
+    };
+    params.direction = match self.direction {
+      Some(name) => truncation_direction(&name)?,
+      None => TruncationDirection::Right,
+    };
+    // The pipeline keeps only the first window, so a stride changes nothing and is not exposed.
+    params.stride = 0;
+    Ok(params)
   }
 }
 
 impl PipelineTokenizer {
   fn encode_options(options: Option<EncodeOptions>) -> Result<PipelineEncodeOptions> {
     let options = options.unwrap_or_default();
-    Ok(PipelineEncodeOptions {
-      add_special_tokens: options.add_special_tokens.unwrap_or(true),
-      encode_special_tokens: options.encode_special_tokens.unwrap_or(false),
-      padding: override_with(options.padding, PaddingOptions::params)?,
-      truncation: override_with(options.truncation, TruncationOptions::params)?,
-    })
+    let mut encode_options = PipelineEncodeOptions::default();
+    encode_options.add_special_tokens = options.add_special_tokens.unwrap_or(true);
+    encode_options.encode_special_tokens = options.encode_special_tokens.unwrap_or(false);
+    encode_options.padding = override_with(options.padding, PaddingOptions::params)?;
+    encode_options.truncation = override_with(options.truncation, TruncationOptions::params)?;
+    Ok(encode_options)
   }
 }
 

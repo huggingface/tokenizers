@@ -20,6 +20,7 @@ impl std::convert::AsRef<str> for TruncationDirection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct TruncationParams {
     pub direction: TruncationDirection,
     pub max_length: usize,
@@ -49,6 +50,7 @@ pub(crate) enum TruncationError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub enum TruncationStrategy {
     #[default]
     LongestFirst,

@@ -42,6 +42,7 @@ impl Ord for PairMerge {
 
 /// Parity selection variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum ParityVariant {
     /// At each step, pick the language with the longest total dev-set token length.
     Base,
@@ -2174,11 +2175,9 @@ mod tests {
         trainer.feed_language(1, lang1);
 
         let (vocab, merges, _) = trainer.do_train().unwrap();
-        let config = BpeConfig {
-            vocab: vocab.clone(),
-            merges: merges.clone(),
-            ..Default::default()
-        };
+        let mut config = BpeConfig::default();
+        config.vocab = vocab.clone();
+        config.merges = merges.clone();
         let model = PipelineBPE::from_config(config).unwrap();
 
         let config = model.to_config().unwrap();

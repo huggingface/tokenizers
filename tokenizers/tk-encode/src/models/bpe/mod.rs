@@ -26,6 +26,7 @@ pub use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 
 /// Errors that can be encountered while using or constructing a `BPE` model.
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum Error {
     /// An error encountered while reading files mainly.
     #[error("IoError: {0}")]

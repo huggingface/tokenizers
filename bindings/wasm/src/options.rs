@@ -109,12 +109,12 @@ pub(crate) fn convert_encode_options(
         .map(|options| options.to_rust())
         .transpose()?
         .unwrap_or_default();
-    Ok(pipeline::EncodeOptions {
-        add_special_tokens: options.add_special_tokens.unwrap_or(true),
-        encode_special_tokens: options.encode_special_tokens.unwrap_or(false),
-        padding: into_override(options.padding, PaddingOptions::params),
-        truncation: into_override(options.truncation, TruncationOptions::params),
-    })
+    let mut encode_options = pipeline::EncodeOptions::default();
+    encode_options.add_special_tokens = options.add_special_tokens.unwrap_or(true);
+    encode_options.encode_special_tokens = options.encode_special_tokens.unwrap_or(false);
+    encode_options.padding = into_override(options.padding, PaddingOptions::params);
+    encode_options.truncation = into_override(options.truncation, TruncationOptions::params);
+    Ok(encode_options)
 }
 
 fn into_override<O, T>(setting: Option<Setting<O>>, params: fn(O) -> T) -> Override<T> {
@@ -127,37 +127,37 @@ fn into_override<O, T>(setting: Option<Setting<O>>, params: fn(O) -> T) -> Overr
 
 impl PaddingOptions {
     fn params(self) -> PaddingParams {
-        PaddingParams {
-            strategy: self.length.map_or(PaddingStrategy::BatchLongest, |length| {
-                PaddingStrategy::Fixed(length as usize)
-            }),
-            direction: match self.direction {
-                None | Some(Direction::Right) => PaddingDirection::Right,
-                Some(Direction::Left) => PaddingDirection::Left,
-            },
-            pad_to_multiple_of: self.pad_to_multiple_of.map(|multiple| multiple as usize),
-            pad_id: self.pad_id.unwrap_or(0),
-            pad_type_id: self.pad_type_id.unwrap_or(0),
-            pad_token: self.pad_token.unwrap_or_else(|| "[PAD]".to_owned()),
-        }
+        let mut params = PaddingParams::default();
+        params.strategy = self.length.map_or(PaddingStrategy::BatchLongest, |length| {
+            PaddingStrategy::Fixed(length as usize)
+        });
+        params.direction = match self.direction {
+            None | Some(Direction::Right) => PaddingDirection::Right,
+            Some(Direction::Left) => PaddingDirection::Left,
+        };
+        params.pad_to_multiple_of = self.pad_to_multiple_of.map(|multiple| multiple as usize);
+        params.pad_id = self.pad_id.unwrap_or(0);
+        params.pad_type_id = self.pad_type_id.unwrap_or(0);
+        params.pad_token = self.pad_token.unwrap_or_else(|| "[PAD]".to_owned());
+        params
     }
 }
 
 impl TruncationOptions {
     fn params(self) -> TruncationParams {
-        TruncationParams {
-            max_length: self.max_length as usize,
-            strategy: match self.strategy {
-                None | Some(Strategy::LongestFirst) => TruncationStrategy::LongestFirst,
-                Some(Strategy::OnlyFirst) => TruncationStrategy::OnlyFirst,
-                Some(Strategy::OnlySecond) => TruncationStrategy::OnlySecond,
-            },
-            direction: match self.direction {
-                None | Some(Direction::Right) => TruncationDirection::Right,
-                Some(Direction::Left) => TruncationDirection::Left,
-            },
-            stride: 0,
-        }
+        let mut params = TruncationParams::default();
+        params.max_length = self.max_length as usize;
+        params.strategy = match self.strategy {
+            None | Some(Strategy::LongestFirst) => TruncationStrategy::LongestFirst,
+            Some(Strategy::OnlyFirst) => TruncationStrategy::OnlyFirst,
+            Some(Strategy::OnlySecond) => TruncationStrategy::OnlySecond,
+        };
+        params.direction = match self.direction {
+            None | Some(Direction::Right) => TruncationDirection::Right,
+            Some(Direction::Left) => TruncationDirection::Left,
+        };
+        params.stride = 0;
+        params
     }
 }
 
@@ -191,53 +191,46 @@ mod tests {
             "padding": {"direction": "left", "length": 24, "padId": 1, "padTypeId": 2, "padToken": "<pad>", "padToMultipleOf": 8},
             "truncation": {"maxLength": 8, "strategy": "only_second", "direction": "left"}
         }"#;
-        assert_eq!(
-            parse_encode_options(json).unwrap(),
-            pipeline::EncodeOptions {
-                add_special_tokens: false,
-                encode_special_tokens: true,
-                padding: With(PaddingParams {
-                    strategy: PaddingStrategy::Fixed(24),
-                    direction: PaddingDirection::Left,
-                    pad_to_multiple_of: Some(8),
-                    pad_id: 1,
-                    pad_type_id: 2,
-                    pad_token: "<pad>".to_owned(),
-                }),
-                truncation: With(TruncationParams {
-                    max_length: 8,
-                    strategy: TruncationStrategy::OnlySecond,
-                    direction: TruncationDirection::Left,
-                    stride: 0,
-                }),
-            }
-        );
+        let mut padding = PaddingParams::default();
+        padding.strategy = PaddingStrategy::Fixed(24);
+        padding.direction = PaddingDirection::Left;
+        padding.pad_to_multiple_of = Some(8);
+        padding.pad_id = 1;
+        padding.pad_type_id = 2;
+        padding.pad_token = "<pad>".to_owned();
+        let mut truncation = TruncationParams::default();
+        truncation.max_length = 8;
+        truncation.strategy = TruncationStrategy::OnlySecond;
+        truncation.direction = TruncationDirection::Left;
+        let mut expected = pipeline::EncodeOptions::default();
+        expected.add_special_tokens = false;
+        expected.encode_special_tokens = true;
+        expected.padding = With(padding);
+        expected.truncation = With(truncation);
+        assert_eq!(parse_encode_options(json).unwrap(), expected);
     }
 
     #[wasm_bindgen_test]
     fn test_padding_truncation_false() {
+        let mut expected = pipeline::EncodeOptions::default();
+        expected.padding = Off;
+        expected.truncation = Off;
         assert_eq!(
             parse_encode_options(r#"{"padding": false, "truncation": false}"#).unwrap(),
-            pipeline::EncodeOptions {
-                padding: Off,
-                truncation: Off,
-                ..Default::default()
-            }
+            expected
         );
     }
 
     #[wasm_bindgen_test]
     fn test_omitted_field_is_core_default() {
+        let mut truncation = TruncationParams::default();
+        truncation.max_length = 8;
+        let mut expected = pipeline::EncodeOptions::default();
+        expected.padding = With(PaddingParams::default());
+        expected.truncation = With(truncation);
         assert_eq!(
             parse_encode_options(r#"{"padding": {}, "truncation": {"maxLength": 8}}"#).unwrap(),
-            pipeline::EncodeOptions {
-                padding: With(PaddingParams::default()),
-                truncation: With(TruncationParams {
-                    max_length: 8,
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }
+            expected
         );
     }
 

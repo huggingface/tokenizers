@@ -24,6 +24,7 @@ pub trait Normalizer {
 
 /// One normalization step of a [`PipelineTokenizer`].
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum PipelineNormalizer {
     /// This used to be a pretokenizer, it makes more sense as a normalizer.
     Metaspace(MetaspaceNormalizer),

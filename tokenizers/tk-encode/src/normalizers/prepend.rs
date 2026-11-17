@@ -4,6 +4,7 @@ use crate::pipeline;
 use crate::tokenizer::Result;
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Prepend {
     pub prepend: String,
 }

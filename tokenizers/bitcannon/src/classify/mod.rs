@@ -25,6 +25,7 @@ use atom_tables::ATOM_TABLES;
 /// per class; a >16-coarse scheme would swap the 16-entry LUT for a 256-entry `tbl256` remap.
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub enum Atom {
     Letter = 0,          // \p{L}
     NumWord = 1,         // Nd ∪ Nl   (numeric AND \w)

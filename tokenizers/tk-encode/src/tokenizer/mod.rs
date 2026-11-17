@@ -27,6 +27,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// On disk it is the bare variant name, which the hand-written `Display` below spells verbatim.
 /// This one needs no `serialization.rs` of its own: those five names are the whole on-disk shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SplitDelimiterBehavior {
     Removed,
     Isolated,

@@ -69,14 +69,14 @@ impl From<CoreAddedToken> for State {
 
 impl From<State> for CoreAddedToken {
     fn from(state: State) -> Self {
-        Self {
-            content: state.content,
-            single_word: state.single_word,
-            lstrip: state.lstrip,
-            rstrip: state.rstrip,
-            normalized: state.normalized,
-            special: state.special,
-        }
+        let mut token = CoreAddedToken::default();
+        token.content = state.content;
+        token.single_word = state.single_word;
+        token.lstrip = state.lstrip;
+        token.rstrip = state.rstrip;
+        token.normalized = state.normalized;
+        token.special = state.special;
+        token
     }
 }
 
@@ -102,10 +102,11 @@ impl TokenToAdd<'_> {
     pub fn into_added_token(self, special: bool) -> CoreAddedToken {
         match self {
             Self::Content(content) => CoreAddedToken::from(content, special),
-            Self::Token(token) => CoreAddedToken {
-                special: token.0.special || special,
-                ..token.0.clone()
-            },
+            Self::Token(token) => {
+                let mut added = token.0.clone();
+                added.special |= special;
+                added
+            }
         }
     }
 }
@@ -122,15 +123,14 @@ impl AddedToken {
         normalized: Option<bool>,
         special: bool,
     ) -> Self {
-        CoreAddedToken {
-            content,
-            single_word,
-            lstrip,
-            rstrip,
-            normalized: normalized.unwrap_or(!special),
-            special,
-        }
-        .into()
+        let mut token = CoreAddedToken::default();
+        token.content = content;
+        token.single_word = single_word;
+        token.lstrip = lstrip;
+        token.rstrip = rstrip;
+        token.normalized = normalized.unwrap_or(!special);
+        token.special = special;
+        token.into()
     }
 
     /// The text of the token.

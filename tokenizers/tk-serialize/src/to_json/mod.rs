@@ -47,19 +47,21 @@ pub fn post_processor_to_json(
 /// Write a lone `padding`, the value of that one key. `None` comes back as `null`.
 ///
 /// The counterpart of [`padding_from_json`](crate::padding_from_json).
-pub fn padding_to_json(padding: Option<&tk_encode::tokenizer::PaddingParams>) -> String {
+pub fn padding_to_json(padding: Option<&tk_encode::tokenizer::PaddingParams>) -> Result<String> {
     let mut out = Out::new();
-    write_padding(&mut out, padding);
-    out.finish()
+    write_padding(&mut out, padding)?;
+    Ok(out.finish())
 }
 
 /// Write a lone `truncation`, the value of that one key. `None` comes back as `null`.
 ///
 /// The counterpart of [`truncation_from_json`](crate::truncation_from_json).
-pub fn truncation_to_json(truncation: Option<&tk_encode::tokenizer::TruncationParams>) -> String {
+pub fn truncation_to_json(
+    truncation: Option<&tk_encode::tokenizer::TruncationParams>,
+) -> Result<String> {
     let mut out = Out::new();
-    write_truncation(&mut out, truncation);
-    out.finish()
+    write_truncation(&mut out, truncation)?;
+    Ok(out.finish())
 }
 
 /// Write one string as the JSON literal `to_json` writes, quotes and escapes included.
@@ -77,9 +79,9 @@ pub fn to_json(tokenizer: &PipelineTokenizer) -> Result<String> {
     out.obj_open();
     out.field_str("version", "2.0");
     out.key("truncation");
-    write_truncation(&mut out, tokenizer.get_truncation());
+    write_truncation(&mut out, tokenizer.get_truncation())?;
     out.key("padding");
-    write_padding(&mut out, tokenizer.get_padding());
+    write_padding(&mut out, tokenizer.get_padding())?;
     // Which token plays which role, so this file can stand in for a `tokenizer_config.json`.
     out.key("role_to_token");
     let roles = tokenizer.get_role_to_token();

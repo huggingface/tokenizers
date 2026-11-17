@@ -13,6 +13,7 @@ use yada::DoubleArray;
 use yada::builder::DoubleArrayBuilder;
 
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum Error {
     #[error("WordPiece error: Missing [UNK] token from the vocabulary")]
     MissingUnkToken,

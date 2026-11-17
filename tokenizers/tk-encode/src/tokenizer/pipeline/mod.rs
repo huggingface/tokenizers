@@ -324,12 +324,14 @@ impl PipelineTokenizer {
     }
 }
 #[derive(Clone)]
+#[non_exhaustive]
 pub enum Input {
     Single(String),
     Pair(String, String),
 }
 
 #[derive(Clone)]
+#[non_exhaustive]
 pub enum Inputs {
     Single(Input),
     Batch(Vec<Input>),
@@ -757,7 +759,7 @@ impl PipelineTokenizer {
     /// the ids -- [`Self::encode_into`] -- pays neither an allocation nor a copy for them.
     ///
     /// `offset` is where `input` starts in its sequence: the parallel encoder hands over slices of
-    /// a longer sequence, and `PrependBehavior::First` needs to know which slice opens it.
+    /// a longer sequence, and `PrependScheme::First` needs to know which slice opens it.
     fn encode_sequence_into(
         &self,
         input: &str,
@@ -1073,6 +1075,7 @@ pub trait Model {
     clippy::large_enum_variant,
     reason = "PipelineBPE holds a 1kB byte -> id lookup table"
 )]
+#[non_exhaustive]
 pub enum PipelineModel {
     BPE(PipelineBPE),
     #[cfg(feature = "unigram")]
@@ -1208,6 +1211,7 @@ impl Model for PipelineModel {
 }
 
 #[derive(Default)]
+#[non_exhaustive]
 pub enum PipelineModelScratch {
     BPE(BpeScratch),
     #[cfg(feature = "wordlevel")]
