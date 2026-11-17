@@ -198,6 +198,77 @@ jobs:
           path: bindings/node/${{ env.APP_NAME }}.*.node
           if-no-files-found: error
 
+  test:
+    # Loads each shipped binary on a machine that can run it and runs the test suite.
+    # armv7 and Android would need emulation and stay untested.
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          # On macOS the loader picks darwin-universal first, so that is the binary users run.
+          - host: macos-latest
+            target: universal-apple-darwin
+            arch: arm64
+          - host: macos-latest
+            target: universal-apple-darwin
+            arch: x64
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: x64
+          - host: windows-latest
+            target: i686-pc-windows-msvc
+            arch: x86
+          - host: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            arch: arm64
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            arch: x64
+          - host: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            docker: node:lts-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5
+          - host: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            docker: node:lts-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5
+    name: test - ${{ matrix.settings.target }} (${{ matrix.settings.arch || 'docker' }})
+    runs-on: ${{ matrix.settings.host }}
+    needs:
+      - build
+      - universal-macOS
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Setup node
+        if: ${{ !matrix.settings.docker }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v6
+        with:
+          node-version: lts/*
+          architecture: ${{ matrix.settings.arch }}
+      - name: Download binary
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: ./bindings/node
+      - name: Fetch test fixture
+        shell: bash
+        run: |
+          mkdir -p bindings/node/data
+          curl -fsSL --retry 3 -o bindings/node/data/tokenizer-wiki.json \
+            https://huggingface.co/datasets/hf-internal-testing/tokenizers-test-data/resolve/main/tokenizer-wiki.json
+      - name: Test (host)
+        if: ${{ !matrix.settings.docker }}
+        working-directory: ./bindings/node
+        run: npm test
+      - name: Test (docker)
+        if: ${{ matrix.settings.docker }}
+        env:
+          IMAGE: ${{ matrix.settings.docker }}
+        run: docker run --rm -v "$PWD/bindings/node:/build" -w /build "$IMAGE" npm test
+
   package:
     # Runs on every trigger, so release-branch pushes exercise the whole assembly; only the
     # `publish` job below is tag-gated, and it publishes this exact tarball.
@@ -272,7 +343,9 @@ jobs:
     name: Publish
     environment: release
     runs-on: ubuntu-latest
-    needs: package
+    needs:
+      - package
+      - test
     steps:
       - name: Setup node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v6
