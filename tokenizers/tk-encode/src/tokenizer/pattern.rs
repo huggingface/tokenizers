@@ -3,7 +3,7 @@ use crate::utils::SysRegex;
 use bitcannon::literal::Literal;
 
 /// Pattern used by `Split` and `Replace` to find the spans to split on or replace.
-pub trait Pattern {
+pub(crate) trait Pattern {
     /// Slice the given string in a list of pattern match positions, with
     /// a boolean indicating whether this is a match or not.
     ///
@@ -61,7 +61,7 @@ impl Pattern for &SysRegex {
 /// Invert the `is_match` flags for the wrapped Pattern. This is useful
 /// for example when we use a regex that matches words instead of a delimiter,
 /// and we want to match the delimiter.
-pub struct Invert<P: Pattern>(pub P);
+pub(crate) struct Invert<P: Pattern>(pub P);
 impl<P: Pattern> Pattern for Invert<P> {
     fn find_matches(&self, inside: &str) -> Result<Vec<((usize, usize), bool)>> {
         Ok(self

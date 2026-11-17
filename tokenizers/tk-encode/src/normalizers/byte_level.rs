@@ -14,7 +14,7 @@ impl Default for ByteLevel {
 }
 
 impl ByteLevel {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {}
     }
 }

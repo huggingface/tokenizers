@@ -9,7 +9,7 @@ use hifijson::token::Lex as _;
 use crate::vendored::{f64_from_parts, number};
 
 /// A real `tokenizer.json` nests about six levels; this keeps a hostile one off the stack.
-pub const MAX_DEPTH: usize = 64;
+pub(crate) const MAX_DEPTH: usize = 64;
 
 type Raw<'a> = hifijson::value::Value<&'a str, Cow<'a, str>>;
 
@@ -17,12 +17,12 @@ type Raw<'a> = hifijson::value::Value<&'a str, Cow<'a, str>>;
 #[derive(Debug, PartialEq)]
 /// A parsed `tokenizer.json`. A newtype, not an alias, so the accessors are inherent methods
 /// and `hifijson` stays inside this module. Nothing becomes an `f64` until [`Json::as_f64`].
-pub struct Json<'a>(Raw<'a>);
+pub(crate) struct Json<'a>(Raw<'a>);
 
 #[derive(Debug, PartialEq)]
 pub struct Error {
-    pub at: usize,
-    pub kind: hifijson::Error,
+    pub(crate) at: usize,
+    pub(crate) kind: hifijson::Error,
 }
 
 impl fmt::Display for Error {
@@ -34,7 +34,7 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 
 impl<'a> Json<'a> {
-    pub fn parse(input: &'a str) -> Result<Self, Error> {
+    pub(crate) fn parse(input: &'a str) -> Result<Self, Error> {
         let mut lexer = hifijson::SliceLexer::new(input.as_bytes());
         let parsed = lexer.exactly_one(hifijson::token::Lex::ws_peek, |next, lexer| {
             hifijson::value::parse_bounded(MAX_DEPTH, next, lexer)
@@ -52,7 +52,7 @@ impl<'a> Json<'a> {
     }
 
     /// A `null` value reads as present; [`Json::field`] treats it as absent.
-    pub fn get(&self, key: &str) -> Option<&Json<'a>> {
+    pub(crate) fn get(&self, key: &str) -> Option<&Json<'a>> {
         match &self.0 {
             Raw::Object(entries) => entries
                 .iter()
@@ -63,33 +63,33 @@ impl<'a> Json<'a> {
     }
 
     /// [`get`](Json::get), but `null` reads as absent -- `"normalizer": null` means no normalizer.
-    pub fn field(&self, key: &str) -> Option<&Json<'a>> {
+    pub(crate) fn field(&self, key: &str) -> Option<&Json<'a>> {
         self.get(key).filter(|v| !matches!(v.0, Raw::Null))
     }
 
-    pub fn type_tag(&self) -> Option<&str> {
+    pub(crate) fn type_tag(&self) -> Option<&str> {
         self.get("type")?.as_str()
     }
 
-    pub fn is_null(&self) -> bool {
+    pub(crate) fn is_null(&self) -> bool {
         matches!(self.0, Raw::Null)
     }
 
-    pub fn as_str(&self) -> Option<&str> {
+    pub(crate) fn as_str(&self) -> Option<&str> {
         match &self.0 {
             Raw::String(s) => Some(&**s),
             _ => None,
         }
     }
 
-    pub fn as_bool(&self) -> Option<bool> {
+    pub(crate) fn as_bool(&self) -> Option<bool> {
         match &self.0 {
             Raw::Bool(b) => Some(*b),
             _ => None,
         }
     }
 
-    pub fn as_f64(&self) -> Option<f64> {
+    pub(crate) fn as_f64(&self) -> Option<f64> {
         match &self.0 {
             Raw::Number((digits, _)) => {
                 let (positive, significand, exponent) = number(digits);
@@ -101,7 +101,7 @@ impl<'a> Json<'a> {
 
     /// Rejects fractions, negatives and anything past `u32::MAX`, so a malformed file cannot
     /// silently truncate an id.
-    pub fn as_u32(&self) -> Option<u32> {
+    pub(crate) fn as_u32(&self) -> Option<u32> {
         let n = self.as_f64()?;
         if n.fract() != 0.0 || !(0.0..=f64::from(u32::MAX)).contains(&n) {
             return None;
@@ -109,7 +109,7 @@ impl<'a> Json<'a> {
         Some(n as u32)
     }
 
-    pub fn as_usize(&self) -> Option<usize> {
+    pub(crate) fn as_usize(&self) -> Option<usize> {
         let n = self.as_f64()?;
         if n.fract() != 0.0 || !(0.0..=9_007_199_254_740_992.0).contains(&n) {
             return None;
@@ -117,7 +117,7 @@ impl<'a> Json<'a> {
         Some(n as usize)
     }
 
-    pub fn as_array(&self) -> Option<&[Json<'a>]> {
+    pub(crate) fn as_array(&self) -> Option<&[Json<'a>]> {
         match &self.0 {
             // SAFETY: `Json` is `#[repr(transparent)]` over `Raw`, so `[Raw]` and `[Json]` have
             Raw::Array(items) => {
@@ -127,7 +127,7 @@ impl<'a> Json<'a> {
         }
     }
 
-    pub fn entries(&self) -> Option<impl ExactSizeIterator<Item = (&str, &Json<'a>)>> {
+    pub(crate) fn entries(&self) -> Option<impl ExactSizeIterator<Item = (&str, &Json<'a>)>> {
         match &self.0 {
             Raw::Object(entries) => Some(entries.iter().map(|(k, v)| (&**k, Json::wrap(v)))),
             _ => None,
@@ -135,7 +135,7 @@ impl<'a> Json<'a> {
     }
 
     /// A required field: the accessor plus the one error -- "`<owner>` has no `<name>`".
-    pub fn need<'s, T>(
+    pub(crate) fn need<'s, T>(
         &'s self,
         owner: &str,
         name: &str,

@@ -16,7 +16,7 @@ use std::sync::atomic::Ordering;
 pub use rayon::current_num_threads;
 
 /// TODO: deprecate
-pub const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
+pub(crate) const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
 
 /// 0 means deafult value
 static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
@@ -123,7 +123,7 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     slot.map(|slot| slot.pool.clone())
 }
 
-pub fn num_threads() -> usize {
+pub(crate) fn num_threads() -> usize {
     match NUM_THREADS.load(Ordering::Acquire) {
         // 0 == default value
         0 => std::thread::available_parallelism()
@@ -144,7 +144,7 @@ pub fn set_num_threads(n: usize) {
 }
 
 /// Get the currently set value for `TOKENIZERS_PARALLELISM` env variable
-pub fn get_parallelism() -> bool {
+pub(crate) fn get_parallelism() -> bool {
     match std::env::var(ENV_VARIABLE) {
         Ok(mut v) => {
             v.make_ascii_lowercase();

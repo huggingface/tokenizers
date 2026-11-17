@@ -29,8 +29,8 @@ pub struct Unigram {
     is_optimized: bool,
     byte_fallback: bool,
 
-    pub alpha: Option<f64>,
-    pub nbest_size: Option<usize>,
+    pub(crate) alpha: Option<f64>,
+    pub(crate) nbest_size: Option<usize>,
 }
 impl PartialEq for Unigram {
     fn eq(&self, other: &Self) -> bool {
@@ -54,7 +54,7 @@ impl std::fmt::Debug for Unigram {
 static K_UNK_PENALTY: f64 = 10.0;
 
 #[derive(thiserror::Error, Debug)]
-pub enum UnigramError {
+pub(crate) enum UnigramError {
     #[error("The vocabulary is empty but at least <unk> is needed")]
     EmptyVocabulary,
     #[error("The `unk_id` is larger than vocabulary size")]
@@ -374,8 +374,8 @@ impl<'a> Iterator for UnigramIterator<'a> {
 /// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
 /// plain inherent methods now and every call site is unchanged.
 impl Unigram {
-    pub fn get_vocab(&self) -> HashMap<String, u32> {
-        self.token_to_ids.get_vocab().into_iter().collect()
+    pub(crate) fn get_vocab(&self) -> HashMap<String, u32> {
+        self.token_to_ids.content().into_iter().collect()
     }
 
     pub fn get_vocab_size(&self) -> usize {
@@ -386,7 +386,7 @@ impl Unigram {
         self.token_to_ids.token_to_id(token)
     }
 
-    pub fn id_to_token(&self, id: u32) -> Option<String> {
+    pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab.get(id as usize).map(|item| item.0.clone())
     }
 }

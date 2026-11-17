@@ -7,7 +7,7 @@ pub struct SysRegex {
 }
 
 impl SysRegex {
-    pub fn find_iter<'r, 't>(&'r self, inside: &'t str) -> Matches<'r, 't> {
+    pub(crate) fn find_iter<'r, 't>(&'r self, inside: &'t str) -> Matches<'r, 't> {
         Matches(self.regex.find_iter(inside))
     }
 

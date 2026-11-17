@@ -51,7 +51,7 @@ impl Template {
     }
 
     /// whether the encoding needs a `type_ids` buffer at all
-    pub fn has_type_ids(&self) -> bool {
+    pub(crate) fn has_type_ids(&self) -> bool {
         self.a_type_id != 0
             || self.b_type_id.is_some_and(|id| id != 0)
             || [&self.prefix, &self.infix, &self.suffix]
@@ -59,7 +59,7 @@ impl Template {
                 .any(|run| run.iter().any(|&(_, id)| id != 0))
     }
 
-    pub fn post_process<const SPECIALS: bool>(
+    pub(crate) fn post_process<const SPECIALS: bool>(
         &self,
         s1: Vec<PipelineToken>,
         s2: Option<Vec<PipelineToken>>,

@@ -42,10 +42,8 @@ mod pre_tokenizer;
 
 pub use normalizer::{Normalizer, NormalizerChain, PipelineNormalizer, normalize_all};
 pub use post_processor::{PipelinePostProcessor, Template};
-pub use pre_tokenizer::{
-    PipelinePreTokenizer, PreTokenizer, PreTokenizerScratch, SplitPolicy, split, split_delimiter,
-    split_matches,
-};
+pub use pre_tokenizer::{PipelinePreTokenizer, PreTokenizer, PreTokenizerScratch};
+pub(crate) use pre_tokenizer::{split_delimiter, split_matches};
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
@@ -303,7 +301,7 @@ impl PipelineTokenizer {
         }
     }
 
-    pub fn resolve_padding<'a>(
+    pub(crate) fn resolve_padding<'a>(
         &'a self,
         padding_override: &'a Override<PaddingParams>,
     ) -> Option<&'a PaddingParams> {
@@ -314,7 +312,7 @@ impl PipelineTokenizer {
         }
     }
 
-    pub fn resolve_truncation<'a>(
+    pub(crate) fn resolve_truncation<'a>(
         &'a self,
         truncation_override: &'a Override<TruncationParams>,
     ) -> Option<&'a TruncationParams> {
@@ -1087,7 +1085,7 @@ pub enum PipelineModel {
 
 impl PipelineModel {
     /// `id -> token` used by [`PipelineTokenizer::decode`]
-    pub fn id_to_token(&self, id: u32) -> Option<String> {
+    pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         match self {
             Self::BPE(model) => model.id_to_token(id),
             #[cfg(feature = "unigram")]
@@ -1099,7 +1097,7 @@ impl PipelineModel {
         }
     }
 
-    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+    pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
         match self {
             Self::BPE(model) => model.token_to_id(token),
             #[cfg(feature = "unigram")]
@@ -1111,7 +1109,7 @@ impl PipelineModel {
         }
     }
 
-    pub fn get_vocab(&self) -> HashMap<String, u32> {
+    pub(crate) fn get_vocab(&self) -> HashMap<String, u32> {
         match self {
             Self::BPE(model) => model.get_vocab(),
             #[cfg(feature = "unigram")]
@@ -1123,7 +1121,7 @@ impl PipelineModel {
         }
     }
 
-    pub fn get_vocab_size(&self) -> usize {
+    pub(crate) fn get_vocab_size(&self) -> usize {
         match self {
             Self::BPE(model) => model.get_vocab_size(),
             #[cfg(feature = "unigram")]

@@ -30,7 +30,7 @@ impl From<&str> for SplitPattern {
 
 /// How a [`Split`] looks for its pattern.
 #[derive(Debug)]
-pub enum Search {
+pub(crate) enum Search {
     /// A plain string, scanned for directly — no regex engine involved, so this works in every build.
     Literal(Literal),
     /// A real regex, which needs the system backend (the `fancy-regex` feature).
@@ -50,7 +50,7 @@ pub struct Split {
     pub pattern: SplitPattern,
     /// How the pattern is found. A plain string never needs a backend; a regex does, unless it is one
     /// of the GPT patterns the native FSM below covers.
-    pub search: Search,
+    pub(crate) search: Search,
     pub behavior: SplitDelimiterBehavior,
     pub invert: bool,
     /// Native `bitcannon` FSM for a recognized GPT regex (gpt2 / cl100k-Llama-3 / o200k), used on the
