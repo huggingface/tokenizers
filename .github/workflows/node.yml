@@ -38,10 +38,10 @@ jobs:
       - name: Install Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
-          node-version: latest
+          node-version: lts/*
 
       - name: Install dependencies
-        run: yarn install
+        run: yarn install --immutable
 
       - name: Build all
         run: yarn build
@@ -64,6 +64,15 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make test HF="uvx --from huggingface_hub hf"
+
+      # The oldest Node line `engines.node` in package.json promises; keep the two in sync.
+      - name: Install the minimum supported Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Run JS tests on the minimum supported Node
+        run: npm test
 
   quality:
     permissions:
@@ -98,13 +107,23 @@ jobs:
       - name: Install Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
-          node-version: latest
+          node-version: lts/*
 
       - name: Install dependencies
-        run: yarn install
+        run: yarn install --immutable
 
       - name: Lint TS
         run: yarn lint
+
+      - name: Minimum Node is still supported upstream
+        run: |
+          floor=$(jq -r .engines.node package.json | grep -oE '[0-9]+' | head -1)
+          eol=$(curl -fsSL https://raw.githubusercontent.com/nodejs/Release/main/schedule.json \
+            | jq -er --arg v "v$floor" '.[$v].end')
+          if [[ "$(date -u +%F)" > "$eol" ]]; then
+            echo "::error::Node $floor reached end of life on $eol: raise engines.node in package.json and the minimum Node test in node.yml"
+            exit 1
+          fi
 
   audit:
     permissions:
