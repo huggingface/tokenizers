@@ -104,9 +104,8 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v6
         if: ${{ !matrix.settings.docker }}
         with:
+          package-manager-cache: false
           node-version: lts/*
-          cache: yarn
-          cache-dependency-path: ./bindings/node/yarn.lock
 
       - name: Install dependencies
         if: ${{ !matrix.settings.docker }}
@@ -117,6 +116,7 @@ jobs:
         if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--cross-compile') }}
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29  # v2.2.1
         with:
+          use-cache: false
           # Pin: without a version the action installs zig master (nightly),
           # whose `zig env` output has drifted and broken the parsers in both
           # napi-rs/cli and cargo-zigbuild.
@@ -234,6 +234,7 @@ jobs:
         if: ${{ !matrix.settings.docker }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v6
         with:
+          package-manager-cache: false
           node-version: lts/*
           architecture: ${{ matrix.settings.arch }}
       - name: Download binary
@@ -272,9 +273,8 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v6
         with:
+          package-manager-cache: false
           node-version: lts/*
-          cache: yarn
-          cache-dependency-path: ./bindings/node/yarn.lock
       - name: Install dependencies
         working-directory: ./bindings/node
         run: yarn install --immutable
@@ -338,6 +338,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v6
         with:
+          package-manager-cache: false
           node-version: lts/*
           # No registry-url: it writes an .npmrc with a ${NODE_AUTH_TOKEN}
           # placeholder, which Trusted Publishing has nothing to fill in.
