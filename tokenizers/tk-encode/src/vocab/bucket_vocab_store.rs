@@ -458,6 +458,23 @@ impl BucketVocabStore {
 mod tests {
     use super::*;
 
+    // Six keys used to get exactly six slots, and this set has no placement in them on any seed.
+    #[test]
+    fn six_tokens_build() {
+        let tokens = ["<s>", "<unk>", "<bos>", "[CLS]", "[SEP]", "[MASK]"];
+        let vocab = BucketVocabStore::build(
+            tokens
+                .iter()
+                .zip(0u32..)
+                .map(|(token, id)| (token.as_bytes().to_vec(), id))
+                .collect(),
+        )
+        .unwrap();
+        for (token, id) in tokens.iter().zip(0u32..) {
+            assert_eq!(vocab.token_to_id(token), Some(id));
+        }
+    }
+
     // The key is a little-endian pack of the word with its length on top -- not whatever a `u64`
     // load of those bytes happens to give. Built with shifts here so the expected value is the
     // same on a big-endian target.
