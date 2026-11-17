@@ -88,7 +88,9 @@ impl<'a> WordCache {
     const WINDOW_SIZE: usize = 16;
 
     pub fn new(num_slots: usize) -> Self {
-        let next_pow2 = num_slots.next_power_of_two();
+        let next_pow2 = num_slots
+            .checked_next_power_of_two()
+            .expect("BPE::from_config rejects a cache_capacity with no next power of two");
         if next_pow2 != num_slots {
             warn!(
                 "WordCache: rounding cache_capacity up from {num_slots} to {next_pow2} slots \

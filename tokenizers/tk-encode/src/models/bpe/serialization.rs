@@ -204,6 +204,13 @@ impl BPE {
         if matches!(&dropout, Some(dropout) if *dropout > 0.0) {
             return Err("BPE models with dropout not supported yet".into());
         }
+        // `WordCache` rounds the capacity up to a power of two and masks every slot index with it.
+        if cache_capacity.checked_next_power_of_two().is_none() {
+            return Err(format!(
+                "BPE cache_capacity {cache_capacity} is too large: no power of two above it fits in a usize"
+            )
+            .into());
+        }
         // A capacity of zero means "no cache"; anything else sizes the per-scratch table.
         let cache_capacity = Some(cache_capacity).filter(|&c| c > 0);
         let prefix = continuing_subword_prefix.unwrap_or_default();

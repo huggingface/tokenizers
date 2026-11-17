@@ -317,6 +317,18 @@ fn rejects_unsupported_configs() {
     );
 }
 
+// The word cache masks a hash with `slots - 1`, so it rounds the capacity up to a power of two.
+#[test]
+fn rejects_a_cache_capacity_with_no_next_power_of_two() {
+    assert!(
+        hello(BpeConfig {
+            cache_capacity: usize::MAX,
+            ..Default::default()
+        })
+        .is_err()
+    );
+}
+
 #[test]
 fn rejects_unk_token_missing_from_vocab() {
     assert!(
