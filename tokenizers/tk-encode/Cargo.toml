@@ -72,8 +72,5 @@ parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
 [dev-dependencies]
 # Test-only: one `#[cfg(test)]` cross-check in `vocab/buckets.rs`.
 daachorse = "5.0.0"
-tempfile = "3.27"
 assert_approx_eq = "1.1"
-tracing = "0.1"
-tracing-subscriber = "0.3.23"
 serde_json = "1.0"
