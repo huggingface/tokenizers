@@ -117,10 +117,9 @@ jobs:
         if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--cross-compile') }}
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29  # v2.2.1
         with:
-          # Pin — without a version the action installs zig master (nightly)
+          # Pin: without a version the action installs zig master (nightly),
           # whose `zig env` output has drifted and broken the parsers in both
-          # napi-rs/cli v2 and cargo-zigbuild. 0.13.0 is what napi-rs's own
-          # release templates pin to.
+          # napi-rs/cli and cargo-zigbuild.
           version: 0.16.0
 
       - name: Verify zig
