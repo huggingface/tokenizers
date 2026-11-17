@@ -28,16 +28,10 @@ pub struct Unigram {
     fuse_unk: bool,
     is_optimized: bool,
     byte_fallback: bool,
-
-    pub(crate) alpha: Option<f64>,
-    pub(crate) nbest_size: Option<usize>,
 }
 impl PartialEq for Unigram {
     fn eq(&self, other: &Self) -> bool {
-        self.unk_id == other.unk_id
-            && self.vocab == other.vocab
-            && self.alpha == other.alpha
-            && self.nbest_size == other.nbest_size
+        self.unk_id == other.unk_id && self.vocab == other.vocab
     }
 }
 
@@ -121,8 +115,6 @@ impl Unigram {
             fuse_unk,
             is_optimized,
             byte_fallback,
-            alpha: None,
-            nbest_size: None,
         })
     }
 
@@ -184,17 +176,9 @@ impl Unigram {
         }
     }
 
-    /// Whether [`Unigram::alpha`] asks for a tokenization drawn at random from the
-    /// lattice instead of its best path. Such a result is one draw out of many, so no
-    /// cache may hold it.
-    fn samples(&self) -> bool {
-        matches!(self.alpha, Some(alpha) if alpha != 0.0)
-    }
-
-    /// The pieces `sentence` encodes to: the lattice's best path, or a draw from it when
-    /// [`Unigram::samples`].
+    /// The pieces `sentence` encodes to: the lattice's best path.
     pub(super) fn encode(&self, sentence: &str) -> Result<Vec<String>> {
-        if self.is_optimized && !self.samples() {
+        if self.is_optimized {
             self.encode_optimized(sentence)
         } else {
             self.encode_unoptimized(sentence)
@@ -295,11 +279,7 @@ impl Unigram {
     fn encode_unoptimized(&self, sentence: &str) -> Result<Vec<String>> {
         let mut lattice = Lattice::from(sentence, self.bos_id, self.eos_id);
         self.populate_nodes(&mut lattice);
-        let path = match (self.nbest_size, self.alpha) {
-            (Some(n), Some(alpha)) if n > 0 => lattice.sample_nbest(n, alpha),
-            (_, Some(alpha)) => lattice.sample(alpha),
-            _ => lattice.viterbi(),
-        };
+        let path = lattice.viterbi();
         if self.fuse_unk {
             let mut results = vec![];
             let mut token = String::new();
@@ -416,16 +396,13 @@ impl pipeline::Tokenize for Unigram {
         if sequence.is_empty() {
             return Ok(());
         }
-        let mut placement = None;
-        if !self.samples() {
-            match scratch.word_cache.lookup(sequence.as_bytes()) {
-                Lookup::Hit(ids) => {
-                    output.extend(ids.iter().copied().map(Token::from));
-                    return Ok(());
-                }
-                Lookup::Miss(at) => placement = Some(at),
+        let placement = match scratch.word_cache.lookup(sequence.as_bytes()) {
+            Lookup::Hit(ids) => {
+                output.extend(ids.iter().copied().map(Token::from));
+                return Ok(());
             }
-        }
+            Lookup::Miss(at) => at,
+        };
 
         let start = output.len();
         for string in self.encode(sequence)? {
@@ -454,13 +431,9 @@ impl pipeline::Tokenize for Unigram {
             };
         }
 
-        // Sampling skipped the lookup, so `placement` is `None` and this stores
-        // nothing, which is what `samples` says has to happen.
-        if let Some(at) = placement {
-            scratch
-                .word_cache
-                .insert(at, output[start..].iter().map(|token| token.id()));
-        }
+        scratch
+            .word_cache
+            .insert(placement, output[start..].iter().map(|token| token.id()));
         Ok(())
     }
 }

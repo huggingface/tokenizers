@@ -3167,7 +3167,6 @@ dependencies = [
  "log",
  "memchr",
  "ptr_hash",
- "rand 0.10.2",
  "rayon",
  "rayon-cond",
  "serde_json",

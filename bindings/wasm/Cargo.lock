@@ -1085,7 +1085,6 @@ dependencies = [
  "log",
  "memchr",
  "ptr_hash",
- "rand",
  "spm_precompiled",
  "thiserror",
  "unicode-normalization",

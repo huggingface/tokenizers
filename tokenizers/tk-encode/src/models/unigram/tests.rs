@@ -248,16 +248,3 @@ fn byte_fallback_ids_survive_the_cache() {
     assert_eq!(ids, [1, 2]);
     assert_eq!(pipeline_ids(&model, "é", &mut scratch), ids);
 }
-
-#[test]
-fn sampling_is_never_cached() {
-    // A sampled tokenization is one draw out of many. Remembering it would turn
-    // every later call on the same text into that same draw.
-    let mut model = Unigram::from(abcd_vocab(), Some(0), false).unwrap();
-    model.alpha = Some(0.5);
-    let mut scratch = Tokenize::init_scratch(&model);
-
-    pipeline_ids(&model, "abcd", &mut scratch);
-
-    assert_eq!(scratch.word_cache.lookup(b"abcd").hit(), None);
-}

@@ -1,6 +1,4 @@
 use dary_heap::QuaternaryHeap;
-use rand::distr::weighted::WeightedIndex;
-use rand::{prelude::*, rng};
 use std::cell::RefCell;
 use std::cmp::{Ordering, min};
 use std::rc::Rc;
@@ -47,8 +45,7 @@ impl Ord for Hypothesis {
     }
 }
 
-/// Structure to implement Viterbi algorithm to find the best encoding, or sample
-/// from all possible encodings of a given sentence.
+/// Structure to implement Viterbi algorithm to find the best encoding of a given sentence.
 #[derive(Debug)]
 pub struct Lattice<'a> {
     pub(super) sentence: &'a str,
@@ -364,72 +361,6 @@ impl<'a> Lattice<'a> {
             }
         }
         freq * z
-    }
-
-    pub(crate) fn sample(&self, theta: f64) -> Vec<NodeRef> {
-        let len = self.len();
-        if len == 0 {
-            return vec![];
-        }
-        let mut alpha = vec![0.0; self.nodes.len()];
-        for pos in 0..=len {
-            for rnode in &self.begin_nodes[pos] {
-                for lnode in &self.end_nodes[pos] {
-                    let lid = lnode.borrow().node_id;
-                    let rid = rnode.borrow().node_id;
-                    alpha[rid] = log_sum_exp(
-                        alpha[rid],
-                        theta * (lnode.borrow().score + alpha[lid]),
-                        *lnode == self.end_nodes[pos][0],
-                    );
-                }
-            }
-        }
-
-        let mut rng = rng();
-        let mut results: Vec<NodeRef> = vec![];
-        let mut probs: Vec<f64> = vec![];
-        let mut z = alpha[self.eos_node().borrow().node_id];
-        let mut node = self.eos_node();
-        loop {
-            probs.clear();
-            let pos = node.borrow().pos;
-            for lnode in &self.end_nodes[pos] {
-                let lid = lnode.borrow().node_id;
-                probs.push((alpha[lid] + theta * lnode.borrow().score - z).exp())
-            }
-            let dist = WeightedIndex::new(&probs).unwrap();
-            let index = dist.sample(&mut rng);
-            node = Rc::clone(&self.end_nodes[pos][index]);
-            if node == self.bos_node() {
-                break;
-            }
-            z = alpha[node.borrow().node_id];
-            results.push(Rc::clone(&node));
-        }
-        results.reverse();
-        results
-    }
-
-    pub(crate) fn sample_nbest(&mut self, n: usize, theta: f64) -> Vec<NodeRef> {
-        let nbest_paths = self.nbest(n);
-        if nbest_paths.is_empty() {
-            return self.viterbi();
-        }
-
-        let mut probs: Vec<f64> = Vec::with_capacity(nbest_paths.len());
-        for p in &nbest_paths {
-            let path_score: f64 = p.iter().map(|node| node.borrow().score).sum();
-            probs.push((theta * path_score).exp());
-        }
-
-        if let Ok(dist) = WeightedIndex::new(&probs) {
-            let mut rng = rng();
-            let index = dist.sample(&mut rng);
-            nbest_paths[index].clone()
-        } else {
-            nbest_paths[0].clone()
-        }
     }
 }
 

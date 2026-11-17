@@ -1213,7 +1213,6 @@ dependencies = [
  "log",
  "memchr",
  "ptr_hash",
- "rand",
  "rayon",
  "rayon-cond",
  "spm_precompiled",
