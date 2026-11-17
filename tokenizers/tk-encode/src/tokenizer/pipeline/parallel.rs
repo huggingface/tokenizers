@@ -53,6 +53,8 @@ impl Inputs {
 #[repr(align(64))]
 struct CachePadded<T>(pub(crate) T);
 
+/// A value that one thread writes and another thread reads later, without a lock.
+/// The atomics of [`EncodeBatch`] order the write before the read.
 struct Slot<T>(UnsafeCell<Option<T>>);
 
 impl<T> Slot<T> {
@@ -60,24 +62,29 @@ impl<T> Slot<T> {
         Self(UnsafeCell::new(value))
     }
 
+    /// # Safety
+    ///
+    /// No other thread accesses this slot during the call.
     unsafe fn set(&self, value: T) {
+        // SAFETY: the caller rules out any other access to the slot.
         unsafe { *self.0.get() = Some(value) };
     }
 
-    // TODO: safety doc
-    fn take(&self) -> Option<T> {
+    /// # Safety
+    ///
+    /// No other thread accesses this slot during the call.
+    unsafe fn take(&self) -> Option<T> {
+        // SAFETY: the caller rules out any other access to the slot.
         unsafe { &mut *self.0.get() }.take()
     }
 }
 
-type ChunkResult = Slot<Result<Vec<Token>>>;
-/// SAFETY: we make sure each chunk's result is set by only one given thread thanks to
-/// [`EncodeBatch::next_task`]
-unsafe impl Sync for ChunkResult {}
+// SAFETY: `set` and `take` are unsafe, and their callers keep two threads from accessing one slot
+// at the same time. The value moves from the writing thread to the reading one, hence `T: Send`.
+unsafe impl<T: Send> Sync for Slot<T> {}
 
+type ChunkResult = Slot<Result<Vec<Token>>>;
 type EncodingResult = Slot<Result<Encoding>>;
-/// SAFETY: we make sure each result is set only by one thread thanks to [`EncodeBatch::remaining`]
-unsafe impl Sync for EncodingResult {}
 
 struct SequenceChunk {
     /// Sequence index in the [`Inputs`] batch
@@ -181,7 +188,8 @@ impl EncodeBatch {
             unsafe { self.outputs[chunk.seq][chunk.idx].set(res) };
 
             if self.remaining[chunk.seq].fetch_sub(1, Ordering::AcqRel) == 1 {
-                let encoding = self.reconstruct(chunk.seq);
+                // SAFETY: this thread brought `remaining[chunk.seq]` to zero, and no other does.
+                let encoding = unsafe { self.reconstruct(chunk.seq) };
                 // SAFETY: only the thread that decremented self.remaining[chunk.seq] to 0 writes to
                 // the slot
                 unsafe { self.encodings[chunk.seq].set(encoding) };
@@ -202,19 +210,31 @@ impl EncodeBatch {
         true
     }
 
-    fn reconstruct(&self, seq: usize) -> Result<Encoding> {
+    /// # Safety
+    ///
+    /// The caller is the thread whose decrement brought `remaining[seq]` to zero.
+    unsafe fn reconstruct(&self, seq: usize) -> Result<Encoding> {
         let chunk_results = &self.outputs[seq];
         let a_len = self.side_a_len[seq];
-        let a = drain(&chunk_results[..a_len])?;
-        let b = (a_len < chunk_results.len())
-            .then(|| drain(&chunk_results[a_len..]))
-            .transpose()?;
+        // SAFETY: every chunk of `seq` was set before its decrement of `remaining[seq]`, and the
+        // thread that sets a chunk never accesses it again. Only the caller is left to read them.
+        let (a, b) = unsafe {
+            let a = drain(&chunk_results[..a_len])?;
+            let b = (a_len < chunk_results.len())
+                .then(|| drain(&chunk_results[a_len..]))
+                .transpose()?;
+            (a, b)
+        };
         self.tokenizer.post_process(a, b, &self.options)
     }
 
-    fn take_encoding(&self, seq: usize) -> Result<Encoding> {
-        self.encodings[seq]
-            .take()
+    /// # Safety
+    ///
+    /// `seq` was read from `completion_queue`, and this is the only call for that entry.
+    unsafe fn take_encoding(&self, seq: usize) -> Result<Encoding> {
+        // SAFETY: a worker stores `seq` in `completion_queue` after it set this slot, and it
+        // doesn't access the slot again.
+        unsafe { self.encodings[seq].take() }
             .expect("[BUG] completion signalled before the encoding was published")
     }
 
@@ -255,7 +275,9 @@ impl Iterator for StreamingIter {
             if let Some(seq) = self.batch.completed_seq(self.next) {
                 self.next += 1;
                 self.completed += 1;
-                return Some((seq, self.batch.take_encoding(seq)));
+                // SAFETY: `completed_seq` read `seq` from `completion_queue`, and `self.next`
+                // moves past each entry once.
+                return Some((seq, unsafe { self.batch.take_encoding(seq) }));
             }
             let scratch = scratch.get_or_insert_with(|| self.batch.tokenizer.get_scratch());
             // The caller has to wait for results regardless: instead of parking or empty
@@ -273,15 +295,19 @@ impl Drop for StreamingIter {
     }
 }
 
-fn drain(results: &[ChunkResult]) -> Result<Vec<Token>> {
+/// # Safety
+///
+/// No other thread accesses `results` during the call.
+unsafe fn drain(results: &[ChunkResult]) -> Result<Vec<Token>> {
     if let [only] = results {
-        return only
-            .take()
+        // SAFETY: the caller rules out any other access to `results`.
+        return unsafe { only.take() }
             .expect("[BUG] failed to take the chunk's result when we expect it to be present");
     }
     let mut out = Vec::with_capacity(results.len());
     for res in results {
-        match res.take() {
+        // SAFETY: the caller rules out any other access to `results`.
+        match unsafe { res.take() } {
             Some(Ok(tokens)) => out.push(tokens),
             Some(Err(e)) => return Err(e),
             None => {
