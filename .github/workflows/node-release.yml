@@ -16,7 +16,28 @@ on:
 permissions: {}
 
 jobs:
+  version-match:
+    name: Assert the ref and version match
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      # Checked on release branches too, so the dry run catches a missed bump before the tag.
+      - run: |
+          case "$GITHUB_REF" in
+            refs/tags/v*) expected=${GITHUB_REF_NAME#v} ;;
+            refs/heads/release/v*) expected=${GITHUB_REF_NAME#release/v} ;;
+            *) echo "No version in $GITHUB_REF, skipping"; exit 0 ;;
+          esac
+          actual=$(jq -r .version bindings/node/package.json)
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::bindings/node/package.json is $actual, $GITHUB_REF expects $expected"
+            exit 1
+          fi
+
   build:
+    needs: version-match
     permissions:
       contents: read
     strategy:
