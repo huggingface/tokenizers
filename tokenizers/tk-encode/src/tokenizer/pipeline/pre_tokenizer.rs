@@ -122,8 +122,13 @@ impl PreTokenizerScratch {
                 std::slice::from_raw_parts_mut(out.as_mut_ptr().add(base), n + 1),
             )
         };
-        debug_assert!(k <= n + 1);
-        // SAFETY: the splitter wrote `k <= n + 1` spans from `base`.
+        assert!(
+            k <= n + 1,
+            "the splitter reported {k} spans, more than the {} it was given room for",
+            n + 1
+        );
+        // SAFETY: the splitter wrote `k` spans from `base`, and the assert keeps `k` within the
+        // reserved `n + 1`.
         unsafe { out.set_len(base + k) };
     }
 
