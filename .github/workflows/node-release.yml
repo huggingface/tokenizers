@@ -198,19 +198,12 @@ jobs:
           path: bindings/node/${{ env.APP_NAME }}.*.node
           if-no-files-found: error
 
-  publish:
-    # Tag pushes only: this workflow also runs on workflow_dispatch, and a dispatch would
-    # otherwise push whatever version package.json happens to hold. prerelease tags DO publish now —
-    # they just don't take the `latest` dist-tag (see --tag in the Publish step below).
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+  package:
+    # Runs on every trigger, so release-branch pushes exercise the whole assembly; only the
+    # `publish` job below is tag-gated, and it publishes this exact tarball.
     permissions:
-      # Trusted Publishing: the job mints an OIDC token that npm exchanges for a
-      # short-lived publish token, so there is no long-lived NPM_TOKEN secret. The
-      # same id-token also signs the provenance attestation.
       contents: read
-      id-token: write
-    name: Publish
-    environment: release
+    name: Package
     runs-on: ubuntu-latest
     needs:
       - build
@@ -223,17 +216,13 @@ jobs:
           node-version: lts/*
           cache: yarn
           cache-dependency-path: ./bindings/node/yarn.lock
-          # No registry-url: it writes an .npmrc with a ${NODE_AUTH_TOKEN}
-          # placeholder, which Trusted Publishing has nothing to fill in.
-      - name: Ensure npm supports Trusted Publishing
-        # OIDC publishing landed in npm 11.5.1; setup-node's bundled npm may be older.
-        run: npm install -g npm@^11.5.1
       - name: Install dependencies
         working-directory: ./bindings/node
         run: yarn install --immutable
-      - name: Download all artifacts
+      - name: Download all binaries
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
+          pattern: bindings-*
           path: ./bindings/node/artifacts
       - name: Create npm/<triple> dirs
         # `yarn artifacts` (napi artifacts) writes each `.node` file into
@@ -250,12 +239,46 @@ jobs:
         # those root-level binaries are what `npm pack` will include.
         working-directory: ./bindings/node
         run: yarn artifacts
-      - name: Verify package contents
+      - name: Pack
         working-directory: ./bindings/node
-        run: npm pack --dry-run --ignore-scripts
+        run: npm pack --ignore-scripts
+      - name: Upload package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: npm-package
+          path: bindings/node/tokenizers-*.tgz
+          if-no-files-found: error
+
+  publish:
+    # Tag pushes only: release branches and workflow_dispatch stop after `package`.
+    # Prerelease tags publish too, but take the `next` dist-tag instead of `latest`.
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    permissions:
+      # Trusted Publishing: the job mints an OIDC token that npm exchanges for a
+      # short-lived publish token, so there is no long-lived NPM_TOKEN secret. The
+      # same id-token also signs the provenance attestation.
+      contents: read
+      id-token: write
+    name: Publish
+    environment: release
+    runs-on: ubuntu-latest
+    needs: package
+    steps:
+      - name: Setup node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v6
+        with:
+          node-version: lts/*
+          # No registry-url: it writes an .npmrc with a ${NODE_AUTH_TOKEN}
+          # placeholder, which Trusted Publishing has nothing to fill in.
+      - name: Ensure npm supports Trusted Publishing
+        # OIDC publishing landed in npm 11.5.1; setup-node's bundled npm may be older.
+        run: npm install -g npm@^11.5.1
+      - name: Download package
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: npm-package
       - name: Publish
-        working-directory: ./bindings/node
         run: |
           TAG=latest
           [[ "$GITHUB_REF_NAME" == *-* ]] && TAG=next
-          npm publish --access public --provenance --ignore-scripts --tag "$TAG"
+          npm publish ./tokenizers-*.tgz --access public --provenance --ignore-scripts --tag "$TAG"
