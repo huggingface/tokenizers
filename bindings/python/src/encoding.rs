@@ -139,7 +139,7 @@ fn bytes_slice_to_u32(slice: &[u8]) -> Vec<u32> {
 
 /// Copies `values` into a new writable `memoryview` with format `"I"` (`uint32`).
 ///
-/// `numpy.asarray` reads it without a copy.
+/// `torch.frombuffer(buffer, dtype=torch.int32)` and `numpy.asarray` read it without a copy.
 fn u32_memoryview<'py>(py: Python<'py>, values: &[u32]) -> PyResult<Bound<'py, PyMemoryView>> {
     let bytes = PyByteArray::new_with(py, mem::size_of_val(values), |buffer| {
         let (chunks, _) = buffer.as_chunks_mut();

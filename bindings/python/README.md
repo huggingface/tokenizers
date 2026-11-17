@@ -36,7 +36,9 @@ encoding.attention_mask  # [1, 1, 1, 1, 1, 1, 1, 1, 1]
 encoding.ids_buffer              # <memory at 0x...>, a memoryview with format "I" (uint32)
 encoding.type_ids_buffer
 encoding.attention_mask_buffer
-np.asarray(encoding.ids_buffer)  # array([101, 7592, ...], dtype=uint32), no copy
+# Read without a copy. torch embeddings refuse uint32 ids, hence int32. torch raises on an empty buffer.
+torch.frombuffer(encoding.ids_buffer, dtype=torch.int32)  # tensor([101, 7592, ...], dtype=torch.int32)
+np.asarray(encoding.ids_buffer)                           # array([101, 7592, ...], dtype=uint32)
 
 compiled.encode("Hello", add_special_tokens=False).ids  # no [CLS]/[SEP]
 compiled.decode(encoding.ids)                           # "hello there, how are you?"
