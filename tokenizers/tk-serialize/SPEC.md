@@ -86,13 +86,17 @@ BPE        { "type", "unk_token":str|null,
 
 Unigram    { "type", "unk_id":int|null,
              "vocab": [ [token, score], … ],         ← array index IS the id
-             "byte_fallback":bool }
+             "byte_fallback":bool,
+             "alpha":number, "nbest_size":int }      ← both sampling fields are optional
 
 WordPiece  { "type", "unk_token":str, "continuing_subword_prefix":str,
              "max_input_chars_per_word":int, "vocab": {token: id} }
 
 WordLevel  { "type", "unk_token":str, "vocab": {token: id} }
 ```
+
+Unigram sampling options are omitted when unset. Missing or `null` values read as unset,
+preserving deterministic tokenization for existing files. Explicit zero values are retained.
 
 ## TemplateProcessing
 
