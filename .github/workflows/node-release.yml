@@ -133,18 +133,18 @@ jobs:
 
       - name: Build native (docker)
         if: ${{ matrix.settings.docker }}
-        uses: addnab/docker-run-action@4f65fabd2431ebc8d299f8e5a018d79a769ae185  # v3
-        with:
-          image: ${{ matrix.settings.docker }}
-          options: >-
-            --user 0:0
-            -v ${{ github.workspace }}:/build
-            -w /build/bindings/node
-          run: |
-            rustup update stable && rustup default stable
-            corepack enable
-            yarn install --immutable
-            ${{ matrix.settings.build }}
+        env:
+          IMAGE: ${{ matrix.settings.docker }}
+          BUILD: ${{ matrix.settings.build }}
+        run: |
+          docker run --rm --user 0:0 \
+            -v "$GITHUB_WORKSPACE:/build" -w /build/bindings/node \
+            -e BUILD --entrypoint sh "$IMAGE" -c '
+              set -e
+              rustup update stable && rustup default stable
+              corepack enable
+              yarn install --immutable
+              eval "$BUILD"'
 
       - name: Upload artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
