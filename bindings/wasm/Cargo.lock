@@ -1182,7 +1182,6 @@ dependencies = [
  "compact_str",
  "dary_heap",
  "esaxx-rs",
- "itertools 0.14.0",
  "log",
  "serde",
  "thiserror",

@@ -29,7 +29,6 @@ ahash = { version = "0.8.11", features = ["serde"] }
 compact_str = { version = "0.9", features = ["serde"] }
 dary_heap = { version = "0.3.6", features = ["serde"] }
 log = "0.4"
-itertools = "0.14"
 thiserror = "2"
 esaxx-rs = { version = "0.1.10", default-features = false, optional = true }
 indicatif = { version = "0.18", optional = true }
@@ -46,5 +45,4 @@ progressbar = ["dep:indicatif"]
 parity-aware-bpe = ["bpe"]
 
 [dev-dependencies]
-tempfile = "3.10"
 assert_approx_eq = "1.1"

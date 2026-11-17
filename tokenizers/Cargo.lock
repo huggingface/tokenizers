@@ -3206,10 +3206,8 @@ dependencies = [
  "dary_heap",
  "esaxx-rs",
  "indicatif",
- "itertools 0.14.0",
  "log",
  "serde",
- "tempfile",
  "thiserror",
  "tk-encode",
 ]
