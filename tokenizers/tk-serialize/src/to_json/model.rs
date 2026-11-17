@@ -85,11 +85,11 @@ pub(super) fn write_model(out: &mut Out, model: &PipelineModel) -> Result<()> {
         PipelineModel::WordLevel(wordlevel) => {
             out.obj_open();
             out.type_tag("WordLevel");
-            out.field_str("unk_token", &wordlevel.unk_token);
+            out.field_str("unk_token", wordlevel.unk_token());
             write_vocab_object(
                 out,
                 wordlevel
-                    .vocab
+                    .vocab()
                     .iter()
                     .map(|(token, &id)| (token.clone(), id))
                     .collect(),

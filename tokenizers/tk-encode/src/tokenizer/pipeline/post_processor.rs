@@ -1,6 +1,7 @@
 //! The post-processor half of the pipeline: the two [`Template`]s an encode adds its tokens from.
 
 use super::{Encoding, PipelineToken};
+use crate::tokenizer::Result;
 
 #[inline]
 fn push_ids(run: &[(PipelineToken, u8)], out: &mut Vec<PipelineToken>) {
@@ -15,8 +16,42 @@ fn push_type_ids(run: &[(PipelineToken, u8)], out: &mut Vec<u8>) {
 /// The templates to wrap around one sequence and around a pair.
 #[derive(Debug)]
 pub struct PipelinePostProcessor {
-    pub single: Template,
-    pub pair: Template,
+    single: Template,
+    pair: Template,
+}
+
+impl PipelinePostProcessor {
+    /// Pairs the two templates.
+    ///
+    /// Returns an error when the `single` template references sequence B or has an infix, or
+    /// when the `pair` template does not reference sequence B.
+    pub fn new(single: Template, pair: Template) -> Result<Self> {
+        let mut problems = Vec::new();
+        if single.b_type_id.is_some() {
+            problems.push("the `single` template references sequence B");
+        }
+        if !single.infix.is_empty() {
+            problems.push("the `single` template has special tokens between sequences A and B");
+        }
+        if pair.b_type_id.is_none() {
+            problems.push("the `pair` template does not reference sequence B");
+        }
+        if problems.is_empty() {
+            Ok(Self { single, pair })
+        } else {
+            Err(problems.join("; ").into())
+        }
+    }
+
+    /// The template wrapped around a single sequence.
+    pub fn single(&self) -> &Template {
+        &self.single
+    }
+
+    /// The template wrapped around a pair of sequences.
+    pub fn pair(&self) -> &Template {
+        &self.pair
+    }
 }
 
 impl Default for PipelinePostProcessor {
@@ -156,5 +191,22 @@ mod tests {
         ] {
             assert!(tagged.has_type_ids());
         }
+    }
+
+    #[test]
+    fn refuses_a_single_template_with_an_infix() {
+        // A single encode never emits the infix, but its type ids would, so the two lengths differ.
+        let single = Template {
+            infix: run(&[0]),
+            ..Template::default()
+        };
+        assert!(PipelinePostProcessor::new(single, PipelinePostProcessor::default().pair).is_err());
+    }
+
+    #[test]
+    fn refuses_a_pair_template_without_sequence_b() {
+        // Sequence B's tokens would get no type ids, so `type_ids` comes out shorter than the ids.
+        let pair = Template::default();
+        assert!(PipelinePostProcessor::new(Template::default(), pair).is_err());
     }
 }

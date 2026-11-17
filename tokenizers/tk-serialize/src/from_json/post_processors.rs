@@ -66,17 +66,9 @@ fn read_template(cfg: &Json<'_>) -> Result<PipelinePostProcessor> {
         if !seen_a {
             return Err("not supported: template does not reference sequence A".into());
         }
-        if (key == "pair") != t.b_type_id.is_some() {
-            return Err(
-                format!("not supported: `{key}` template references the wrong sequences").into(),
-            );
-        }
         (t.prefix, t.infix, t.suffix) = (prefix.into(), infix.into(), suffix.into());
         Ok(t)
     };
 
-    Ok(PipelinePostProcessor {
-        single: template_for("single")?,
-        pair: template_for("pair")?,
-    })
+    PipelinePostProcessor::new(template_for("single")?, template_for("pair")?)
 }
