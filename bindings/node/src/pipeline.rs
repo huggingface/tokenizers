@@ -201,25 +201,28 @@ impl PipelineTokenizer {
   /// Drops the two remaining per-call costs of [`Self::encode`]: the JS string -> UTF-8 copy
   /// (as fast as the tokenizer itself, so it halves throughput) and the fresh `ArrayBuffer`
   /// (388 ns of a 789 ns call). Returns how many ids were written.
-  #[napi]
+  #[napi(
+    ts_args_type = "text: Uint8Array, out: Uint32Array, options?: EncodeOptions | undefined | null"
+  )]
   pub fn encode_bytes_into(
     &self,
-    text: Uint8Array,
-    mut out: Uint32Array,
+    text: Unknown,
+    out: Unknown,
     options: Option<EncodeOptions>,
   ) -> Result<u32> {
+    let options = Self::encode_options(options)?;
+    // napi read `options` before this body, which ran its getters. A getter can detach or resize
+    // a buffer, so the two arrays' pointers are read only now, and no JS runs from here on.
+    let text = Uint8Array::from_unknown(text)?;
+    let mut out = Uint32Array::from_unknown(out)?;
     // `text` is a handle, not a `&[u8]` argument, so its borrow ends with this block.
     let encodings = {
       let text = std::str::from_utf8(&text).map_err(err)?;
-      self
-        .0
-        .encode(text, &Self::encode_options(options)?)
-        .wait()
-        .map_err(err)?
+      self.0.encode(text, &options).wait().map_err(err)?
     };
     let ids = encodings.first().map(|e| e.ids()).unwrap_or(&[]);
-    // SAFETY: JS is blocked for this synchronous call, and the borrow of `text` has ended, so
-    // nothing aliases `out` even when both are views of one `ArrayBuffer`.
+    // SAFETY: no JS has run since `out` was read, so its buffer is still attached and as long.
+    // The borrow of `text` has ended, so nothing aliases `out` even on one shared `ArrayBuffer`.
     let dst = unsafe { out.as_mut() };
     if ids.len() > dst.len() {
       return Err(err(format!(

@@ -63,6 +63,21 @@ test('encodeBytesInto rejects a buffer that is too small', () => {
   assert.throws(() => tok.encodeBytesInto(Buffer.from(text, 'utf8'), tooSmall), /buffer holds 1/)
 })
 
+// Reading `options` runs its getters, and a getter can detach `out` by transferring its buffer.
+test('encodeBytesInto reads its buffers after an options getter has run', () => {
+  const tok = PipelineTokenizer.fromFile(MODEL)
+  const out = new Uint32Array(64)
+  let transferred = new ArrayBuffer(0)
+  const options = {
+    get addSpecialTokens() {
+      transferred = out.buffer.transfer()
+      return true
+    },
+  }
+  assert.throws(() => tok.encodeBytesInto(Buffer.from('Hello there', 'utf8'), out, options), /buffer holds 0/)
+  assert.deepStrictEqual(new Uint32Array(transferred), new Uint32Array(64))
+})
+
 test('addSpecialTokens is honoured', () => {
   const tok = PipelineTokenizer.fromFile(MODEL)
   const withSpecials = tok.encode('Hello', { addSpecialTokens: true })
