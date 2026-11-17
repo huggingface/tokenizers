@@ -3247,17 +3247,10 @@ dependencies = [
 name = "tokenizers"
 version = "1.0.0-dev.2"
 dependencies = [
- "ahash",
- "assert_approx_eq",
- "criterion 0.8.2",
- "serde_json",
- "tempfile",
  "tk-convert",
  "tk-encode",
  "tk-serialize",
  "tk-train",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
