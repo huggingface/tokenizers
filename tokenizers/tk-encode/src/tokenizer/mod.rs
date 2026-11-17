@@ -4,39 +4,17 @@
 //! pre-tokenization and post-processing are defined by the traits in [`pipeline`]; what stays here
 //! is the input/output vocabulary they are written against.
 
-// The `Path` types are reachable only from `Model::save`.
-
-mod encoding;
 pub mod pattern;
 pub mod pipeline;
 
-// `Tokenizer`, `TokenizerImpl`, `TokenizerBuilder`, `DecodeStream`, the legacy `AddedVocabulary`
-// (and its `AddedToken`) and the whole serde load/save surface live in `tk-convert`. What
-// stays here is the vocabulary of traits every component implements, plus the input/output types
-// they are written against.
 pub use crate::decoders::{Decoder, DecoderRuntime};
-pub use crate::utils::iter::LinesWithEnding;
 pub use crate::utils::padding::{PaddingDirection, PaddingParams, PaddingStrategy, pad_encodings};
 pub use crate::utils::truncation::{
     TruncationDirection, TruncationParams, TruncationStrategy, truncate_pair,
 };
-pub use encoding::*;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Result<T> = std::result::Result<T, Error>;
-pub type Offsets = (usize, usize);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Token {
-    pub id: u32,
-    pub value: String,
-    pub offsets: (usize, usize),
-}
-impl Token {
-    pub fn new(id: u32, value: String, offsets: (usize, usize)) -> Self {
-        Self { id, value, offsets }
-    }
-}
 
 /// Defines the expected behavior for the delimiter of a Split Pattern
 /// When splitting on `'-'` for example, with input `the-final--countdown`:

@@ -261,12 +261,6 @@ impl BpeTrainer {
         BpeTrainerBuilder::new()
     }
 
-    /// Returns the number of unique words in the corpus after feeding.
-    /// This can be used to estimate training time before starting.
-    pub fn get_word_count(&self) -> usize {
-        self.words.len()
-    }
-
     /// Setup a progress bar if asked to show progress (only for Indicatif format)
     fn setup_progress(&self) -> Option<ProgressBar> {
         if self.show_progress && self.progress_format == ProgressFormat::Indicatif {

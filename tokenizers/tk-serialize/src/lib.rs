@@ -11,7 +11,7 @@ mod vendored;
 
 /// Standard alphabet, padded on the way out and padding-*indifferent* on the way in, as `base64`
 /// 0.13 was under `spm_precompiled`'s serde.
-#[cfg(any(feature = "normalizers", all(test, feature = "deserialize")))]
+#[cfg(feature = "normalizers")]
 pub const BASE64: base64::engine::GeneralPurpose = base64::engine::GeneralPurpose::new(
     &base64::alphabet::STANDARD,
     base64::engine::GeneralPurposeConfig::new()

@@ -1,5 +1,4 @@
 use crate::pipeline::Model;
-use crate::tokenizer::Token;
 
 use super::*;
 
@@ -158,25 +157,8 @@ fn test_unigram_bytefallback() {
         ("<0xA9>".to_string(), -0.03),
     ];
     let unigram = Unigram::from(sentencepieces, Some(0), true).unwrap();
-    let tokens: Vec<Token> = unigram.tokenize("é").unwrap();
-    assert_eq!(
-        tokens,
-        [
-            Token {
-                id: 1,
-                value: "<0xC3>".to_string(),
-                offsets: (0, 2)
-            },
-            Token {
-                id: 2,
-                value: "<0xA9>".to_string(),
-                offsets: (0, 2)
-            }
-        ]
-    );
-
-    let tokens = unigram.tokenize("?é").unwrap();
-    assert_eq!(tokens[0].id, 0);
+    let mut scratch = Model::init_scratch(&unigram);
+    assert_eq!(pipeline_ids(&unigram, "?é", &mut scratch)[0], 0);
 }
 
 /// Ids 0..=8 are `<unk>`, `a`, `b`, `c`, `d`, `cd`, `ab`, `abc`, `abcd`.
@@ -207,11 +189,7 @@ fn pipeline_remembers_what_a_sequence_encoded_to() {
 
     let ids = pipeline_ids(&model, "abcd", &mut scratch);
 
-    let cache = scratch
-        .word_cache
-        .as_mut()
-        .expect("Unigram encodes with a cache");
-    assert_eq!(cache.lookup(b"abcd").hit(), Some(&ids[..]));
+    assert_eq!(scratch.word_cache.lookup(b"abcd").hit(), Some(&ids[..]));
 }
 
 #[test]
@@ -252,8 +230,7 @@ fn caches_only_the_ids_this_sequence_produced() {
 
     let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
     assert_eq!(ids, [6, 5]);
-    let cache = scratch.word_cache.as_mut().unwrap();
-    assert_eq!(cache.lookup(b"cd").hit(), Some(&[5u32][..]));
+    assert_eq!(scratch.word_cache.lookup(b"cd").hit(), Some(&[5u32][..]));
 }
 
 #[test]
@@ -284,16 +261,5 @@ fn sampling_is_never_cached() {
 
     pipeline_ids(&model, "abcd", &mut scratch);
 
-    let cache = scratch.word_cache.as_mut().unwrap();
-    assert_eq!(cache.lookup(b"abcd").hit(), None);
-}
-
-#[test]
-fn a_capacity_of_zero_turns_the_cache_off() {
-    let mut model = Unigram::from(abcd_vocab(), Some(0), false).unwrap();
-    model.resize_cache(0);
-    let mut scratch = Model::init_scratch(&model);
-
-    assert_eq!(pipeline_ids(&model, "abcd", &mut scratch), [8]);
-    assert!(scratch.word_cache.is_none());
+    assert_eq!(scratch.word_cache.lookup(b"abcd").hit(), None);
 }

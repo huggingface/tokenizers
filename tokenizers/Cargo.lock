@@ -3170,13 +3170,9 @@ dependencies = [
  "rand 0.10.2",
  "rayon",
  "rayon-cond",
- "regex",
  "serde_json",
  "spm_precompiled",
- "tempfile",
  "thiserror",
- "tracing",
- "tracing-subscriber",
  "unicode-normalization",
  "unicode-segmentation",
  "unicode_categories",
@@ -3207,10 +3203,8 @@ dependencies = [
  "dary_heap",
  "esaxx-rs",
  "indicatif",
- "itertools 0.14.0",
  "log",
  "serde",
- "tempfile",
  "thiserror",
  "tk-encode",
 ]
@@ -3253,17 +3247,10 @@ dependencies = [
 name = "tokenizers"
 version = "1.0.0-dev.2"
 dependencies = [
- "ahash",
- "assert_approx_eq",
- "criterion 0.8.2",
- "serde_json",
- "tempfile",
  "tk-convert",
  "tk-encode",
  "tk-serialize",
  "tk-train",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

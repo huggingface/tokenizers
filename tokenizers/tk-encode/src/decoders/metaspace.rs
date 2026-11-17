@@ -41,10 +41,6 @@ impl MetaspaceDecoder {
     pub fn get_replacement(&self) -> char {
         self.replacement
     }
-
-    pub fn set_replacement(&mut self, replacement: char) {
-        self.replacement = replacement;
-    }
 }
 
 impl Default for MetaspaceDecoder {

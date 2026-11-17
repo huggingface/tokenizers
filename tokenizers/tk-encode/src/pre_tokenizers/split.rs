@@ -134,19 +134,12 @@ impl Split {
         })
     }
 
-    /// The native FSM family this pattern was recognised as, if any.
-    pub fn grammar(&self) -> Option<Grammar> {
-        self.fsm
-    }
-
     /// Pipeline canonicalization. A recognized whole-covering GPT regex shipped
     /// as `(invert=true, behavior=Removed)` — the tiktoken-conversion convention
     /// used by cl100k/o200k — is byte-exactly equivalent to `(invert=false,
     /// Isolated)`, the form the native FSM fast path requires (the inverted match
     /// set is the gaps, and these patterns leave no gaps). Rewrite to it so
     /// cl100k/o200k route to `fsm_cl100k`/`fsm_o200k` instead of the SysRegex fallback.
-    // `pub` because the `PreTokenizerWrapper` -> `PipelinePreTokenizer` lowering, which is the only
-    // caller, lives in `tk-convert`.
     pub fn canonicalized_for_pipeline(self) -> Result<Self> {
         use crate::tokenizer::SplitDelimiterBehavior::{Isolated, Removed};
         if self.fsm.is_some() && self.invert && self.behavior == Removed {
@@ -223,7 +216,7 @@ mod tests {
             )
             .expect("native must not need a regex backend");
             assert!(
-                split.grammar().is_none(),
+                split.fsm.is_none(),
                 "deepseek's patterns are not individually FSM-recognised"
             );
         }
@@ -249,7 +242,7 @@ mod tests {
             false,
         )
         .unwrap();
-        assert_eq!(gpt2.grammar(), Some(Grammar::Gpt2));
+        assert_eq!(gpt2.fsm, Some(Grammar::Gpt2));
     }
 
     #[cfg(feature = "fancy-regex")]

@@ -486,11 +486,6 @@ impl ParityBpeTrainer {
         Ok(())
     }
 
-    /// Return the number of languages currently fed
-    pub fn num_languages(&self) -> usize {
-        self.language_words.len()
-    }
-
     fn setup_progress(&self) -> Option<ProgressBar> {
         if self.show_progress {
             let p = ProgressBar::new(0);

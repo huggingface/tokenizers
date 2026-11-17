@@ -262,6 +262,7 @@ fn padding_fixed_reads_back() {
 /// `crate::BASE64` is a spelled-out engine rather than `STANDARD`, purely so that decoding stays
 /// indifferent to padding the way `spm_precompiled`'s `base64` 0.13 was. That is the only decision
 /// left here -- swap the engine for `STANDARD` and this fails.
+#[cfg(feature = "normalizers")]
 #[test]
 fn a_charsmap_decodes_padded_or_not() {
     use base64::Engine as _;

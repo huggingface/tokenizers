@@ -1,10 +1,6 @@
 use crate::pipeline::{self, PipelinePreTokenizer};
 use crate::tokenizer::Result;
 
-// The `Sequence` pre-tokenizer is a `Vec<PreTokenizerWrapper>`, so it lives in `tk-convert`
-// with the wrapper it is parameterised by, together with the `TryFrom<Sequence>` that lowers it
-// into the `PipelineSequence` below.
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct PipelineSequence {
     pre_tokenizers: Vec<PipelinePreTokenizer>,
@@ -24,10 +20,7 @@ impl PipelineSequence {
     /// Isolated, non-inverted `Split`s carrying deepseek's `[\p{N}{1,3}, CJK, big]` regexes (the trailing
     /// byte-map `ByteLevel` converts to `PipelinePreTokenizer::None`). Routes the whole split to one
     /// `fsm_deepseek` pass.
-    // `pub` because the differential test that asserts deepseek's exact 3-`Split` sequence is
-    // recognized lives in `tk-convert` now (it needs `PreTokenizerWrapper` to build the
-    // legacy oracle it compares against).
-    pub fn is_deepseek(&self) -> bool {
+    fn is_deepseek(&self) -> bool {
         use crate::pre_tokenizers::split::SplitPattern;
         use crate::tokenizer::SplitDelimiterBehavior::Isolated;
         let regex = |i: usize| match self.pre_tokenizers.get(i) {

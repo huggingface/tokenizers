@@ -74,7 +74,7 @@ impl Atom {
 }
 
 /// `true` iff the tag's **coarse** class (low nibble) is in `mask`. Masking `tag & 0x0F` makes every
-/// coarse consumer refinement-agnostic (a refined `Letter` like `0x20` still tests as `LETTER`) — and is
+/// coarse consumer refinement-agnostic (a refined `Letter` like `0x20` still tests as a `Letter`) — and is
 /// mandatory, not just a view: a refined tag's raw value can exceed 15, and `1u16 << 0x20` would overflow.
 #[inline]
 pub const fn in_mask(tag: u8, mask: u16) -> bool {
@@ -103,26 +103,10 @@ pub mod mask {
     pub const WORD: u16 = Letter.bit() | NumWord.bit() | Mark.bit() | Connector.bit();
     /// `\s`: newline + 0x20 + other whitespace.
     pub const WS: u16 = Newline.bit() | Space.bit() | WsOther.bit();
-    /// `\p{L}`.
-    pub const LETTER: u16 = Letter.bit();
-    /// `\p{N}`.
-    pub const NUMBER: u16 = NumWord.bit() | NumOther.bit();
     /// `is_numeric` (Digits pretokenizer).
     pub const NUMERIC: u16 = NumWord.bit() | NumOther.bit() | NumericOther.bit();
     /// `is_ascii_punctuation | is_punctuation` (Punctuation / Bert).
     pub const PUNCT: u16 = Connector.bit() | Punct.bit() | Apostrophe.bit();
-    /// cl100k `[^\s\p{L}\p{N}]` — the rule-4 punct-run class.
-    pub const NOT_WS_L_N: u16 = Mark.bit()
-        | Connector.bit()
-        | Punct.bit()
-        | Apostrophe.bit()
-        | SymOther.bit()
-        | Control.bit()
-        | NumericOther.bit();
-    /// `\p{P} ∪ \p{S}` (deepseek) — punctuation + symbol, EXCLUDING control/unassigned.
-    pub const PUNCT_SYM: u16 = Connector.bit() | Punct.bit() | Apostrophe.bit() | SymOther.bit();
-    /// `\p{L} ∪ \p{M}` (deepseek letter/mark run).
-    pub const LETTER_MARK: u16 = Letter.bit() | Mark.bit();
 }
 
 pub const CONT: u8 = Atom::Cont as u8;

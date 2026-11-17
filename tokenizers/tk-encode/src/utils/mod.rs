@@ -1,5 +1,4 @@
 pub(crate) mod cache;
-// `pub` because `Tokenizer::from_pretrained` — the only caller — lives in `tk-convert`.
 #[cfg(feature = "http")]
 pub mod from_pretrained;
 pub(crate) mod word_cache;
@@ -19,10 +18,10 @@ pub use no_regex::SysRegex;
 
 // Recognize known GPT pre-tokenization regexes and route them to bitcannon's native (unrolled) FSM.
 mod unrolled_regex;
-pub use unrolled_regex::{DEEPSEEK_PATTERNS, Grammar, GrammarPattern, is_deepseek, recognize};
+pub use unrolled_regex::{DEEPSEEK_PATTERNS, Grammar};
+pub(crate) use unrolled_regex::{is_deepseek, recognize};
 
 pub mod byte_level;
-pub mod iter;
 pub mod padding;
 #[cfg(feature = "parallelism")]
 pub mod parallelism;

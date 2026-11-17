@@ -325,31 +325,6 @@ impl BucketVocabStore {
         (e.digest == digest_of(hash)).then_some(e.id & VOCAB_ID_MASK)
     }
 
-    /// The id for `q`, together with whether that entry may be folded. One probe and one entry
-    /// load: the flag is a bit of the id the probe already read.
-    #[inline]
-    pub fn get_bytes_foldable(&self, q: &[u8]) -> Option<(u32, bool)> {
-        let (key, hash) = key_and_hash(q);
-        self.get_keyed_foldable(key, hash)
-    }
-
-    #[inline(always)]
-    pub fn probe_slot(&self, hash: u64) -> usize {
-        self.mphf.index(&hash)
-    }
-
-    #[inline(always)]
-    pub fn entry_at(&self, slot: usize) -> (u32, u32) {
-        let e = self.entries[slot];
-        (e.digest, e.id)
-    }
-
-    #[inline(always)]
-    pub fn resolve_foldable(hash: u64, entry: (u32, u32)) -> Option<(u32, bool)> {
-        let (edigest, eid) = entry;
-        (edigest == digest_of(hash)).then_some((eid & VOCAB_ID_MASK, eid & FOLD_BIT != 0))
-    }
-
     #[inline]
     pub fn get_keyed_foldable(&self, key: u64, hash: u64) -> Option<(u32, bool)> {
         let _ = key;

@@ -89,14 +89,6 @@ impl<'a> Json<'a> {
         }
     }
 
-    /// A number's text as written in the file, so `1.0` and `1` stay distinct.
-    pub fn number_literal(&self) -> Option<&'a str> {
-        match &self.0 {
-            Raw::Number((digits, _)) => Some(digits),
-            _ => None,
-        }
-    }
-
     pub fn as_f64(&self) -> Option<f64> {
         match &self.0 {
             Raw::Number((digits, _)) => {

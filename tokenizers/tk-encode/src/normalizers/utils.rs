@@ -3,9 +3,6 @@ use std::borrow::Cow;
 use crate::pipeline;
 use crate::tokenizer::Result;
 
-// The `Sequence` normalizer is a `Vec<NormalizerWrapper>`, so it lives in `tk-convert` with
-// the wrapper it is parameterised by.
-
 /// Lowercases the input
 #[derive(Copy, Clone, Debug)]
 pub struct Lowercase;

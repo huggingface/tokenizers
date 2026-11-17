@@ -16,19 +16,13 @@ mod tests;
 pub type Pair = (u32, u32);
 /// Token string -> external id, as the model file declares it.
 pub type Vocab = AHashMap<String, u32>;
-/// External id -> token string.
-pub type VocabR = AHashMap<u32, String>;
 /// Merge pairs as token strings, highest priority first.
 pub type Merges = Vec<(String, String)>;
 /// Merge pair (external ids) -> (rank, external id of the merged token).
 pub type MergeMap = AHashMap<Pair, (u32, u32)>;
 
-/// The word cache's default size, and the longest word it will hold.
-///
-/// Re-exported from `utils::cache`, which is `pub(crate)`: the config-shaped `BPE` in `tk-convert`
-/// keeps a cache of its own and needs both numbers, and a second copy of them on that side would be
-/// a second answer to "how big is a BPE cache".
-pub use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
+/// The word cache's default size, which [`BpeConfig::cache_capacity`] starts from.
+pub use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 
 /// Errors that can be encountered while using or constructing a `BPE` model.
 #[derive(thiserror::Error, Debug)]
