@@ -1,4 +1,4 @@
-use crate::tokenizer::{Decoder, Result};
+use crate::tokenizer::{Decode, Result};
 
 #[derive(Clone, Debug, Default)]
 /// ByteFallback is a simple trick which converts tokens looking like `<0x61>`
@@ -13,7 +13,7 @@ impl ByteFallback {
     }
 }
 
-impl Decoder for ByteFallback {
+impl Decode for ByteFallback {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         let mut new_tokens: Vec<String> = vec![];
         let mut previous_byte_tokens: Vec<u8> = vec![];

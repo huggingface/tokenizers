@@ -13,11 +13,11 @@ pub use crate::pipeline::encode_options::EncodeOptions;
 pub use crate::pipeline::encode_options::Override;
 use crate::utils::truncation::truncate_pair;
 use crate::{
-    DecoderRuntime, PaddingParams, TruncationParams,
+    Decoder, PaddingParams, TruncationParams,
     models::bpe::{BPE, BpeScratch},
     pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
-    tokenizer::Decoder as _,
+    tokenizer::Decode as _,
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
 };
 #[cfg(feature = "parallelism")]
@@ -216,7 +216,7 @@ struct TokenizerInner {
     pre_tokenizer: PreTokenizer,
     model: Model,
     post_processor: PostProcessor,
-    decoder: Option<DecoderRuntime>,
+    decoder: Option<Decoder>,
     /// Lowest id owned by the added vocabulary, or `u32::MAX` when there is none.
     /// Allows to skip the added vocabulary lookup if the token id is lower than this value.
     added_id_min: u32,
@@ -260,7 +260,7 @@ impl Tokenizer {
         pre_tokenizer: PreTokenizer,
         model: Model,
         post_processor: PostProcessor,
-        decoder: Option<DecoderRuntime>,
+        decoder: Option<Decoder>,
         role_to_token: BTreeMap<String, String>,
         padding: Option<PaddingParams>,
         truncation: Option<TruncationParams>,
@@ -580,7 +580,7 @@ impl Tokenizer {
     }
 
     /// The decoder, if the config declared one.
-    pub fn get_decoder(&self) -> Option<&DecoderRuntime> {
+    pub fn get_decoder(&self) -> Option<&Decoder> {
         self.inner.decoder.as_ref()
     }
 

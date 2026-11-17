@@ -1,4 +1,4 @@
-use crate::tokenizer::{Decoder, Result};
+use crate::tokenizer::{Decode, Result};
 
 #[derive(Clone, Debug, Default)]
 /// Fuse simply fuses all tokens into one big string.
@@ -17,7 +17,7 @@ impl Fuse {
     }
 }
 
-impl Decoder for Fuse {
+impl Decode for Fuse {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         let new_string = tokens.join("");
         Ok(vec![new_string])

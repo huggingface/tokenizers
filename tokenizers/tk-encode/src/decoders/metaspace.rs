@@ -3,7 +3,7 @@
 //! [`MetaspaceNormalizer`]: crate::normalizers::metaspace::MetaspaceNormalizer.
 
 use crate::normalizers::metaspace::PrependScheme;
-use crate::tokenizer::{Decoder, Result};
+use crate::tokenizer::{Decode, Result};
 
 /// Turns the metaspace replacement character back into a space.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,7 +31,7 @@ impl Default for MetaspaceDecoder {
     }
 }
 
-impl Decoder for MetaspaceDecoder {
+impl Decode for MetaspaceDecoder {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         Ok(tokens
             .iter()
