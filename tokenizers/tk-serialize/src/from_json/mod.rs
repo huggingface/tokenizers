@@ -3,27 +3,7 @@
 //! Reads the canonical `2.0` format and nothing else. A legacy file is tk-convert's input, not
 //! this reader's: it produces a `2.0` file, and only then does this run.
 //!
-//! ## TODO(pr3): port to tk-convert
-//!
-//! Each of these was accepted here and is now refused. tk-convert has to rewrite them:
-//!
-//! - `"version": "1.0"` — everything below is what makes a file one
-//! - a `model` with no `"type"` — the kind was inferred from which keys are present: `merges` meant
-//!   BPE, an array `vocab` meant Unigram, `continuing_subword_prefix` meant WordPiece, else
-//!   WordLevel
-//! - `merges` spelled as `"a b"` strings rather than `["a", "b"]` pairs — split on the first space
-//! - a `Metaspace` *pre-tokenizer*, which is two components: it becomes a `MetaspaceNormalizer` in
-//!   the `normalizer` slot plus a `Split` on the delimiter with `MergedWithNext`
-//! - `Sequence[WhitespaceSplit, Metaspace]`, the t5/albert shape — the same, with
-//!   `drop_whitespace: true`
-//! - `add_prefix_space` on a `Metaspace`, with its quirk: `false` is an error unless
-//!   `prepend_scheme: "never"` is spelled beside it, and `true` is ignored outright
-//! - a `Metaspace` decoder with no `prepend_scheme` — it defaulted to `always`
-//! - a `ByteLevel` *pre-tokenizer* — it becomes `"byte_level": true` on the model plus, for
-//!   `use_regex: true`, a `Split` on the GPT-2 regex with `Isolated`; `use_regex: false` leaves no
-//!   pre-tokenizer at all. `add_prefix_space: true` on one is still unsupported downstream
-//!
-//! Refused by both, because nothing converts it: a vocabulary named by path (`files`).
+//! A vocabulary named by path (`files`) is refused: tk-convert has nothing to rewrite it into.
 mod added_tokens;
 mod decoders;
 mod model;
