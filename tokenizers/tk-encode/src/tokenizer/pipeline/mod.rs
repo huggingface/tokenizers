@@ -324,6 +324,7 @@ impl PipelineTokenizer {
     }
 }
 #[derive(Clone)]
+#[non_exhaustive]
 pub enum Input {
     Single(String),
     Pair(String, String),
