@@ -52,8 +52,10 @@ unicode-normalization = { version = "=0.1.25", optional = true }
 yada = { version = "0.7.0", optional = true }
 # The n-best heap in `models/unigram/lattice.rs`, which is `unigram`-gated.
 dary_heap = { version = "0.3.9", optional = true }
-# One `#[cfg(unix)]` `pthread_atfork` call in `utils/parallelism.rs`, which is `parallelism`-gated.
-libc = { version = "0.2", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+# `pthread_atfork`, in `utils/fork.rs` and `utils/parallelism.rs`.
+libc = "0.2"
 
 [features]
 default = ["bpe"]
@@ -68,7 +70,7 @@ normalizers = [
 ]
 unicode-scripts = []
 http = ["hf-hub"]
-parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
+parallelism = ["dep:rayon", "dep:rayon-cond"]
 
 [dev-dependencies]
 # Test-only: one `#[cfg(test)]` cross-check in `vocab/buckets.rs`.
