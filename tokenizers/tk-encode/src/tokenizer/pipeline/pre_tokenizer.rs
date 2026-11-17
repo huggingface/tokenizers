@@ -21,14 +21,20 @@ use bitcannon::classify::classify;
 ///
 /// # Safety
 ///
-/// [`PreTokenize::pre_tokenize`] produces [`Span`] objects that are later consumed by [`Tokenizer::encode_sequence`].
-/// For performance reasons, [`Tokenizer::encode_sequence`] turns every span into a `&str` with [`str::get_unchecked`].
-/// As a consequence, every implementation of this trait *MUST* ensure the following invariants for each [`Span`]:
+/// [`PreTokenize::pre_tokenize`] produces [`Span`] objects that are later consumed by [`Tokenize::tokenize_spans`].
+/// For performance reasons, [`Tokenize::tokenize_spans`] may turn every span into a `&str` with [`str::get_unchecked`].
+/// As a consequence, every implementation of this trait *MUST* ensure the following invariants for each [`Span`],
+/// for every `text` of at most [`u32::MAX`] bytes:
 ///
 /// * `span.end <= text.len()`: the span is inside the text
 /// * `span.start <= span.end`: the span is not reversed
 /// * `text.is_char_boundary(start)` and `text.is_char_boundary(end)`: the start and end offset must be UTF-8 char boundaries
 /// * The offsets are relative to the `text`.
+///
+/// A [`Span`] holds `u32` offsets, which cannot address a longer `text`.
+/// The caller refuses such a `text` before it trusts the spans.
+///
+/// [`Tokenize::tokenize_spans`]: super::Tokenize::tokenize_spans
 pub unsafe trait PreTokenize {
     /// Split `text` into pre-tokens, appending to `out`. Ranges are into `text`.
     /// `scratch` holds the working buffers, see [`PreTokenizerScratch`].

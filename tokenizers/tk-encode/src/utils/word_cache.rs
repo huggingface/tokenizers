@@ -141,10 +141,11 @@ impl<'a> WordCache {
     #[inline]
     pub unsafe fn probe_emit_keyed(&'a self, key: u64, hash: u64, dst: *mut u32) -> ProbeEmit<'a> {
         let placement = placement_from(LookupKey(key), hash, self.placement_mask);
-        // SAFETY: `index` is masked with `placement_mask` (`next_pow2 - 1`), and the table is
+        // SAFETY: `index` is masked with `placement_mask`, the power-of-two slot count minus one.
+        // The table holds `WINDOW_SIZE` more slots than that count.
         let slot = unsafe { *self.cached_words.as_ptr().add(placement.index) };
         if slot.key == placement.key && !slot.is_spilled() {
-            // SAFETY: the caller guarantees room for `MAX_INLINE_IDS`. Lanes past `ids_len` are
+            // SAFETY: the caller guarantees room for `MAX_INLINE_IDS` ids.
             unsafe {
                 for (lane, &payload) in slot.payload.iter().enumerate().take(MAX_INLINE_IDS) {
                     dst.add(lane).write(payload);
