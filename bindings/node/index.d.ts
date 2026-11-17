@@ -16,6 +16,9 @@ export declare class PipelineTokenizer {
    * Drops the two remaining per-call costs of [`Self::encode`]: the JS string -> UTF-8 copy
    * (as fast as the tokenizer itself, so it halves throughput) and the fresh `ArrayBuffer`
    * (388 ns of a 789 ns call). Returns how many ids were written.
+   *
+   * Throws on a view of a `SharedArrayBuffer`, which another thread could write to during the
+   * call.
    */
   encodeBytesInto(text: Uint8Array, out: Uint32Array, options?: EncodeOptions | undefined | null): number
 }

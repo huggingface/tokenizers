@@ -7,6 +7,9 @@
 //! were all removed with it, and this crate had stopped compiling. Rather than port wrappers for
 //! an engine that is gone, the binding now exposes the path that replaced it.
 
+use std::ptr;
+
+use napi::JsValue;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use tokenizers::pipeline::{self, Override};
@@ -17,6 +20,44 @@ use tokenizers::{
 
 fn err<E: std::fmt::Display>(e: E) -> Error {
   Error::from_reason(format!("{e}"))
+}
+
+/// Refuses a typed array whose memory is a `SharedArrayBuffer`.
+///
+/// Another thread can write to a `SharedArrayBuffer` at any time, so Rust cannot hold a `&str` or
+/// a `&mut [u32]` over it.
+fn refuse_shared_buffer(typed_array: &Unknown, name: &str) -> Result<()> {
+  let typed_array = typed_array.value();
+  let mut buffer = ptr::null_mut();
+  let mut is_array_buffer = false;
+  // SAFETY: the env and the value come from an argument of the running call. napi skips an
+  // out-pointer that is null, and the two others point to locals.
+  unsafe {
+    check_status!(
+      sys::napi_get_typedarray_info(
+        typed_array.env,
+        typed_array.value,
+        ptr::null_mut(),
+        ptr::null_mut(),
+        ptr::null_mut(),
+        &mut buffer,
+        ptr::null_mut(),
+      ),
+      "`{name}` is not a typed array"
+    )?;
+    // False for a `SharedArrayBuffer`, the only other buffer a typed array can sit on.
+    check_status!(sys::napi_is_arraybuffer(
+      typed_array.env,
+      buffer,
+      &mut is_array_buffer
+    ))?;
+  }
+  if !is_array_buffer {
+    return Err(err(format!(
+      "`{name}` is a view of a SharedArrayBuffer, which another thread could write to during the call: pass a copy"
+    )));
+  }
+  Ok(())
 }
 
 /// Per-call settings. A field left out keeps the tokenizer's own behaviour.
@@ -201,6 +242,9 @@ impl PipelineTokenizer {
   /// Drops the two remaining per-call costs of [`Self::encode`]: the JS string -> UTF-8 copy
   /// (as fast as the tokenizer itself, so it halves throughput) and the fresh `ArrayBuffer`
   /// (388 ns of a 789 ns call). Returns how many ids were written.
+  ///
+  /// Throws on a view of a `SharedArrayBuffer`, which another thread could write to during the
+  /// call.
   #[napi(
     ts_args_type = "text: Uint8Array, out: Uint32Array, options?: EncodeOptions | undefined | null"
   )]
@@ -213,6 +257,8 @@ impl PipelineTokenizer {
     let options = Self::encode_options(options)?;
     // napi read `options` before this body, which ran its getters. A getter can detach or resize
     // a buffer, so the two arrays' pointers are read only now, and no JS runs from here on.
+    refuse_shared_buffer(&text, "text")?;
+    refuse_shared_buffer(&out, "out")?;
     let text = Uint8Array::from_unknown(text)?;
     let mut out = Uint32Array::from_unknown(out)?;
     // `text` is a handle, not a `&[u8]` argument, so its borrow ends with this block.
@@ -221,8 +267,8 @@ impl PipelineTokenizer {
       self.0.encode(text, &options).wait().map_err(err)?
     };
     let ids = encodings.first().map(|e| e.ids()).unwrap_or(&[]);
-    // SAFETY: no JS has run since `out` was read, so its buffer is still attached and as long.
-    // The borrow of `text` has ended, so nothing aliases `out` even on one shared `ArrayBuffer`.
+    // SAFETY: `out` is not on a `SharedArrayBuffer` and no JS has run since it was read, so only
+    // this call accesses its memory. The borrow of `text`, maybe a view of the same buffer, has ended.
     let dst = unsafe { out.as_mut() };
     if ids.len() > dst.len() {
       return Err(err(format!(

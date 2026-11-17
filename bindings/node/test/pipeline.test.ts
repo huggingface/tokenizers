@@ -78,6 +78,17 @@ test('encodeBytesInto reads its buffers after an options getter has run', () => 
   assert.deepStrictEqual(new Uint32Array(transferred), new Uint32Array(64))
 })
 
+// Another thread can write to a SharedArrayBuffer while the call reads `text` or writes `out`.
+test('encodeBytesInto refuses a view of a SharedArrayBuffer', () => {
+  const tok = PipelineTokenizer.fromFile(MODEL)
+  const text = Buffer.from('Hello there', 'utf8')
+  const sharedText = new Uint8Array(new SharedArrayBuffer(text.length))
+  sharedText.set(text)
+  assert.throws(() => tok.encodeBytesInto(sharedText, new Uint32Array(64)), /text.*SharedArrayBuffer/)
+  const sharedOut = new Uint32Array(new SharedArrayBuffer(256))
+  assert.throws(() => tok.encodeBytesInto(text, sharedOut), /out.*SharedArrayBuffer/)
+})
+
 test('addSpecialTokens is honoured', () => {
   const tok = PipelineTokenizer.fromFile(MODEL)
   const withSpecials = tok.encode('Hello', { addSpecialTokens: true })
