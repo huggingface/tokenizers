@@ -834,12 +834,14 @@ impl Tokenizer {
                                 // The whole span list at once; see Tokenize::tokenize_spans.
                                 // SAFETY: `PreTokenize` guarantees every span is a valid range of
                                 // `normalized_chunk`, which is what lets the model slice it unchecked.
-                                self.inner.model.tokenize_spans(
-                                    normalized_chunk,
-                                    pre_tokens,
-                                    model_scratch,
-                                    output,
-                                )?;
+                                unsafe {
+                                    self.inner.model.tokenize_spans(
+                                        normalized_chunk,
+                                        pre_tokens,
+                                        model_scratch,
+                                        output,
+                                    )
+                                }?;
                             }
                         }
                     }
@@ -1045,7 +1047,13 @@ pub trait Tokenize {
     ///
     /// The default is the loop it replaces, so a model only overrides this if it has per-chunk
     /// work to hoist out of the loop.
-    fn tokenize_spans(
+    ///
+    /// # Safety
+    ///
+    /// Every span must satisfy the [`PreTokenize`] invariants for `chunk`: inside it, not
+    /// reversed, and starting and ending on char boundaries. An override may slice `chunk` with
+    /// [`str::get_unchecked`].
+    unsafe fn tokenize_spans(
         &self,
         chunk: &str,
         spans: &[Span],
@@ -1160,7 +1168,8 @@ impl Tokenize for Model {
         }
     }
 
-    fn tokenize_spans(
+    // SAFETY: each arm forwards the caller's spans unchanged, so the caller's guarantee holds.
+    unsafe fn tokenize_spans(
         &self,
         chunk: &str,
         spans: &[Span],
@@ -1168,21 +1177,21 @@ impl Tokenize for Model {
         output: &mut Vec<Token>,
     ) -> Result<()> {
         match (self, scratch) {
-            (Self::BPE(model), ModelScratch::BPE(scratch)) => {
+            (Self::BPE(model), ModelScratch::BPE(scratch)) => unsafe {
                 model.tokenize_spans(chunk, spans, scratch, output)
-            }
+            },
             #[cfg(feature = "unigram")]
-            (Self::Unigram(model), ModelScratch::Unigram(scratch)) => {
+            (Self::Unigram(model), ModelScratch::Unigram(scratch)) => unsafe {
                 model.tokenize_spans(chunk, spans, scratch, output)
-            }
+            },
             #[cfg(feature = "wordlevel")]
-            (Self::WordLevel(model), ModelScratch::WordLevel(scratch)) => {
+            (Self::WordLevel(model), ModelScratch::WordLevel(scratch)) => unsafe {
                 model.tokenize_spans(chunk, spans, scratch, output)
-            }
+            },
             #[cfg(feature = "wordpiece")]
-            (Self::WordPiece(model), ModelScratch::WordPiece(scratch)) => {
+            (Self::WordPiece(model), ModelScratch::WordPiece(scratch)) => unsafe {
                 model.tokenize_spans(chunk, spans, scratch, output)
-            }
+            },
             _ => unreachable!(),
         }
     }

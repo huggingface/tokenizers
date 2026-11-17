@@ -271,7 +271,7 @@ impl pipeline::Tokenize for BPE {
     /// The scratch is destructured once instead of once per word, the output is grown once for the
     /// whole batch instead of being capacity-checked on every push, and the virtual call, the
     /// slice and the `Result` happen once per chunk rather than once per pre-token.
-    fn tokenize_spans(
+    unsafe fn tokenize_spans(
         &self,
         chunk: &str,
         spans: &[Span],
@@ -306,8 +306,8 @@ impl pipeline::Tokenize for BPE {
         let mut cache_slot = word_cache.as_mut();
 
         for span in spans {
-            // SAFETY: the pre-tokenizer cuts on char boundaries, so a span is always a valid slice
-            // of this chunk. Bounds- and UTF-8-checking it again per word measured worth removing.
+            // SAFETY: the caller guarantees each span is a char-boundary range of `chunk`. Checking
+            // it again per word measured worth removing.
             let sequence = unsafe { chunk.get_unchecked(span.range()) };
             if sequence.is_empty() {
                 continue;
