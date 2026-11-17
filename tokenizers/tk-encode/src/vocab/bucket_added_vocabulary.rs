@@ -272,7 +272,6 @@ impl AddedVocabulary {
             .or_else(|| self.normalized_vocab.token_to_internal_id(token))
     }
     /// Size of the additional vocabulary
-    #[allow(dead_code)] // Suppress the "method is never used" warning
     pub fn len(&self) -> usize {
         self.vocab.len() + self.normalized_vocab.len()
     }
