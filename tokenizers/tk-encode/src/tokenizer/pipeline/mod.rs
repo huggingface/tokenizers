@@ -331,6 +331,7 @@ pub enum Input {
 }
 
 #[derive(Clone)]
+#[non_exhaustive]
 pub enum Inputs {
     Single(Input),
     Batch(Vec<Input>),
