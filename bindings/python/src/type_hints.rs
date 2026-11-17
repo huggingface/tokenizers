@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
-use numpy::{Element, PyArray1, PyReadonlyArray1};
+use numpy::{Element, PyArray1};
+use pyo3::buffer::PyBuffer;
 use pyo3::exceptions::PyTypeError;
 use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
@@ -47,11 +48,11 @@ impl<'py, T: Dtype> IntoPyObject<'py> for NDArray<'py, T> {
 /// The `ids` argument of `Tokenizer.decode` and `Tokenizer.decode_tokens`, typed
 /// `Encoding | Sequence[int] | NDArray[numpy.integer[Any]]`.
 ///
-/// An `Encoding` and a `uint32` numpy array are read in place, no copy.
+/// An `Encoding` is read in place, no copy.
+/// A 1-D buffer of `uint32`, such as a numpy array, is copied in one block.
 /// Any other sequence is copied into a `Vec<u32>` one element at a time.
 pub enum TokenIds<'py> {
     Encoding(Bound<'py, Encoding>),
-    Array(PyReadonlyArray1<'py, u32>),
     Copied(Vec<u32>),
 }
 
@@ -77,11 +78,10 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
         if let Ok(encoding) = obj.extract::<Bound<'py, Encoding>>() {
             return Ok(Self::Encoding(encoding));
         }
-        if let Ok(array) = obj.extract::<PyReadonlyArray1<u32>>() {
-            return Ok(match array.as_slice() {
-                Ok(_) => Self::Array(array),
-                Err(_) => Self::Copied(array.as_array().to_vec()),
-            });
+        if let Ok(buffer) = PyBuffer::<u32>::get(&obj)
+            && buffer.dimensions() == 1
+        {
+            return buffer.to_vec(obj.py()).map(Self::Copied);
         }
         obj.extract::<Vec<u32>>().map(Self::Copied)
     }
@@ -91,7 +91,6 @@ impl TokenIds<'_> {
     pub fn as_slice(&self) -> &[u32] {
         match self {
             Self::Encoding(encoding) => encoding.get().ids(),
-            Self::Array(array) => array.as_slice().expect("contiguous, checked in extract"),
             Self::Copied(ids) => ids,
         }
     }
