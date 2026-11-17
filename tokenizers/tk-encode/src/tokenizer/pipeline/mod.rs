@@ -1,3 +1,4 @@
+use ahash::AHashMap;
 use std::collections::{BTreeMap, HashMap};
 use std::iter::Enumerate;
 use std::sync::Arc;
@@ -18,7 +19,7 @@ use crate::{
     pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     tokenizer::Decode as _,
-    vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
+    vocab::bucket_added_vocabulary::{AddedToken, AddedVocabulary as BucketAddedVocabulary},
 };
 #[cfg(feature = "parallelism")]
 pub use parallel::PARALLEL_MIN_BYTES;
@@ -41,7 +42,7 @@ mod pre_tokenizer;
 pub use normalizer::{Normalize, Normalizer, NormalizerChain, normalize_all};
 pub use post_processor::{PostProcessor, Template};
 pub use pre_tokenizer::{PreTokenize, PreTokenizer, PreTokenizerScratch};
-pub(crate) use pre_tokenizer::{split_delimiter, split_matches};
+pub(crate) use pre_tokenizer::{Cut, split_delimiter, split_matches};
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
@@ -232,6 +233,9 @@ struct TokenizerInner {
     truncation: Option<TruncationParams>,
     /// Pool of scratch buffers. Scratch buffers hold intermediate state (cache, intermediate buffers, etc) required by the tokenization algorithms.
     scratch_pool: ScratchPool,
+    /// See [`safe_cut`].
+    #[cfg_attr(not(feature = "parallelism"), allow(dead_code))]
+    cut: Option<Cut>,
 }
 
 /// Experimental encode-only pipeline built from a [`Tokenizer`]. Runs the same
@@ -265,18 +269,20 @@ impl Tokenizer {
         padding: Option<PaddingParams>,
         truncation: Option<TruncationParams>,
     ) -> Self {
-        let added_id_min = added_vocabulary
-            .get_added_tokens_decoder()
-            .keys()
-            .copied()
-            .min()
-            .unwrap_or(u32::MAX);
+        // rebuilt from the vocabulary, so built once
+        let added_tokens = added_vocabulary.get_added_tokens_decoder();
+        let added_id_min = added_tokens.keys().copied().min().unwrap_or(u32::MAX);
         let added_outside_model = added_vocabulary
             .get_vocab()
             .keys()
             .filter(|token| model.token_to_id(token).is_none())
             .count();
         let total_vocab_size = model.get_vocab_size() + added_outside_model;
+        let cut = if cfg!(feature = "parallelism") {
+            safe_cut(&added_tokens, &normalizers, &pre_tokenizer)
+        } else {
+            None
+        };
         Self {
             inner: Arc::new(TokenizerInner {
                 added_vocabulary,
@@ -291,6 +297,7 @@ impl Tokenizer {
                 padding,
                 truncation,
                 scratch_pool: ScratchPool::new(),
+                cut,
             }),
         }
     }
@@ -317,6 +324,30 @@ impl Tokenizer {
         }
     }
 }
+/// The pre-tokenizer's [`Cut`], kept only if no other stage can see across a cut. Models work per
+/// pre-token and the post-processor on the reassembled sequence; what can break a cut:
+/// - any normalizer (for now)
+/// - a `single_word` added token (reads the chars around its match)
+/// - a normalized added token a cut could split, or an `lstrip`/`rstrip` one (raw ones are peeled
+///   off the whole input before cutting)
+fn safe_cut(
+    added_tokens: &AHashMap<u32, AddedToken>,
+    normalizers: &[Normalizer],
+    pre_tokenizer: &PreTokenizer,
+) -> Option<Cut> {
+    let cut = pre_tokenizer.cut()?;
+    if !normalizers.is_empty() {
+        return None;
+    }
+    let preserved = added_tokens.values().all(|token| {
+        let content = token.content.as_bytes();
+        !token.single_word
+            && (!token.normalized
+                || (!token.lstrip && !token.rstrip && cut(content, 0, content.len()).is_none()))
+    });
+    preserved.then_some(cut)
+}
+
 #[derive(Clone)]
 #[non_exhaustive]
 pub enum Input {
@@ -587,6 +618,13 @@ impl Tokenizer {
     /// The added vocabulary, whose `get_added_tokens_decoder` is the `added_tokens` array.
     pub fn get_added_vocabulary(&self) -> &BucketAddedVocabulary {
         &self.inner.added_vocabulary
+    }
+
+    /// Whether a large input may be cut and its chunks encoded in parallel (see [`safe_cut`]). For
+    /// tests: a cut silently turned off would still encode right.
+    #[doc(hidden)]
+    pub fn cuts_large_inputs(&self) -> bool {
+        self.inner.cut.is_some()
     }
 
     /// Which token plays which role, as the config declared it. Empty when it declared none.
@@ -2019,5 +2057,66 @@ mod tests {
 
     fn hello_pipeline_with_truncation(truncation: TruncationParams) -> Tokenizer {
         hello_pipeline_with(PostProcessor::default(), None, Some(truncation))
+    }
+
+    /// cl100k's `Split`, as Llama-3 ships it (behind a byte-map `ByteLevel`).
+    fn llama3_pre_tokenizer() -> PreTokenizer {
+        use crate::pre_tokenizers::sequence::Sequence;
+        use crate::pre_tokenizers::split::{Split, SplitPattern};
+        let split = Split::new(
+            SplitPattern::Regex(bitcannon::regexes::CL100K.to_owned()),
+            crate::tokenizer::SplitDelimiterBehavior::Isolated,
+            false,
+        )
+        .unwrap();
+        PreTokenizer::Sequence(Sequence::new(vec![
+            PreTokenizer::Split(split),
+            PreTokenizer::None,
+        ]))
+    }
+
+    fn added(tokens: impl IntoIterator<Item = AddedToken>) -> AHashMap<u32, AddedToken> {
+        let mut added = BucketAddedVocabulary::new();
+        added
+            .add_tokens(tokens, 8, |_| None, None::<&Normalizer>)
+            .unwrap();
+        added.get_added_tokens_decoder()
+    }
+
+    #[test]
+    fn llama3_shape_is_cut_at_letter_ends() {
+        let cut = safe_cut(&added([]), &[], &llama3_pre_tokenizer()).expect("cuttable");
+        assert_eq!(cut(b"hello world", 0, 11), Some(5));
+        // raw specials are peeled before cutting
+        let specials = added([AddedToken::from("<|reserved_special_token_0|>", true)]);
+        assert!(safe_cut(&specials, &[], &llama3_pre_tokenizer()).is_some());
+    }
+
+    #[test]
+    fn no_cut_without_a_proven_pre_tokenizer() {
+        assert!(safe_cut(&added([]), &[], &PreTokenizer::None).is_none());
+    }
+
+    #[test]
+    fn a_normalizer_disables_cuts() {
+        let normalizers = [Normalizer::Lowercase(
+            crate::normalizers::utils::Lowercase,
+        )];
+        assert!(safe_cut(&added([]), &normalizers, &llama3_pre_tokenizer()).is_none());
+    }
+
+    #[test]
+    fn added_tokens_a_cut_could_break_disable_cuts() {
+        let pre_tokenizer = llama3_pre_tokenizer();
+        // normalized tokens are matched per chunk: a cut inside one breaks it
+        let inside = AddedToken::from("<|endoftext|>", true).normalized(true);
+        assert!(safe_cut(&added([inside]), &[], &pre_tokenizer).is_none());
+        let whole = AddedToken::from("<<>>", true).normalized(true);
+        assert!(safe_cut(&added([whole]), &[], &pre_tokenizer).is_some());
+        // stripped whitespace may hold a cut: refused, conservatively
+        let rstrip = AddedToken::from("<<>>", true).normalized(true).rstrip(true);
+        assert!(safe_cut(&added([rstrip]), &[], &pre_tokenizer).is_none());
+        let single_word = AddedToken::from("<<>>", true).single_word(true);
+        assert!(safe_cut(&added([single_word]), &[], &pre_tokenizer).is_none());
     }
 }

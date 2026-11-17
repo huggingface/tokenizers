@@ -39,6 +39,20 @@ impl Sequence {
     }
 }
 
+impl Sequence {
+    /// The lone non-identity child's cuts; none for several real children (deepseek has three).
+    pub(crate) fn cut(&self) -> Option<pipeline::Cut> {
+        let mut work = self
+            .pre_tokenizers
+            .iter()
+            .filter(|c| !matches!(c, PreTokenizer::None));
+        match (work.next(), work.next()) {
+            (Some(only), None) => only.cut(),
+            _ => None,
+        }
+    }
+}
+
 // SAFETY: a `Sequence` runs its children in order. A child splits the spans emitted by the previous child.
 // `Sequence` is safe because:
 // - all of its children are safe

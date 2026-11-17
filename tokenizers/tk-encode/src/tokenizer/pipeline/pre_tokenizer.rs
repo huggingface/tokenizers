@@ -157,6 +157,20 @@ pub enum PreTokenizer {
     None,
 }
 
+/// First safe cut in `text[from..to)` (see [`bitcannon::cuts`]).
+pub(crate) type Cut = fn(text: &[u8], from: usize, to: usize) -> Option<usize>;
+
+impl PreTokenizer {
+    /// This pre-tokenizer's safe cuts, if any are proven. `None` keeps inputs whole.
+    pub(crate) fn cut(&self) -> Option<Cut> {
+        match self {
+            Self::Split(split) => split.cut(),
+            Self::Sequence(sequence) => sequence.cut(),
+            _ => None,
+        }
+    }
+}
+
 // SAFETY: every arm but `None` forwards to another `PreTokenize` impl, which upholds the contract itself.
 // `None` emits the single span covering all of `text`, whose ends are `0` and `text.len()`.
 unsafe impl PreTokenize for PreTokenizer {
