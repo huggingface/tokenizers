@@ -1,4 +1,4 @@
-use crate::tokenizer::{Decoder, Result};
+use crate::tokenizer::{Decode, Result};
 
 #[derive(Clone, Debug, Default)]
 /// Strip just removes the `content` when it appears at the start position up until the stop position.
@@ -19,7 +19,7 @@ impl Strip {
     }
 }
 
-impl Decoder for Strip {
+impl Decode for Strip {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         Ok(tokens
             .into_iter()
