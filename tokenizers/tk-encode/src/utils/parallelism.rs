@@ -17,9 +17,6 @@ use std::sync::atomic::Ordering;
 // Re-export rayon current_num_threads
 pub use rayon::current_num_threads;
 
-/// TODO: deprecate
-pub(crate) const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
-
 /// See [`max_threads`]. 0 means the default.
 static MAX_THREADS: AtomicUsize = AtomicUsize::new(0);
 /// Bumped by [`set_max_threads`], so the next [`pool`] call builds a pool with the new count.
@@ -144,31 +141,21 @@ pub fn set_max_threads(n: usize) {
     invalidate();
 }
 
-/// Get the currently set value for `TOKENIZERS_PARALLELISM` env variable
+/// Whether the `MaybeParallel*` iterators run in parallel: always. They run on rayon's global pool,
+/// which `RAYON_NUM_THREADS` sizes.
 pub(crate) fn get_parallelism() -> bool {
-    match std::env::var(ENV_VARIABLE) {
-        Ok(mut v) => {
-            v.make_ascii_lowercase();
-            !matches!(v.as_ref(), "" | "off" | "false" | "f" | "no" | "n" | "0")
-        }
-        Err(_) => true, // If we couldn't get the variable, we use the default
-    }
+    true
 }
 
-/// Allows to convert into an iterator that can be executed either parallelly or serially.
-///
-/// The choice is made according to the currently set `TOKENIZERS_PARALLELISM` environment variable.
-/// This variable can have one of the following values
-///   - False => "" (empty value), "false", "f", "off", "no", "n", "0"
-///   - True => Any other value
-///
+/// Allows to convert into an iterator that can be executed either parallelly or serially,
+/// according to [`get_parallelism`].
 pub trait MaybeParallelIterator<P, S>
 where
     P: ParallelIterator,
     S: Iterator<Item = P::Item>,
 {
     /// Convert ourself in a CondIterator, that will be executed either in parallel or serially,
-    /// based solely on the `TOKENIZERS_PARALLELISM` environment variable
+    /// based solely on [`get_parallelism`]
     fn into_maybe_par_iter(self) -> CondIterator<P, S>;
 }
 
@@ -237,7 +224,7 @@ where
     T: Sync,
 {
     /// Create a CondIterator, that will be executed either in parallel or serially,
-    /// based solely on the `TOKENIZERS_PARALLELISM` environment variable
+    /// based solely on [`get_parallelism`]
     fn maybe_par_chunks(
         &'_ self,
         chunk_size: usize,
