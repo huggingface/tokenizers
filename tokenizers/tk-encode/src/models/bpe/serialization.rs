@@ -151,14 +151,11 @@ impl BPE {
             return Err(Error::InvalidDropout.into());
         }
 
-        let mut max_len = 0;
-        for key in vocab.keys() {
-            if max_len < key.len() {
-                max_len = key.len();
-            }
-        }
-        let prefix = config.continuing_subword_prefix.as_deref();
-        let mut buffer = String::with_capacity(max_len);
+        let prefix = config
+            .continuing_subword_prefix
+            .as_deref()
+            .unwrap_or_default();
+        let mut buffer = String::new();
         let merges: MergeMap = merges
             .into_iter()
             .enumerate()
@@ -169,18 +166,18 @@ impl BPE {
                 let b_id = vocab
                     .get(&b)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
-                // Only strip the continuing subword prefix when `b` actually carries
-                // it. Slicing at `prefix.len()` unconditionally can cut inside a
-                // multi-byte character, or past the end of `b` entirely.
-                let b_stripped = match prefix {
-                    Some(prefix) => b.strip_prefix(prefix).unwrap_or(b.as_str()),
-                    None => b.as_str(),
+                let Some(b_suffix) = b.strip_prefix(prefix) else {
+                    return Err(Error::MergeTokenWithoutPrefix {
+                        token: b,
+                        prefix: prefix.to_owned(),
+                    }
+                    .into());
                 };
                 buffer.clear();
                 buffer.push_str(&a);
-                buffer.push_str(b_stripped);
+                buffer.push_str(b_suffix);
                 let new_id = vocab
-                    .get(buffer.as_str())
+                    .get(&buffer)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(buffer.clone()))?;
                 Ok(((*a_id, *b_id), (i as u32, *new_id)))
             })
