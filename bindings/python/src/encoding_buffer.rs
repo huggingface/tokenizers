@@ -4,7 +4,9 @@ use std::{mem, ptr};
 use pyo3::exceptions::PyBufferError;
 use pyo3::ffi;
 use pyo3::prelude::*;
+use pyo3::types::{PyCapsule, PyDict};
 
+use crate::dlpack;
 use crate::encoding::Encoding;
 
 /// Which field of an `Encoding` an `EncodingBuffer` exposes.
@@ -27,7 +29,7 @@ impl Field {
 /// One field of an `Encoding`, as a read-only buffer of `uint32`.
 ///
 /// It implements the Python buffer protocol over the encoding's own memory, so `numpy.asarray`
-/// and `memoryview` read the field without a copy.
+/// and `memoryview` read the field without a copy. `torch.tensor` copies it to an `int64` tensor.
 #[pyclass(frozen, module = "tokenizers")]
 pub struct EncodingBuffer {
     encoding: Py<Encoding>,
@@ -99,5 +101,20 @@ impl EncodingBuffer {
             (*view).obj = slf.into_any().into_ptr();
         }
         Ok(())
+    }
+
+    // DLPack is the protocol `torch.tensor` reads. torch ignores DLPack's read-only flag, so this
+    // exports a copy, never the encoding's own memory. The copy answers every DLPack option.
+    #[pyo3(signature = (**_kwargs))]
+    fn __dlpack__<'py>(
+        &self,
+        py: Python<'py>,
+        _kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Bound<'py, PyCapsule>> {
+        dlpack::int64_capsule(py, self.as_slice())
+    }
+
+    fn __dlpack_device__(&self) -> (i32, i32) {
+        (dlpack::CPU, 0)
     }
 }

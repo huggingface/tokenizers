@@ -3,6 +3,7 @@ import io
 
 import numpy as np
 import pytest
+import torch
 
 from tokenizers import Padding
 
@@ -49,11 +50,39 @@ def test_buffer_outlives_encoding(bert):
     assert memoryview(ids).tolist() == [1, 27462, 7495, 2]
 
 
+@pytest.mark.parametrize("to_tensor", [torch.tensor, torch.as_tensor, torch.from_dlpack])
+def test_torch_gets_an_int64_copy(bert, to_tensor):
+    encoding = bert.encode("Hello there")
+
+    ids = to_tensor(encoding.ids_buffer)
+    assert ids.dtype == torch.int64
+    assert ids.tolist() == encoding.ids
+
+    ids[0] = 0
+    assert encoding.ids == [1, 27462, 7495, 2]
+
+
+def test_tensor_outlives_buffer(bert):
+    ids = torch.from_dlpack(bert.encode("Hello there").ids_buffer)
+
+    gc.collect()
+
+    assert ids.tolist() == [1, 27462, 7495, 2]
+
+
+def test_unused_dlpack_capsule_is_freed(bert):
+    bert.encode("Hello there").ids_buffer.__dlpack__()
+
+    gc.collect()
+
+
 def test_empty(gpt2):
     encoding = gpt2.encode("")
 
     assert np.asarray(encoding.ids_buffer).shape == (0,)
     assert np.asarray(encoding.ids_buffer).dtype == np.uint32
+    assert torch.tensor(encoding.ids_buffer).shape == (0,)
+    assert torch.tensor(encoding.ids_buffer).dtype == torch.int64
 
 
 def test_equality_ignores_which_fields_were_read(bert):

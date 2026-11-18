@@ -4,6 +4,7 @@ import threading
 
 import numpy as np
 import pytest
+import torch
 
 from conftest import GPT2
 
@@ -40,6 +41,27 @@ def test_read_buffer_while_decoding_it(gpt2):
     while decoder.is_alive():
         encoding.ids_buffer
     decoder.join()
+
+
+def test_torch_reads_buffer_while_decoding_it(gpt2):
+    encoding = gpt2.encode(GPT2.read_text()[:4000])
+    ids = encoding.ids_buffer
+    tensors = []
+
+    def read():
+        for _ in range(100):
+            tensors.append(torch.tensor(ids))
+
+    readers = [threading.Thread(target=read) for _ in range(4)]
+    for reader in readers:
+        reader.start()
+    while any(reader.is_alive() for reader in readers):
+        gpt2.decode(ids)
+    for reader in readers:
+        reader.join()
+
+    assert len(tensors) == 400
+    assert all(tensor.tolist() == encoding.ids for tensor in tensors)
 
 
 def test_threads_export_the_same_memory(gpt2):

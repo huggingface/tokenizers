@@ -6,6 +6,7 @@ mod added_tokens_spec;
 mod compiled;
 mod components;
 mod decode_stream;
+mod dlpack;
 mod encoding;
 mod encoding_buffer;
 mod error;

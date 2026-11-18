@@ -13,8 +13,19 @@ dev = [
     "numpy",
     "pytest",
     "ruff",
+    # The tests read the buffer getters with `torch.tensor`, through DLPack.
+    "torch>=2.6",
     "ty==0.0.102",
 ]
+
+# PyPI's Linux wheels of torch bundle CUDA, several GB that the CPU-only tests never load.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [build-system]
 requires = ["maturin>=1.0,<2.0"]
