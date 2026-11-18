@@ -21,8 +21,8 @@ use bitcannon::classify::classify;
 ///
 /// # Safety
 ///
-/// [`PreTokenize::pre_tokenize`] produces [`Span`] objects that are later consumed by [`Tokenize::tokenize_spans`].
-/// For performance reasons, [`Tokenize::tokenize_spans`] may turn every span into a `&str` with [`str::get_unchecked`].
+/// [`PreTokenize::pre_tokenize`] produces [`Span`] objects that [`PreTokenizer::pre_tokens`] wraps in a [`PreTokens`].
+/// For performance reasons, [`PreTokens::iter`] turns every span into a `&str` with [`str::get_unchecked`].
 /// As a consequence, every implementation of this trait *MUST* ensure the following invariants for each [`Span`],
 /// for every `text` of at most [`u32::MAX`] bytes:
 ///
@@ -33,8 +33,6 @@ use bitcannon::classify::classify;
 ///
 /// A [`Span`] holds `u32` offsets, which cannot address a longer `text`.
 /// The caller refuses such a `text` before it trusts the spans.
-///
-/// [`Tokenize::tokenize_spans`]: super::Tokenize::tokenize_spans
 pub unsafe trait PreTokenize {
     /// Split `text` into pre-tokens, appending to `out`. Ranges are into `text`.
     /// `scratch` holds the working buffers, see [`PreTokenizerScratch`].
@@ -44,6 +42,45 @@ pub unsafe trait PreTokenize {
         scratch: &mut PreTokenizerScratch,
         out: &mut Vec<Span>,
     ) -> Result<()>;
+}
+
+/// A chunk of text and the pre-token spans from [`PreTokenize`].
+///
+/// Every span satisfies the [`PreTokenize`] invariants for the chunk,
+/// which allows unchecked slicing.
+#[derive(Clone, Copy)]
+pub struct PreTokens<'a> {
+    chunk: &'a str,
+    spans: &'a [Span],
+}
+
+impl<'a> PreTokens<'a> {
+    /// # Safety
+    ///
+    /// Every span must satisfy the [`PreTokenize`] invariants for `chunk`:
+    /// - the start and the end of the span are inside the chunk
+    /// - the span is not reversed
+    /// - the span starts and ends on char boundaries
+    unsafe fn new_unchecked(chunk: &'a str, spans: &'a [Span]) -> Self {
+        Self { chunk, spans }
+    }
+
+    pub fn chunk(&self) -> &'a str {
+        self.chunk
+    }
+
+    pub fn spans(&self) -> &'a [Span] {
+        self.spans
+    }
+
+    /// Every span with the text it covers.
+    pub fn iter(&self) -> impl Iterator<Item = (Span, &'a str)> + use<'a> {
+        let chunk = self.chunk;
+        self.spans.iter().map(move |&span| {
+            // SAFETY: `new_unchecked` requires every span to be a char-boundary range of `chunk`.
+            (span, unsafe { chunk.get_unchecked(span.range()) })
+        })
+    }
 }
 
 /// The working buffers a [`PreTokenize`] impl needs to split a text into pre-tokens.
@@ -165,6 +202,43 @@ pub enum PreTokenizer {
 
 // SAFETY: every arm but `None` forwards to another `PreTokenize` impl, which upholds the contract itself.
 // `None` emits the single span covering all of `text`, whose ends are `0` and `text.len()`.
+impl PreTokenizer {
+    /// Splits `text` into pre-tokens.
+    pub fn pre_tokens<'a>(
+        &self,
+        text: &'a str,
+        scratch: &mut PreTokenizerScratch,
+        spans: &'a mut Vec<Span>,
+    ) -> Result<PreTokens<'a>> {
+        // A [`Span`] holds `u32` offsets, which cannot address a longer text.
+        if text.len() > u32::MAX as usize {
+            return Err(format!(
+                "sequence too long to pre-tokenize: {} bytes after normalization, the limit is {}",
+                text.len(),
+                u32::MAX
+            )
+            .into());
+        }
+        spans.clear();
+        self.pre_tokenize(text, scratch, spans)?;
+
+        #[cfg(debug_assertions)]
+        for span in spans.iter() {
+            let range = span.range();
+            debug_assert!(
+                range.start <= range.end
+                    && text.is_char_boundary(range.start)
+                    && text.is_char_boundary(range.end),
+                "{self:?} broke the PreTokenize contract: emitted {span:?} for {text:?}",
+            );
+        }
+        
+        // SAFETY: `spans` was empty before the call and `text` fits in `u32` offsets, so
+        // `PreTokenize` guarantees every span in it is a valid range of `text`.
+        Ok(unsafe { PreTokens::new_unchecked(text, spans) })
+    }
+}
+
 unsafe impl PreTokenize for PreTokenizer {
     fn pre_tokenize(
         &self,

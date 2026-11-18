@@ -9,7 +9,7 @@ use crate::models::bpe::convert::Affixes;
 use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_with_queue};
 use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
-use crate::pipeline::{self, Span, Token};
+use crate::pipeline::{self, PreTokens, Token};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, char_to_byte};
 use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
@@ -271,10 +271,9 @@ impl pipeline::Tokenize for BPE {
     /// The scratch is destructured once instead of once per word, the output is grown once for the
     /// whole batch instead of being capacity-checked on every push, and the virtual call, the
     /// slice and the `Result` happen once per chunk rather than once per pre-token.
-    unsafe fn tokenize_spans(
+    fn tokenize_spans(
         &self,
-        chunk: &str,
-        spans: &[Span],
+        pre_tokens: PreTokens<'_>,
         scratch: &mut Self::Scratch,
         output: &mut Vec<Token>,
     ) -> Result<()> {
@@ -283,6 +282,8 @@ impl pipeline::Tokenize for BPE {
             queue,
             word_cache,
         } = scratch;
+        let chunk = pre_tokens.chunk();
+        let spans = pre_tokens.spans();
 
         output.reserve(spans.len() + MAX_INLINE_IDS);
         let mut capacity = output.capacity();
@@ -305,10 +306,7 @@ impl pipeline::Tokenize for BPE {
         // of what gigatoken's `ProbeView` does by carrying the table base and mask across a chunk.
         let mut cache_slot = word_cache.as_mut();
 
-        for span in spans {
-            // SAFETY: the caller guarantees each span is a char-boundary range of `chunk`. Checking
-            // it again per word measured worth removing.
-            let sequence = unsafe { chunk.get_unchecked(span.range()) };
+        for (span, sequence) in pre_tokens.iter() {
             if sequence.is_empty() {
                 continue;
             }
