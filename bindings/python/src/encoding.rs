@@ -1,4 +1,5 @@
 use std::mem;
+use std::slice;
 use std::sync::OnceLock;
 
 use pyo3::prelude::*;
@@ -141,13 +142,10 @@ fn bytes_slice_to_u32(slice: &[u8]) -> Vec<u32> {
 ///
 /// `torch.frombuffer(buffer, dtype=torch.int32)` and `numpy.asarray` read it without a copy.
 fn u32_memoryview<'py>(py: Python<'py>, values: &[u32]) -> PyResult<Bound<'py, PyMemoryView>> {
-    let bytes = PyByteArray::new_with(py, mem::size_of_val(values), |buffer| {
-        let (chunks, _) = buffer.as_chunks_mut();
-        for (chunk, value) in chunks.iter_mut().zip(values) {
-            *chunk = value.to_ne_bytes();
-        }
-        Ok(())
-    })?;
+    // SAFETY: a `u32` is four initialized bytes with no padding, and a `u8` needs no alignment.
+    // The byte slice covers the memory of `values` exactly and borrows it for as long.
+    let bytes = unsafe { slice::from_raw_parts(values.as_ptr().cast(), mem::size_of_val(values)) };
+    let bytes = PyByteArray::new(py, bytes);
     Ok(PyMemoryView::from(&bytes)?
         .call_method1("cast", ("I",))?
         .cast_into()?)
