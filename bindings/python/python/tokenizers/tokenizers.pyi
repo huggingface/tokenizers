@@ -337,6 +337,24 @@ class Component:
     def __repr__(self, /) -> str: ...
 
 @final
+class DLPackExporter:
+    """
+    One field of an `Encoding`, for array libraries to read through DLPack.
+
+    `torch.tensor` and `numpy.from_dlpack` each get their own `int64` copy of the field.
+    """
+    def __dlpack__(
+        self,
+        /,
+        *,
+        stream: Any | None = None,
+        max_version: tuple[int, int] | None = None,
+        dl_device: tuple[int, int] | None = None,
+        copy: bool | None = None,
+    ) -> Any: ...
+    def __dlpack_device__(self, /) -> tuple[int, int]: ...
+
+@final
 class Encoding:
     """
     Text encoded to token ids by a tokenizer.
@@ -364,14 +382,30 @@ class Encoding:
         A list of ints.
         """
     @property
+    def attention_mask_dlpack(self, /) -> DLPackExporter:
+        """
+        The attention mask, for `torch.tensor` and `numpy.from_dlpack` to read as `int64`.
+        When the encoding is padded: 1 for token ids, 0 for padding tokens.
+        """
+    @property
     def ids(self, /) -> list[int]:
         """
         The id of each token, as a list of ints.
         """
     @property
+    def ids_dlpack(self, /) -> DLPackExporter:
+        """
+        The id of each token, for `torch.tensor` and `numpy.from_dlpack` to read as `int64`.
+        """
+    @property
     def type_ids(self, /) -> list[int]:
         """
         The type id of each token, as a list of ints.
+        """
+    @property
+    def type_ids_dlpack(self, /) -> DLPackExporter:
+        """
+        The type id of each token, for `torch.tensor` and `numpy.from_dlpack` to read as `int64`.
         """
 
 @final

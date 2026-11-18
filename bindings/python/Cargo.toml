@@ -37,6 +37,8 @@ tk = { package = "tokenizers", path = "../../tokenizers", default-features = fal
   "regex",
 ] }
 pastey = "0.2.3"
+# DLPack capsules for `torch.tensor`. 0.9.1 and later need pyo3 0.30.
+dlpark = { version = "=0.9.0", features = ["pyo3"] }
 
 [build-dependencies]
 pyo3-build-config = "=0.29"

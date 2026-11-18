@@ -3,6 +3,8 @@ use std::sync::OnceLock;
 use pyo3::prelude::*;
 use tk::pipeline::{self, Token};
 
+use crate::dlpack::{DLPackExporter, Field};
+
 /// Text encoded to token ids by a tokenizer.
 #[pyclass(frozen, eq, module = "tokenizers")]
 pub struct Encoding {
@@ -50,7 +52,7 @@ impl Encoding {
 
     /// The type id of each token, as a list of ints.
     #[getter]
-    fn type_ids(&self) -> &[u32] {
+    pub(crate) fn type_ids(&self) -> &[u32] {
         self.type_ids.get_or_init(|| {
             if let Some(inner) = self.inner.type_ids() {
                 bytes_slice_to_u32(inner)
@@ -63,7 +65,7 @@ impl Encoding {
     /// Attention mask when the encoding is padded: 1 for token ids, 0 for padding tokens.
     /// A list of ints.
     #[getter]
-    fn attention_mask(&self) -> &[u32] {
+    pub(crate) fn attention_mask(&self) -> &[u32] {
         self.attention_mask.get_or_init(|| {
             if let Some(inner) = self.inner.attention_mask() {
                 bytes_slice_to_u32(inner)
@@ -71,6 +73,25 @@ impl Encoding {
                 vec![1; self.inner.len()]
             }
         })
+    }
+
+    /// The id of each token, for `torch.tensor` and `numpy.from_dlpack` to read as `int64`.
+    #[getter]
+    fn ids_dlpack(slf: Bound<'_, Self>) -> DLPackExporter {
+        DLPackExporter::new(slf, Field::Ids)
+    }
+
+    /// The type id of each token, for `torch.tensor` and `numpy.from_dlpack` to read as `int64`.
+    #[getter]
+    fn type_ids_dlpack(slf: Bound<'_, Self>) -> DLPackExporter {
+        DLPackExporter::new(slf, Field::TypeIds)
+    }
+
+    /// The attention mask, for `torch.tensor` and `numpy.from_dlpack` to read as `int64`.
+    /// When the encoding is padded: 1 for token ids, 0 for padding tokens.
+    #[getter]
+    fn attention_mask_dlpack(slf: Bound<'_, Self>) -> DLPackExporter {
+        DLPackExporter::new(slf, Field::AttentionMask)
     }
 
     /// The number of tokens in the encoding

@@ -32,6 +32,10 @@ encoding.ids             # [101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102]
 encoding.type_ids        # [0, 0, 0, 0, 0, 0, 0, 0, 0]
 encoding.attention_mask  # [1, 1, 1, 1, 1, 1, 1, 1, 1]
 
+# The same fields for array libraries, through DLPack. Each read is an `int64` copy.
+torch.tensor(encoding.ids_dlpack)   # tensor([101, 7592, ...]), torch 2.6 or later
+np.from_dlpack(encoding.attention_mask_dlpack)  # array([1, 1, ...])
+
 compiled.encode("Hello", add_special_tokens=False).ids  # no [CLS]/[SEP]
 compiled.decode(encoding.ids)                           # "hello there, how are you?"
 compiled.decode(np.array(encoding.ids, dtype=np.uint32))  # a uint32 buffer, such as a numpy array, works too
