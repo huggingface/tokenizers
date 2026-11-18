@@ -3,7 +3,6 @@ use std::borrow::Cow;
 use crate::pipeline;
 use crate::tokenizer::Result;
 use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
-use ahash::AHashSet;
 
 #[derive(Clone, Debug)]
 pub struct ByteLevel;
@@ -15,16 +14,12 @@ impl Default for ByteLevel {
 }
 
 impl ByteLevel {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {}
-    }
-
-    pub fn alphabet() -> AHashSet<char> {
-        BYTES_CHAR_LOOKUP.iter().copied().collect()
     }
 }
 
-impl pipeline::Normalizer for ByteLevel {
+impl pipeline::Normalize for ByteLevel {
     fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
         let table = &*BYTES_CHAR_LOOKUP;
         let mut out = String::with_capacity(2 * input.len());
@@ -52,7 +47,7 @@ mod tests {
             ("", ""),
         ] {
             assert_eq!(
-                &*pipeline::Normalizer::normalize(&n, input, 0).unwrap(),
+                &*pipeline::Normalize::normalize(&n, input, 0).unwrap(),
                 expected,
                 "input={input:?}"
             );

@@ -9,6 +9,7 @@ mod byte_level;
 use ahash::AHashMap;
 use byte_level::{ByteLevelFold, Fold};
 
+use crate::models::bpe::tables::NO_SYMBOL;
 use crate::models::bpe::{At, MergeMap};
 
 /// A bitmap of which codepoints fold, plus the symbols they fold to.
@@ -56,7 +57,7 @@ impl SparseFold {
     ) -> Self {
         let mut rows = vec![0u64; 1024];
         for (codepoint, &symbol) in codepoint_to_symbol.iter().enumerate() {
-            if symbol != u32::MAX {
+            if symbol != NO_SYMBOL {
                 // we set a single bit using |
                 rows[codepoint >> 6] |= 1u64 << (codepoint & 0x3F);
             }
@@ -70,11 +71,11 @@ impl SparseFold {
         let symbols: Vec<u32> = codepoint_to_symbol
             .iter()
             .copied()
-            .filter(|&symbol| symbol != u32::MAX)
+            .filter(|&symbol| symbol != NO_SYMBOL)
             .collect();
         let mut ascii = [0u32; 128];
         for (byte, symbol) in ascii.iter_mut().enumerate() {
-            *symbol = if codepoint_to_symbol[byte] != u32::MAX {
+            *symbol = if codepoint_to_symbol[byte] != NO_SYMBOL {
                 codepoint_to_symbol[byte]
             } else {
                 byte_symbols[byte]
@@ -93,12 +94,12 @@ impl SparseFold {
         self.rows.len() * 8 + self.row_start.len() * 4 + self.symbols.len() * 4 + 512
     }
 
-    /// The symbol at (row, col), or `u32::MAX` if that codepoint does not fold.
+    /// The symbol at (row, col), or [`NO_SYMBOL`] if that codepoint does not fold.
     #[inline(always)]
     fn get(&self, row: usize, col: u32) -> u32 {
         let bits = self.rows.at(row);
         if (bits >> col) & 1 == 0 {
-            return u32::MAX;
+            return NO_SYMBOL;
         }
         let before =
             self.row_start.at(row) as usize + (bits & ((1u64 << col) - 1)).count_ones() as usize;
@@ -111,7 +112,7 @@ impl SparseFold {
         self.ascii.at((byte & 0x7F) as usize)
     }
 
-    /// A character given as UTF-8 bytes. `u32::MAX` means it does not fold and the caller emits its
+    /// A character given as UTF-8 bytes. [`NO_SYMBOL`] means it does not fold and the caller emits its
     /// bytes instead. `lead` and `char_len` come from the caller, which already has them.
     ///
     /// We use a small trick: any continuation byte can be converted to a key to index the sparse
@@ -154,7 +155,7 @@ impl SparseFold {
         } else {
             char::from_u32(codepoint)
                 .and_then(|character| self.non_bmp.get(&character).copied())
-                .unwrap_or(u32::MAX)
+                .unwrap_or(NO_SYMBOL)
         }
     }
 }
@@ -177,10 +178,10 @@ pub(super) fn build(
     }
 
     // the flat 256 KB table is build-time only: `SparseFold::compact` shrinks it and it is dropped
-    let mut cp_to_internal_id = vec![u32::MAX; 65536];
+    let mut cp_to_internal_id = vec![NO_SYMBOL; 65536];
     let mut non_bmp: AHashMap<char, u32> = AHashMap::new();
     let (mut folded, mut unsafe_chars) = (0usize, 0usize);
-    let mut byte_internal = [u32::MAX; 256];
+    let mut byte_internal = [NO_SYMBOL; 256];
     if byte_level {
         // A character reaches the merge loop as bytes, so folding it means proving the
         // merges are  predetermined. See `byte_level`.
@@ -204,7 +205,7 @@ pub(super) fn build(
                 let id = internal_id_map
                     .get(*external as usize)
                     .copied()
-                    .unwrap_or(u32::MAX);
+                    .unwrap_or(NO_SYMBOL);
                 place(&mut cp_to_internal_id, &mut non_bmp, ch, id);
                 folded += 1;
             }

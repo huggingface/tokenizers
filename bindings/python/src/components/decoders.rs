@@ -1,35 +1,13 @@
-use std::sync::Arc;
+//! Python classes definitions for decoder components.
+//! Generated from the definitions in `tk::schemas`.
 
-use pyo3::prelude::*;
+use super::macros::component_module;
 
-use crate::tokenizer::{ComponentKey, ComponentSpec};
-
-use super::{Component, ComponentKind};
-
-/// Base class for all decoders
-#[pyclass(frozen, subclass, extends = Component, module = "tokenizers.decoders")]
-#[derive(Default)]
-pub struct Decoder;
-
-#[pymethods]
-impl Decoder {
-    /// Rebuilds a component from its `__getstate__`
-    #[staticmethod]
-    fn _unpickle(py: Python<'_>, state: &[u8]) -> PyResult<Py<Self>> {
-        Self::from_state(py, state)
-    }
-}
-
-impl ComponentKind for Decoder {
-    const JSON_KEY: ComponentKey = ComponentKey::Decoder;
-
-    fn from_spec(py: Python<'_>, spec: Arc<ComponentSpec>) -> PyResult<Py<Self>> {
-        Self::default_component(py, spec)
-    }
-}
-
-#[pymodule]
-pub mod decoders {
-    #[pymodule_export]
-    use super::Decoder;
-}
+tk::decoder_schemas!(component_module! {
+    kind: Decoder,
+    module: decoders,
+    python_module: "tokenizers.decoders",
+    tokenizer_field: decoder,
+    items_key: "decoders",
+    also_exports: [crate::decode_stream::DecodeStream],
+});

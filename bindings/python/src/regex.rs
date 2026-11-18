@@ -4,12 +4,16 @@
 //! converts them to the JSON `tokenizer.json` stores.
 
 use pyo3::prelude::*;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
 use tk::utils::SysRegex;
 
 use crate::error::err;
 
-#[pyclass(frozen, module = "tokenizers")]
+// `Deserialize` skips the compile check: it reads a pattern back from a spec, which `compile()`
+// checks.
+#[pyclass(frozen, from_py_object, module = "tokenizers")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Regex {
     pattern: String,
 }
@@ -25,17 +29,8 @@ impl Regex {
 }
 
 /// A pattern from `tokenizer.json`: `{"String": ...}` or `{"Regex": ...}`.
-#[derive(FromPyObject)]
+#[derive(FromPyObject, IntoPyObject, Serialize, Deserialize)]
 pub(crate) enum Pattern {
-    Str(String),
-    Regex(Py<Regex>),
-}
-
-impl From<Pattern> for Value {
-    fn from(pattern: Pattern) -> Self {
-        match pattern {
-            Pattern::Str(literal) => json!({"String": literal}),
-            Pattern::Regex(regex) => json!({"Regex": regex.get().pattern}),
-        }
-    }
+    String(String),
+    Regex(Regex),
 }

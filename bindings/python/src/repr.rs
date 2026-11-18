@@ -1,6 +1,8 @@
 //! Utils to render Tokenizers.__repr__
 
+use pyo3::PyResult;
 use serde_json::Value;
+use tk::vocab::bucket_added_vocabulary::AddedToken;
 
 use crate::JsonObject;
 use crate::options::{Padding, Truncation};
@@ -17,19 +19,17 @@ const INDENT: &str = "    ";
 pub(crate) fn tokenizer<'spec>(
     name: &str,
     fields: impl IntoIterator<Item = (&'spec str, Field<'spec>)>,
-) -> String {
+) -> PyResult<String> {
     let mut out = format!("{name}(");
     for (key, field) in fields {
         newline(1, &mut out);
         out.push_str(key);
         out.push('=');
         match field {
-            Field::Json(value) => write_value(key, &value, Some(1), &mut out),
-            Field::Component(Some(fields)) => write_object(key, &fields, Some(1), &mut out),
-            Field::Component(None) | Field::Padding(None) | Field::Truncation(None) => {
-                out.push_str("None")
-            }
-            Field::Padding(Some(padding)) => push_indented(&Padding::repr(padding), &mut out),
+            Field::JsonValue(value) => write_value(key, &value, Some(1), &mut out),
+            Field::JsonObject(fields) => write_object(key, &fields, Some(1), &mut out),
+            Field::Padding(None) | Field::Truncation(None) => out.push_str("None"),
+            Field::Padding(Some(padding)) => push_indented(&Padding::repr(padding)?, &mut out),
             Field::Truncation(Some(truncation)) => {
                 push_indented(&Truncation::repr(truncation), &mut out)
             }
@@ -38,7 +38,7 @@ pub(crate) fn tokenizer<'spec>(
     }
     newline(0, &mut out);
     out.push(')');
-    out
+    Ok(out)
 }
 
 pub(crate) fn component(json: &JsonObject) -> String {
@@ -52,7 +52,7 @@ pub(crate) fn component(json: &JsonObject) -> String {
 fn write_value(key: &str, value: &Value, indent: Option<usize>, out: &mut String) {
     match value {
         Value::Null => out.push_str("None"),
-        Value::Bool(b) => out.push_str(if *b { "True" } else { "False" }),
+        Value::Bool(b) => out.push_str(python_bool(*b)),
         Value::Number(n) => out.push_str(&n.to_string()),
         // A charsmap is a base64 blob of hundreds of KB.
         Value::String(_) if key == "precompiled_charsmap" => out.push_str("..."),
@@ -159,6 +159,18 @@ fn write_entries_at(
     }
 }
 
+pub(crate) fn added_token(token: &AddedToken) -> String {
+    format!(
+        "AddedToken({}, single_word={}, lstrip={}, rstrip={}, normalized={}, special={})",
+        tk::str_to_json(&token.content),
+        python_bool(token.single_word),
+        python_bool(token.lstrip),
+        python_bool(token.rstrip),
+        python_bool(token.normalized),
+        python_bool(token.special),
+    )
+}
+
 fn push_indented(rendered: &str, out: &mut String) {
     out.push_str(&rendered.replace('\n', &format!("\n{INDENT}")));
 }
@@ -166,6 +178,10 @@ fn push_indented(rendered: &str, out: &mut String) {
 fn newline(indent: usize, out: &mut String) {
     out.push('\n');
     out.push_str(&INDENT.repeat(indent));
+}
+
+fn python_bool(value: bool) -> &'static str {
+    if value { "True" } else { "False" }
 }
 
 fn write_str(s: &str, out: &mut String) {

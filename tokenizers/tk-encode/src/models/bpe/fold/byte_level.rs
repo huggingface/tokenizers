@@ -19,6 +19,7 @@ use ahash::AHashMap;
 use std::cmp;
 
 use crate::models::bpe::MergeMap;
+use crate::models::bpe::tables::NO_SYMBOL;
 use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, char_to_byte};
 
 /// What one vocab token is worth to the fold table.
@@ -62,10 +63,10 @@ impl<'a> ByteLevelFold<'a> {
             internal_id_map
                 .get(external as usize)
                 .copied()
-                .unwrap_or(u32::MAX)
+                .unwrap_or(NO_SYMBOL)
         };
 
-        let mut byte_internal = [u32::MAX; 256];
+        let mut byte_internal = [NO_SYMBOL; 256];
         let mut buf = [0u8; 4];
         for b in 0..256usize {
             if let Some(&external) = vocab.get(&*BYTES_CHAR_LOOKUP[b].encode_utf8(&mut buf)) {
@@ -90,7 +91,7 @@ impl<'a> ByteLevelFold<'a> {
         self.internal_id_map
             .get(external as usize)
             .copied()
-            .unwrap_or(u32::MAX)
+            .unwrap_or(NO_SYMBOL)
     }
 
     /// Verdict for `token`, whose external id is `external`.
@@ -113,7 +114,7 @@ impl<'a> ByteLevelFold<'a> {
             .iter()
             .map(|&b| self.byte_internal[b as usize])
             .collect();
-        if running.contains(&u32::MAX) {
+        if running.contains(&NO_SYMBOL) {
             return Fold::Skip; // a byte with no token of its own: never assemblable
         }
         // Now we loop over the bytes of the char and apply bpe: loop on global merge, merge then
@@ -186,14 +187,14 @@ fn boundary_merge_ranks(
         internal_id_map
             .get(external as usize)
             .copied()
-            .unwrap_or(u32::MAX)
+            .unwrap_or(NO_SYMBOL)
     };
     let mut left = vec![u32::MAX; internal_id_map.len()];
     let mut right = vec![u32::MAX; internal_id_map.len()];
     for ((a, b), (rank, _)) in merges.iter() {
         let (ia, ib) = (iid(*a), iid(*b));
-        if ia == u32::MAX
-            || ib == u32::MAX
+        if ia == NO_SYMBOL
+            || ib == NO_SYMBOL
             || ia as usize >= n_internal
             || ib as usize >= n_internal
         {

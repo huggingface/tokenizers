@@ -1,7 +1,7 @@
 //! The `Replace` **decoder**.
 //! It is convenient to do the inverse operation of a Replace normalizer.
 
-use crate::tokenizer::{Decoder, Result};
+use crate::tokenizer::{Decode, Result};
 use crate::utils::search::{ReplacePattern, Search};
 
 /// Replaces every occurrence of `pattern` with `content` in each token being decoded.
@@ -46,7 +46,7 @@ impl PartialEq for ReplaceDecoder {
     }
 }
 
-impl Decoder for ReplaceDecoder {
+impl Decode for ReplaceDecoder {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         tokens
             .into_iter()

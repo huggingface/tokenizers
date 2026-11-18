@@ -78,7 +78,7 @@ fn replace_matches<'a>(
     }
 }
 
-impl pipeline::Normalizer for Replace {
+impl pipeline::Normalize for Replace {
     fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
         Ok(match &self.search {
             Search::Literal(literal) => {
@@ -106,7 +106,7 @@ mod tests {
     fn assert_pipeline(n: &Replace, cases: &[(&str, &str)]) {
         for &(input, expected) in cases {
             assert_eq!(
-                &*pipeline::Normalizer::normalize(n, input, 0).unwrap(),
+                &*pipeline::Normalize::normalize(n, input, 0).unwrap(),
                 expected,
                 "input={input:?}"
             );

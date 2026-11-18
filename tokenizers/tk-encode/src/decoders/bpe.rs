@@ -1,4 +1,4 @@
-use crate::tokenizer::{Decoder, Result};
+use crate::tokenizer::{Decode, Result};
 
 #[derive(Clone, Debug)]
 /// Allows decoding Original BPE by joining all the tokens and then replacing
@@ -25,7 +25,7 @@ impl Default for BPEDecoder {
     }
 }
 
-impl Decoder for BPEDecoder {
+impl Decode for BPEDecoder {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         let n = tokens.len() - 1;
         Ok(tokens

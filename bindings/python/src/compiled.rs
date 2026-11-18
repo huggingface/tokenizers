@@ -1,22 +1,25 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use pyo3::prelude::*;
+use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyBytes, PyDict};
 use tk::PaddingParams;
 use tk::TruncationParams;
+use tk::pipeline;
 use tk::pipeline::EncodeOptions;
-use tk::pipeline::Encoding as PipelineEncoding;
 use tk::pipeline::Input;
 use tk::pipeline::Inputs;
-use tk::pipeline::PipelineToken;
-use tk::pipeline::PipelineTokenizer;
+use tk::pipeline::Token;
+use tk::pipeline::Tokenizer;
 use tk::{from_json, to_json};
 
+use crate::added_token::AddedToken;
 use crate::encoding::Encoding;
 use crate::error::err;
 use crate::input::PyInput;
 use crate::options::OverrideSentinel;
 use crate::tokenizer::TokenizerSpec;
+use crate::type_hints::AddedTokens;
 use crate::type_hints::TokenIds;
 
 /// A tokenizer built by `Tokenizer.compile()`. Encodes text into token ids, and decodes token
@@ -25,19 +28,32 @@ use crate::type_hints::TokenIds;
 /// A compiled tokenizer is immutable and can be shared across threads.
 /// Pickling serializes to the JSON config, and unpickling compiles the CompiledTokenizer
 /// again from that JSON config.
-#[pyclass(frozen, module = "tokenizers")]
+#[pyclass(frozen, dict, module = "tokenizers")]
 pub struct CompiledTokenizer {
-    pipeline: PipelineTokenizer,
+    pipeline: Tokenizer,
+    /// The `added_tokens` dict, built on first read.
+    added_tokens: PyOnceLock<Py<PyDict>>,
 }
 
 impl CompiledTokenizer {
+    pub(crate) fn pipeline(&self) -> &Tokenizer {
+        &self.pipeline
+    }
+
     pub(crate) fn new(py: Python<'_>, spec: &TokenizerSpec) -> PyResult<Self> {
         // py.detach releases the GIL while the Rust code runs.
         let pipeline = py.detach(|| spec.compile()).map_err(err)?;
-        Ok(Self { pipeline })
+        Ok(Self {
+            pipeline,
+            added_tokens: PyOnceLock::new(),
+        })
     }
 
-    fn encode_one(&self, input: PyInput, options: &EncodeOptions) -> tk::Result<PipelineEncoding> {
+    fn encode_one(
+        &self,
+        input: PyInput,
+        options: &EncodeOptions,
+    ) -> tk::Result<pipeline::Encoding> {
         let mut encodings = self.pipeline.encode(input, options).wait()?;
         Ok(encodings
             .pop()
@@ -51,12 +67,12 @@ fn encode_options(
     padding: OverrideSentinel<PaddingParams>,
     truncation: OverrideSentinel<TruncationParams>,
 ) -> EncodeOptions {
-    EncodeOptions {
-        add_special_tokens,
-        encode_special_tokens,
-        padding: padding.into(),
-        truncation: truncation.into(),
-    }
+    let mut options = EncodeOptions::default();
+    options.add_special_tokens = add_special_tokens;
+    options.encode_special_tokens = encode_special_tokens;
+    options.padding = padding.into();
+    options.truncation = truncation.into();
+    options
 }
 
 #[pymethods]
@@ -74,10 +90,10 @@ impl CompiledTokenizer {
     ///         or be replaced by their id in the added vocabulary.
     ///     padding: `Padding` or `None`
     ///         Padding options. Pass `None` to disable padding.
-    ///         When omitted, defaults to the padding of the spec this tokenizer was compiled from.
+    ///         When omitted, uses the padding the tokenizer had when compiled.
     ///     truncation: `Truncation` or `None`
     ///         Truncation options. Pass `None` to disable truncation.
-    ///         When omitted, defaults to the truncation of the spec this tokenizer was compiled from.
+    ///         When omitted, uses the truncation the tokenizer had when compiled.
     ///
     /// Returns:
     ///     Encoding
@@ -120,10 +136,10 @@ impl CompiledTokenizer {
     ///         or be replaced by their id in the added vocabulary.
     ///     padding: `Padding` or `None`
     ///         Padding options. Pass `None` to disable padding.
-    ///         When omitted, defaults to the padding of the spec this tokenizer was compiled from.
+    ///         When omitted, uses the padding the tokenizer had when compiled.
     ///     truncation: `Truncation` or `None`
     ///         Truncation options. Pass `None` to disable truncation.
-    ///         When omitted, defaults to the truncation of the spec this tokenizer was compiled from.
+    ///         When omitted, uses the truncation the tokenizer had when compiled.
     ///
     /// Returns:
     ///     list[str]
@@ -148,7 +164,7 @@ impl CompiledTokenizer {
             let encoding = self.encode_one(input, &options)?;
             Ok(self
                 .pipeline
-                .decode_tokens(PipelineToken::cast_slice(encoding.ids()), false))
+                .decode_tokens(Token::cast_slice(encoding.ids()), false))
         })
         .map_err(err)
     }
@@ -167,10 +183,10 @@ impl CompiledTokenizer {
     ///         or be replaced by their id in the added vocabulary.
     ///     padding: `Padding` or `None`
     ///         Padding options. Pass `None` to disable padding.
-    ///         When omitted, defaults to the padding of the spec this tokenizer was compiled from.
+    ///         When omitted, uses the padding the tokenizer had when compiled.
     ///     truncation: `Truncation` or `None`
     ///         Truncation options. Pass `None` to disable truncation.
-    ///         When omitted, defaults to the truncation of the spec this tokenizer was compiled from.
+    ///         When omitted, uses the truncation the tokenizer had when compiled.
     ///
     /// Returns:
     ///     List[Encoding]
@@ -241,6 +257,35 @@ impl CompiledTokenizer {
         let ids = ids.as_slice();
         // py.detach releases the GIL while the Rust code runs.
         Ok(py.detach(|| self.pipeline.decode_tokens(ids, skip_special_tokens)))
+    }
+
+    /// The added tokens, indexed by their token id, in ascending id order.
+    // The core rebuilds its tokens on every call, so the dict is built once and cached.
+    // Each read returns a shallow copy: a caller's edits never reach the cache.
+    #[getter]
+    fn added_tokens<'py>(&self, py: Python<'py>) -> PyResult<AddedTokens<'py>> {
+        let added_tokens = self.added_tokens.get_or_try_init(py, || {
+            let decoder = self
+                .pipeline
+                .get_added_vocabulary()
+                .get_added_tokens_decoder();
+            // The core returns a HashMap, which has no order. A BTreeMap sorts it by id.
+            let by_id: BTreeMap<u32, AddedToken> = decoder
+                .into_iter()
+                .map(|(id, token)| (id, token.into()))
+                .collect();
+            PyResult::Ok(by_id.into_pyobject(py)?.unbind())
+        })?;
+        Ok(AddedTokens(added_tokens.bind(py).copy()?))
+    }
+
+    /// Returns `added_tokens`. Deprecated: use the `added_tokens` property instead.
+    #[pyo3(warn(
+        message = "`get_added_tokens_decoder()` is deprecated, use the `added_tokens` property instead",
+        category = pyo3::exceptions::PyDeprecationWarning
+    ))]
+    fn get_added_tokens_decoder<'py>(&self, py: Python<'py>) -> PyResult<AddedTokens<'py>> {
+        self.added_tokens(py)
     }
 
     /// Returns the vocabulary, as a dict from token to id.
@@ -327,13 +372,16 @@ impl CompiledTokenizer {
         let json = std::str::from_utf8(json).map_err(err)?;
         // py.detach releases the GIL while the Rust code runs.
         let pipeline = py.detach(|| from_json(json)).map_err(err)?;
-        Ok(Self { pipeline })
+        Ok(Self {
+            pipeline,
+            added_tokens: PyOnceLock::new(),
+        })
     }
 
     fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
         // py.detach releases the GIL while the Rust code runs.
         let json = py.detach(|| to_json(&self.pipeline)).map_err(err)?;
         let spec = TokenizerSpec::from_json(&json).map_err(err)?;
-        Ok(spec.repr("CompiledTokenizer"))
+        spec.repr("CompiledTokenizer")
     }
 }

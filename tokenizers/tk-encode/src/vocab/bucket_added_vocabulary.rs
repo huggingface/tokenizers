@@ -1,9 +1,9 @@
 use super::super::Result;
 use super::buckets::{AddedTokenFlags, Buckets};
-use crate::pipeline::Normalizer;
-use crate::pipeline::PipelinePatternMatcher;
+use crate::pipeline::Normalize;
+use crate::pipeline::PatternMatcher;
 use crate::pre_tokenizers::whitespace::is_word_char;
-use crate::utils::perfect_hash::{Mphf, mix};
+use crate::utils::perfect_hash::{Mphf, splitmix64};
 use ahash::AHashMap;
 use ptr_hash::PtrHashParams;
 use std::collections::BTreeMap;
@@ -14,6 +14,7 @@ use std::fmt;
 ///   - Whether they should only match single words
 ///   - Whether to include any whitespace on its left or right
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct AddedToken {
     /// The content of the added token (original, as provided by the user)
     pub content: String,
@@ -38,11 +39,11 @@ fn is_ws(cp: u32) -> bool {
         char::from_u32(cp).is_some_and(|c| c.is_whitespace())
     }
 }
-fn is_single_word(bytes: &[u8], search: usize, match_start: usize, match_end: usize) -> bool {
+fn is_single_word(bytes: &[u8], match_start: usize, match_end: usize) -> bool {
     // FIXME: we use chr conversion for now, this can be inproved by using bitmap.
     // This is the equivalent of `\w`, so its letters, numbers and underscore
     let s = unsafe { std::str::from_utf8_unchecked(bytes) };
-    let before_ok = s[search..match_start]
+    let before_ok = s[..match_start]
         .chars()
         .next_back()
         .is_none_or(|c| !is_word_char(c));
@@ -127,8 +128,6 @@ impl Default for AddedToken {
     }
 }
 
-// TODO: remove this once we have the final saving format
-// its outside the scope of this PR and allows us to test
 impl From<&AddedToken> for AddedTokenFlags {
     fn from(token: &AddedToken) -> AddedTokenFlags {
         AddedTokenFlags {
@@ -194,7 +193,10 @@ impl InternalIds {
             sorted_vocab_ids.is_sorted(),
             "add_tokens collects the vocab ids from a BTreeMap, which yields them in order"
         );
-        let keys: Vec<u64> = sorted_vocab_ids.iter().map(|&id| mix(id as u64)).collect();
+        let keys: Vec<u64> = sorted_vocab_ids
+            .iter()
+            .map(|&id| splitmix64(id as u64))
+            .collect();
         let mphf = Mphf::new(&keys, PtrHashParams::default_fast());
         // Unused slots hold 0 - `internal_id` rejects them by comparing the vocab id.
         let mut internal_ids = vec![0; mphf.max_index()].into_boxed_slice();
@@ -216,7 +218,7 @@ impl InternalIds {
         // An empty vocabulary has no slots.
         let internal_id = *self
             .internal_ids
-            .get(self.mphf.index(&mix(vocab_id as u64)))?;
+            .get(self.mphf.index(&splitmix64(vocab_id as u64)))?;
         (self.vocab_id(internal_id) == vocab_id).then_some(internal_id)
     }
 
@@ -268,9 +270,10 @@ impl AddedVocabulary {
             .token_to_internal_id(token)
             .or_else(|| self.normalized_vocab.token_to_internal_id(token))
     }
+
     /// Size of the additional vocabulary
-    #[allow(dead_code)] // Suppress the "method is never used" warning
-    pub fn len(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
         self.vocab.len() + self.normalized_vocab.len()
     }
 
@@ -281,7 +284,7 @@ impl AddedVocabulary {
 
     /// Get the additional vocabulary (union of both matchers; normalized tokens appear by their
     /// normalized form, since the original content isn't retained after partitioning).
-    pub fn get_vocab(&self) -> AHashMap<String, u32> {
+    pub(crate) fn get_vocab(&self) -> AHashMap<String, u32> {
         self.tokens()
             .map(|(token, internal_id)| (token, self.ids.vocab_id(internal_id)))
             .collect::<AHashMap<String, u32>>()
@@ -309,7 +312,7 @@ impl AddedVocabulary {
     }
 
     /// Get the id matching one of our token if it exists
-    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+    pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
         self.token_to_internal_id(token)
             .map(|internal_id| self.ids.vocab_id(internal_id))
     }
@@ -319,7 +322,7 @@ impl AddedVocabulary {
     ///
     /// A token added with `normalized` gives its normalized form (e.g. byte-level encoding), so
     /// the configured `Decoder` can invert the normalization. Any other token gives its `content`.
-    pub fn id_to_token_bytes(&self, id: u32) -> Option<(&[u8], &AddedTokenFlags)> {
+    pub(crate) fn id_to_token_bytes(&self, id: u32) -> Option<(&[u8], &AddedTokenFlags)> {
         let internal_id = self.ids.internal_id(id)?;
         let flags = &self.token_metadata[internal_id as usize];
         let bytes = self
@@ -329,19 +332,8 @@ impl AddedVocabulary {
         Some((bytes, flags))
     }
 
-    /// Add some special tokens to the vocabulary
-    pub fn add_special_tokens<N: Normalizer>(
-        &mut self,
-        tokens: impl IntoIterator<Item = AddedToken>,
-        model_vocab_size: usize,
-        model_token_to_id: impl Fn(&str) -> Option<u32>,
-        normalizer: Option<&N>,
-    ) -> Result<usize> {
-        self.add_tokens(tokens, model_vocab_size, model_token_to_id, normalizer)
-    }
-
     /// Add some tokens to the vocabulary
-    pub fn add_tokens<N: Normalizer>(
+    pub fn add_tokens<N: Normalize>(
         &mut self,
         tokens: impl IntoIterator<Item = AddedToken>,
         model_vocab_size: usize,
@@ -440,7 +432,7 @@ impl AddedVocabulary {
     }
 }
 
-impl PipelinePatternMatcher for AddedVocabulary {
+impl PatternMatcher for AddedVocabulary {
     fn extract_next(
         &self,
         bytes: &[u8],
@@ -465,7 +457,7 @@ impl PipelinePatternMatcher for AddedVocabulary {
             }
             // single_word: reject unless the token is a standalone word (neither neighbour
             // char is a word char). Checked on the raw byte bounds, before any strip.
-            if metadata.single_word && !is_single_word(bytes, search, match_start, match_end) {
+            if metadata.single_word && !is_single_word(bytes, match_start, match_end) {
                 search = match_start + 1;
                 continue;
             }
@@ -568,6 +560,28 @@ mod tests {
     }
 
     #[test]
+    fn dense_ids_build() {
+        // With `mix`, this almost always panicked:
+        // https://github.com/huggingface/tokenizers/issues/2665
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        vocab
+            .add_tokens(
+                (0..757).map(|i| AddedToken::from(format!("<{i}>"), true)),
+                0,
+                |t| model.token_to_id(t),
+                None::<&Lowercase>,
+            )
+            .unwrap();
+        for id in [0, 378, 756] {
+            assert_eq!(
+                vocab.id_to_token_bytes(id).unwrap().0,
+                format!("<{id}>").as_bytes()
+            );
+        }
+    }
+
+    #[test]
     fn changing_normalized_keeps_the_vocab_id() {
         let mut vocab = sparse_vocabulary();
         let text = b"say hello<|end|>";
@@ -656,7 +670,7 @@ mod tests {
         // Add tokens normally
         assert_eq!(
             vocab
-                .add_special_tokens(
+                .add_tokens(
                     [AddedToken::from("added_token_1", true)],
                     model.get_vocab_size(),
                     |t| model.token_to_id(t),
@@ -671,7 +685,7 @@ mod tests {
         // Does not add multiple time the same token
         assert_eq!(
             vocab
-                .add_special_tokens(
+                .add_tokens(
                     [
                         AddedToken::from("added_token_2", true),
                         AddedToken::from("added_token_2", true)
@@ -688,7 +702,7 @@ mod tests {
         // Can add tokens already covered by the model
         assert_eq!(
             vocab
-                .add_special_tokens(
+                .add_tokens(
                     [AddedToken::from("test", true)],
                     model.get_vocab_size(),
                     |t| model.token_to_id(t),
@@ -729,7 +743,7 @@ mod tests {
         // Let's add an already added token again, but change normalized
         assert_eq!(
             vocab
-                .add_special_tokens(
+                .add_tokens(
                     [AddedToken::from("another_two", true)],
                     model.get_vocab_size(),
                     |t| model.token_to_id(t),
@@ -786,7 +800,7 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer: Option<&Lowercase> = None;
         vocab
-            .add_special_tokens(
+            .add_tokens(
                 [AddedToken::from("<unk>", true).normalized(true)],
                 model.get_vocab_size(),
                 |t| model.token_to_id(t),
@@ -820,7 +834,7 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer: Option<&Lowercase> = None;
         vocab
-            .add_special_tokens(
+            .add_tokens(
                 [
                     AddedToken::from("[CLS]", true),
                     AddedToken::from("[SEP]", true),
@@ -870,6 +884,42 @@ mod tests {
     }
 
     #[test]
+    fn single_word_rejects_a_match_after_a_word_char() {
+        let model = ModelMock::new(&[]);
+        let mut vocab = AddedVocabulary::new();
+        let normalizer: Option<&Lowercase> = None;
+        vocab
+            .add_tokens(
+                ["ü", "zz", "foo"]
+                    .map(|t| {
+                        AddedToken::from(t, false)
+                            .normalized(false)
+                            .single_word(true)
+                    })
+                    .into_iter()
+                    .chain([AddedToken::from("x", false).normalized(false)]),
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
+                normalizer,
+            )
+            .unwrap();
+
+        assert_eq!(
+            segments(&vocab, "üü ü", false, false),
+            vec![(Some("üü ".to_string()), None), (None, Some(0))]
+        );
+        assert_eq!(
+            segments(&vocab, "zzz zz", false, false),
+            vec![(Some("zzz ".to_string()), None), (None, Some(1))]
+        );
+        // `x` has `single_word=false` so it matches even inside a word
+        assert_eq!(
+            segments(&vocab, "xfoo", false, false),
+            vec![(None, Some(3)), (Some("foo".to_string()), None)]
+        );
+    }
+
+    #[test]
     fn segment_iterator_applies_lstrip_rstrip() {
         let model = ModelMock::new(&[]);
         let mut vocab = AddedVocabulary::new();
@@ -904,7 +954,7 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer: Option<&Lowercase> = None;
         vocab
-            .add_special_tokens(
+            .add_tokens(
                 [AddedToken::from("[CLS]", true)],
                 model.get_vocab_size(),
                 |t| model.token_to_id(t),

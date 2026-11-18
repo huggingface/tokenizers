@@ -10,6 +10,7 @@ pub(crate) fn is_punc(x: char) -> bool {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Punctuation {
     /// An absent `behavior` means `Isolated`, which is also `Punctuation::default()`.
     pub behavior: SplitDelimiterBehavior,
@@ -30,7 +31,7 @@ impl Default for Punctuation {
 // SAFETY: both routes cut only at character boundaries of `text`.
 // The class-runs route is an `bitcannon` fsm.
 // the merge behaviors go through `pipeline::split_delimiter`, which takes its offsets from `str::char_indices`.
-unsafe impl pipeline::PreTokenizer for Punctuation {
+unsafe impl pipeline::PreTokenize for Punctuation {
     fn pre_tokenize(
         &self,
         text: &str,
@@ -66,7 +67,7 @@ mod tests {
         let pretok = Punctuation::new(behavior);
         let mut splits = Vec::new();
         let mut scratch = PreTokenizerScratch::default();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+        crate::pipeline::PreTokenize::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
             .unwrap();
         splits
             .iter()

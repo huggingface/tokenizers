@@ -282,6 +282,16 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
     assert_eq!(v["pre_tokenizer"], serde_json::Value::Null);
 }
 
+#[test]
+fn a_singleton_metaspace_sequence_lowers_like_a_bare_metaspace() {
+    let bare = r#"{"type": "Metaspace", "replacement": "▁"}"#;
+    let wrapped = format!(r#"{{"type": "Sequence", "pretokenizers": [{bare}]}}"#);
+    assert_eq!(
+        done(BPE, &format!(r#", "pre_tokenizer": {wrapped}"#)),
+        done(BPE, &format!(r#", "pre_tokenizer": {bare}"#)),
+    );
+}
+
 // ---- ByteLevel ------------------------------------------------------------------------------
 
 #[test]

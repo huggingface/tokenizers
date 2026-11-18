@@ -3,7 +3,7 @@ use crate::Result;
 use super::bucket_vocab_store::BucketVocabStore;
 
 #[derive(Clone, PartialEq, Debug, Default)]
-pub struct AddedTokenFlags {
+pub(crate) struct AddedTokenFlags {
     pub special: bool,
     pub normalized: bool,
     pub single_word: bool,
@@ -21,24 +21,24 @@ pub struct AddedTokenFlags {
 /// 3. We check the prefix interpreted as a u64 (so we take the first 8 bytes). This is a fast &
 /// 4. We iterate over the length list, hash the bytes cropped to the length -> longest first match.
 #[derive(Clone, Debug)]
-pub struct Bucket {
+pub(crate) struct Bucket {
     // longest common prefix of the bucket
     pub prefix: Box<[u8]>,
     // prefix[0..min(len,8)] packed native-endian + a per-byte masking on invalid bytes, so the hot-path reject is a
     // single `(chunk ^ prefix_word) & prefix_mask` instead of walking the boxed prefix slice.
-    pub prefix_word: u64,
-    pub prefix_mask: u64,
+    pub(crate) prefix_word: u64,
+    pub(crate) prefix_mask: u64,
     // post-prefix byte -> sub-list index; 0xFFFF = none. We use u16 because proba of having > 65K
     // different lists is close to 0. We could use u4 safely AFAIK :).
-    pub next_byte_to_length_id: [u16; 256],
+    pub(crate) next_byte_to_length_id: [u16; 256],
     // per-post-prefix byte indexed by next_byte_to_length_id. We build this once so Box (per byte)
     // Box (an array of length) and IDK any token are gonna > u16::MAX.
-    pub length_list: Box<[Box<[u16]>]>,
+    pub(crate) length_list: Box<[Box<[u16]>]>,
 }
 
 impl Bucket {
     /// Pack the prefix into `prefix_word`/`prefix_mask` for the fast rejection.
-    pub fn new(
+    pub(crate) fn new(
         prefix: Box<[u8]>,
         next_byte_to_length_id: [u16; 256],
         length_list: Box<[Box<[u16]>]>,
@@ -71,7 +71,7 @@ impl Bucket {
 /// fraction of the memory cost for the same performance in worst cases (dense inputs) and much
 /// faster when there are no candidates.
 #[derive(Clone)]
-pub struct Buckets {
+pub(crate) struct Buckets {
     // is there a bucket for that byte. This is used to build the nibble matcher and extract
     // on match the bucket corresponding to the byte that was scanned.
     first_byte_to_bucket_id: [u8; 256],
@@ -86,7 +86,7 @@ pub struct Buckets {
 }
 
 impl Buckets {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             first_byte_to_bucket_id: [0xFF; 256], // 0xFF = no bucket for this first byte
             lo16: [0; 16],
@@ -96,7 +96,7 @@ impl Buckets {
         }
     }
     /// Build the matcher from `tokens`, the first-byte->bucket table, and the buckets.
-    pub fn build(
+    pub(crate) fn build(
         tokens: Vec<(Vec<u8>, u32)>,
         first_byte_to_bucket_id: [u8; 256],
         buckets: Box<[Bucket]>,
@@ -114,7 +114,7 @@ impl Buckets {
     }
 
     /// Used by the AddedVocabulary when a new token is added, we recreate the entire structure.
-    pub fn from_tokens(tokens: Vec<(Vec<u8>, u32)>) -> Result<Self> {
+    pub(crate) fn from_tokens(tokens: Vec<(Vec<u8>, u32)>) -> Result<Self> {
         if tokens.is_empty() {
             return Ok(Self::new());
         }
@@ -326,7 +326,7 @@ impl Buckets {
 
     /// Find the leftmost added-token match in `bytes`. Returns (internal_id, match_position, match_len).
     /// Dispatch: 1 bucket -> memchr on the shared first byte; >=2 -> NEON nibble, mask-iterated.
-    pub fn match_bytes(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
+    pub(crate) fn match_bytes(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
         match self.buckets.len() {
             0 => None,
             1 => {
@@ -424,28 +424,25 @@ impl Buckets {
         None
     }
 
-    pub fn len(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
         self.vocab.len()
     }
     pub fn is_empty(&self) -> bool {
         self.vocab.is_empty()
     }
-    /// first byte -> bucket index (0xFF = none). The builder reads this to extend buckets.
-    pub fn first_byte_to_bucket_id(&self) -> &[u8; 256] {
-        &self.first_byte_to_bucket_id
-    }
     /// Every token's bytes with its internal id.
-    pub fn token_bytes(&self) -> Vec<(Vec<u8>, u32)> {
+    pub(crate) fn token_bytes(&self) -> Vec<(Vec<u8>, u32)> {
         self.vocab.byte_content()
     }
     /// Every token with its internal id.
-    pub fn tokens(&self) -> Vec<(String, u32)> {
+    pub(crate) fn tokens(&self) -> Vec<(String, u32)> {
         self.vocab.content()
     }
-    pub fn token_to_internal_id(&self, token: &str) -> Option<u32> {
+    pub(crate) fn token_to_internal_id(&self, token: &str) -> Option<u32> {
         self.vocab.token_to_id(token)
     }
-    pub fn internal_id_to_token_bytes(&self, internal_id: u32) -> Option<&[u8]> {
+    pub(crate) fn internal_id_to_token_bytes(&self, internal_id: u32) -> Option<&[u8]> {
         self.vocab.id_to_token_bytes(internal_id)
     }
 }

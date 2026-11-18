@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use js_sys::{JSON, Promise, Reflect};
-use tokenizers::pipeline::{EncodeOptions, PipelineTokenizer};
+use tokenizers::pipeline::{self, EncodeOptions};
 use tokenizers_wasm::Tokenizer;
 use tsify::Ts;
 use wasm_bindgen::prelude::*;
@@ -22,7 +22,7 @@ fn unwrap<T>(result: Result<T, impl Into<JsValue>>) -> T {
 }
 
 fn core_encode() -> Vec<u32> {
-    let tokenizer: PipelineTokenizer =
+    let tokenizer: pipeline::Tokenizer =
         tokenizers::from_json(&tokenizers::canonicalize_str(BERT).unwrap()).unwrap();
     let encodings = tokenizer
         .encode(TEXT, &EncodeOptions::default())

@@ -2,12 +2,12 @@
 
 use super::unsupported;
 use crate::json::Json;
-use tk_encode::pipeline::{PipelinePostProcessor, PipelineToken, Template};
+use tk_encode::pipeline::{PostProcessor, Template, Token};
 use tk_encode::tokenizer::Result;
 
-pub(super) fn read_post_processor(cfg: Option<&Json<'_>>) -> Result<PipelinePostProcessor> {
+pub(super) fn read_post_processor(cfg: Option<&Json<'_>>) -> Result<PostProcessor> {
     let Some(cfg) = cfg else {
-        return Ok(PipelinePostProcessor::default());
+        return Ok(PostProcessor::default());
     };
     let kind = cfg
         .type_tag()
@@ -18,7 +18,7 @@ pub(super) fn read_post_processor(cfg: Option<&Json<'_>>) -> Result<PipelinePost
     }
 }
 
-fn read_template(cfg: &Json<'_>) -> Result<PipelinePostProcessor> {
+fn read_template(cfg: &Json<'_>) -> Result<PostProcessor> {
     let template_for = |key: &str| -> Result<Template> {
         let pieces = cfg.need("TemplateProcessing", key, Json::as_array)?;
         let mut t = Template::default();
@@ -55,7 +55,7 @@ fn read_template(cfg: &Json<'_>) -> Result<PipelinePostProcessor> {
                     let id = id.as_u32().ok_or_else(|| -> tk_encode::Error {
                         "a template piece has a bad id".into()
                     })?;
-                    dst.push((PipelineToken::from(id), type_id));
+                    dst.push((Token::from(id), type_id));
                 }
             } else {
                 // The `{"SpecialToken": {"id": ...}}` wrapper and its `special_tokens` table are a
@@ -66,17 +66,9 @@ fn read_template(cfg: &Json<'_>) -> Result<PipelinePostProcessor> {
         if !seen_a {
             return Err("not supported: template does not reference sequence A".into());
         }
-        if (key == "pair") != t.b_type_id.is_some() {
-            return Err(
-                format!("not supported: `{key}` template references the wrong sequences").into(),
-            );
-        }
         (t.prefix, t.infix, t.suffix) = (prefix.into(), infix.into(), suffix.into());
         Ok(t)
     };
 
-    Ok(PipelinePostProcessor {
-        single: template_for("single")?,
-        pair: template_for("pair")?,
-    })
+    PostProcessor::new(template_for("single")?, template_for("pair")?)
 }

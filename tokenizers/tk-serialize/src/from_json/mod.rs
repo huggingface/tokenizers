@@ -1,29 +1,9 @@
-//! Build a [`PipelineTokenizer`] from a `tokenizer.json`.
+//! Build a [`Tokenizer`] from a `tokenizer.json`.
 //!
 //! Reads the canonical `2.0` format and nothing else. A legacy file is tk-convert's input, not
 //! this reader's: it produces a `2.0` file, and only then does this run.
 //!
-//! ## TODO(pr3): port to tk-convert
-//!
-//! Each of these was accepted here and is now refused. tk-convert has to rewrite them:
-//!
-//! - `"version": "1.0"` — everything below is what makes a file one
-//! - a `model` with no `"type"` — the kind was inferred from which keys are present: `merges` meant
-//!   BPE, an array `vocab` meant Unigram, `continuing_subword_prefix` meant WordPiece, else
-//!   WordLevel
-//! - `merges` spelled as `"a b"` strings rather than `["a", "b"]` pairs — split on the first space
-//! - a `Metaspace` *pre-tokenizer*, which is two components: it becomes a `MetaspaceNormalizer` in
-//!   the `normalizer` slot plus a `Split` on the delimiter with `MergedWithNext`
-//! - `Sequence[WhitespaceSplit, Metaspace]`, the t5/albert shape — the same, with
-//!   `drop_whitespace: true`
-//! - `add_prefix_space` on a `Metaspace`, with its quirk: `false` is an error unless
-//!   `prepend_scheme: "never"` is spelled beside it, and `true` is ignored outright
-//! - a `Metaspace` decoder with no `prepend_scheme` — it defaulted to `always`
-//! - a `ByteLevel` *pre-tokenizer* — it becomes `"byte_level": true` on the model plus, for
-//!   `use_regex: true`, a `Split` on the GPT-2 regex with `Isolated`; `use_regex: false` leaves no
-//!   pre-tokenizer at all. `add_prefix_space: true` on one is still unsupported downstream
-//!
-//! Refused by both, because nothing converts it: a vocabulary named by path (`files`).
+//! A vocabulary named by path (`files`) is refused: tk-convert has nothing to rewrite it into.
 mod added_tokens;
 mod decoders;
 mod model;
@@ -52,10 +32,10 @@ use self::pre_tokenizers::read_pre_tokenizer;
 use self::truncation::read_truncation;
 use crate::json::Json;
 use std::collections::BTreeMap;
-use tk_encode::models::bpe::{BpeConfig, PipelineBPE};
-use tk_encode::pipeline::{
-    NormalizerChain, PipelineModel, PipelineNormalizer, PipelinePreTokenizer, PipelineTokenizer,
-};
+use tk_encode::models::bpe::BPE;
+#[cfg(feature = "wordpiece")]
+use tk_encode::models::wordpiece::WordPiece;
+use tk_encode::pipeline::{Model, Normalizer, NormalizerChain, PreTokenizer, Tokenizer};
 use tk_encode::tokenizer::Result;
 use tk_encode::vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary;
 
@@ -75,16 +55,16 @@ fn needs_feature(what: &str, feature: &str) -> tk_encode::Error {
     format!("reading {what} needs the `{feature}` feature, which is off in this build").into()
 }
 
-// Free functions rather than inherent methods: `PipelineTokenizer` is defined in `tk-encode`, and
+// Free functions rather than inherent methods: `Tokenizer` is defined in `tk-encode`, and
 // reading a `tokenizer.json` is this crate's whole job.
 /// Read a `tokenizer.json` from a string.
-pub fn from_json(text: &str) -> Result<PipelineTokenizer> {
+pub fn from_json(text: &str) -> Result<Tokenizer> {
     let doc = Json::parse(text).map_err(|e| -> tk_encode::Error { e.to_string().into() })?;
     from_json_value(&doc)
 }
 
 /// Read a `tokenizer.json` from a file.
-pub fn from_json_file(path: impl AsRef<std::path::Path>) -> Result<PipelineTokenizer> {
+pub fn from_json_file(path: impl AsRef<std::path::Path>) -> Result<Tokenizer> {
     let text = std::fs::read_to_string(path)?;
     from_json(&text)
 }
@@ -95,10 +75,10 @@ pub fn from_json_file(path: impl AsRef<std::path::Path>) -> Result<PipelineToken
 ///
 /// The bindings hold a post-processor on its own, so they need this half of the reader; going
 /// through it is what keeps one parser for the canonical spelling.
-pub fn post_processor_from_json(text: &str) -> Result<tk_encode::pipeline::PipelinePostProcessor> {
+pub fn post_processor_from_json(text: &str) -> Result<tk_encode::pipeline::PostProcessor> {
     let text = text.trim();
     if text.is_empty() || text == "null" {
-        return Ok(tk_encode::pipeline::PipelinePostProcessor::default());
+        return Ok(tk_encode::pipeline::PostProcessor::default());
     }
     let doc = Json::parse(text).map_err(|e| -> tk_encode::Error { e.to_string().into() })?;
     read_post_processor(Some(&doc))
@@ -116,7 +96,7 @@ pub fn truncation_from_json(text: &str) -> Result<Option<tk_encode::tokenizer::T
     read_truncation(Some(&doc).filter(|doc| !doc.is_null()))
 }
 
-fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
+fn from_json_value(doc: &Json<'_>) -> Result<Tokenizer> {
     // `2.0` is the canonical format this crate reads and writes. A `1.0` file is a legacy file:
     // tk-convert turns one into a `2.0` file, and this reader never sees it.
     match doc.field("version").and_then(Json::as_str) {
@@ -149,11 +129,10 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
                 |v| v.len(),
                 |v, t| v.get(t).copied(),
                 |vocab| {
-                    Ok(PipelineModel::BPE(PipelineBPE::from_config(BpeConfig {
-                        vocab,
-                        merges,
-                        ..options
-                    })?))
+                    let mut config = options;
+                    config.vocab = vocab;
+                    config.merges = merges;
+                    Ok(Model::BPE(BPE::from_config(config)?))
                 },
             )
         }
@@ -163,9 +142,9 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
             normalizers,
             pre_tokenizer,
             read_wordpiece(model_cfg)?,
-            tk_encode::models::wordpiece::WordPiece::get_vocab_size,
-            tk_encode::models::wordpiece::WordPiece::token_to_id,
-            |wp| Ok(PipelineModel::WordPiece(wp.try_into()?)),
+            |wp| wp.vocab.len(),
+            |wp, t| wp.vocab.get(t).copied(),
+            |wp| Ok(Model::WordPiece(WordPiece::from_config(wp)?)),
         ),
         #[cfg(feature = "unigram")]
         "Unigram" => build(
@@ -175,7 +154,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
             read_unigram(model_cfg)?,
             tk_encode::models::unigram::Unigram::get_vocab_size,
             tk_encode::models::unigram::Unigram::token_to_id,
-            |u| Ok(PipelineModel::Unigram(u)),
+            |u| Ok(Model::Unigram(u)),
         ),
         #[cfg(feature = "wordlevel")]
         "WordLevel" => build(
@@ -185,7 +164,7 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
             read_wordlevel(model_cfg)?,
             tk_encode::models::wordlevel::WordLevel::get_vocab_size,
             tk_encode::models::wordlevel::WordLevel::token_to_id,
-            |wl| Ok(PipelineModel::WordLevel(wl)),
+            |wl| Ok(Model::WordLevel(wl)),
         ),
         // Covers both an unrecognised `"type"` and a known one whose per-model feature is off,
         // because from here the two are indistinguishable: the arm simply is not compiled.
@@ -200,19 +179,19 @@ fn from_json_value(doc: &Json<'_>) -> Result<PipelineTokenizer> {
 
 fn build<M>(
     doc: &Json<'_>,
-    normalizers: Vec<PipelineNormalizer>,
-    pre_tokenizer: PipelinePreTokenizer,
+    normalizers: Vec<Normalizer>,
+    pre_tokenizer: PreTokenizer,
     concrete: M,
     vocab_size: impl FnOnce(&M) -> usize,
     token_to_id: impl Fn(&M, &str) -> Option<u32>,
-    lower: impl FnOnce(M) -> Result<PipelineModel>,
-) -> Result<PipelineTokenizer> {
+    lower: impl FnOnce(M) -> Result<Model>,
+) -> Result<Tokenizer> {
     let added = read_added_tokens(doc.field("added_tokens"))?;
 
     let mut added_vocabulary = BucketAddedVocabulary::new();
     // TODO: this has nothing to do here.
     let declared = match normalizers.last() {
-        Some(PipelineNormalizer::Metaspace(_)) => &normalizers[..normalizers.len() - 1],
+        Some(Normalizer::Metaspace(_)) => &normalizers[..normalizers.len() - 1],
         _ => &normalizers[..],
     };
     let chain = NormalizerChain(declared);
@@ -224,7 +203,7 @@ fn build<M>(
     )?;
     let model = lower(concrete)?;
 
-    Ok(PipelineTokenizer::from_parts(
+    Ok(Tokenizer::from_parts(
         added_vocabulary,
         normalizers,
         pre_tokenizer,

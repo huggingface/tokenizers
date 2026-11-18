@@ -1,5 +1,5 @@
 use crate::decoders::wordpiece;
-use crate::tokenizer::{Decoder, Result};
+use crate::tokenizer::{Decode, Result};
 
 #[derive(Debug, Clone)]
 /// The CTC (Connectionist Temporal Classification) decoder takes care
@@ -37,7 +37,7 @@ impl Default for CTC {
     }
 }
 
-impl Decoder for CTC {
+impl Decode for CTC {
     fn decode_chain(&self, mut tokens: Vec<String>) -> Result<Vec<String>> {
         tokens.dedup();
         Ok(tokens

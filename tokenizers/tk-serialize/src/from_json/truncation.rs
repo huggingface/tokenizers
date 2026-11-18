@@ -15,12 +15,12 @@ pub(super) fn read_truncation(cfg: Option<&Json<'_>>) -> Result<Option<Truncatio
     // 5,053 popular Hub configs surveyed carry one, all question-answering fine-tunes, and
     // transformers rebuilds truncation from the per-call `stride` anyway, so the file's value never
     // reaches encode there either.
-    Ok(Some(TruncationParams {
-        max_length: cfg.need("the `truncation` config", "max_length", Json::as_usize)?,
-        strategy: read_strategy(cfg)?,
-        direction: read_direction(cfg)?,
-        stride: cfg.need("the `truncation` config", "stride", Json::as_usize)?,
-    }))
+    let mut truncation = TruncationParams::default();
+    truncation.max_length = cfg.need("the `truncation` config", "max_length", Json::as_usize)?;
+    truncation.strategy = read_strategy(cfg)?;
+    truncation.direction = read_direction(cfg)?;
+    truncation.stride = cfg.need("the `truncation` config", "stride", Json::as_usize)?;
+    Ok(Some(truncation))
 }
 
 fn read_strategy(cfg: &Json<'_>) -> Result<TruncationStrategy> {

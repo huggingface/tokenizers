@@ -45,7 +45,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Cache cargo registry / git / target
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           workspaces: bindings/wasm
           shared-key: wasm
@@ -62,7 +62,7 @@ jobs:
       # Provides `uvx`, used to run the huggingface_hub CLI that downloads
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       # Clippy runs on --all-targets, and the tests `include_str!` the fixtures.
       - name: Lint with RustFmt and Clippy
@@ -91,7 +91,7 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo registry / git / target
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           workspaces: bindings/wasm
           shared-key: wasm-release
@@ -134,7 +134,7 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo registry / git / target
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           workspaces: bindings/wasm
           shared-key: wasm
@@ -156,7 +156,7 @@ jobs:
       # Provides `uvx`, used to run the huggingface_hub CLI that downloads
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       # The runner image ships Chrome with a matching chromedriver; the one wasm-pack
       # downloads tracks the newest Chrome and can refuse the installed one.
@@ -189,7 +189,7 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo registry / git / target
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           workspaces: bindings/wasm
           shared-key: wasm-release
@@ -212,7 +212,7 @@ jobs:
           restore-keys: hf-test-data-wasm-
 
       - name: Install uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       # Also downloads a tokenizer from the Hub through `from_pretrained`; the token avoids rate limits.
       - name: Install the tarball and run it under Node
@@ -248,7 +248,7 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo registry / git / target
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           workspaces: bindings/wasm
           shared-key: wasm-release
