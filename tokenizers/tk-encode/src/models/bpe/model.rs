@@ -338,6 +338,7 @@ impl pipeline::Tokenize for BPE {
             let mut placement = None;
             if let Some(cache) = cache_slot.as_deref_mut() {
                 // SAFETY: the capacity check above leaves `MAX_INLINE_IDS` slots past `cursor`, and
+                // `Token` is a transparent `u32`.
                 let found = unsafe { cache.probe_emit_keyed(key, hash, dst.cast::<u32>()) };
                 match found {
                     ProbeEmit::Wrote(n) => {
@@ -377,7 +378,7 @@ impl pipeline::Tokenize for BPE {
                 continue;
             }
 
-            // SAFETY: `cursor` counts what the fast paths wrote; the merge below uses `output`
+            // SAFETY: `cursor` counts what the fast paths wrote.
             unsafe { output.set_len(cursor) };
             let start = output.len();
             self.merge_word(sequence, symbols, queue);
