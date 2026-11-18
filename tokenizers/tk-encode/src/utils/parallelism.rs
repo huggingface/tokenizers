@@ -8,6 +8,7 @@ use rayon_cond::CondIterator;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use std::sync::OnceLock;
 use std::sync::TryLockError;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::AtomicUsize;
@@ -25,7 +26,8 @@ static MAX_THREADS: AtomicUsize = AtomicUsize::new(0);
 static POOL_GEN: AtomicUsize = AtomicUsize::new(0);
 
 struct CachedPool {
-    pool: Arc<rayon::ThreadPool>,
+    /// `None` when `max_threads()` is 1: cached too, so a serial process skips the rebuild path.
+    pool: Option<Arc<rayon::ThreadPool>>,
     generation: usize,
 }
 
@@ -94,34 +96,40 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     if let Some(cached) = cache.as_ref()
         && cached.generation == generation
     {
-        return Some(cached.pool.clone());
+        return cached.pool.clone();
     }
     // the caller is one of the `max_threads`
     let workers = max_threads() - 1;
-    if workers == 0 {
-        *cache = None;
-        return None;
-    }
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(workers)
-        .thread_name(|i| format!("tk-encode-{i}"))
-        .build()
-        .ok()?;
-    let pool = Arc::new(pool);
+    let pool = if workers == 0 {
+        None
+    } else {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(workers)
+            .thread_name(|i| format!("tk-encode-{i}"))
+            .build()
+            .ok()?;
+        Some(Arc::new(pool))
+    };
     *cache = Some(CachedPool {
         pool: pool.clone(),
         generation,
     });
-    Some(pool)
+    pool
 }
 
 /// Max threads per encode, caller included: the shared pool holds `max_threads() - 1`, so 1 means
 /// serial. Defaults to `available_parallelism()` (affinity mask, cgroup quota).
 pub fn max_threads() -> usize {
     match MAX_THREADS.load(Ordering::Acquire) {
-        0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
+        0 => available_parallelism(),
         n => n,
     }
+}
+
+/// Cached: on Linux it reads the cgroup quota from files, too slow for every encode.
+fn available_parallelism() -> usize {
+    static CORES: OnceLock<usize> = OnceLock::new();
+    *CORES.get_or_init(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
 }
 
 fn invalidate() {
