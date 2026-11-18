@@ -7,6 +7,7 @@ mod compiled;
 mod components;
 mod decode_stream;
 mod encoding;
+mod encoding_buffer;
 mod error;
 mod input;
 mod options;

@@ -1,11 +1,9 @@
-use std::mem;
-use std::slice;
 use std::sync::OnceLock;
 
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyMemoryView};
 use tk::pipeline::{self, Token};
 
+use crate::encoding_buffer::Field;
 use crate::type_hints::U32Buffer;
 
 /// Text encoded to token ids by a tokenizer.
@@ -55,7 +53,7 @@ impl Encoding {
 
     /// The type id of each token, as a list of ints.
     #[getter]
-    fn type_ids(&self) -> &[u32] {
+    pub(crate) fn type_ids(&self) -> &[u32] {
         self.type_ids.get_or_init(|| {
             if let Some(inner) = self.inner.type_ids() {
                 bytes_slice_to_u32(inner)
@@ -68,7 +66,7 @@ impl Encoding {
     /// Attention mask when the encoding is padded: 1 for token ids, 0 for padding tokens.
     /// A list of ints.
     #[getter]
-    fn attention_mask(&self) -> &[u32] {
+    pub(crate) fn attention_mask(&self) -> &[u32] {
         self.attention_mask.get_or_init(|| {
             if let Some(inner) = self.inner.attention_mask() {
                 bytes_slice_to_u32(inner)
@@ -78,23 +76,23 @@ impl Encoding {
         })
     }
 
-    /// The id of each token, as a read-only buffer of `uint32`.
+    /// The id of each token, as a read-only buffer of `uint32` over the encoding's memory.
     #[getter]
-    fn ids_buffer<'py>(&self, py: Python<'py>) -> PyResult<U32Buffer<'py>> {
-        u32_buffer(py, self.ids())
+    fn ids_buffer(slf: Bound<'_, Self>) -> PyResult<U32Buffer<'_>> {
+        U32Buffer::new(slf, Field::Ids)
     }
 
-    /// The type id of each token, as a read-only buffer of `uint32`.
+    /// The type id of each token, as a read-only buffer of `uint32` over the encoding's memory.
     #[getter]
-    fn type_ids_buffer<'py>(&self, py: Python<'py>) -> PyResult<U32Buffer<'py>> {
-        u32_buffer(py, self.type_ids())
+    fn type_ids_buffer(slf: Bound<'_, Self>) -> PyResult<U32Buffer<'_>> {
+        U32Buffer::new(slf, Field::TypeIds)
     }
 
-    /// The attention mask, as a read-only buffer of `uint32`.
+    /// The attention mask, as a read-only buffer of `uint32` over the encoding's memory.
     /// When the encoding is padded: 1 for token ids, 0 for padding tokens.
     #[getter]
-    fn attention_mask_buffer<'py>(&self, py: Python<'py>) -> PyResult<U32Buffer<'py>> {
-        u32_buffer(py, self.attention_mask())
+    fn attention_mask_buffer(slf: Bound<'_, Self>) -> PyResult<U32Buffer<'_>> {
+        U32Buffer::new(slf, Field::AttentionMask)
     }
 
     /// The number of tokens in the encoding
@@ -138,17 +136,4 @@ impl Encoding {
 
 fn bytes_slice_to_u32(slice: &[u8]) -> Vec<u32> {
     slice.iter().map(|&byte| byte as u32).collect()
-}
-
-/// Copies `values` into a new read-only `memoryview` with format `"I"` (`uint32`).
-///
-/// `numpy.asarray` reads it without a copy.
-fn u32_buffer<'py>(py: Python<'py>, values: &[u32]) -> PyResult<U32Buffer<'py>> {
-    // SAFETY: a `u32` is four initialized bytes with no padding, and a `u8` needs no alignment.
-    // The byte slice covers the memory of `values` exactly and borrows it for as long.
-    let bytes = unsafe { slice::from_raw_parts(values.as_ptr().cast(), mem::size_of_val(values)) };
-    // A `memoryview` of `bytes` is read-only.
-    let bytes = PyBytes::new(py, bytes);
-    let view = PyMemoryView::from(&bytes)?.call_method1("cast", ("I",))?;
-    Ok(U32Buffer(view))
 }

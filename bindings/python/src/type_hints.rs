@@ -12,6 +12,7 @@ use pyo3::{Borrowed, PyTypeInfo, type_hint_identifier, type_hint_subscript, type
 
 use crate::added_token::AddedToken;
 use crate::encoding::Encoding;
+use crate::encoding_buffer::{EncodingBuffer, Field};
 
 /// The `ids` argument of `Tokenizer.decode` and `Tokenizer.decode_tokens`, typed
 /// `Encoding | Sequence[int] | Buffer`.
@@ -101,11 +102,18 @@ impl<'py> IntoPyObject<'py> for AddedTokens<'py> {
 /// What `Encoding.ids_buffer` and the other buffer getters return, typed `Buffer`.
 ///
 /// The stubs promise only the buffer protocol, so the class behind it can change.
-pub struct U32Buffer<'py>(pub Bound<'py, PyAny>);
+pub struct U32Buffer<'py>(Bound<'py, EncodingBuffer>);
+
+impl<'py> U32Buffer<'py> {
+    pub fn new(encoding: Bound<'py, Encoding>, field: Field) -> PyResult<Self> {
+        let py = encoding.py();
+        Bound::new(py, EncodingBuffer::new(encoding, field)).map(Self)
+    }
+}
 
 impl<'py> IntoPyObject<'py> for U32Buffer<'py> {
-    type Target = PyAny;
-    type Output = Bound<'py, PyAny>;
+    type Target = EncodingBuffer;
+    type Output = Bound<'py, EncodingBuffer>;
     type Error = Infallible;
 
     const OUTPUT_TYPE: PyStaticExpr = type_hint_identifier!("typing_extensions", "Buffer");

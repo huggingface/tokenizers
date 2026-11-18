@@ -1,6 +1,8 @@
 import gc
+import io
 
 import numpy as np
+import pytest
 
 from tokenizers import Padding
 
@@ -16,11 +18,27 @@ def test_buffer_list_equivalence(bert):
         assert np.asarray(field).shape == (8,)
 
 
+def test_buffer_reads_encoding_memory(bert):
+    encoding = bert.encode("Hello there")
+
+    for field in ("ids_buffer", "type_ids_buffer", "attention_mask_buffer"):
+        first, second = np.asarray(getattr(encoding, field)), np.asarray(getattr(encoding, field))
+        assert np.shares_memory(first, second)
+
+
 def test_buffer_is_read_only(bert):
     encoding = bert.encode("Hello there")
 
     assert memoryview(encoding.ids_buffer).readonly
     assert not np.asarray(encoding.ids_buffer).flags.writeable
+
+
+def test_buffer_refuses_a_writer(bert):
+    encoding = bert.encode("Hello there")
+
+    with pytest.raises(TypeError):
+        io.BytesIO(bytes(16)).readinto(encoding.ids_buffer)
+    assert encoding.ids == [1, 27462, 7495, 2]
 
 
 def test_buffer_outlives_encoding(bert):

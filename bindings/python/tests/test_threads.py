@@ -2,6 +2,7 @@ import sys
 import sysconfig
 import threading
 
+import numpy as np
 import pytest
 
 from conftest import GPT2
@@ -39,6 +40,25 @@ def test_read_buffer_while_decoding_it(gpt2):
     while decoder.is_alive():
         encoding.ids_buffer
     decoder.join()
+
+
+def test_threads_export_the_same_memory(gpt2):
+    encoding = gpt2.encode(GPT2.read_text()[:4000])
+    start = threading.Barrier(8)
+    arrays = []
+
+    def export():
+        start.wait()
+        arrays.append(np.asarray(encoding.type_ids_buffer))
+
+    threads = [threading.Thread(target=export) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(arrays) == 8
+    assert all(np.shares_memory(array, arrays[0]) for array in arrays)
 
 
 # `sys._is_gil_enabled` exists on every build from 3.13 on, so only the config var tells the two apart.

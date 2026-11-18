@@ -366,7 +366,7 @@ class Encoding:
     @property
     def attention_mask_buffer(self, /) -> Buffer:
         """
-        The attention mask, as a read-only buffer of `uint32`.
+        The attention mask, as a read-only buffer of `uint32` over the encoding's memory.
         When the encoding is padded: 1 for token ids, 0 for padding tokens.
         """
     @property
@@ -377,7 +377,7 @@ class Encoding:
     @property
     def ids_buffer(self, /) -> Buffer:
         """
-        The id of each token, as a read-only buffer of `uint32`.
+        The id of each token, as a read-only buffer of `uint32` over the encoding's memory.
         """
     @property
     def type_ids(self, /) -> list[int]:
@@ -387,7 +387,7 @@ class Encoding:
     @property
     def type_ids_buffer(self, /) -> Buffer:
         """
-        The type id of each token, as a read-only buffer of `uint32`.
+        The type id of each token, as a read-only buffer of `uint32` over the encoding's memory.
         """
 
 @final
