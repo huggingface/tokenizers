@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::iter::Enumerate;
+use std::ops::Range;
 use std::sync::Arc;
 use std::vec::IntoIter;
 
@@ -671,6 +672,78 @@ impl Tokenizer {
         parallel::encode(self, inputs, options)
     }
 
+    /// Encode one text with caller-supplied untrusted spans.
+    ///
+    /// Spans are nonempty, sorted, non-overlapping UTF-8 byte ranges in `input`.
+    /// Adjacent spans are treated as one. The encoder does not match added tokens
+    /// across a span boundary. Normalization and model tokenization run separately
+    /// on the two sides of a boundary, so nearby ordinary token IDs may change.
+    ///
+    /// Untrusted text skips raw and normalized added-token matching regardless of
+    /// [`EncodeOptions::encode_special_tokens`]. If the model itself produces an
+    /// added token ID in untrusted text, encoding fails. Post-processing, including
+    /// configured special tokens, still applies to the complete sequence.
+    pub fn encode_with_untrusted_spans(
+        &self,
+        input: &str,
+        untrusted_spans: &[Range<usize>],
+        options: &EncodeOptions,
+    ) -> Result<Encoding> {
+        let mut previous_end = 0;
+        for span in untrusted_spans {
+            if span.start < previous_end
+                || span.is_empty()
+                || !input.is_char_boundary(span.start)
+                || !input.is_char_boundary(span.end)
+            {
+                return Err(format!("invalid untrusted UTF-8 byte range: {span:?}").into());
+            }
+            previous_end = span.end;
+        }
+
+        let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
+        let mut output = Vec::with_capacity(input.len() / 4);
+        let mut offset = 0;
+        let mut spans = untrusted_spans.iter().peekable();
+        while let Some(span) = spans.next() {
+            let mut end = span.end;
+            while let Some(next) = spans.next_if(|next| next.start == end) {
+                end = next.end;
+            }
+
+            self.encode_sequence_into(
+                &input[offset..span.start],
+                offset,
+                options,
+                &mut scratch,
+                &mut output,
+            )?;
+
+            let normalized =
+                normalize_all(&self.inner.normalizers, &input[span.start..end], span.start)?;
+            let token_start = output.len();
+            if !normalized.is_empty() {
+                self.encode_model(&normalized, &mut scratch, &mut output)?;
+            }
+            if let Some(id) = output[token_start..]
+                .iter()
+                .map(|token| token.id())
+                .find(|&id| {
+                    id >= self.inner.added_id_min && self.inner.added_vocabulary.contains_id(id)
+                })
+            {
+                return Err(format!("model emitted added token ID {id} in untrusted text").into());
+            }
+            offset = end;
+        }
+        self.encode_sequence_into(&input[offset..], offset, options, &mut scratch, &mut output)?;
+        let mut encoding = self.post_process(output, None, options)?;
+        if let Some(padding) = self.resolve_padding(&options.padding) {
+            pad_encodings(std::slice::from_mut(&mut encoding), padding)?;
+        }
+        Ok(encoding)
+    }
+
     fn encode_serial(&self, inputs: Inputs, options: &EncodeOptions) -> Vec<Result<Encoding>> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         match inputs {
@@ -797,22 +870,7 @@ impl Tokenizer {
                             } => {
                                 // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),
                                 // so the length limit of `pre_tokens` applies to the normalized chunk.
-                                let EncodeScratch {
-                                    model: model_scratch,
-                                    pre_tokens,
-                                    split: pre_tokenizer_scratch,
-                                } = &mut *scratch;
-                                let pre_tokens = self.inner.pre_tokenizer.pre_tokens(
-                                    normalized_chunk,
-                                    pre_tokenizer_scratch,
-                                    pre_tokens,
-                                )?;
-                                output.reserve(pre_tokens.spans().len());
-                                self.inner.model.tokenize_spans(
-                                    pre_tokens,
-                                    model_scratch,
-                                    output,
-                                )?;
+                                self.encode_model(normalized_chunk, scratch, output)?;
                             }
                         }
                     }
@@ -820,6 +878,28 @@ impl Tokenizer {
             };
         }
         Ok(())
+    }
+
+    #[inline]
+    fn encode_model(
+        &self,
+        normalized: &str,
+        scratch: &mut EncodeScratch,
+        output: &mut Vec<Token>,
+    ) -> Result<()> {
+        let EncodeScratch {
+            model: model_scratch,
+            pre_tokens,
+            split: pre_tokenizer_scratch,
+        } = scratch;
+        let pre_tokens =
+            self.inner
+                .pre_tokenizer
+                .pre_tokens(normalized, pre_tokenizer_scratch, pre_tokens)?;
+        output.reserve(pre_tokens.spans().len());
+        self.inner
+            .model
+            .tokenize_spans(pre_tokens, model_scratch, output)
     }
 
     /// [`Self::encode_sequence_into`] into a fresh buffer, for the callers that want one back.
@@ -1325,6 +1405,52 @@ mod tests {
 
         assert_eq!(ids(&carved), vec![8, 7]);
         assert_eq!(ids(&encoded), vec![2, 3, 2, 7]);
+    }
+
+    #[test]
+    fn untrusted_spans_leave_only_trusted_added_tokens_in_the_encoding() {
+        let pipeline = hello_pipeline_with_special("lol");
+        let options = EncodeOptions::no_specials();
+        let input = "lollol";
+        assert_eq!(
+            ids(&pipeline.encode(input, &options).wait().unwrap()[0]),
+            [8, 8]
+        );
+
+        for span in [3..6, 4..5] {
+            let encoding = pipeline
+                .encode_with_untrusted_spans(input, std::slice::from_ref(&span), &options)
+                .unwrap();
+            assert_eq!(ids(&encoding), [8, 2, 3, 2]);
+        }
+    }
+
+    #[test]
+    fn adjacent_untrusted_spans_share_model_context_and_padding() {
+        let pipeline = hello_pipeline_with_padding(pad_to(3));
+        let encoding = pipeline
+            .encode_with_untrusted_spans("hello", &[0..2, 2..5], &EncodeOptions::no_specials())
+            .unwrap();
+
+        assert_eq!(ids(&encoding), [7, PAD, PAD]);
+    }
+
+    #[test]
+    fn untrusted_spans_must_be_ordered_utf8_byte_ranges() {
+        let pipeline = hello_pipeline();
+        for spans in [
+            std::slice::from_ref(&(1..2)),
+            std::slice::from_ref(&(2..5)),
+            &[2..4, 3..4],
+            &[3..4, 2..3],
+        ] {
+            assert!(
+                pipeline
+                    .encode_with_untrusted_spans("élo", spans, &EncodeOptions::no_specials())
+                    .is_err(),
+                "accepted {spans:?}"
+            );
+        }
     }
 
     #[test]

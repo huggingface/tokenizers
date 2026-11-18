@@ -1,8 +1,8 @@
 import pytest
 
-from tokenizers import Encoding
+from tokenizers import AddedToken, Encoding, Tokenizer, models, normalizers
 
-# Every id in this file comes from released tokenizers 0.23.1 on the same fixture
+# The GPT-2 and BERT fixture IDs come from released tokenizers 0.23.1.
 
 
 @pytest.mark.parametrize(
@@ -95,3 +95,27 @@ def test_encode_pair(bert, pair):
 def test_encode_pair_needs_two_texts(bert, pair):
     with pytest.raises(TypeError):
         bert.encode(pair)
+
+
+@pytest.mark.parametrize(("special", "normalized"), [(True, False), (False, True)])
+def test_encode_untrusted_spans(special, normalized):
+    spec = Tokenizer(models.BPE(vocab={"a": 0, "b": 1, "é": 2}, merges=[]))
+    spec.normalizer = normalizers.Lowercase()
+    spec.add_tokens([AddedToken("AB", special=special, normalized=normalized)])
+    tokenizer = spec.compile()
+    text = "éABABAB"
+
+    assert tokenizer.encode(text).ids == [2, 3, 3, 3]
+    assert tokenizer.encode(text, untrusted_spans=[(2, 4), (6, 8)]).ids == [2, 0, 1, 3, 0, 1]
+    with pytest.raises(ValueError):
+        tokenizer.encode(text, untrusted_spans=[(1, 4)])
+
+
+def test_encode_untrusted_spans_rejects_control_id_from_model():
+    spec = Tokenizer(models.BPE(vocab={"a": 0, "b": 1, "ab": 2}, merges=[("a", "b")]))
+    spec.add_tokens([AddedToken("ab", special=True)])
+    tokenizer = spec.compile()
+
+    assert tokenizer.encode("ab", encode_special_tokens=True).ids == [2]
+    with pytest.raises(ValueError):
+        tokenizer.encode("ab", untrusted_spans=[(0, 2)])

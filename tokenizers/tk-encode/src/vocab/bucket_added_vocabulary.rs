@@ -317,6 +317,10 @@ impl AddedVocabulary {
             .map(|internal_id| self.ids.vocab_id(internal_id))
     }
 
+    pub(crate) fn contains_id(&self, id: u32) -> bool {
+        self.ids.internal_id(id).is_some()
+    }
+
     /// The bytes decoding writes for the added token `id`, with the token's flags, or `None` when
     /// `id` is not an added token.
     ///
