@@ -120,7 +120,8 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
 
 /// Max threads per encode, caller included: the shared pool holds `max_threads() - 1`, so 1 means
 /// serial. Defaults to `available_parallelism()` (affinity mask, cgroup quota), or to 1 in a forked
-/// child, which can't know how many siblings share the cores.
+/// child, which can't know how many siblings share the cores. The fork is only seen if tk-encode was
+/// used before it (a tokenizer built, `max_threads` or `set_max_threads` called).
 pub fn max_threads() -> usize {
     fork::watch();
     match MAX_THREADS.load(Ordering::Acquire) {
@@ -138,6 +139,7 @@ fn available_parallelism() -> usize {
 
 /// Set [`max_threads`] process-wide; `0` restores the default. Takes effect on the next encode.
 pub fn set_max_threads(n: usize) {
+    fork::watch();
     MAX_THREADS.store(n, Ordering::Release);
 }
 
