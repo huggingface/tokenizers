@@ -1,6 +1,8 @@
 use super::unsupported;
 use crate::json::Json;
 use tk_encode::models::bpe::{BpeConfig, Merges, Vocab};
+#[cfg(feature = "wordpiece")]
+use tk_encode::models::wordpiece::WordPieceConfig;
 use tk_encode::tokenizer::Result;
 
 pub(super) fn read_bpe(cfg: &Json<'_>) -> Result<(Vocab, Merges, BpeConfig)> {
@@ -26,38 +28,36 @@ pub(super) fn read_bpe(cfg: &Json<'_>) -> Result<(Vocab, Merges, BpeConfig)> {
     }
 
     // Each option is left at its default unless the config names it, which is what the builder's
-    let options = BpeConfig {
-        dropout: cfg
-            .field("dropout")
-            .and_then(Json::as_f64)
-            .map(|v| v as f32),
-        unk_token: cfg
-            .field("unk_token")
-            .and_then(Json::as_str)
-            .map(str::to_string),
-        continuing_subword_prefix: cfg
-            .field("continuing_subword_prefix")
-            .and_then(Json::as_str)
-            .map(str::to_string),
-        end_of_word_suffix: cfg
-            .field("end_of_word_suffix")
-            .and_then(Json::as_str)
-            .map(str::to_string),
-        fuse_unk: cfg
-            .field("fuse_unk")
-            .and_then(Json::as_bool)
-            .unwrap_or_default(),
-        byte_fallback: cfg
-            .field("byte_fallback")
-            .and_then(Json::as_bool)
-            .unwrap_or_default(),
-        ignore_merges: cfg
-            .field("ignore_merges")
-            .and_then(Json::as_bool)
-            .unwrap_or_default(),
-        byte_level,
-        ..BpeConfig::default()
-    };
+    let mut options = BpeConfig::default();
+    options.dropout = cfg
+        .field("dropout")
+        .and_then(Json::as_f64)
+        .map(|v| v as f32);
+    options.unk_token = cfg
+        .field("unk_token")
+        .and_then(Json::as_str)
+        .map(str::to_string);
+    options.continuing_subword_prefix = cfg
+        .field("continuing_subword_prefix")
+        .and_then(Json::as_str)
+        .map(str::to_string);
+    options.end_of_word_suffix = cfg
+        .field("end_of_word_suffix")
+        .and_then(Json::as_str)
+        .map(str::to_string);
+    options.fuse_unk = cfg
+        .field("fuse_unk")
+        .and_then(Json::as_bool)
+        .unwrap_or_default();
+    options.byte_fallback = cfg
+        .field("byte_fallback")
+        .and_then(Json::as_bool)
+        .unwrap_or_default();
+    options.ignore_merges = cfg
+        .field("ignore_merges")
+        .and_then(Json::as_bool)
+        .unwrap_or_default();
+    options.byte_level = byte_level;
     Ok((vocab, merges, options))
 }
 
@@ -77,25 +77,21 @@ fn read_vocab_object(cfg: &Json<'_>) -> Result<Vocab> {
 }
 
 #[cfg(feature = "wordpiece")]
-pub(super) fn read_wordpiece(cfg: &Json<'_>) -> Result<tk_encode::models::wordpiece::WordPiece> {
-    let vocab = read_vocab_object(cfg)?;
-    let max_input_chars_per_word = cfg.need(
+pub(super) fn read_wordpiece(cfg: &Json<'_>) -> Result<WordPieceConfig> {
+    let mut config = WordPieceConfig::default();
+    config.vocab = read_vocab_object(cfg)?;
+    config.max_input_chars_per_word = cfg.need(
         "WordPiece model",
         "max_input_chars_per_word",
         Json::as_usize,
     )?;
-    tk_encode::models::wordpiece::WordPiece::builder()
-        .vocab(vocab)
-        .unk_token(
-            cfg.need("WordPiece model", "unk_token", Json::as_str)?
-                .to_string(),
-        )
-        .continuing_subword_prefix(
-            cfg.need("WordPiece model", "continuing_subword_prefix", Json::as_str)?
-                .to_string(),
-        )
-        .max_input_chars_per_word(max_input_chars_per_word)
-        .build()
+    config.unk_token = cfg
+        .need("WordPiece model", "unk_token", Json::as_str)?
+        .to_string();
+    config.continuing_subword_prefix = cfg
+        .need("WordPiece model", "continuing_subword_prefix", Json::as_str)?
+        .to_string();
+    Ok(config)
 }
 
 /// Unigram's vocab is an array of `[token, score]` pairs, and the scores decide the lattice, so a

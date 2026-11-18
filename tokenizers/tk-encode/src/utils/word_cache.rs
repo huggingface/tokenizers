@@ -144,8 +144,8 @@ impl<'a> WordCache {
         if slot.key == placement.key && !slot.is_spilled() {
             // SAFETY: the caller guarantees room for `MAX_INLINE_IDS`. Lanes past `ids_len` are
             unsafe {
-                for lane in 0..MAX_INLINE_IDS {
-                    dst.add(lane).write(slot.payload[lane]);
+                for (lane, &payload) in slot.payload.iter().enumerate().take(MAX_INLINE_IDS) {
+                    dst.add(lane).write(payload);
                 }
             }
             return ProbeEmit::Wrote(slot.ids_len as usize);

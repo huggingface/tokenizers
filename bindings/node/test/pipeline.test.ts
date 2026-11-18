@@ -3,10 +3,11 @@ import assert from 'node:assert'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { PipelineTokenizer, type EncodeOptions } from '../index.js'
 
 // `make test` fetches this one; see the Makefile's TESTS_RESOURCES.
-const MODEL = new URL('../data/tokenizer-wiki.json', import.meta.url).pathname
+const MODEL = fileURLToPath(new URL('../data/tokenizer-wiki.json', import.meta.url))
 
 // Every id in this file comes from released tokenizers 0.23.1 on the same fixture.
 const LONG = 'Hello there, how are you today?'

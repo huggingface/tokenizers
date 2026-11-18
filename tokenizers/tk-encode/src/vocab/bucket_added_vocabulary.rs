@@ -1,7 +1,7 @@
 use super::super::Result;
 use super::buckets::{AddedTokenFlags, Buckets};
-use crate::pipeline::Normalizer;
-use crate::pipeline::PipelinePatternMatcher;
+use crate::pipeline::Normalize;
+use crate::pipeline::PatternMatcher;
 use crate::pre_tokenizers::whitespace::is_word_char;
 use crate::utils::perfect_hash::{Mphf, splitmix64};
 use ahash::AHashMap;
@@ -14,6 +14,7 @@ use std::fmt;
 ///   - Whether they should only match single words
 ///   - Whether to include any whitespace on its left or right
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct AddedToken {
     /// The content of the added token (original, as provided by the user)
     pub content: String,
@@ -127,8 +128,6 @@ impl Default for AddedToken {
     }
 }
 
-// TODO: remove this once we have the final saving format
-// its outside the scope of this PR and allows us to test
 impl From<&AddedToken> for AddedTokenFlags {
     fn from(token: &AddedToken) -> AddedTokenFlags {
         AddedTokenFlags {
@@ -271,9 +270,10 @@ impl AddedVocabulary {
             .token_to_internal_id(token)
             .or_else(|| self.normalized_vocab.token_to_internal_id(token))
     }
+
     /// Size of the additional vocabulary
-    #[allow(dead_code)] // Suppress the "method is never used" warning
-    pub fn len(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
         self.vocab.len() + self.normalized_vocab.len()
     }
 
@@ -284,7 +284,7 @@ impl AddedVocabulary {
 
     /// Get the additional vocabulary (union of both matchers; normalized tokens appear by their
     /// normalized form, since the original content isn't retained after partitioning).
-    pub fn get_vocab(&self) -> AHashMap<String, u32> {
+    pub(crate) fn get_vocab(&self) -> AHashMap<String, u32> {
         self.tokens()
             .map(|(token, internal_id)| (token, self.ids.vocab_id(internal_id)))
             .collect::<AHashMap<String, u32>>()
@@ -312,7 +312,7 @@ impl AddedVocabulary {
     }
 
     /// Get the id matching one of our token if it exists
-    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+    pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
         self.token_to_internal_id(token)
             .map(|internal_id| self.ids.vocab_id(internal_id))
     }
@@ -322,7 +322,7 @@ impl AddedVocabulary {
     ///
     /// A token added with `normalized` gives its normalized form (e.g. byte-level encoding), so
     /// the configured `Decoder` can invert the normalization. Any other token gives its `content`.
-    pub fn id_to_token_bytes(&self, id: u32) -> Option<(&[u8], &AddedTokenFlags)> {
+    pub(crate) fn id_to_token_bytes(&self, id: u32) -> Option<(&[u8], &AddedTokenFlags)> {
         let internal_id = self.ids.internal_id(id)?;
         let flags = &self.token_metadata[internal_id as usize];
         let bytes = self
@@ -332,19 +332,8 @@ impl AddedVocabulary {
         Some((bytes, flags))
     }
 
-    /// Add some special tokens to the vocabulary
-    pub fn add_special_tokens<N: Normalizer>(
-        &mut self,
-        tokens: impl IntoIterator<Item = AddedToken>,
-        model_vocab_size: usize,
-        model_token_to_id: impl Fn(&str) -> Option<u32>,
-        normalizer: Option<&N>,
-    ) -> Result<usize> {
-        self.add_tokens(tokens, model_vocab_size, model_token_to_id, normalizer)
-    }
-
     /// Add some tokens to the vocabulary
-    pub fn add_tokens<N: Normalizer>(
+    pub fn add_tokens<N: Normalize>(
         &mut self,
         tokens: impl IntoIterator<Item = AddedToken>,
         model_vocab_size: usize,
@@ -443,7 +432,7 @@ impl AddedVocabulary {
     }
 }
 
-impl PipelinePatternMatcher for AddedVocabulary {
+impl PatternMatcher for AddedVocabulary {
     fn extract_next(
         &self,
         bytes: &[u8],
@@ -681,7 +670,7 @@ mod tests {
         // Add tokens normally
         assert_eq!(
             vocab
-                .add_special_tokens(
+                .add_tokens(
                     [AddedToken::from("added_token_1", true)],
                     model.get_vocab_size(),
                     |t| model.token_to_id(t),
@@ -696,7 +685,7 @@ mod tests {
         // Does not add multiple time the same token
         assert_eq!(
             vocab
-                .add_special_tokens(
+                .add_tokens(
                     [
                         AddedToken::from("added_token_2", true),
                         AddedToken::from("added_token_2", true)
@@ -713,7 +702,7 @@ mod tests {
         // Can add tokens already covered by the model
         assert_eq!(
             vocab
-                .add_special_tokens(
+                .add_tokens(
                     [AddedToken::from("test", true)],
                     model.get_vocab_size(),
                     |t| model.token_to_id(t),
@@ -754,7 +743,7 @@ mod tests {
         // Let's add an already added token again, but change normalized
         assert_eq!(
             vocab
-                .add_special_tokens(
+                .add_tokens(
                     [AddedToken::from("another_two", true)],
                     model.get_vocab_size(),
                     |t| model.token_to_id(t),
@@ -811,7 +800,7 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer: Option<&Lowercase> = None;
         vocab
-            .add_special_tokens(
+            .add_tokens(
                 [AddedToken::from("<unk>", true).normalized(true)],
                 model.get_vocab_size(),
                 |t| model.token_to_id(t),
@@ -845,7 +834,7 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer: Option<&Lowercase> = None;
         vocab
-            .add_special_tokens(
+            .add_tokens(
                 [
                     AddedToken::from("[CLS]", true),
                     AddedToken::from("[SEP]", true),
@@ -965,7 +954,7 @@ mod tests {
         let mut vocab = AddedVocabulary::new();
         let normalizer: Option<&Lowercase> = None;
         vocab
-            .add_special_tokens(
+            .add_tokens(
                 [AddedToken::from("[CLS]", true)],
                 model.get_vocab_size(),
                 |t| model.token_to_id(t),

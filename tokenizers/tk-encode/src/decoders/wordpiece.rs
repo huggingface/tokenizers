@@ -1,4 +1,4 @@
-use crate::tokenizer::{Decoder, Result};
+use crate::tokenizer::{Decode, Result};
 
 #[derive(Clone, Debug)]
 /// The WordPiece decoder takes care of decoding a list of wordpiece tokens
@@ -40,7 +40,7 @@ pub fn cleanup(dirty_input: &str) -> String {
         .replace(" 're", "'re")
 }
 
-impl Decoder for WordPiece {
+impl Decode for WordPiece {
     fn decode_chain(&self, mut tokens: Vec<String>) -> Result<Vec<String>> {
         for (i, token) in tokens.iter_mut().enumerate() {
             if i != 0 {

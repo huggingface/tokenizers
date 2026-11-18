@@ -2,20 +2,20 @@ use std::sync::OnceLock;
 
 use numpy::PyArray1;
 use pyo3::prelude::*;
-use tk::pipeline::{Encoding as PipelineEncoding, PipelineToken};
+use tk::pipeline::{self, Token};
 
 use crate::type_hints::{NDArray, U32Array};
 
 /// Text encoded to token ids by a tokenizer.
 #[pyclass(frozen, eq, module = "tokenizers")]
 pub struct Encoding {
-    inner: PipelineEncoding,
+    inner: pipeline::Encoding,
     type_ids: OnceLock<Vec<u32>>,
     attention_mask: OnceLock<Vec<u32>>,
 }
 
-impl From<PipelineEncoding> for Encoding {
-    fn from(encoding: PipelineEncoding) -> Self {
+impl From<pipeline::Encoding> for Encoding {
+    fn from(encoding: pipeline::Encoding) -> Self {
         Self {
             inner: encoding,
             type_ids: OnceLock::new(),
@@ -26,7 +26,7 @@ impl From<PipelineEncoding> for Encoding {
 
 impl Encoding {
     pub(crate) fn get_ids(&self) -> &[u32] {
-        PipelineToken::cast_slice(self.inner.ids())
+        Token::cast_slice(self.inner.ids())
     }
 }
 
@@ -114,8 +114,8 @@ impl Encoding {
     #[staticmethod]
     fn _unpickle(ids: Vec<u32>, type_ids: Vec<u8>, attention_mask: Vec<u8>) -> Self {
         Self {
-            inner: PipelineEncoding::new(
-                ids.into_iter().map(PipelineToken::from).collect(),
+            inner: pipeline::Encoding::new(
+                ids.into_iter().map(Token::from).collect(),
                 Some(type_ids),
                 Some(attention_mask),
             ),

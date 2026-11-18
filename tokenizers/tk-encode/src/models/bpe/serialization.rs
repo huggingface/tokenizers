@@ -1,6 +1,6 @@
 //! The different functions used to go from the serialized json vocab / merges to building the BPE.
 
-use super::model::{Atoms, PipelineBPE, build_byte_to_gate};
+use super::model::{Atoms, BPE, build_byte_to_gate};
 use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
 use crate::models::bpe::tables::{BpeTables, NO_SYMBOL};
 use crate::models::bpe::{Error, MergeMap, Merges, Pair, Vocab};
@@ -14,6 +14,7 @@ use std::str::from_utf8_unchecked;
 /// Every byte a `&str` can hold except 0xF1 | 0xF2, which are UTF-8 lead bytes that prefix unassigned codepoints
 const VALID_UTF8_BYTES: [RangeInclusive<u8>; 3] = [0x00..=0xBF, 0xC2..=0xF0, 0xF3..=0xF4];
 
+#[non_exhaustive]
 pub struct BpeConfig {
     /// `{"token": id}`, in no particular order.
     pub vocab: Vocab,
@@ -65,7 +66,7 @@ impl Default for BpeConfig {
     }
 }
 
-impl PipelineBPE {
+impl BPE {
     pub fn to_config(&self) -> Result<BpeConfig> {
         let byte_level = self.is_byte_level();
         // TODO: For now we keep serializing the old "printable" chars, but this costs nothing to
@@ -136,7 +137,7 @@ impl PipelineBPE {
         })
     }
 
-    /// Build a `PipelineBPE` from a vocabulary and a merge list, exactly as they are written in a
+    /// Build a `BPE` from a vocabulary and a merge list, exactly as they are written in a
     /// `tokenizer.json`.
     ///
     /// Each merge's two tokens are looked up in `vocab`, their concatenation (minus the
@@ -252,16 +253,44 @@ impl PipelineBPE {
             };
             let unk_token = unk_token.map(|external| to_internal(external).unwrap_or(NO_SYMBOL));
             let fallback_lookup = if byte_fallback {
-                let mut fallback_lookup = [0u32; 256];
+                let mut fallback_lookup = [NO_SYMBOL; 256];
                 for b in 0u8..=255 {
                     let code = format!("<{b:#04X}>");
-                    let external = vocab
-                        .token_to_id(&code)
-                        .ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
-                    fallback_lookup[b as usize] =
-                        to_internal(external).ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
+                    if let Some(internal) = vocab.token_to_id(&code).and_then(to_internal) {
+                        fallback_lookup[b as usize] = internal;
+                    }
                 }
-                Some(fallback_lookup)
+
+                // NVIDIA NeMo models such as Parakeet set `byte_fallback` with no `<0xNN>` token at all.
+                // In this case, we turn off the byte fallback at load time.
+                if fallback_lookup.iter().all(|&id| id == NO_SYMBOL) {
+                    None
+                } else {
+                    // Some model don't store fallback tokens for single-bytes characters that
+                    // are already in the vocab. For example, Gemma doesn't store a <0x09> fallback token (`\t`).
+                    // It's a valid configuration because the byte fallback only triggers when
+                    // a character is missing from the vocabulary.
+
+                    let has_affixes = !prefix.is_empty() || !suffix.is_empty();
+                    let mut missing = Vec::new();
+                    for b in 0u8..=255 {
+                        if fallback_lookup[b as usize] != NO_SYMBOL {
+                            continue;
+                        }
+                        let literal = (b.is_ascii() && !has_affixes)
+                            .then(|| vocab.token_to_id(&(b as char).to_string()))
+                            .flatten()
+                            .and_then(to_internal);
+                        match literal {
+                            Some(internal) => fallback_lookup[b as usize] = internal,
+                            None => missing.push(b),
+                        }
+                    }
+                    if !missing.is_empty() {
+                        return Err(Error::ByteFallbackOutOfVocabulary(missing).into());
+                    }
+                    Some(fallback_lookup)
+                }
             } else {
                 None
             };

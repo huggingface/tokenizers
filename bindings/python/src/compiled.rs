@@ -5,12 +5,12 @@ use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyBytes, PyDict};
 use tk::PaddingParams;
 use tk::TruncationParams;
+use tk::pipeline;
 use tk::pipeline::EncodeOptions;
-use tk::pipeline::Encoding as PipelineEncoding;
 use tk::pipeline::Input;
 use tk::pipeline::Inputs;
-use tk::pipeline::PipelineToken;
-use tk::pipeline::PipelineTokenizer;
+use tk::pipeline::Token;
+use tk::pipeline::Tokenizer;
 use tk::{from_json, to_json};
 
 use crate::added_token::AddedToken;
@@ -30,13 +30,13 @@ use crate::type_hints::TokenIds;
 /// again from that JSON config.
 #[pyclass(frozen, dict, module = "tokenizers")]
 pub struct CompiledTokenizer {
-    pipeline: PipelineTokenizer,
+    pipeline: Tokenizer,
     /// The `added_tokens` dict, built on first read.
     added_tokens: PyOnceLock<Py<PyDict>>,
 }
 
 impl CompiledTokenizer {
-    pub(crate) fn pipeline(&self) -> &PipelineTokenizer {
+    pub(crate) fn pipeline(&self) -> &Tokenizer {
         &self.pipeline
     }
 
@@ -49,7 +49,11 @@ impl CompiledTokenizer {
         })
     }
 
-    fn encode_one(&self, input: PyInput, options: &EncodeOptions) -> tk::Result<PipelineEncoding> {
+    fn encode_one(
+        &self,
+        input: PyInput,
+        options: &EncodeOptions,
+    ) -> tk::Result<pipeline::Encoding> {
         let mut encodings = self.pipeline.encode(input, options).wait()?;
         Ok(encodings
             .pop()
@@ -63,12 +67,12 @@ fn encode_options(
     padding: OverrideSentinel<PaddingParams>,
     truncation: OverrideSentinel<TruncationParams>,
 ) -> EncodeOptions {
-    EncodeOptions {
-        add_special_tokens,
-        encode_special_tokens,
-        padding: padding.into(),
-        truncation: truncation.into(),
-    }
+    let mut options = EncodeOptions::default();
+    options.add_special_tokens = add_special_tokens;
+    options.encode_special_tokens = encode_special_tokens;
+    options.padding = padding.into();
+    options.truncation = truncation.into();
+    options
 }
 
 #[pymethods]
@@ -160,7 +164,7 @@ impl CompiledTokenizer {
             let encoding = self.encode_one(input, &options)?;
             Ok(self
                 .pipeline
-                .decode_tokens(PipelineToken::cast_slice(encoding.ids()), false))
+                .decode_tokens(Token::cast_slice(encoding.ids()), false))
         })
         .map_err(err)
     }
@@ -378,6 +382,6 @@ impl CompiledTokenizer {
         // py.detach releases the GIL while the Rust code runs.
         let json = py.detach(|| to_json(&self.pipeline)).map_err(err)?;
         let spec = TokenizerSpec::from_json(&json).map_err(err)?;
-        Ok(spec.repr("CompiledTokenizer"))
+        spec.repr("CompiledTokenizer")
     }
 }

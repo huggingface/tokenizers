@@ -9,7 +9,7 @@ use unicode_normalization::{
 
 #[derive(Default, Copy, Clone, Debug)]
 pub struct NFD;
-impl pipeline::Normalizer for NFD {
+impl pipeline::Normalize for NFD {
     fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfd_quick(input.chars()) {
             Ok(input.into())
@@ -21,7 +21,7 @@ impl pipeline::Normalizer for NFD {
 
 #[derive(Default, Copy, Clone, Debug)]
 pub struct NFKD;
-impl pipeline::Normalizer for NFKD {
+impl pipeline::Normalize for NFKD {
     fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfkd_quick(input.chars()) {
             Ok(input.into())
@@ -33,7 +33,7 @@ impl pipeline::Normalizer for NFKD {
 
 #[derive(Default, Copy, Clone, Debug)]
 pub struct NFC;
-impl pipeline::Normalizer for NFC {
+impl pipeline::Normalize for NFC {
     fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfc_quick(input.chars()) {
             Ok(input.into())
@@ -45,7 +45,7 @@ impl pipeline::Normalizer for NFC {
 
 #[derive(Default, Copy, Clone, Debug)]
 pub struct NFKC;
-impl pipeline::Normalizer for NFKC {
+impl pipeline::Normalize for NFKC {
     fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
         if let IsNormalized::Yes = is_nfkc_quick(input.chars()) {
             Ok(input.into())
@@ -89,7 +89,7 @@ fn nmt_to_space(c: char) -> char {
 #[derive(Default, Copy, Clone, Debug)]
 pub struct Nmt;
 
-impl pipeline::Normalizer for Nmt {
+impl pipeline::Normalize for Nmt {
     fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
         if input
             .chars()
@@ -124,7 +124,7 @@ mod tests {
             ("\u{c5}", "A\u{30a}"),
         ] {
             assert_eq!(
-                &*pipeline::Normalizer::normalize(&NFD, input, 0).unwrap(),
+                &*pipeline::Normalize::normalize(&NFD, input, 0).unwrap(),
                 expected,
                 "input={input:?}"
             );
@@ -144,7 +144,7 @@ mod tests {
             ("", ""),
         ] {
             assert_eq!(
-                &*pipeline::Normalizer::normalize(&NFKD, input, 0).unwrap(),
+                &*pipeline::Normalize::normalize(&NFKD, input, 0).unwrap(),
                 expected,
                 "input={input:?}"
             );
@@ -163,7 +163,7 @@ mod tests {
             ("cafe\u{301}", "caf\u{e9}"),
         ] {
             assert_eq!(
-                &*pipeline::Normalizer::normalize(&NFC, input, 0).unwrap(),
+                &*pipeline::Normalize::normalize(&NFC, input, 0).unwrap(),
                 expected,
                 "input={input:?}"
             );
@@ -183,7 +183,7 @@ mod tests {
             ("", ""),
         ] {
             assert_eq!(
-                &*pipeline::Normalizer::normalize(&NFKC, input, 0).unwrap(),
+                &*pipeline::Normalize::normalize(&NFKC, input, 0).unwrap(),
                 expected,
                 "input={input:?}"
             );
@@ -205,7 +205,7 @@ mod tests {
             ("c\u{7}d", "cd"),
         ] {
             assert_eq!(
-                &*pipeline::Normalizer::normalize(&n, input, 0).unwrap(),
+                &*pipeline::Normalize::normalize(&n, input, 0).unwrap(),
                 expected,
                 "input={input:?}"
             );

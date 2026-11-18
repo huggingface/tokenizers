@@ -15,14 +15,14 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 // The `Word` machinery a trainer merges into is training-only, so it lives here rather than in the
-// inference crate. `PipelineBPE` is the only BPE left; a trainer reaches it through
+// inference crate. `BPE` is the only BPE left; a trainer reaches it through
 // `from_config`, the same serde-free door a reader walks through, because its fields are
 // private to `tk-encode`.
 use word::{WithFirstLastIterator, Word};
 
 use crate::progress::{ProgressBar, ProgressFormat, ProgressStyle};
 use tk_encode::Result;
-use tk_encode::models::bpe::{BpeConfig, Merges, Pair, PipelineBPE, Vocab};
+use tk_encode::models::bpe::{BPE, BpeConfig, Merges, Pair, Vocab};
 use tk_encode::parallelism::*;
 
 #[derive(Debug, Eq)]
@@ -197,17 +197,20 @@ impl BpeTrainerBuilder {
 /// ```
 /// use tk_train::BpeTrainer;
 /// use tk_train::Trainer;
-/// use tk_encode::models::bpe::{PipelineBPE, BpeConfig};
+/// use tk_encode::models::bpe::{BPE, BpeConfig};
 ///
 /// let sequences = vec![ "Hello", "World" ];
 ///
 /// let mut trainer = BpeTrainer::default();
 /// trainer.feed(sequences.iter(), |s| Ok(vec![s.to_owned()]));
 ///
-/// // `PipelineBPE` has no empty state to train *into* -- it only exists once there is a
+/// // `BPE` has no empty state to train *into* -- it only exists once there is a
 /// // vocabulary and a merge list -- so take the parts and build it.
 /// let (vocab, merges, special_tokens) = trainer.train_vocab().unwrap();
-/// let model = PipelineBPE::from_config(BpeConfig { vocab, merges, ..BpeConfig::default() }).unwrap();
+/// let mut config = BpeConfig::default();
+/// config.vocab = vocab;
+/// config.merges = merges;
+/// let model = BPE::from_config(config).unwrap();
 /// ```
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
@@ -259,12 +262,6 @@ impl BpeTrainer {
 
     pub fn builder() -> BpeTrainerBuilder {
         BpeTrainerBuilder::new()
-    }
-
-    /// Returns the number of unique words in the corpus after feeding.
-    /// This can be used to estimate training time before starting.
-    pub fn get_word_count(&self) -> usize {
-        self.words.len()
     }
 
     /// Setup a progress bar if asked to show progress (only for Indicatif format)
@@ -474,7 +471,7 @@ impl BpeTrainer {
     /// Train and hand back the raw parts, for a caller that wants them rather than a built model.
     ///
     /// The WordPiece trainer is the one caller: it trains a BPE and reinterprets the vocabulary as
-    /// WordPiece pieces, so building a `PipelineBPE` first -- merge tables and all -- would be work
+    /// WordPiece pieces, so building a `BPE` first -- merge tables and all -- would be work
     /// thrown away.
     pub fn train_vocab(&self) -> Result<(Vocab, Merges, Vec<AddedToken>)> {
         self.do_train(&self.words)
@@ -486,19 +483,18 @@ impl BpeTrainer {
     /// [`BpeConfig`] describes how to *read* a model (unknown-token handling, dropout,
     /// caching) and is the reader's business, not the trainer's, so it stays at its default.
     fn model_options(&self) -> BpeConfig {
-        BpeConfig {
-            continuing_subword_prefix: self.continuing_subword_prefix.clone(),
-            end_of_word_suffix: self.end_of_word_suffix.clone(),
-            ..Default::default()
-        }
+        let mut config = BpeConfig::default();
+        config.continuing_subword_prefix = self.continuing_subword_prefix.clone();
+        config.end_of_word_suffix = self.end_of_word_suffix.clone();
+        config
     }
 
     /// Runs the training and returns the vocabulary and merge list it produced, plus the special
     /// tokens the caller has to add alongside them.
     ///
     /// It hands back `(Vocab, Merges)` rather than filling in a model because that pair *is* what a
-    /// `tokenizer.json` stores, and `PipelineBPE` can only be built from it -- see
-    /// [`PipelineBPE::from_config`]. The WordPiece trainer wants the vocabulary alone, so
+    /// `tokenizer.json` stores, and `BPE` can only be built from it -- see
+    /// [`BPE::from_config`]. The WordPiece trainer wants the vocabulary alone, so
     /// splitting the two also saves it building merge tables it would throw away.
     pub fn do_train(
         &self,
@@ -680,16 +676,15 @@ impl BpeTrainer {
 }
 
 impl Trainer for BpeTrainer {
-    type Model = PipelineBPE;
+    type Model = BPE;
 
     /// Train a BPE model
-    fn train(&self, model: &mut PipelineBPE) -> Result<Vec<AddedToken>> {
+    fn train(&self, model: &mut BPE) -> Result<Vec<AddedToken>> {
         let (vocab, merges, special_tokens) = self.do_train(&self.words)?;
-        *model = PipelineBPE::from_config(BpeConfig {
-            vocab,
-            merges,
-            ..self.model_options()
-        })?;
+        let mut config = self.model_options();
+        config.vocab = vocab;
+        config.merges = merges;
+        *model = BPE::from_config(config)?;
         Ok(special_tokens)
     }
 
@@ -795,7 +790,7 @@ mod tests {
         assert_eq!(trained_vocab, expected_vocab);
 
         // `merges` is the pair of symbol *strings* per merge, highest priority first -- the on-disk
-        // form, and what `PipelineBPE::from_config` re-derives its ranks from. Position in
+        // form, and what `BPE::from_config` re-derives its ranks from. Position in
         // the list is the rank, so the order is part of what is being asserted.
         let expected_merges: Merges = vec![
             ("r".into(), "e".into()),  // 'r' + 'e'  -> 're'

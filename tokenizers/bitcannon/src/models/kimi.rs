@@ -4,7 +4,7 @@
 //! the pattern as a converted tokenizer would spell it.
 //!
 //! The grammar lives in [`super::family_o200k`]; this is o200k's regex with `HAN = true`, which
-//! routes Script=Han (atom refinement 3) to its own LUT code and drops `/` from the rule-4 tail.
+//! routes Script=Han (atom refinement 3) to its own LUT codes and drops `/` from the rule-4 tail.
 
 use crate::{AUX_NONE, Span};
 

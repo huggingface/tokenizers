@@ -340,7 +340,7 @@ fn a_byte_level_pre_tokenizer_becomes_a_model_flag_and_a_split() {
 
 #[test]
 fn nonterminal_byte_level_splits_the_mapped_text() {
-    use tk_encode::pipeline::{EncodeOptions, PipelineToken};
+    use tk_encode::pipeline::{EncodeOptions, Token};
 
     let model = r#"{
         "type": "BPE",
@@ -377,9 +377,7 @@ fn nonterminal_byte_level_splits_the_mapped_text() {
                 .unwrap();
             assert_eq!(ids, [0, 1, 7, 8, 9]);
             assert_eq!(
-                tokenizer
-                    .decode(PipelineToken::cast_slice(&ids), false)
-                    .unwrap(),
+                tokenizer.decode(Token::cast_slice(&ids), false).unwrap(),
                 "β1234!"
             );
             ids.clear();
@@ -387,7 +385,7 @@ fn nonterminal_byte_level_splits_the_mapped_text() {
                 .encode_into("a ", &EncodeOptions::no_specials(), &mut ids)
                 .unwrap();
             let expected: &[u32] = if use_regex { &[10, 11] } else { &[12] };
-            assert_eq!(PipelineToken::cast_slice(&ids), expected);
+            assert_eq!(Token::cast_slice(&ids), expected);
         }
     }
 }
@@ -425,29 +423,24 @@ fn a_canonical_byte_map_requires_one_nonterminal_stage_and_text_bpe() {
 
 #[test]
 fn a_manually_built_byte_map_sequence_rejects_byte_level_bpe() {
-    use tk_encode::models::bpe::{BpeConfig, PipelineBPE};
-    use tk_encode::pipeline::{
-        EncodeOptions, PipelineModel, PipelinePreTokenizer, PipelineTokenizer,
-    };
-    use tk_encode::pre_tokenizers::sequence::PipelineSequence;
+    use tk_encode::models::bpe::{BPE, BpeConfig};
+    use tk_encode::pipeline::{EncodeOptions, Model, PreTokenizer, Tokenizer};
+    use tk_encode::pre_tokenizers::sequence::Sequence;
     use tk_encode::pre_tokenizers::whitespace::WhitespaceSplit;
     use tk_encode::vocab::bucket_added_vocabulary::AddedVocabulary;
 
-    let model = PipelineBPE::from_config(BpeConfig {
-        vocab: [("a".to_owned(), 0)].into_iter().collect(),
-        byte_level: true,
-        ..BpeConfig::default()
-    })
-    .unwrap();
-    let sequence =
-        PipelineSequence::new(vec![PipelinePreTokenizer::WhitespaceSplit(WhitespaceSplit)])
-            .with_byte_map(0)
-            .unwrap();
-    let tokenizer = PipelineTokenizer::from_parts(
+    let mut config = BpeConfig::default();
+    config.vocab = [("a".to_owned(), 0)].into_iter().collect();
+    config.byte_level = true;
+    let model = BPE::from_config(config).unwrap();
+    let sequence = Sequence::new(vec![PreTokenizer::WhitespaceSplit(WhitespaceSplit)])
+        .with_byte_map(0)
+        .unwrap();
+    let tokenizer = Tokenizer::from_parts(
         AddedVocabulary::new(),
         Vec::new(),
-        PipelinePreTokenizer::Sequence(sequence),
-        PipelineModel::BPE(model),
+        PreTokenizer::Sequence(sequence),
+        Model::BPE(model),
         Default::default(),
         None,
         Default::default(),

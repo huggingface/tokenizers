@@ -1,18 +1,18 @@
 //! [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 //! model.
 
-use crate::pipeline::{self, PipelineToken};
-use crate::tokenizer::{Result, Token};
+use crate::pipeline::{self, Token};
+use crate::tokenizer::Result;
 use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::utils::word_cache::{Lookup, WordCache};
 use ahash::AHashMap;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::convert::TryFrom;
 use yada::DoubleArray;
 use yada::builder::DoubleArrayBuilder;
 
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum Error {
     #[error("WordPiece error: Missing [UNK] token from the vocabulary")]
     MissingUnkToken,
@@ -21,101 +21,29 @@ pub enum Error {
 }
 
 type Vocab = AHashMap<String, u32>;
-type VocabR = AHashMap<u32, String>;
 
-struct Config {
-    vocab: Vocab,
-    unk_token: String,
-    continuing_subword_prefix: String,
-    max_input_chars_per_word: usize,
-}
-
-/// A `WordPieceBuilder` can be used to create a `WordPiece` model with a custom configuration.
-pub struct WordPieceBuilder {
-    config: Config,
-}
-
-impl Default for WordPieceBuilder {
-    fn default() -> Self {
-        Self {
-            config: Config {
-                vocab: AHashMap::new(),
-                unk_token: String::from("[UNK]"),
-                continuing_subword_prefix: String::from("##"),
-                max_input_chars_per_word: 100,
-            },
-        }
-    }
-}
-
-impl WordPieceBuilder {
-    /// Construct a new `WordPieceBuilder`.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Set the vocab (token -> ID) mapping.
-    #[must_use]
-    pub fn vocab<V: Into<AHashMap<String, u32>>>(mut self, vocab: V) -> Self {
-        self.config.vocab = vocab.into();
-        self
-    }
-
-    /// The the `UNK` token for the vocab.
-    #[must_use]
-    pub fn unk_token(mut self, unk_token: String) -> Self {
-        self.config.unk_token = unk_token;
-        self
-    }
-
-    /// Set the prefix for continuing subwords.
-    #[must_use]
-    pub fn continuing_subword_prefix(mut self, continuing_subword_prefix: String) -> Self {
-        self.config.continuing_subword_prefix = continuing_subword_prefix;
-        self
-    }
-
-    /// Set the maximum number of input characters per word.
-    #[must_use]
-    pub fn max_input_chars_per_word(mut self, max_input_chars_per_word: usize) -> Self {
-        self.config.max_input_chars_per_word = max_input_chars_per_word;
-        self
-    }
-
-    /// Constructs a `WordPiece` model that uses the `WordPieceBuilder`'s configuration.
-    pub fn build(self) -> Result<WordPiece> {
-        let vocab_r = self
-            .config
-            .vocab
-            .iter()
-            .map(|(key, val)| (*val, key.to_owned()))
-            .collect();
-
-        Ok(WordPiece {
-            vocab: self.config.vocab,
-            vocab_r,
-            unk_token: self.config.unk_token,
-            continuing_subword_prefix: self.config.continuing_subword_prefix,
-            max_input_chars_per_word: self.config.max_input_chars_per_word,
-        })
-    }
-}
-
-/// A
-/// [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
-/// model.
+/// The fields of a [`WordPiece`] model in `tokenizer.json`. [`WordPiece::from_config`] builds the
+/// model from them.
+// There is no way to load a vocabulary from its own files in rc0, in any spelling: `read_file` /
+// `read_bytes` / `from_file` for a `vocab.txt`, `from_bytes` for a serialized model (which needs
+// serde), and `from_bpe` all lived in the config layer, which is deleted. A `tokenizer.json`
+// read by `tk-serialize` is the only route to a model now. See `REQUIRED_FOR_V1.md` §4.
 #[derive(Clone, PartialEq, Eq)]
-pub struct WordPiece {
+#[non_exhaustive]
+pub struct WordPieceConfig {
+    /// `{"token": id}`, in no particular order.
     pub vocab: Vocab,
-    pub vocab_r: VocabR,
+    /// The token to emit for a word that cannot be split into vocabulary entries.
     pub unk_token: String,
+    /// Prefix carried by every piece that is not the first of its word.
     pub continuing_subword_prefix: String,
+    /// A word longer than this, in characters, becomes one unk token.
     pub max_input_chars_per_word: usize,
 }
 
-impl std::fmt::Debug for WordPiece {
+impl std::fmt::Debug for WordPieceConfig {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        fmt.debug_struct("WordPiece")
+        fmt.debug_struct("WordPieceConfig")
             .field("unk_token", &self.unk_token)
             .field("continuing_subword_prefix", &self.continuing_subword_prefix)
             .field("max_input_chars_per_word", &self.max_input_chars_per_word)
@@ -124,109 +52,14 @@ impl std::fmt::Debug for WordPiece {
     }
 }
 
-impl Default for WordPiece {
+impl Default for WordPieceConfig {
     fn default() -> Self {
         Self {
             vocab: AHashMap::new(),
-            vocab_r: AHashMap::new(),
             unk_token: String::from("[UNK]"),
             continuing_subword_prefix: String::from("##"),
             max_input_chars_per_word: 100,
         }
-    }
-}
-
-impl WordPiece {
-    /// Get a `WordPieceBuilder`.
-    pub fn builder() -> WordPieceBuilder {
-        WordPieceBuilder::new()
-    }
-
-    // There is no way to load a vocabulary from its own files in rc0, in any spelling: `read_file` /
-    // `read_bytes` / `from_file` for a `vocab.txt`, `from_bytes` for a serialized model (which needs
-    // serde), and `from_bpe` all lived in the config layer, which is deleted. A `tokenizer.json`
-    // read by `tk-serialize` is the only route to a model now. See `REQUIRED_FOR_V1.md` §4.
-}
-
-/// The model methods the pipeline and the readers call. These used to be the legacy
-/// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
-/// plain inherent methods now and every call site is unchanged.
-impl WordPiece {
-    pub fn get_vocab(&self) -> HashMap<String, u32> {
-        self.vocab.clone().into_iter().collect()
-    }
-
-    pub fn get_vocab_size(&self) -> usize {
-        self.vocab.len()
-    }
-
-    pub fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
-        let char_len = sequence.chars().count();
-        if char_len > self.max_input_chars_per_word {
-            return Ok(vec![Token {
-                value: self.unk_token.clone(),
-                id: *self
-                    .vocab
-                    .get(&self.unk_token)
-                    .ok_or(Error::MissingUnkToken)?,
-                offsets: (0, sequence.len()),
-            }]);
-        }
-
-        let mut is_bad = false;
-        let mut start = 0;
-        let mut sub_tokens: Vec<Token> = vec![];
-
-        while start < sequence.len() {
-            let mut end = sequence.len();
-            let mut cur_str = None;
-
-            while start < end {
-                let mut substr: Cow<str> = Cow::Borrowed(&sequence[start..end]);
-
-                if start > 0 {
-                    substr = Cow::Owned(format!("{}{}", self.continuing_subword_prefix, substr));
-                }
-                if self.vocab.contains_key(substr.as_ref()) {
-                    cur_str = Some(Token {
-                        id: self.vocab[substr.as_ref()],
-                        value: substr.to_string(),
-                        offsets: (start, end),
-                    });
-                    break;
-                }
-                end -= substr.chars().last().map_or(1, |c| c.len_utf8());
-            }
-
-            if cur_str.is_none() {
-                is_bad = true;
-                break;
-            }
-
-            sub_tokens.push(cur_str.unwrap());
-            start = end;
-        }
-
-        if is_bad {
-            Ok(vec![Token {
-                value: self.unk_token.clone(),
-                id: *self
-                    .vocab
-                    .get(&self.unk_token)
-                    .ok_or(Error::MissingUnkToken)?,
-                offsets: (0, sequence.len()),
-            }])
-        } else {
-            Ok(sub_tokens)
-        }
-    }
-
-    pub fn token_to_id(&self, token: &str) -> Option<u32> {
-        self.vocab.get(token).copied()
-    }
-
-    pub fn id_to_token(&self, id: u32) -> Option<String> {
-        self.vocab_r.get(&id).cloned()
     }
 }
 
@@ -235,8 +68,6 @@ pub struct WordPieceScratch {
     /// Outlives the encode call that fills it, or it would never see a word twice.
     word_cache: WordCache,
 }
-
-impl pipeline::ModelScratch for WordPieceScratch {}
 
 /// yada cannot store the NUL byte as a token, the trie holds NUL as 0xFF instead.
 /// 0xFF is not a valid UTF-8 byte.
@@ -254,7 +85,7 @@ fn trie_key(bytes: &[u8]) -> Cow<'_, [u8]> {
     Cow::Owned(key)
 }
 
-pub struct PipelineWordPiece {
+pub struct WordPiece {
     vocab_trie: yada::DoubleArray<Vec<u8>>,
     vocab_r: Box<[Option<Box<str>>]>,
     vocab_size: usize,
@@ -263,16 +94,17 @@ pub struct PipelineWordPiece {
     max_input_chars_per_word: usize,
 }
 
-impl TryFrom<WordPiece> for PipelineWordPiece {
-    type Error = crate::Error;
-    fn try_from(value: WordPiece) -> Result<Self> {
-        let WordPiece {
+impl WordPiece {
+    /// Builds the model from its `tokenizer.json` fields. Fails if the vocabulary holds no
+    /// non-empty token.
+    pub fn from_config(config: WordPieceConfig) -> Result<Self> {
+        let WordPieceConfig {
             vocab,
             unk_token,
             continuing_subword_prefix,
             max_input_chars_per_word,
             ..
-        } = value;
+        } = config;
         let unk_token = vocab.get(&unk_token).copied();
 
         let keyset: Vec<(String, u32)> = vocab.into_iter().collect();
@@ -306,9 +138,7 @@ impl TryFrom<WordPiece> for PipelineWordPiece {
             vocab_size,
         })
     }
-}
 
-impl PipelineWordPiece {
     /// One word, greedily: the longest vocabulary entry it starts with, then the
     /// longest entry the rest of it starts with once the continuing-subword prefix
     /// is put in front, and so on. A piece with no entry at all anywhere in the
@@ -317,14 +147,14 @@ impl PipelineWordPiece {
         &self,
         sequence: &str,
         candidate: &mut Vec<u8>,
-        output: &mut Vec<PipelineToken>,
+        output: &mut Vec<Token>,
     ) -> Result<()> {
         let checkpoint = output.len();
 
         let char_len = sequence.chars().count();
         if char_len > self.max_input_chars_per_word {
             let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
-            output.push(PipelineToken::from(unk_id));
+            output.push(Token::from(unk_id));
             return Ok(());
         }
 
@@ -352,20 +182,20 @@ impl PipelineWordPiece {
             else {
                 let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
                 output.truncate(checkpoint);
-                output.push(PipelineToken::from(unk_id));
+                output.push(Token::from(unk_id));
                 return Ok(());
             };
-            output.push(PipelineToken::from(token_id));
+            output.push(Token::from(token_id));
             start += match_len - prefix_len;
         }
         Ok(())
     }
 
-    pub fn id_to_token(&self, id: u32) -> Option<String> {
+    pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(id as usize)?.as_deref().map(str::to_owned)
     }
 
-    pub fn token_to_id(&self, token: &str) -> Option<u32> {
+    pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
         // The trie leaves the empty token out, because yada cannot hold it.
         if token.is_empty() {
             let id = self.vocab_r.iter().position(|t| t.as_deref() == Some(""))?;
@@ -375,11 +205,11 @@ impl PipelineWordPiece {
             .exact_match_search(trie_key(token.as_bytes()))
     }
 
-    pub fn get_vocab(&self) -> HashMap<String, u32> {
+    pub(crate) fn get_vocab(&self) -> HashMap<String, u32> {
         self.vocab().into_iter().collect()
     }
 
-    pub fn get_vocab_size(&self) -> usize {
+    pub(crate) fn get_vocab_size(&self) -> usize {
         self.vocab_size
     }
 
@@ -408,7 +238,7 @@ impl PipelineWordPiece {
     }
 }
 
-impl pipeline::Model for PipelineWordPiece {
+impl pipeline::Tokenize for WordPiece {
     type Scratch = WordPieceScratch;
 
     fn init_scratch(&self) -> Self::Scratch {
@@ -420,11 +250,11 @@ impl pipeline::Model for PipelineWordPiece {
 
     /// A hit skips `tokenize_word`: one trie search per piece of the word,
     /// each over a fresh copy of what is left to match.
-    fn tokenize_pipeline(
+    fn tokenize(
         &self,
         sequence: &str,
         scratch: &mut Self::Scratch,
-        output: &mut Vec<pipeline::PipelineToken>,
+        output: &mut Vec<pipeline::Token>,
     ) -> Result<()> {
         if sequence.is_empty() {
             return Ok(());
@@ -436,7 +266,7 @@ impl pipeline::Model for PipelineWordPiece {
 
         let placement = match word_cache.lookup(sequence.as_bytes()) {
             Lookup::Hit(ids) => {
-                output.extend(ids.iter().copied().map(PipelineToken::from));
+                output.extend(ids.iter().copied().map(Token::from));
                 return Ok(());
             }
             Lookup::Miss(at) => at,
@@ -462,7 +292,7 @@ mod tests {
     /// `hello` is in the vocabulary whole and as `hell` + `##o`, so the
     /// longest-match walk has something to choose; `world` gives a second
     /// one-token word.
-    fn pipeline_wordpiece() -> PipelineWordPiece {
+    fn pipeline_wordpiece() -> WordPiece {
         let vocab: Vocab = [
             ("[UNK]", 0u32),
             ("hell", 1),
@@ -473,28 +303,24 @@ mod tests {
         .into_iter()
         .map(|(token, id)| (token.to_string(), id))
         .collect();
-        let model = WordPiece::builder()
-            .vocab(vocab)
-            .max_input_chars_per_word(8)
-            .build()
-            .unwrap();
-        PipelineWordPiece::try_from(model).unwrap()
+        let model = WordPieceConfig {
+            vocab,
+            max_input_chars_per_word: 8,
+            ..Default::default()
+        };
+        WordPiece::from_config(model).unwrap()
     }
 
-    fn pipeline_ids(
-        model: &PipelineWordPiece,
-        sequence: &str,
-        scratch: &mut WordPieceScratch,
-    ) -> Vec<u32> {
+    fn pipeline_ids(model: &WordPiece, sequence: &str, scratch: &mut WordPieceScratch) -> Vec<u32> {
         let mut output = vec![];
-        pipeline::Model::tokenize_pipeline(model, sequence, scratch, &mut output).unwrap();
+        pipeline::Tokenize::tokenize(model, sequence, scratch, &mut output).unwrap();
         output.iter().map(|token| token.id()).collect()
     }
 
     #[test]
     fn pipeline_remembers_what_a_word_encoded_to() {
         let model = pipeline_wordpiece();
-        let mut scratch = pipeline::Model::init_scratch(&model);
+        let mut scratch = pipeline::Tokenize::init_scratch(&model);
 
         let ids = pipeline_ids(&model, "hello", &mut scratch);
 
@@ -523,10 +349,10 @@ mod tests {
             long.as_str(),
         ];
 
-        let mut warm_scratch = pipeline::Model::init_scratch(&model);
+        let mut warm_scratch = pipeline::Tokenize::init_scratch(&model);
         let warm = corpus.map(|sequence| pipeline_ids(&model, sequence, &mut warm_scratch));
         let cold = corpus.map(|sequence| {
-            let mut scratch = pipeline::Model::init_scratch(&model);
+            let mut scratch = pipeline::Tokenize::init_scratch(&model);
             pipeline_ids(&model, sequence, &mut scratch)
         });
 
@@ -540,9 +366,12 @@ mod tests {
             .into_iter()
             .map(|(token, id)| (token.to_string(), id))
             .collect();
-        let model = WordPiece::builder().vocab(vocab).build().unwrap();
-        let model = PipelineWordPiece::try_from(model).unwrap();
-        let mut scratch = pipeline::Model::init_scratch(&model);
+        let model = WordPieceConfig {
+            vocab,
+            ..Default::default()
+        };
+        let model = WordPiece::from_config(model).unwrap();
+        let mut scratch = pipeline::Tokenize::init_scratch(&model);
 
         assert_eq!(pipeline_ids(&model, "hello", &mut scratch), [2]);
         assert_eq!(pipeline_ids(&model, "world", &mut scratch), [1]);
@@ -560,9 +389,12 @@ mod tests {
             .map(|(c, id)| (c.to_string(), id))
             .collect();
         vocab.insert("[UNK]".to_string(), 0);
-        let model = WordPiece::builder().vocab(vocab).build().unwrap();
-        let model = PipelineWordPiece::try_from(model).unwrap();
-        let mut scratch = pipeline::Model::init_scratch(&model);
+        let model = WordPieceConfig {
+            vocab,
+            ..Default::default()
+        };
+        let model = WordPiece::from_config(model).unwrap();
+        let mut scratch = pipeline::Tokenize::init_scratch(&model);
 
         for (c, id) in chars.iter().zip(1u32..) {
             let token = c.to_string();
@@ -583,9 +415,12 @@ mod tests {
         .into_iter()
         .map(|(token, id)| (token.to_string(), id))
         .collect();
-        let model = WordPiece::builder().vocab(vocab).build().unwrap();
-        let model = PipelineWordPiece::try_from(model).unwrap();
-        let mut scratch = pipeline::Model::init_scratch(&model);
+        let model = WordPieceConfig {
+            vocab,
+            ..Default::default()
+        };
+        let model = WordPiece::from_config(model).unwrap();
+        let mut scratch = pipeline::Tokenize::init_scratch(&model);
 
         assert_eq!(pipeline_ids(&model, "a\0a", &mut scratch), [1, 3, 4]);
         assert_eq!(pipeline_ids(&model, "\0", &mut scratch), [2]);
@@ -612,8 +447,11 @@ mod tests {
     fn refuses_a_vocab_with_only_empty_token() {
         for tokens in [&[][..], &[""]] {
             let vocab: Vocab = tokens.iter().map(|token| (token.to_string(), 0)).collect();
-            let model = WordPiece::builder().vocab(vocab).build().unwrap();
-            let err = PipelineWordPiece::try_from(model).err().unwrap();
+            let model = WordPieceConfig {
+                vocab,
+                ..Default::default()
+            };
+            let err = WordPiece::from_config(model).err().unwrap();
             assert!(
                 matches!(err.downcast_ref(), Some(Error::EmptyVocab)),
                 "{err}"
@@ -626,10 +464,10 @@ mod tests {
         // Every word the pipeline hands the model appends to one output buffer,
         // so a word has to remember its own ids, not everything the buffer holds.
         let model = pipeline_wordpiece();
-        let mut scratch = pipeline::Model::init_scratch(&model);
+        let mut scratch = pipeline::Tokenize::init_scratch(&model);
         let mut output = vec![];
-        pipeline::Model::tokenize_pipeline(&model, "hello", &mut scratch, &mut output).unwrap();
-        pipeline::Model::tokenize_pipeline(&model, "world", &mut scratch, &mut output).unwrap();
+        pipeline::Tokenize::tokenize(&model, "hello", &mut scratch, &mut output).unwrap();
+        pipeline::Tokenize::tokenize(&model, "world", &mut scratch, &mut output).unwrap();
 
         let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
         assert_eq!(ids, [3, 4]);

@@ -1,7 +1,7 @@
 use std::slice;
 
 use pyo3::prelude::*;
-use tk::pipeline::PipelineDecodeStream;
+use tk::pipeline;
 
 use crate::compiled::CompiledTokenizer;
 use crate::error::err;
@@ -28,7 +28,7 @@ use crate::type_hints::TokenIds;
 ///     >>> for id in tokenizer.encode("Hello, streaming world!").ids:
 ///     ...     print(stream.step(tokenizer, id) or "", end="")
 #[pyclass(module = "tokenizers.decoders")]
-pub struct DecodeStream(PipelineDecodeStream);
+pub struct DecodeStream(pipeline::DecodeStream);
 
 #[derive(FromPyObject)]
 enum StepIds {
@@ -45,7 +45,7 @@ impl DecodeStream {
             Some(ids) => ids.as_slice().to_vec(),
             None => Vec::new(),
         };
-        Self(PipelineDecodeStream::new(prompt, skip_special_tokens))
+        Self(pipeline::DecodeStream::new(prompt, skip_special_tokens))
     }
 
     /// Adds the next id, or several ids, to the stream and returns the new text.

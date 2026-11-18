@@ -163,7 +163,7 @@ The classes or tags each have a high and low nibble (encoded on a u8), and carry
 <details>
 <summary><b><code>tk-serialize</code></b> — the reader</summary>
 
-`from_json_file` turns a canonical `tokenizer.json` into a `PipelineTokenizer`.
+`from_json_file` turns a canonical `tokenizer.json` into a `Tokenizer`.
 
 **Why separate:** this just makes it optional for some usecases!
 </details>
@@ -184,9 +184,9 @@ of compatibility branches. But, the legacy code amounted to quite a lot of the f
 
 The `Trainer` trait, every concrete `*Trainer`, `TrainerWrapper` and the `Trainable` extension.
 
-The `tokenizers` crate re-exports it behind the `train` feature, which is off by default. It
-trains only the models whose feature is on (`bpe`, `unigram`, `wordpiece`, `wordlevel`). Add
-`esaxx_fast` for the C++ suffix array behind Unigram training.
+The `tokenizers` crate does not re-export it. Its API will still change, so the crate stays 0.x
+until it settles. It trains only the models whose feature is on (`bpe`, `unigram`, `wordpiece`,
+`wordlevel`). Add `esaxx_fast` for the C++ suffix array behind Unigram training.
 
 **Why separate:** training is a batch job on a workstation; inference is a hot loop in a server.
 They have opposite constraints, so they get opposite dependency budgets.

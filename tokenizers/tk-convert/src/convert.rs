@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value};
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ConvertError {
     #[error("the config is not JSON: {0}")]
     Json(#[from] serde_json::Error),

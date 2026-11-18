@@ -7,7 +7,6 @@ authors = [
   "Luc Georges <luc@huggingface.co>",
   "Simon Brandeis <simon@huggingface.co>",
 ]
-homepage = "https://github.com/huggingface/tokenizers"
 repository = "https://github.com/huggingface/tokenizers"
 documentation = "https://docs.rs/tokenizers/"
 license = "Apache-2.0"
@@ -26,19 +25,18 @@ tk-encode = { path = "../tk-encode", version = "0.1.0-dev.2", default-features =
   "parallelism",
 ] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 ahash = { version = "0.8.11", features = ["serde"] }
-compact_str = { version = "0.9", features = ["serde"] }
-dary_heap = { version = "0.3.6", features = ["serde"] }
+# The word type and merge queue of the BPE trainers, which are `bpe`-gated.
+compact_str = { version = "0.9", features = ["serde"], optional = true }
+dary_heap = { version = "0.3.6", features = ["serde"], optional = true }
 log = "0.4"
-itertools = "0.14"
 thiserror = "2"
 esaxx-rs = { version = "0.1.10", default-features = false, optional = true }
 indicatif = { version = "0.18", optional = true }
 
 [features]
 default = ["progressbar", "bpe", "unigram", "wordpiece", "wordlevel"]
-bpe = ["tk-encode/bpe"]
+bpe = ["tk-encode/bpe", "dep:compact_str", "dep:dary_heap"]
 unigram = ["tk-encode/unigram", "dep:esaxx-rs"]
 # The WordPiece trainer runs the BPE one and keeps only its vocabulary.
 wordpiece = ["bpe", "tk-encode/wordpiece"]
@@ -48,5 +46,4 @@ progressbar = ["dep:indicatif"]
 parity-aware-bpe = ["bpe"]
 
 [dev-dependencies]
-tempfile = "3.10"
 assert_approx_eq = "1.1"

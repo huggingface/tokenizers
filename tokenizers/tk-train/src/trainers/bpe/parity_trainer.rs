@@ -42,6 +42,7 @@ impl Ord for PairMerge {
 
 /// Parity selection variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum ParityVariant {
     /// At each step, pick the language with the longest total dev-set token length.
     Base,
@@ -484,11 +485,6 @@ impl ParityBpeTrainer {
         }
         self.dev_language_words[lang_idx] = words?;
         Ok(())
-    }
-
-    /// Return the number of languages currently fed
-    pub fn num_languages(&self) -> usize {
-        self.language_words.len()
     }
 
     fn setup_progress(&self) -> Option<ProgressBar> {
@@ -1536,7 +1532,7 @@ impl ParityBpeTrainer {
 mod tests {
     use super::*;
     use std::assert_matches;
-    use tk_encode::models::bpe::{BpeConfig, PipelineBPE};
+    use tk_encode::models::bpe::{BPE, BpeConfig};
 
     /// The trained vocabulary, and each merge written as `"a b"`.
     fn train(trainer: &ParityBpeTrainer) -> (Vocab, Vec<String>) {
@@ -2179,12 +2175,10 @@ mod tests {
         trainer.feed_language(1, lang1);
 
         let (vocab, merges, _) = trainer.do_train().unwrap();
-        let config = BpeConfig {
-            vocab: vocab.clone(),
-            merges: merges.clone(),
-            ..Default::default()
-        };
-        let model = PipelineBPE::from_config(config).unwrap();
+        let mut config = BpeConfig::default();
+        config.vocab = vocab.clone();
+        config.merges = merges.clone();
+        let model = BPE::from_config(config).unwrap();
 
         let config = model.to_config().unwrap();
         assert_eq!(config.vocab, vocab);

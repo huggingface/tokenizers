@@ -13,7 +13,7 @@ use bitcannon::regexes::CL100K;
 /// `Isolated` split byte-for-byte. One variant per distinct regex; models sharing a regex share a
 /// variant (o200k covers Llama-4, gpt-oss and MiniMax-M2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Grammar {
+pub(crate) enum Grammar {
     /// GPT-2 / ByteLevel.
     Gpt2,
     /// cl100k family. `digit_cap` is rule 3's `\p{N}{1,cap}` bound: 3 = cl100k / Llama-3 / GLM-4.6,
@@ -77,37 +77,6 @@ pub fn recognize(pattern: &str) -> Option<Grammar> {
         TEKKEN => Some(Grammar::Tekken),
         KIMI_K2 => Some(Grammar::Kimi),
         _ => cl100k_digit_cap(pattern).map(|digit_cap| Grammar::Cl100k { digit_cap }),
-    }
-}
-
-/// `Pattern` that runs the native grammar on the legacy (`NormalizedString`) split path, so GPT
-/// pre-tokenizers need no system-regex backend. `Isolated` keeps every span and these grammars
-/// cover the input contiguously, so this is byte-for-byte the original regex `Isolated` split.
-pub struct GrammarPattern(pub Grammar);
-
-impl crate::tokenizer::pattern::Pattern for GrammarPattern {
-    fn find_matches(
-        &self,
-        inside: &str,
-    ) -> crate::tokenizer::Result<Vec<(crate::tokenizer::Offsets, bool)>> {
-        if inside.is_empty() {
-            return Ok(vec![((0, 0), false)]);
-        }
-        let bytes = inside.as_bytes();
-        let n = bytes.len();
-        let mut tags = vec![0u8; n];
-        bitcannon::classify::classify(bytes, &mut tags);
-        let words = n.div_ceil(64) + 1;
-        let (mut starts, mut flag) = (vec![0u64; words], vec![0u64; words]);
-        let mut later = vec![0u64; 2 * words];
-        let mut spans = vec![Span::default(); n + 1];
-        let k = self
-            .0
-            .split(bytes, &tags, &mut starts, &mut flag, &mut later, &mut spans);
-        Ok(spans[..k]
-            .iter()
-            .map(|sp| ((sp.start as usize, sp.end as usize), true))
-            .collect())
     }
 }
 

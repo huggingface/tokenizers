@@ -19,7 +19,7 @@ impl CharDelimiterSplit {
 // SAFETY: the spans come from `bitcannon::classes::CharDelimiterSplit`, which splits only at character
 // boundaries of `text`. It scans for the delimiter's own UTF-8 bytes and confirms the whole encoding
 // before cutting.
-unsafe impl pipeline::PreTokenizer for CharDelimiterSplit {
+unsafe impl pipeline::PreTokenize for CharDelimiterSplit {
     fn pre_tokenize(
         &self,
         text: &str,
@@ -52,7 +52,7 @@ mod tests {
         let pretok = CharDelimiterSplit::new(delimiter);
         let mut scratch = pipeline::PreTokenizerScratch::default();
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+        crate::pipeline::PreTokenize::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
             .unwrap();
         splits
             .iter()

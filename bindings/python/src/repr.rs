@@ -1,5 +1,6 @@
 //! Utils to render Tokenizers.__repr__
 
+use pyo3::PyResult;
 use serde_json::Value;
 use tk::vocab::bucket_added_vocabulary::AddedToken;
 
@@ -18,7 +19,7 @@ const INDENT: &str = "    ";
 pub(crate) fn tokenizer<'spec>(
     name: &str,
     fields: impl IntoIterator<Item = (&'spec str, Field<'spec>)>,
-) -> String {
+) -> PyResult<String> {
     let mut out = format!("{name}(");
     for (key, field) in fields {
         newline(1, &mut out);
@@ -28,7 +29,7 @@ pub(crate) fn tokenizer<'spec>(
             Field::JsonValue(value) => write_value(key, &value, Some(1), &mut out),
             Field::JsonObject(fields) => write_object(key, &fields, Some(1), &mut out),
             Field::Padding(None) | Field::Truncation(None) => out.push_str("None"),
-            Field::Padding(Some(padding)) => push_indented(&Padding::repr(padding), &mut out),
+            Field::Padding(Some(padding)) => push_indented(&Padding::repr(padding)?, &mut out),
             Field::Truncation(Some(truncation)) => {
                 push_indented(&Truncation::repr(truncation), &mut out)
             }
@@ -37,7 +38,7 @@ pub(crate) fn tokenizer<'spec>(
     }
     newline(0, &mut out);
     out.push(')');
-    out
+    Ok(out)
 }
 
 pub(crate) fn component(json: &JsonObject) -> String {

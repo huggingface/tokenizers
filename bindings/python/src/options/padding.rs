@@ -27,12 +27,23 @@ impl Padding {
         Self(params)
     }
 
-    pub(crate) fn repr(params: &PaddingParams) -> String {
-        let length = match params.strategy {
-            PaddingStrategy::Fixed(length) => length.to_string(),
-            PaddingStrategy::BatchLongest => "None".to_string(),
+    /// The fixed length padded to, or `None` when padding to the longest item in the batch.
+    fn fixed_length(params: &PaddingParams) -> PyResult<Option<usize>> {
+        match params.strategy {
+            PaddingStrategy::Fixed(length) => Ok(Some(length)),
+            PaddingStrategy::BatchLongest => Ok(None),
+            ref other => Err(err(format!(
+                "the padding strategy {other:?} has no Python equivalent"
+            ))),
+        }
+    }
+
+    pub(crate) fn repr(params: &PaddingParams) -> PyResult<String> {
+        let length = match Self::fixed_length(params)? {
+            Some(length) => length.to_string(),
+            None => "None".to_string(),
         };
-        format!(
+        Ok(format!(
             "Padding(\n    direction={:?},\n    pad_id={},\n    pad_type_id={},\n    pad_token={:?},\n    length={},\n    pad_to_multiple_of={},\n)",
             params.direction.as_ref(),
             params.pad_id,
@@ -42,7 +53,7 @@ impl Padding {
             params
                 .pad_to_multiple_of
                 .map_or("None".to_string(), |m| m.to_string()),
-        )
+        ))
     }
 }
 
@@ -115,14 +126,14 @@ impl Padding {
         length: Option<usize>,
         pad_to_multiple_of: Option<usize>,
     ) -> Self {
-        Self(PaddingParams {
-            strategy: length.map_or(PaddingStrategy::BatchLongest, PaddingStrategy::Fixed),
-            direction: direction.0,
-            pad_to_multiple_of,
-            pad_id,
-            pad_type_id,
-            pad_token: pad_token.to_owned(),
-        })
+        let mut params = PaddingParams::default();
+        params.strategy = length.map_or(PaddingStrategy::BatchLongest, PaddingStrategy::Fixed);
+        params.direction = direction.0;
+        params.pad_to_multiple_of = pad_to_multiple_of;
+        params.pad_id = pad_id;
+        params.pad_type_id = pad_type_id;
+        params.pad_token = pad_token.to_owned();
+        Self(params)
     }
 
     /// `"left"` or `"right"`.
@@ -152,11 +163,8 @@ impl Padding {
 
     /// The fixed length padded to, or `None` when padding to the longest item in the batch.
     #[getter]
-    fn length(&self) -> Option<usize> {
-        match self.0.strategy {
-            PaddingStrategy::Fixed(length) => Some(length),
-            PaddingStrategy::BatchLongest => None,
-        }
+    fn length(&self) -> PyResult<Option<usize>> {
+        Self::fixed_length(&self.0)
     }
 
     /// The multiple the padded length is rounded up to, or `None`.
@@ -166,19 +174,22 @@ impl Padding {
     }
 
     /// Pickle rebuilds a `Padding` by calling the class with these constructor arguments.
-    fn __reduce__<'py>(&self, py: Python<'py>) -> (Bound<'py, PyType>, UnpickleArguments) {
+    fn __reduce__<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<(Bound<'py, PyType>, UnpickleArguments)> {
         let arguments = (
             self.direction(),
             self.pad_id(),
             self.pad_type_id(),
             self.pad_token().to_owned(),
-            self.length(),
+            self.length()?,
             self.pad_to_multiple_of(),
         );
-        (py.get_type::<Self>(), arguments)
+        Ok((py.get_type::<Self>(), arguments))
     }
 
-    fn __repr__(&self) -> String {
+    fn __repr__(&self) -> PyResult<String> {
         Self::repr(&self.0)
     }
 }
