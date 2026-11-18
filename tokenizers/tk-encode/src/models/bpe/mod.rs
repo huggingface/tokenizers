@@ -41,6 +41,9 @@ pub enum Error {
     /// If a token found in merges, is not in the vocab
     #[error("Token `{0}` out of vocabulary")]
     MergeTokenOutOfVocabulary(String),
+    /// The right token of a merge does not start with `continuing_subword_prefix`.
+    #[error("Merge token `{token}` does not start with the continuing subword prefix `{prefix}`")]
+    MergeTokenWithoutPrefix { token: String, prefix: String },
     /// If the provided unk token is out of vocabulary
     #[error("Unk token `{0}` not found in the vocabulary")]
     UnkTokenOutOfVocabulary(String),
