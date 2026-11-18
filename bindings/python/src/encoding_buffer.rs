@@ -1,10 +1,10 @@
 use std::ffi::c_int;
 use std::{mem, ptr};
 
+use dlpark::python::ExportRequest;
 use pyo3::exceptions::PyBufferError;
 use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::types::{PyCapsule, PyDict};
 
 use crate::dlpack;
 use crate::encoding::Encoding;
@@ -103,17 +103,22 @@ impl EncodingBuffer {
     }
 
     // DLPack is the protocol `torch.tensor` reads. torch ignores DLPack's read-only flag, so this
-    // exports a copy, never the encoding's own memory. The copy answers every DLPack option.
-    #[pyo3(signature = (**_kwargs))]
+    // exports a copy, never the encoding's own memory. That answers `copy` whatever its value.
+    #[pyo3(signature = (*, stream=None, max_version=None, dl_device=None, copy=None))]
     fn __dlpack__<'py>(
         &self,
         py: Python<'py>,
-        _kwargs: Option<&Bound<'py, PyDict>>,
-    ) -> PyResult<Bound<'py, PyCapsule>> {
-        dlpack::int64_capsule(py, self.as_slice())
+        stream: Option<&Bound<'py, PyAny>>,
+        max_version: Option<(u32, u32)>,
+        dl_device: Option<(u32, i32)>,
+        copy: Option<bool>,
+    ) -> PyResult<Py<PyAny>> {
+        let _ = copy;
+        let request = ExportRequest::parse(stream, max_version, dl_device, None)?;
+        dlpack::int64_capsule(py, self.as_slice(), &request)
     }
 
-    fn __dlpack_device__(&self) -> (i32, i32) {
-        (dlpack::CPU, 0)
+    fn __dlpack_device__(&self) -> (u32, i32) {
+        (dlpack::DEVICE.device_type.0, dlpack::DEVICE.device_id)
     }
 }
