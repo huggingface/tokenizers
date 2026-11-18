@@ -232,7 +232,7 @@ impl PreTokenizer {
                 "{self:?} broke the PreTokenize contract: emitted {span:?} for {text:?}",
             );
         }
-        
+
         // SAFETY: `spans` was empty before the call and `text` fits in `u32` offsets, so
         // `PreTokenize` guarantees every span in it is a valid range of `text`.
         Ok(unsafe { PreTokens::new_unchecked(text, spans) })
