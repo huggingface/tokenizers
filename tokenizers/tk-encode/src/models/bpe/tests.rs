@@ -419,17 +419,32 @@ fn byte_fallback_missing_code_with_prefix_errors() {
 #[test]
 fn rejects_merge_token_out_of_vocabulary() {
     // The merge-map derivation is now part of this constructor, so its errors are its own.
-    let err = BPE::from_config(BpeConfig {
-        vocab: v(HELLO_VOCAB),
-        merges: m(&[("h", "z")]),
+    // "z" is not in the vocab. "e" and "l" are, but the token they merge into is not.
+    for (merge, missing) in [(("h", "z"), "z"), (("e", "l"), "el")] {
+        let err = BPE::from_config(BpeConfig {
+            vocab: v(HELLO_VOCAB),
+            merges: m(&[merge]),
+            ..BpeConfig::default()
+        })
+        .err()
+        .unwrap();
+        match err.downcast_ref::<Error>() {
+            Some(Error::MergeTokenOutOfVocabulary(token)) => assert_eq!(token, missing),
+            other => panic!("expected MergeTokenOutOfVocabulary, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn merges_a_right_token_carrying_the_prefix() {
+    let model = BPE::from_config(BpeConfig {
+        vocab: v(&[("a", 0), ("##b", 1), ("ab", 2)]),
+        merges: m(&[("a", "##b")]),
+        continuing_subword_prefix: Some("##".into()),
         ..BpeConfig::default()
     })
-    .err()
     .unwrap();
-    match err.downcast_ref::<Error>() {
-        Some(Error::MergeTokenOutOfVocabulary(token)) => assert_eq!(token, "z"),
-        other => panic!("expected MergeTokenOutOfVocabulary, got {other:?}"),
-    }
+    assert_eq!(pipeline_ids(&model, "ab"), vec![2]);
 }
 
 #[test]
