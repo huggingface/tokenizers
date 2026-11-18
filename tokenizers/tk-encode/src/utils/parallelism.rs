@@ -19,9 +19,9 @@ pub use rayon::current_num_threads;
 /// TODO: deprecate
 pub(crate) const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
 
-/// 0 means deafult value
-static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
-/// Bumped by [`set_num_threads`], so the next [`pool`] call builds a pool with the new count.
+/// See [`max_threads`]. 0 means the default.
+static MAX_THREADS: AtomicUsize = AtomicUsize::new(0);
+/// Bumped by [`set_max_threads`], so the next [`pool`] call builds a pool with the new count.
 static POOL_GEN: AtomicUsize = AtomicUsize::new(0);
 
 struct CachedPool {
@@ -96,14 +96,14 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     {
         return Some(cached.pool.clone());
     }
-    let num_threads = num_threads();
-    // no pool for a single thread
-    if num_threads == 1 {
+    // the caller is one of the `max_threads`
+    let workers = max_threads() - 1;
+    if workers == 0 {
         *cache = None;
         return None;
     }
     let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(num_threads)
+        .num_threads(workers)
         .thread_name(|i| format!("tk-encode-{i}"))
         .build()
         .ok()?;
@@ -115,12 +115,11 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     Some(pool)
 }
 
-pub(crate) fn num_threads() -> usize {
-    match NUM_THREADS.load(Ordering::Acquire) {
-        // 0 == default value
-        0 => std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1),
+/// Max threads per encode, caller included: the shared pool holds `max_threads() - 1`, so 1 means
+/// serial. Defaults to `available_parallelism()` (affinity mask, cgroup quota).
+pub fn max_threads() -> usize {
+    match MAX_THREADS.load(Ordering::Acquire) {
+        0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
         n => n,
     }
 }
@@ -129,9 +128,9 @@ fn invalidate() {
     POOL_GEN.fetch_add(1, Ordering::SeqCst);
 }
 
-/// Passing in 0 will reset to the default value
-pub fn set_num_threads(n: usize) {
-    NUM_THREADS.store(n, Ordering::Release);
+/// Set [`max_threads`] process-wide; `0` restores the default. Takes effect on the next encode.
+pub fn set_max_threads(n: usize) {
+    MAX_THREADS.store(n, Ordering::Release);
     invalidate();
 }
 
@@ -285,11 +284,27 @@ mod tests {
         assert_eq!(v.into_maybe_par_iter().sum::<u32>(), 21);
     }
 
+    /// The caller counts: the pool holds `max - 1` threads, none for a max of 1.
+    #[test]
+    fn max_threads_counts_the_caller() {
+        let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        set_max_threads(3);
+        assert_eq!(max_threads(), 3);
+        assert_eq!(pool().expect("a pool").current_num_threads(), 2);
+        set_max_threads(1);
+        assert!(pool().is_none(), "one thread is the caller alone");
+        set_max_threads(0);
+        assert_eq!(
+            max_threads(),
+            std::thread::available_parallelism().map_or(1, |n| n.get())
+        );
+    }
+
     /// Contended callers must reuse the cached pool, not build their own.
     #[test]
     fn concurrent_callers_share_one_pool() {
         let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
-        if num_threads() == 1 {
+        if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
         // start stale, so the callers race the rebuild too
@@ -316,7 +331,7 @@ mod tests {
     #[test]
     fn child_forked_mid_lock_gets_a_pool() {
         let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
-        if num_threads() == 1 {
+        if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
         register_fork_handler();
@@ -337,7 +352,7 @@ mod tests {
     #[test]
     fn child_runs_on_a_pool_of_its_own() {
         let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
-        if num_threads() == 1 {
+        if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
         let parent = pool().expect("a pool");
