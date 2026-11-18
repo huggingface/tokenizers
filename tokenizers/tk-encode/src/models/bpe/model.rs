@@ -271,6 +271,8 @@ impl pipeline::Tokenize for BPE {
     /// The scratch is destructured once instead of once per word, the output is grown once for the
     /// whole batch instead of being capacity-checked on every push, and the virtual call, the
     /// slice and the `Result` happen once per chunk rather than once per pre-token.
+    // Inlining measure faster on x86
+    #[inline(always)]
     fn tokenize_spans(
         &self,
         pre_tokens: PreTokens<'_>,
