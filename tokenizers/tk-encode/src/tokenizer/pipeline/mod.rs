@@ -1132,6 +1132,8 @@ impl Tokenize for Model {
         }
     }
 
+    // inlining was measured faster (4% e2e) on x86
+    #[inline(always)]
     fn tokenize_spans(
         &self,
         pre_tokens: PreTokens<'_>,
