@@ -119,3 +119,29 @@ def test_encode_untrusted_spans_rejects_control_id_from_model():
     assert tokenizer.encode("ab", encode_special_tokens=True).ids == [2]
     with pytest.raises(ValueError):
         tokenizer.encode("ab", untrusted_spans=[(0, 2)])
+
+
+@pytest.mark.parametrize("normalized", [False, True])
+def test_untrusted_spans_preserve_single_word_boundaries(normalized):
+    spec = Tokenizer(models.BPE(vocab={"a": 0, "b": 1, "x": 2, "é": 3, " ": 4}, merges=[]))
+    spec.normalizer = normalizers.Lowercase()
+    spec.add_tokens([AddedToken("ab", special=True, single_word=True, normalized=normalized)])
+    tokenizer = spec.compile()
+
+    assert tokenizer.encode("xab", untrusted_spans=[(0, 1)]).ids == [2, 0, 1]
+    assert tokenizer.encode("abé", untrusted_spans=[(2, 4)]).ids == [0, 1, 3]
+    assert tokenizer.encode(" ab", untrusted_spans=[(0, 1)]).ids == [4, 5]
+
+
+@pytest.mark.parametrize(
+    ("text", "span", "replacement"),
+    [("!ab", (0, 1), "x"), ("x!ab", (1, 2), ""), ("ab!x", (2, 3), "")],
+)
+def test_normalized_single_word_matches_use_normalized_neighbors(text, span, replacement):
+    spec = Tokenizer(models.BPE(vocab={"a": 0, "b": 1, "x": 2}, merges=[]))
+    spec.normalizer = normalizers.Replace("!", replacement)
+    spec.add_tokens([AddedToken("ab", special=True, single_word=True, normalized=True)])
+    tokenizer = spec.compile()
+
+    expected = [0, 1, 2] if text.startswith("ab") else [2, 0, 1]
+    assert tokenizer.encode(text, untrusted_spans=[span]).ids == expected
