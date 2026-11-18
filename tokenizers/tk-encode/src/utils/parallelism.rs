@@ -19,14 +19,14 @@ pub use rayon::current_num_threads;
 
 /// See [`max_threads`]. 0 means the default.
 static MAX_THREADS: AtomicUsize = AtomicUsize::new(0);
-/// Bumped by [`set_max_threads`], so the next [`pool`] call builds a pool with the new count.
-static POOL_GEN: AtomicUsize = AtomicUsize::new(0);
 
+/// The cached pool, keyed by the worker count it was built for: a change rebuilds it.
 struct CachedPool {
     /// `None` when `max_threads()` is 1 or the build failed: cached too, so a serial process skips
     /// the rebuild path.
     pool: Option<Arc<rayon::ThreadPool>>,
-    generation: usize,
+    /// `max_threads() - 1` at build time.
+    workers: usize,
 }
 
 type PoolCache = Mutex<Option<CachedPool>>;
@@ -88,16 +88,16 @@ fn try_lock_briefly() -> Option<MutexGuard<'static, Option<CachedPool>>> {
 pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     register_fork_handler();
 
-    let generation = POOL_GEN.load(Ordering::Acquire);
+    // the caller is one of the `max_threads`. Read once and stored as the key: a racing
+    // `set_max_threads` is caught by the next call.
+    let workers = max_threads() - 1;
     // callers that find the lock held encode serially, so only one of them builds a pool
     let mut cache = try_lock_briefly()?;
     if let Some(cached) = cache.as_ref()
-        && cached.generation == generation
+        && cached.workers == workers
     {
         return cached.pool.clone();
     }
-    // the caller is one of the `max_threads`
-    let workers = max_threads() - 1;
     let pool = if workers == 0 {
         None
     } else {
@@ -111,7 +111,7 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     };
     *cache = Some(CachedPool {
         pool: pool.clone(),
-        generation,
+        workers,
     });
     pool
 }
@@ -131,14 +131,9 @@ fn available_parallelism() -> usize {
     *CORES.get_or_init(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
 }
 
-fn invalidate() {
-    POOL_GEN.fetch_add(1, Ordering::SeqCst);
-}
-
 /// Set [`max_threads`] process-wide; `0` restores the default. Takes effect on the next encode.
 pub fn set_max_threads(n: usize) {
     MAX_THREADS.store(n, Ordering::Release);
-    invalidate();
 }
 
 /// Whether the `MaybeParallel*` iterators run in parallel: always. They run on rayon's global pool,
@@ -314,8 +309,9 @@ mod tests {
         if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
-        // start stale, so the callers race the rebuild too
-        invalidate();
+        // start stale (cached for another size), so the callers race the rebuild too
+        pool();
+        set_max_threads(max_threads() + 1);
         let callers: Vec<_> = (0..32)
             .map(|_| {
                 std::thread::spawn(|| {
@@ -330,6 +326,7 @@ mod tests {
             .into_iter()
             .flat_map(|caller| caller.join().unwrap())
             .collect();
+        set_max_threads(0);
         assert_eq!(seen.len(), 1, "contended callers built pools of their own");
     }
 
