@@ -64,9 +64,12 @@ impl EncodingBuffer {
         flags: c_int,
     ) -> PyResult<()> {
         // Writing through the buffer would change the `Encoding`, which other threads read.
-        if flags & ffi::PyBUF_WRITABLE != 0 {
+        // `torch.frombuffer` and `torch.asarray` ask for unformatted bytes and return a writable
+        // tensor over them, whatever `readonly` says.
+        if flags & ffi::PyBUF_WRITABLE != 0 || flags & ffi::PyBUF_FORMAT == 0 {
             return Err(PyBufferError::new_err(
-                "an Encoding buffer is read-only, copy it to write (numpy.array, torch.tensor)",
+                "an Encoding buffer is read-only uint32: read it with numpy.asarray or memoryview, \
+                 copy it with torch.tensor",
             ));
         }
         let buffer = slf.get();
@@ -80,11 +83,7 @@ impl EncodingBuffer {
             (*view).len = mem::size_of_val(values) as isize;
             (*view).readonly = 1;
             (*view).itemsize = ITEM_SIZE;
-            (*view).format = if flags & ffi::PyBUF_FORMAT != 0 {
-                c"I".as_ptr().cast_mut()
-            } else {
-                ptr::null_mut()
-            };
+            (*view).format = c"I".as_ptr().cast_mut();
             (*view).ndim = 1;
             (*view).shape = if flags & ffi::PyBUF_ND != 0 {
                 shape.cast_mut()

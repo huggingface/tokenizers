@@ -39,6 +39,7 @@ encoding.attention_mask_buffer
 np.asarray(encoding.ids_buffer)  # reads it without a copy: array([101, 7592, ...], dtype=uint32)
 np.array(encoding.ids_buffer)    # a copy you can write to
 torch.tensor(encoding.ids_buffer)  # an int64 copy you can write to (torch 2.6 or later): tensor([101, 7592, ...])
+# `torch.frombuffer` and `torch.asarray` raise: their tensor would write into the encoding.
 
 compiled.encode("Hello", add_special_tokens=False).ids  # no [CLS]/[SEP]
 compiled.decode(encoding.ids)                           # "hello there, how are you?"

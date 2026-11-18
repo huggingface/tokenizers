@@ -62,6 +62,14 @@ def test_torch_gets_an_int64_copy(bert, to_tensor):
     assert encoding.ids == [1, 27462, 7495, 2]
 
 
+@pytest.mark.parametrize("to_tensor", [torch.asarray, lambda buffer: torch.frombuffer(buffer, dtype=torch.int32)])
+def test_torch_cannot_share_encoding_memory(bert, to_tensor):
+    encoding = bert.encode("Hello there")
+
+    with pytest.raises(RuntimeError):
+        to_tensor(encoding.ids_buffer)
+
+
 def test_tensor_outlives_buffer(bert):
     ids = torch.from_dlpack(bert.encode("Hello there").ids_buffer)
 
