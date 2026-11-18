@@ -14,6 +14,8 @@ use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
+use crate::utils::fork;
+
 // Re-export rayon current_num_threads
 pub use rayon::current_num_threads;
 
@@ -117,9 +119,12 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
 }
 
 /// Max threads per encode, caller included: the shared pool holds `max_threads() - 1`, so 1 means
-/// serial. Defaults to `available_parallelism()` (affinity mask, cgroup quota).
+/// serial. Defaults to `available_parallelism()` (affinity mask, cgroup quota), or to 1 in a forked
+/// child, which can't know how many siblings share the cores.
 pub fn max_threads() -> usize {
+    fork::watch();
     match MAX_THREADS.load(Ordering::Acquire) {
+        0 if fork::generation() > 0 => 1,
         0 => available_parallelism(),
         n => n,
     }
@@ -302,6 +307,26 @@ mod tests {
         );
     }
 
+    /// A forked child defaults to serial; an explicit max still applies.
+    #[cfg(unix)]
+    #[test]
+    fn forked_children_default_to_one_thread() {
+        let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        set_max_threads(0);
+        fork::watch();
+        let ok = in_forked_child(|| {
+            let default = max_threads();
+            set_max_threads(3);
+            let explicit = max_threads();
+            i32::from(!(default == 1 && explicit == 3))
+        });
+        assert!(
+            ok,
+            "the child's default isn't serial, or ignores an explicit max"
+        );
+        assert!(max_threads() >= 1, "the parent keeps its default");
+    }
+
     /// Contended callers must reuse the cached pool, not build their own.
     #[test]
     fn concurrent_callers_share_one_pool() {
@@ -346,7 +371,11 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(50));
         });
         held_rx.recv().unwrap();
-        let ok = in_forked_child(|| i32::from(pool().is_none()));
+        let ok = in_forked_child(|| {
+            // forked children default to serial
+            set_max_threads(2);
+            i32::from(pool().is_none())
+        });
         holder.join().unwrap();
         assert!(ok, "the child got no pool");
     }
@@ -359,9 +388,14 @@ mod tests {
         if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
-        let parent = pool().expect("a pool");
+        let size = max_threads();
+        let parent = built_pool().expect("a pool");
+        // a fork while a worker starts can hang the child's own thread spawns (std's lock)
+        parent.broadcast(|_| ());
         let parent = Arc::as_ptr(&parent) as usize;
         let ok = in_forked_child(|| {
+            // the parent's size (a child defaults to serial), so only the fork tells the pools apart
+            set_max_threads(size);
             let Some(pool) = pool() else { return 1 };
             if Arc::as_ptr(&pool) as usize == parent {
                 return 2;
