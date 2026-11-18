@@ -36,11 +36,11 @@ def test_decode_tokens(gpt2):
     assert gpt2.decode_tokens([]) == []
 
 
-def test_decode_tokens_takes_arrays(gpt2):
+def test_decode_tokens_takes_buffers(gpt2):
     encoding = gpt2.encode("Hello there")
     tokens = gpt2.decode_tokens(encoding.ids)
 
-    assert gpt2.decode_tokens(encoding.ids_array) == tokens
+    assert gpt2.decode_tokens(np.array(encoding.ids, dtype=np.uint32)) == tokens
     assert gpt2.decode_tokens(np.array(encoding.ids, dtype=np.int32)) == tokens
 
 

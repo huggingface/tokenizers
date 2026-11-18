@@ -1,10 +1,7 @@
 use std::sync::OnceLock;
 
-use numpy::PyArray1;
 use pyo3::prelude::*;
 use tk::pipeline::{self, Token};
-
-use crate::type_hints::{NDArray, U32Array};
 
 /// Text encoded to token ids by a tokenizer.
 #[pyclass(frozen, eq, module = "tokenizers")]
@@ -74,25 +71,6 @@ impl Encoding {
                 vec![1; self.inner.len()]
             }
         })
-    }
-
-    /// Returns a copy of the id of each token, as a `uint32` numpy array.
-    #[getter]
-    fn ids_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
-        NDArray(PyArray1::from_slice(py, self.ids()))
-    }
-
-    /// Returns a copy of the type id of each token, as a `uint32` numpy array.
-    #[getter]
-    fn type_ids_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
-        NDArray(PyArray1::from_slice(py, self.type_ids()))
-    }
-
-    /// Returns a copy of the attention mask, as a `uint32` numpy array.
-    /// When the encoding is padded: 1 for token ids, 0 for padding tokens.
-    #[getter]
-    fn attention_mask_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
-        NDArray(PyArray1::from_slice(py, self.attention_mask()))
     }
 
     /// The number of tokens in the encoding

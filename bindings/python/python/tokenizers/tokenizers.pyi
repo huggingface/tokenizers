@@ -5,8 +5,7 @@ from collections.abc import Sequence
 from os import PathLike
 from typing import Any, Final, Literal, final
 
-from numpy import integer, uint32
-from numpy.typing import NDArray
+from typing_extensions import Buffer
 
 from . import decoders as decoders
 from . import models as models
@@ -134,9 +133,7 @@ class CompiledTokenizer:
         """
         The added tokens, indexed by their token id, in ascending id order.
         """
-    def decode(
-        self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = True
-    ) -> str:
+    def decode(self, /, ids: Encoding | Sequence[int] | Buffer, skip_special_tokens: bool = True) -> str:
         """
         Decodes token ids back into text
 
@@ -149,9 +146,7 @@ class CompiledTokenizer:
         Returns:
             str
         """
-    def decode_tokens(
-        self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = False
-    ) -> list[str]:
+    def decode_tokens(self, /, ids: Encoding | Sequence[int] | Buffer, skip_special_tokens: bool = False) -> list[str]:
         """
         Converts token ids to their string representation. This does NOT apply the decoder.
 
@@ -369,30 +364,14 @@ class Encoding:
         A list of ints.
         """
     @property
-    def attention_mask_array(self, /) -> NDArray[uint32]:
-        """
-        Returns a copy of the attention mask, as a `uint32` numpy array.
-        When the encoding is padded: 1 for token ids, 0 for padding tokens.
-        """
-    @property
     def ids(self, /) -> list[int]:
         """
         The id of each token, as a list of ints.
         """
     @property
-    def ids_array(self, /) -> NDArray[uint32]:
-        """
-        Returns a copy of the id of each token, as a `uint32` numpy array.
-        """
-    @property
     def type_ids(self, /) -> list[int]:
         """
         The type id of each token, as a list of ints.
-        """
-    @property
-    def type_ids_array(self, /) -> NDArray[uint32]:
-        """
-        Returns a copy of the type id of each token, as a `uint32` numpy array.
         """
 
 @final
