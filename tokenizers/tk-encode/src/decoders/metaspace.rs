@@ -2,26 +2,8 @@
 //! To use in conjunction with the
 //! [`MetaspaceNormalizer`]: crate::normalizers::metaspace::MetaspaceNormalizer.
 
-use crate::tokenizer::{Decoder, Result};
-
-/// Enum representing options for the metaspace prepending scheme.
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub enum PrependScheme {
-    /// Specifies that the scheme should be prepended only once, on the first split.
-    First,
-    Never,
-    Always,
-}
-
-impl std::fmt::Display for PrependScheme {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::First => "first",
-            Self::Never => "never",
-            Self::Always => "always",
-        })
-    }
-}
+use crate::normalizers::metaspace::PrependScheme;
+use crate::tokenizer::{Decode, Result};
 
 /// Turns the metaspace replacement character back into a space.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,10 +23,6 @@ impl MetaspaceDecoder {
     pub fn get_replacement(&self) -> char {
         self.replacement
     }
-
-    pub fn set_replacement(&mut self, replacement: char) {
-        self.replacement = replacement;
-    }
 }
 
 impl Default for MetaspaceDecoder {
@@ -53,7 +31,7 @@ impl Default for MetaspaceDecoder {
     }
 }
 
-impl Decoder for MetaspaceDecoder {
+impl Decode for MetaspaceDecoder {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         Ok(tokens
             .iter()

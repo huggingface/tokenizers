@@ -56,7 +56,7 @@ fn json(text: &str) -> serde_json::Value {
     serde_json::from_str(text).expect("a test expectation is valid JSON")
 }
 
-fn ids(tokenizer: &PipelineTokenizer, text: &str, options: &EncodeOptions) -> Vec<u32> {
+fn ids(tokenizer: &Tokenizer, text: &str, options: &EncodeOptions) -> Vec<u32> {
     let encoded = tokenizer
         .encode(text, options)
         .wait()
@@ -70,7 +70,7 @@ fn ids(tokenizer: &PipelineTokenizer, text: &str, options: &EncodeOptions) -> Ve
 
 /// Every `data/*.json` the reader accepts, built. A refusal is a skip; `tokenizer.json` is another
 /// test binary's output, written in parallel with this one.
-fn fixtures() -> Vec<(String, PipelineTokenizer)> {
+fn fixtures() -> Vec<(String, Tokenizer)> {
     let Ok(entries) = std::fs::read_dir("../data") else {
         return Vec::new();
     };
@@ -87,7 +87,9 @@ fn fixtures() -> Vec<(String, PipelineTokenizer)> {
         .iter()
         .filter_map(|path| {
             let name = path.file_name()?.to_string_lossy().to_string();
-            Some((name, from_json(&std::fs::read_to_string(path).ok()?).ok()?))
+            let canonical =
+                tk_convert::canonicalize_str(&std::fs::read_to_string(path).ok()?).ok()?;
+            Some((name, from_json(&canonical).ok()?))
         })
         .collect()
 }
@@ -107,9 +109,8 @@ const TEXTS: &[&str] = &[
 
 /// Read a real config, write it, read it back, encode with both. A *writer* refusal is a failure,
 /// not a skip: everything the reader builds, the writer must describe.
-// TODO(pr3): every fixture in `data/` is a 1.0 file, so this has no input until tk-convert can
-// produce 2.0 ones. Port it there, with the per-score float sweep git remembers.
-#[ignore = "needs 2.0 fixtures from tk-convert (pr3)"]
+// The fixtures in `data/` are 1.0 files, so they go through tk-convert first.
+#[ignore = "llama-2 fails: the writer emits a normalized added token's normalized content (backlog #18)"]
 #[test]
 fn round_trip_preserves_ids_on_every_real_config() {
     let mut configs = 0usize;

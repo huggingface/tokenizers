@@ -9,18 +9,18 @@ pub(super) fn read_padding(cfg: Option<&Json<'_>>) -> Result<Option<PaddingParam
     let Some(cfg) = cfg else {
         return Ok(None);
     };
-    Ok(Some(PaddingParams {
-        strategy: read_strategy(cfg)?,
-        direction: read_direction(cfg)?,
-        // The one key a config may leave out: real files ship it as `null` when there is no
-        // multiple to round the padded length up to.
-        pad_to_multiple_of: cfg.field("pad_to_multiple_of").and_then(Json::as_usize),
-        pad_id: cfg.need("the `padding` config", "pad_id", Json::as_u32)?,
-        pad_type_id: cfg.need("the `padding` config", "pad_type_id", Json::as_u32)?,
-        pad_token: cfg
-            .need("the `padding` config", "pad_token", Json::as_str)?
-            .to_string(),
-    }))
+    let mut padding = PaddingParams::default();
+    padding.strategy = read_strategy(cfg)?;
+    padding.direction = read_direction(cfg)?;
+    // The one key a config may leave out: real files ship it as `null` when there is no
+    // multiple to round the padded length up to.
+    padding.pad_to_multiple_of = cfg.field("pad_to_multiple_of").and_then(Json::as_usize);
+    padding.pad_id = cfg.need("the `padding` config", "pad_id", Json::as_u32)?;
+    padding.pad_type_id = cfg.need("the `padding` config", "pad_type_id", Json::as_u32)?;
+    padding.pad_token = cfg
+        .need("the `padding` config", "pad_token", Json::as_str)?
+        .to_string();
+    Ok(Some(padding))
 }
 
 /// `"BatchLongest"`, the longest sequence in the batch, or `{"Fixed": <size>}`, one length for

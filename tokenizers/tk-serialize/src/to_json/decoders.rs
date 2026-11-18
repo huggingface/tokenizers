@@ -1,46 +1,45 @@
 //! Every variant keeps its own fields, and this is a
 //! one-arm-per-variant transcription back out.
 
-use super::normalizers::write_replace_pattern;
+use super::normalizers::{prepend_scheme_name, write_replace_pattern};
 use super::writer::Out;
-use tk_encode::decoders::DecoderRuntime;
-use tk_encode::decoders::metaspace::PrependScheme;
+use tk_encode::decoders::Decoder;
 use tk_encode::tokenizer::Result;
 
-pub(super) fn write_decoder(out: &mut Out, decoder: Option<&DecoderRuntime>) -> Result<()> {
+pub(super) fn write_decoder(out: &mut Out, decoder: Option<&Decoder>) -> Result<()> {
     match decoder {
         // A missing `decoder` reads back as `None`, so absent is exact.
         None => out.null(),
-        Some(decoder) => write_one(out, decoder),
+        Some(decoder) => write_one(out, decoder)?,
     }
     Ok(())
 }
 
-fn write_one(out: &mut Out, decoder: &DecoderRuntime) {
+fn write_one(out: &mut Out, decoder: &Decoder) -> Result<()> {
     match decoder {
-        DecoderRuntime::ByteLevel(_) => {
+        Decoder::ByteLevel(_) => {
             out.obj_open();
             out.type_tag("ByteLevel");
             out.obj_close();
         }
-        DecoderRuntime::Replace(replace) => {
+        Decoder::Replace(replace) => {
             out.obj_open();
             out.type_tag("Replace");
-            write_replace_pattern(out, replace.pattern());
+            write_replace_pattern(out, replace.pattern())?;
             out.field_str("content", replace.content());
             out.obj_close();
         }
-        DecoderRuntime::ByteFallback(_) => {
+        Decoder::ByteFallback(_) => {
             out.obj_open();
             out.type_tag("ByteFallback");
             out.obj_close();
         }
-        DecoderRuntime::Fuse(_) => {
+        Decoder::Fuse(_) => {
             out.obj_open();
             out.type_tag("Fuse");
             out.obj_close();
         }
-        DecoderRuntime::Strip(strip) => {
+        Decoder::Strip(strip) => {
             out.obj_open();
             out.type_tag("Strip");
             out.field_str("content", strip.content.encode_utf8(&mut [0; 4]));
@@ -48,20 +47,20 @@ fn write_one(out: &mut Out, decoder: &DecoderRuntime) {
             out.field_usize("stop", strip.stop);
             out.obj_close();
         }
-        DecoderRuntime::BPE(bpe) => {
+        Decoder::BPE(bpe) => {
             out.obj_open();
             out.type_tag("BPEDecoder");
             out.field_str("suffix", &bpe.suffix);
             out.obj_close();
         }
-        DecoderRuntime::WordPiece(wordpiece) => {
+        Decoder::WordPiece(wordpiece) => {
             out.obj_open();
             out.type_tag("WordPiece");
             out.field_str("prefix", &wordpiece.prefix);
             out.field_bool("cleanup", wordpiece.cleanup);
             out.obj_close();
         }
-        DecoderRuntime::Metaspace(metaspace) => {
+        Decoder::Metaspace(metaspace) => {
             out.obj_open();
             out.type_tag("Metaspace");
             out.field_str(
@@ -70,15 +69,11 @@ fn write_one(out: &mut Out, decoder: &DecoderRuntime) {
             );
             out.field_str(
                 "prepend_scheme",
-                match metaspace.prepend_scheme {
-                    PrependScheme::Always => "always",
-                    PrependScheme::First => "first",
-                    PrependScheme::Never => "never",
-                },
+                prepend_scheme_name(metaspace.prepend_scheme)?,
             );
             out.obj_close();
         }
-        DecoderRuntime::CTC(ctc) => {
+        Decoder::CTC(ctc) => {
             out.obj_open();
             out.type_tag("CTC");
             out.field_str("pad_token", &ctc.pad_token);
@@ -86,16 +81,18 @@ fn write_one(out: &mut Out, decoder: &DecoderRuntime) {
             out.field_bool("cleanup", ctc.cleanup);
             out.obj_close();
         }
-        DecoderRuntime::Sequence(members) => {
+        Decoder::Sequence(members) => {
             out.obj_open();
             out.type_tag("Sequence");
             out.key("decoders");
             out.arr_open();
             for member in members {
-                write_one(out, member);
+                write_one(out, member)?;
             }
             out.arr_close();
             out.obj_close();
         }
+        _ => return Err("to_json cannot write this decoder".into()),
     }
+    Ok(())
 }

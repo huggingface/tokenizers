@@ -11,6 +11,7 @@ use crate::tokenizer::{
 ///
 /// Written down externally tagged: `{"String":"..."}` / `{"Regex":"..."}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SplitPattern {
     String(String),
     Regex(String),
@@ -30,7 +31,7 @@ impl From<&str> for SplitPattern {
 
 /// How a [`Split`] looks for its pattern.
 #[derive(Debug)]
-pub enum Search {
+pub(crate) enum Search {
     /// A plain string, scanned for directly — no regex engine involved, so this works in every build.
     Literal(Literal),
     /// A real regex, which needs the system backend (the `fancy-regex` feature).
@@ -50,7 +51,7 @@ pub struct Split {
     pub pattern: SplitPattern,
     /// How the pattern is found. A plain string never needs a backend; a regex does, unless it is one
     /// of the GPT patterns the native FSM below covers.
-    pub search: Search,
+    pub(crate) search: Search,
     pub behavior: SplitDelimiterBehavior,
     pub invert: bool,
     /// Native `bitcannon` FSM for a recognized GPT regex (gpt2 / cl100k-Llama-3 / o200k), used on the
@@ -134,19 +135,12 @@ impl Split {
         })
     }
 
-    /// The native FSM family this pattern was recognised as, if any.
-    pub fn grammar(&self) -> Option<Grammar> {
-        self.fsm
-    }
-
     /// Pipeline canonicalization. A recognized whole-covering GPT regex shipped
     /// as `(invert=true, behavior=Removed)` — the tiktoken-conversion convention
     /// used by cl100k/o200k — is byte-exactly equivalent to `(invert=false,
     /// Isolated)`, the form the native FSM fast path requires (the inverted match
     /// set is the gaps, and these patterns leave no gaps). Rewrite to it so
     /// cl100k/o200k route to `fsm_cl100k`/`fsm_o200k` instead of the SysRegex fallback.
-    // `pub` because the `PreTokenizerWrapper` -> `PipelinePreTokenizer` lowering, which is the only
-    // caller, lives in `tk-convert`.
     pub fn canonicalized_for_pipeline(self) -> Result<Self> {
         use crate::tokenizer::SplitDelimiterBehavior::{Isolated, Removed};
         if self.fsm.is_some() && self.invert && self.behavior == Removed {
@@ -162,7 +156,7 @@ impl Split {
 // `Pattern::find_matches` through `pipeline::split_matches`, and every `Pattern` here reports
 // boundaries: a regex matches on a `&str`, and `Literal` holds the bytes of a `&str` pattern, which
 // well-formed UTF-8 can only contain starting and ending on a boundary.
-unsafe impl pipeline::PreTokenizer for Split {
+unsafe impl pipeline::PreTokenize for Split {
     fn pre_tokenize(
         &self,
         text: &str,
@@ -223,7 +217,7 @@ mod tests {
             )
             .expect("native must not need a regex backend");
             assert!(
-                split.grammar().is_none(),
+                split.fsm.is_none(),
                 "deepseek's patterns are not individually FSM-recognised"
             );
         }
@@ -249,7 +243,7 @@ mod tests {
             false,
         )
         .unwrap();
-        assert_eq!(gpt2.grammar(), Some(Grammar::Gpt2));
+        assert_eq!(gpt2.fsm, Some(Grammar::Gpt2));
     }
 
     #[cfg(feature = "fancy-regex")]
@@ -265,7 +259,7 @@ mod tests {
         let pretok = Split::new(pattern, behavior, invert).unwrap();
         let mut scratch = pipeline::PreTokenizerScratch::default();
         let mut splits = Vec::with_capacity(text.len() / 5);
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+        crate::pipeline::PreTokenize::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
             .unwrap();
         splits
             .iter()

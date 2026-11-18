@@ -8,7 +8,98 @@ from typing import Any, Final, Literal, final
 from numpy import integer, uint32
 from numpy.typing import NDArray
 
+from . import decoders as decoders
+from . import models as models
+from . import normalizers as normalizers
+from . import pre_tokenizers as pre_tokenizers
+from . import processors as processors
+from .decoders import Decoder
+from .models import Model
+from .normalizers import Normalizer
+from .pre_tokenizers import PreTokenizer
+from .processors import PostProcessor
+
 __version__: Final[str]
+
+@final
+class AddedToken:
+    """
+    A token matched in the text before the model runs, such as `[CLS]` or `<|endoftext|>`.
+
+    Args:
+        content:
+            The text of the token.
+        single_word:
+            Only match the token when it is a whole word, not inside one.
+        lstrip:
+            Include the whitespace to the left of a match in the token.
+        rstrip:
+            Include the whitespace to the right of a match in the token.
+        normalized:
+            Match the token against the normalized text rather than the original text.
+            Defaults to `not special`.
+        special:
+            Skip the token when decoding with `skip_special_tokens`.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __getstate__(self, /) -> dict:
+        """
+        The token's `added_tokens` entry without its `id`, as a dict.
+        """
+    def __hash__(self, /) -> int: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __new__(
+        cls,
+        /,
+        content: str,
+        *,
+        single_word: bool = False,
+        lstrip: bool = False,
+        rstrip: bool = False,
+        normalized: bool | None = None,
+        special: bool = False,
+    ) -> AddedToken: ...
+    def __reduce__(self, /) -> tuple[Any, tuple[dict]]:
+        """
+        Pickle rebuilds an `AddedToken` by calling `_unpickle` with `__getstate__()`.
+        """
+    def __repr__(self, /) -> str: ...
+    def __str__(self, /) -> str: ...
+    @staticmethod
+    def _unpickle(state: dict) -> AddedToken:
+        """
+        Rebuilds an `AddedToken` from its `__getstate__`.
+        """
+    @property
+    def content(self, /) -> str:
+        """
+        The text of the token.
+        """
+    @property
+    def lstrip(self, /) -> bool:
+        """
+        Whether a match includes the whitespace to its left.
+        """
+    @property
+    def normalized(self, /) -> bool:
+        """
+        Whether the token text is normalized.
+        """
+    @property
+    def rstrip(self, /) -> bool:
+        """
+        Whether a match includes the whitespace to its right.
+        """
+    @property
+    def single_word(self, /) -> bool:
+        """
+        Whether the token only matches a whole word.
+        """
+    @property
+    def special(self, /) -> bool:
+        """
+        Whether decoding with `skip_special_tokens` skips the token.
+        """
 
 @final
 class CompiledTokenizer:
@@ -38,6 +129,11 @@ class CompiledTokenizer:
     def __repr__(self, /) -> str: ...
     @staticmethod
     def _unpickle(json: bytes) -> CompiledTokenizer: ...
+    @property
+    def added_tokens(self, /) -> dict[int, AddedToken]:
+        """
+        The added tokens, indexed by their token id, in ascending id order.
+        """
     def decode(
         self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = True
     ) -> str:
@@ -92,10 +188,10 @@ class CompiledTokenizer:
                 or be replaced by their id in the added vocabulary.
             padding: `Padding` or `None`
                 Padding options. Pass `None` to disable padding.
-                When omitted, defaults to the padding of the spec this tokenizer was compiled from.
+                When omitted, uses the padding the tokenizer had when compiled.
             truncation: `Truncation` or `None`
                 Truncation options. Pass `None` to disable truncation.
-                When omitted, defaults to the truncation of the spec this tokenizer was compiled from.
+                When omitted, uses the truncation the tokenizer had when compiled.
 
         Returns:
             Encoding
@@ -125,13 +221,63 @@ class CompiledTokenizer:
                 or be replaced by their id in the added vocabulary.
             padding: `Padding` or `None`
                 Padding options. Pass `None` to disable padding.
-                When omitted, defaults to the padding of the spec this tokenizer was compiled from.
+                When omitted, uses the padding the tokenizer had when compiled.
             truncation: `Truncation` or `None`
                 Truncation options. Pass `None` to disable truncation.
-                When omitted, defaults to the truncation of the spec this tokenizer was compiled from.
+                When omitted, uses the truncation the tokenizer had when compiled.
 
         Returns:
             List[Encoding]
+        """
+    def get_added_tokens_decoder(self, /) -> dict[int, AddedToken]:
+        """
+        Returns `added_tokens`. Deprecated: use the `added_tokens` property instead.
+        """
+    def get_vocab(self, /, with_added_tokens: bool = True) -> dict[str, int]:
+        """
+        Returns the vocabulary, as a dict from token to id.
+
+        Args:
+            with_added_tokens: bool
+                Whether to include the added tokens, such as special tokens.
+
+        Returns:
+            dict[str, int]
+        """
+    def get_vocab_size(self, /, with_added_tokens: bool = True) -> int:
+        """
+        Returns the size of the vocabulary.
+
+        Args:
+            with_added_tokens: bool
+                Whether to count the added tokens, such as special tokens.
+
+        Returns:
+            int
+        """
+    def id_to_token(self, /, id: int) -> str | None:
+        """
+        Converts an id to its token.
+
+        Args:
+            id: int
+                The id to convert.
+
+        Returns:
+            str or None: `None` when the id is not in the vocabulary.
+        """
+    def token_to_id(self, /, token: str) -> int | None:
+        """
+        Converts a token to its id.
+
+        Takes the token as `get_vocab()` returns it, e.g. `"Ġhe"` for GPT-2's `" he"`.
+
+        Args:
+            token: str
+                The token to convert.
+
+        Returns:
+            int or None: `None` when the token is not in the vocabulary.
         """
     def tokenize(
         self,
@@ -160,14 +306,40 @@ class CompiledTokenizer:
                 or be replaced by their id in the added vocabulary.
             padding: `Padding` or `None`
                 Padding options. Pass `None` to disable padding.
-                When omitted, defaults to the padding of the spec this tokenizer was compiled from.
+                When omitted, uses the padding the tokenizer had when compiled.
             truncation: `Truncation` or `None`
                 Truncation options. Pass `None` to disable truncation.
-                When omitted, defaults to the truncation of the spec this tokenizer was compiled from.
+                When omitted, uses the truncation the tokenizer had when compiled.
 
         Returns:
             list[str]
         """
+
+class Component:
+    """
+    Base class of every tokenizer component: models, normalizers, pre-tokenizers, post-processors
+    and decoders.
+
+    A component points at a shared spec object.
+    An edit through one component reaches every component that points at the same spec:
+    ```python
+    b.normalizer = a.normalizer
+    a.normalizer.prepend = "_"  # b.normalizer changes too
+    ```
+
+    `copy.deepcopy(component)` returns an independent copy.
+
+    A compiled tokenizer ignores later edits. Call `compile()` again to apply them.
+    """
+    def __getstate__(self, /) -> bytes:
+        """
+        Returns the component's JSON, as `bytes`.
+        """
+    def __reduce__(self, /) -> tuple[Any, tuple[bytes]]:
+        """
+        Pickles the component as its JSON. Unpickling rebuilds it through its kind's `_unpickle`.
+        """
+    def __repr__(self, /) -> str: ...
 
 @final
 class Encoding:
@@ -296,11 +468,19 @@ class Padding:
         """
 
 @final
+class Regex:
+    def __new__(cls, /, pattern: str) -> Regex:
+        """
+        Fails on a pattern the rust regex engine cannot compile.
+        """
+
+@final
 class Tokenizer:
     """
-    The contents of a `tokenizer.json`, which can be edited.
+    An editable tokenizer, loaded from a `tokenizer.json`.
 
-    Call `compile()` to get a `CompiledTokenizer`, which encodes and decodes.
+    Edit its components and settings, then call `compile()` to get a `CompiledTokenizer`,
+    which encodes and decodes.
 
     Example:
     ```python
@@ -316,11 +496,23 @@ class Tokenizer:
     """
     def __copy__(self, /) -> Tokenizer:
         """
-        An independent copy: editing one spec leaves the other unchanged.
+        Returns an independent copy. Editing one tokenizer leaves the other unchanged.
+        Copying is cheap, even with a large vocab.
         """
     def __deepcopy__(self, /, _memo: dict) -> Tokenizer:
         """
-        An independent copy: editing one spec leaves the other unchanged.
+        Returns an independent copy. Editing one tokenizer leaves the other unchanged.
+        Copying is cheap, even with a large vocab.
+        """
+    def __new__(cls, /, model: Model) -> Tokenizer:
+        """
+        A tokenizer made of `model` alone. Set the other components afterwards.
+
+        The tokenizer shares `model`: an edit through either one reaches both.
+
+        Args:
+            model:
+                The model that turns words into ids.
         """
     def __reduce__(self, /) -> tuple[Any, tuple[bytes]]:
         """
@@ -329,23 +521,66 @@ class Tokenizer:
     def __repr__(self, /) -> str: ...
     @staticmethod
     def _unpickle(json: bytes) -> Tokenizer: ...
+    def add_special_tokens(self, /, tokens: Sequence[str | AddedToken]) -> int:
+        """
+        Adds special tokens: `decode` skips them with `skip_special_tokens`.
+
+        Works as `add_tokens`, with every token marked special.
+
+        Args:
+            tokens:
+                The tokens to add. A `str` is added as `AddedToken(content, special=True)`.
+
+        Returns:
+            The number of tokens added or changed.
+        """
+    def add_tokens(self, /, tokens: Sequence[str | AddedToken]) -> int:
+        """
+        Adds tokens matched in the text before the model runs.
+
+        A token already added with the same content gets the new flags. A token in the model's
+        vocabulary keeps its id there; any other new token gets the next free id at `compile()`.
+
+        Args:
+            tokens:
+                The tokens to add. A `str` is added as `AddedToken(content)`.
+
+        Returns:
+            The number of tokens added or changed.
+        """
     def compile(self, /) -> CompiledTokenizer:
         """
-        Builds a new `CompiledTokenizer` from the spec as it is now.
+        Builds a `CompiledTokenizer` from the tokenizer's current settings.
 
-        Every call builds the whole tokenizer again. Later edits of the spec do not reach the
-        compiled tokenizer: compile again to see them.
+        Edits made after the call don't reach the compiled tokenizer: call `compile()` again.
+
+        Raises:
+            ValueError: A component has an unknown type or an invalid setting.
         """
+    @property
+    def decoder(self, /) -> Decoder | None:
+        """
+        The decoder, which turns token ids back into text, or `None`.
+
+        Returns an editable view of the tokenizer's decoder.
+        """
+    @decoder.setter
+    def decoder(self, /, decoder: Decoder | None) -> None: ...
     @staticmethod
     def from_file(path: str | PathLike[str]) -> Tokenizer:
         """
-        Loads a `tokenizer.json` and upgrades it to the 2.0 format.
+        Loads a tokenizer from a `tokenizer.json` file.
 
-        Errors in the file's components, such as the model or the normalizer, show up at `compile()`.
+        Components are not validated at this stage. A component with an unknown type or an invalid
+        setting raises `ValueError` in `Tokenizer.compile()`.
 
         Args:
-            path:
+            path: str or Path
                 The file to read.
+
+        Raises:
+            ValueError: The JSON is malformed or is not a `tokenizer.json`.
+            OSError: The file cannot be read.
         """
     @staticmethod
     def from_pretrained(
@@ -359,35 +594,34 @@ class Tokenizer:
         subfolder: str | None = None,
     ) -> Tokenizer:
         """
-        Instantiate a new `Tokenizer` from an existing file on the Hugging Face Hub.
+        Loads a tokenizer from the `tokenizer.json` of a model repo on the Hugging Face Hub.
 
-        Defers downloading and caching to `huggingface_hub.hf_hub_download`.
+        `huggingface_hub.hf_hub_download` downloads and caches the file.
+        Components are not validated at this stage. A component with an unknown type or an invalid
+        setting raises `ValueError` in `Tokenizer.compile()`.
 
         Args:
-            identifier (`str`):
-                The *model id* of a repo hosted on huggingface.co that contains a `tokenizer.json` file,
-                e.g., `"openai-community/gpt2"`.
-            revision (`str`, *optional*, defaults to `"main"`):
-                The specific model version to use. It can be a branch name, a tag name, or a commit id,
-                since we use a git-based system for storing models and other artifacts on huggingface.co,
-                so `revision` can be any identifier allowed by git.
-            token (`str` or `bool`, *optional*):
-                The token to use as HTTP bearer authorization for remote files. If `True`, will use the
-                token generated when running `hf auth login`. If `False`, will send no token. If `None`,
-                will use the stored token when there is one.
-            cache_dir (`str` or `Path`, *optional*):
-                Path to a directory in which the downloaded file should be cached if the standard cache
-                should not be used.
-            force_download (`bool`, *optional*, defaults to `False`):
-                Whether or not to download the file again and override the cached version if it exists.
-            local_files_only (`bool`, *optional*, defaults to `False`):
-                Whether or not to only rely on the cache and not to attempt to download anything.
-            subfolder (`str`, *optional*):
-                In case `tokenizer.json` is located inside a subfolder of the model repo on huggingface.co,
-                specify it here.
+            identifier: str
+                The id of a repo on huggingface.co, such as `"openai-community/gpt2"`.
+            revision: str
+                A branch name, a tag name or a commit id. Defaults to `"main"`.
+            token: str, bool or None
+                The token to send to the Hub. `True` uses the token stored by `hf auth login`.
+                `False` sends no token. `None` uses the stored token when there is one.
+            cache_dir: str, Path or None
+                A cache directory to use instead of the default one.
+            force_download: bool
+                Whether to download the file again, even when it is cached.
+            local_files_only: bool
+                Whether to read only from the cache, without contacting the Hub.
+            subfolder: str or None
+                The folder of the repo that holds `tokenizer.json`.
 
         Returns:
-            `Tokenizer`: The tokenizer the file describes.
+            Tokenizer
+
+        Raises:
+            ValueError: The downloaded JSON is malformed or is not a `tokenizer.json`.
 
         Examples:
 
@@ -405,19 +639,87 @@ class Tokenizer:
         tokenizer = Tokenizer.from_pretrained("openai-community/gpt2", local_files_only=True)
         ```
         """
+    @staticmethod
+    def from_str(json: str) -> Tokenizer:
+        """
+        Loads a tokenizer from a JSON string, in the `tokenizer.json` format.
+
+        Components are not validated at this stage. A component with an unknown type or an invalid
+        setting raises `ValueError` in `Tokenizer.compile()`.
+
+        Args:
+            json: str
+                The JSON string to read.
+
+        Raises:
+            ValueError: The JSON is malformed or is not a `tokenizer.json`.
+        """
+    @property
+    def model(self, /) -> Model:
+        """
+        The model, which turns words into token ids.
+
+        Returns an editable view of the tokenizer's model.
+        """
+    @model.setter
+    def model(self, /, model: Model) -> None: ...
+    @property
+    def normalizer(self, /) -> Normalizer | None:
+        """
+        The normalizer, which cleans up the text before it is split, or `None`.
+
+        Returns an editable view of the tokenizer's normalizer.
+        """
+    @normalizer.setter
+    def normalizer(self, /, normalizer: Normalizer | None) -> None: ...
     @property
     def padding(self, /) -> Padding | None:
         """
-        The padding a tokenizer compiled from this spec applies to every encode, or `None`.
-        Assign `None` to switch padding off.
+        The padding that `CompiledTokenizer.encode` applies by default, or `None` for no padding.
         """
     @padding.setter
     def padding(self, /, padding: Padding | None) -> None: ...
     @property
+    def post_processor(self, /) -> PostProcessor | None:
+        """
+        The post-processor, which adds special tokens, or `None`.
+
+        Returns an editable view of the tokenizer's post-processor.
+        """
+    @post_processor.setter
+    def post_processor(self, /, post_processor: PostProcessor | None) -> None: ...
+    @property
+    def pre_tokenizer(self, /) -> PreTokenizer | None:
+        """
+        The pre-tokenizer, which splits the text into words, or `None`.
+
+        Returns an editable view of the tokenizer's pre-tokenizer.
+        """
+    @pre_tokenizer.setter
+    def pre_tokenizer(self, /, pre_tokenizer: PreTokenizer | None) -> None: ...
+    def save(self, /, path: str | PathLike[str], pretty: bool = True) -> None:
+        """
+        Saves the tokenizer to a file as JSON, for example `tokenizer.json`
+
+        Args:
+            path: str or Path
+                The file to write.
+            pretty: bool
+                Whether to indent the JSON. Defaults to `True`.
+        """
+    def to_str(self, /, pretty: bool = False) -> str:
+        """
+        Returns the tokenizer as a JSON string, in the `tokenizer.json` format.
+
+        Args:
+            pretty: bool
+                Whether to indent the JSON. Defaults to `False`.
+        """
+    @property
     def truncation(self, /) -> Truncation | None:
         """
-        The truncation a tokenizer compiled from this spec applies to every encode, or `None`.
-        Assign `None` to switch truncation off.
+        The truncation that `CompiledTokenizer.encode` applies by default, or `None` for no
+        truncation.
         """
     @truncation.setter
     def truncation(self, /, truncation: Truncation | None) -> None: ...

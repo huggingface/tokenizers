@@ -14,8 +14,8 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use tk_encode::pipeline::{
-    EncodeOptions, Model, PipelineModel, PipelineTokenizer, PreTokenizer, PreTokenizerScratch,
-    Span, SpecialSegmentIterator, normalize_all,
+    EncodeOptions, Model, PreTokenize, PreTokenizerScratch, Span, SpecialSegmentIterator, Tokenize,
+    Tokenizer, normalize_all,
 };
 
 const BATCH_SIZE: usize = 1_000;
@@ -29,12 +29,12 @@ const FIXTURES: [(&str, &str); 1] = [("encode-deepseek", "../data/deepseek-v4.js
 
 /// Read a real config from `../data`. They are all still version `1.0`, so run the upgrade pass
 /// first -- the reader only accepts canonical `2.0`.
-fn load(path: &str) -> PipelineTokenizer {
+fn load(path: &str) -> Tokenizer {
     let canonical = tk_convert::canonicalize_file(path).unwrap();
     tk_serialize::from_json(&canonical).unwrap()
 }
 
-fn pre_tokenize(tokenizer: &PipelineTokenizer, text: &str, spans: &mut Vec<Span>) {
+fn pre_tokenize(tokenizer: &Tokenizer, text: &str, spans: &mut Vec<Span>) {
     let mut scratch = PreTokenizerScratch::default();
     spans.clear();
     tokenizer
@@ -132,26 +132,26 @@ pub fn encode(c: &mut Criterion) {
         // ---- stage 4: the model, one call per pre-token ----
         let words: Vec<&str> = spans.iter().map(|span| &normalized[span.range()]).collect();
 
-        // `tokenize_pipeline` lives on the concrete model, not on the `PipelineModel` enum, so the
+        // `tokenize` lives on the concrete model, not on the `Model` enum, so the
         // row exists per model kind. Both fixtures here are BPE.
-        // Irrefutable in a `bpe`-only build, where `PipelineModel` has exactly one variant.
+        // Irrefutable in a `bpe`-only build, where `Model` has exactly one variant.
         #[allow(irrefutable_let_patterns)]
-        if let PipelineModel::BPE(bpe) = tokenizer.get_model() {
+        if let Model::BPE(bpe) = tokenizer.get_model() {
             group.bench_function("stage/model", |b| {
                 let mut scratch = bpe.init_scratch();
                 let mut out = Vec::new();
                 b.iter(|| {
                     out.clear();
                     for word in &words {
-                        bpe.tokenize_pipeline(word, &mut scratch, &mut out).unwrap();
+                        bpe.tokenize(word, &mut scratch, &mut out).unwrap();
                     }
                     black_box(out.len())
                 })
             });
         }
 
-        // No `stage/post-process` row: `PipelineTokenizer::post_process` is private and
-        // `PipelinePostProcessor` exposes only its templates, so that stage shows up today only
+        // No `stage/post-process` row: `Tokenizer::post_process` is private and
+        // `PostProcessor` exposes only its templates, so that stage shows up today only
         // inside the fused rows.
     }
 }

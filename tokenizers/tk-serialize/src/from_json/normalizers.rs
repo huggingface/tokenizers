@@ -1,4 +1,4 @@
-//! The `normalizer` object, flattened into the pipeline's `Vec<PipelineNormalizer>`.
+//! The `normalizer` object, flattened into the pipeline's `Vec<Normalizer>`.
 
 #[cfg(not(feature = "normalizers"))]
 use super::needs_feature;
@@ -7,12 +7,12 @@ use crate::json::Json;
 #[cfg(feature = "normalizers")]
 use base64::Engine as _;
 use tk_encode::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
-use tk_encode::normalizers::metaspace::{MetaspaceNormalizer, PrependBehavior};
+use tk_encode::normalizers::metaspace::{MetaspaceNormalizer, PrependScheme};
 use tk_encode::normalizers::prepend::Prepend;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
 use tk_encode::normalizers::strip::Strip;
 use tk_encode::normalizers::utils::Lowercase;
-use tk_encode::pipeline::PipelineNormalizer;
+use tk_encode::pipeline::Normalizer;
 use tk_encode::tokenizer::Result;
 
 #[cfg(feature = "normalizers")]
@@ -23,7 +23,7 @@ use tk_encode::normalizers::{
     unicode::{NFC, NFD, NFKC, NFKD, Nmt},
 };
 
-pub(super) fn read_normalizers(cfg: Option<&Json<'_>>) -> Result<Vec<PipelineNormalizer>> {
+pub(super) fn read_normalizers(cfg: Option<&Json<'_>>) -> Result<Vec<Normalizer>> {
     let mut out = Vec::new();
     if let Some(cfg) = cfg {
         push_normalizer(cfg, &mut out)?;
@@ -31,16 +31,16 @@ pub(super) fn read_normalizers(cfg: Option<&Json<'_>>) -> Result<Vec<PipelineNor
     Ok(out)
 }
 
-fn read_metaspace_prepend_behavior(cfg: &Json<'_>, owner: &str) -> Result<PrependBehavior> {
-    match cfg.need(owner, "prepend", Json::as_str)? {
-        "always" => Ok(PrependBehavior::Always),
-        "first" => Ok(PrependBehavior::First),
-        "never" => Ok(PrependBehavior::Never),
-        other => Err(format!("unknown metaspace prepend {other:?}").into()),
+pub(super) fn read_prepend_scheme(cfg: &Json<'_>, owner: &str, key: &str) -> Result<PrependScheme> {
+    match cfg.need(owner, key, Json::as_str)? {
+        "always" => Ok(PrependScheme::Always),
+        "first" => Ok(PrependScheme::First),
+        "never" => Ok(PrependScheme::Never),
+        other => Err(format!("unknown metaspace {key} {other:?}").into()),
     }
 }
 
-fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<()> {
+fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<Normalizer>) -> Result<()> {
     let kind = cfg
         .type_tag()
         .ok_or_else(|| unsupported("a normalizer with no `type`"))?;
@@ -55,27 +55,25 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
                 push_normalizer(member, out)?;
             }
         }
-        "MetaspaceNormalizer" => out.push(PipelineNormalizer::Metaspace(MetaspaceNormalizer::new(
+        "MetaspaceNormalizer" => out.push(Normalizer::Metaspace(MetaspaceNormalizer::new(
             super::pre_tokenizers::read_char(cfg, "replacement")?,
-            read_metaspace_prepend_behavior(cfg, &owner)?,
+            read_prepend_scheme(cfg, &owner, "prepend")?,
             cfg.need(&owner, "drop_whitespace", Json::as_bool)?,
         ))),
-        "Replace" => out.push(PipelineNormalizer::Replace(read_replace(cfg)?)),
+        "Replace" => out.push(Normalizer::Replace(read_replace(cfg)?)),
         "Prepend" => {
             let prepend = cfg
                 .field("prepend")
                 .and_then(Json::as_str)
                 .ok_or_else(|| -> tk_encode::Error { "Prepend has no `prepend` field".into() })?;
-            out.push(PipelineNormalizer::Prepend(Prepend::new(
-                prepend.to_string(),
-            )));
+            out.push(Normalizer::Prepend(Prepend::new(prepend.to_string())));
         }
-        "Strip" => out.push(PipelineNormalizer::Strip(Strip::new(
+        "Strip" => out.push(Normalizer::Strip(Strip::new(
             cfg.need(&owner, "strip_left", Json::as_bool)?,
             cfg.need(&owner, "strip_right", Json::as_bool)?,
         ))),
-        "Lowercase" => out.push(PipelineNormalizer::Lowercase(Lowercase)),
-        "ByteLevel" => out.push(PipelineNormalizer::ByteLevel(ByteLevelNormalizer)),
+        "Lowercase" => out.push(Normalizer::Lowercase(Lowercase)),
+        "ByteLevel" => out.push(Normalizer::ByteLevel(ByteLevelNormalizer)),
         #[cfg(feature = "normalizers")]
         "BertNormalizer" => {
             let strip_accents = cfg
@@ -84,7 +82,7 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
                     "BertNormalizer has no `strip_accents` (spell it `null` for the default)".into()
                 })?
                 .as_bool();
-            out.push(PipelineNormalizer::Bert(BertNormalizer::new(
+            out.push(Normalizer::Bert(BertNormalizer::new(
                 cfg.need(&owner, "clean_text", Json::as_bool)?,
                 cfg.need(&owner, "handle_chinese_chars", Json::as_bool)?,
                 strip_accents,
@@ -92,17 +90,17 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
             )));
         }
         #[cfg(feature = "normalizers")]
-        "StripAccents" => out.push(PipelineNormalizer::StripAccents(StripAccents::new())),
+        "StripAccents" => out.push(Normalizer::StripAccents(StripAccents::new())),
         #[cfg(feature = "normalizers")]
-        "NFC" => out.push(PipelineNormalizer::NFC(NFC)),
+        "NFC" => out.push(Normalizer::NFC(NFC)),
         #[cfg(feature = "normalizers")]
-        "NFD" => out.push(PipelineNormalizer::NFD(NFD)),
+        "NFD" => out.push(Normalizer::NFD(NFD)),
         #[cfg(feature = "normalizers")]
-        "NFKC" => out.push(PipelineNormalizer::NFKC(NFKC)),
+        "NFKC" => out.push(Normalizer::NFKC(NFKC)),
         #[cfg(feature = "normalizers")]
-        "NFKD" => out.push(PipelineNormalizer::NFKD(NFKD)),
+        "NFKD" => out.push(Normalizer::NFKD(NFKD)),
         #[cfg(feature = "normalizers")]
-        "Nmt" => out.push(PipelineNormalizer::Nmt(Nmt)),
+        "Nmt" => out.push(Normalizer::Nmt(Nmt)),
         #[cfg(feature = "normalizers")]
         "Precompiled" => {
             let charsmap = cfg
@@ -118,7 +116,7 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<PipelineNormalizer>) -> Result<
                 })?;
             // The bytes go in beside the parsed value: they are the whole of this normalizer's
             // configuration, and `spm_precompiled` publishes them only through serde.
-            out.push(PipelineNormalizer::Precompiled(
+            out.push(Normalizer::Precompiled(
                 PrecompiledNormalizer::from_charsmap(&bytes)?,
             ));
         }

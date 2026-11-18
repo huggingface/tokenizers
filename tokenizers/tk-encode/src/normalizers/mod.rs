@@ -25,8 +25,3 @@ pub use crate::normalizers::strip_accents::StripAccents;
 #[cfg(feature = "normalizers")]
 pub use crate::normalizers::unicode::{NFC, NFD, NFKC, NFKD, Nmt};
 pub use crate::normalizers::utils::Lowercase;
-
-// `NormalizerWrapper`, its hand-written `Deserialize` (tagged, with an untagged legacy fallback)
-// and the `Sequence` normalizer that holds a `Vec<NormalizerWrapper>` live in `tk-convert`.
-// What the encode path runs is `pipeline::PipelineNormalizer`, one variant per concrete normalizer,
-// which the config layer lowers a wrapper into.

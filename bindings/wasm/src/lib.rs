@@ -1,6 +1,6 @@
 use tokenizers::canonicalize_str;
 use tokenizers::from_json;
-use tokenizers::pipeline::PipelineTokenizer;
+use tokenizers::pipeline;
 use tsify::Ts;
 
 use wasm_bindgen::prelude::*;
@@ -24,7 +24,7 @@ pub use options::EncodeOptions;
 /// using tokenizer = Tokenizer.from_json(json);
 /// const ids = tokenizer.encode("Hello world");
 /// ```
-pub struct Tokenizer(PipelineTokenizer);
+pub struct Tokenizer(pipeline::Tokenizer);
 
 #[wasm_bindgen]
 impl Tokenizer {

@@ -19,7 +19,7 @@ impl Strip {
     }
 }
 
-impl pipeline::Normalizer for Strip {
+impl pipeline::Normalize for Strip {
     fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
         let s = if self.strip_left {
             input.trim_start()
@@ -77,7 +77,7 @@ mod tests {
             let n = Strip::new(strip_left, strip_right);
             for &(input, expected) in pairs {
                 assert_eq!(
-                    &*pipeline::Normalizer::normalize(&n, input, 0).unwrap(),
+                    &*pipeline::Normalize::normalize(&n, input, 0).unwrap(),
                     expected,
                     "strip=({strip_left}, {strip_right}) input={input:?}"
                 );

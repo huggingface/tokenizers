@@ -5,7 +5,7 @@
 //!
 //! This is the whole reason you see 'Ġ' everywhere! It's the encode " " char.
 
-use crate::tokenizer::{Decoder, Result};
+use crate::tokenizer::{Decode, Result};
 use crate::utils::byte_level::char_to_byte;
 
 /// Maps the byte-level alphabet back to the bytes it stands for.
@@ -18,7 +18,7 @@ impl ByteLevelDecoder {
     }
 }
 
-impl Decoder for ByteLevelDecoder {
+impl Decode for ByteLevelDecoder {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
         let toks = tokens
             .into_iter()
