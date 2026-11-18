@@ -364,9 +364,9 @@ class Encoding:
         A list of ints.
         """
     @property
-    def attention_mask_buffer(self, /) -> memoryview:
+    def attention_mask_buffer(self, /) -> Buffer:
         """
-        Returns a copy of the attention mask, as a `memoryview` of `uint32`.
+        The attention mask, as a read-only buffer of `uint32`.
         When the encoding is padded: 1 for token ids, 0 for padding tokens.
         """
     @property
@@ -375,9 +375,9 @@ class Encoding:
         The id of each token, as a list of ints.
         """
     @property
-    def ids_buffer(self, /) -> memoryview:
+    def ids_buffer(self, /) -> Buffer:
         """
-        Returns a copy of the id of each token, as a `memoryview` of `uint32`.
+        The id of each token, as a read-only buffer of `uint32`.
         """
     @property
     def type_ids(self, /) -> list[int]:
@@ -385,9 +385,9 @@ class Encoding:
         The type id of each token, as a list of ints.
         """
     @property
-    def type_ids_buffer(self, /) -> memoryview:
+    def type_ids_buffer(self, /) -> Buffer:
         """
-        Returns a copy of the type id of each token, as a `memoryview` of `uint32`.
+        The type id of each token, as a read-only buffer of `uint32`.
         """
 
 @final

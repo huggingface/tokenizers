@@ -3,8 +3,10 @@ use std::slice;
 use std::sync::OnceLock;
 
 use pyo3::prelude::*;
-use pyo3::types::{PyByteArray, PyMemoryView};
+use pyo3::types::{PyBytes, PyMemoryView};
 use tk::pipeline::{self, Token};
+
+use crate::type_hints::U32Buffer;
 
 /// Text encoded to token ids by a tokenizer.
 #[pyclass(frozen, eq, module = "tokenizers")]
@@ -76,23 +78,23 @@ impl Encoding {
         })
     }
 
-    /// Returns a copy of the id of each token, as a `memoryview` of `uint32`.
+    /// The id of each token, as a read-only buffer of `uint32`.
     #[getter]
-    fn ids_buffer<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
-        u32_memoryview(py, self.ids())
+    fn ids_buffer<'py>(&self, py: Python<'py>) -> PyResult<U32Buffer<'py>> {
+        u32_buffer(py, self.ids())
     }
 
-    /// Returns a copy of the type id of each token, as a `memoryview` of `uint32`.
+    /// The type id of each token, as a read-only buffer of `uint32`.
     #[getter]
-    fn type_ids_buffer<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
-        u32_memoryview(py, self.type_ids())
+    fn type_ids_buffer<'py>(&self, py: Python<'py>) -> PyResult<U32Buffer<'py>> {
+        u32_buffer(py, self.type_ids())
     }
 
-    /// Returns a copy of the attention mask, as a `memoryview` of `uint32`.
+    /// The attention mask, as a read-only buffer of `uint32`.
     /// When the encoding is padded: 1 for token ids, 0 for padding tokens.
     #[getter]
-    fn attention_mask_buffer<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyMemoryView>> {
-        u32_memoryview(py, self.attention_mask())
+    fn attention_mask_buffer<'py>(&self, py: Python<'py>) -> PyResult<U32Buffer<'py>> {
+        u32_buffer(py, self.attention_mask())
     }
 
     /// The number of tokens in the encoding
@@ -138,15 +140,15 @@ fn bytes_slice_to_u32(slice: &[u8]) -> Vec<u32> {
     slice.iter().map(|&byte| byte as u32).collect()
 }
 
-/// Copies `values` into a new writable `memoryview` with format `"I"` (`uint32`).
+/// Copies `values` into a new read-only `memoryview` with format `"I"` (`uint32`).
 ///
-/// `torch.frombuffer(buffer, dtype=torch.int32)` and `numpy.asarray` read it without a copy.
-fn u32_memoryview<'py>(py: Python<'py>, values: &[u32]) -> PyResult<Bound<'py, PyMemoryView>> {
+/// `numpy.asarray` reads it without a copy.
+fn u32_buffer<'py>(py: Python<'py>, values: &[u32]) -> PyResult<U32Buffer<'py>> {
     // SAFETY: a `u32` is four initialized bytes with no padding, and a `u8` needs no alignment.
     // The byte slice covers the memory of `values` exactly and borrows it for as long.
     let bytes = unsafe { slice::from_raw_parts(values.as_ptr().cast(), mem::size_of_val(values)) };
-    let bytes = PyByteArray::new(py, bytes);
-    Ok(PyMemoryView::from(&bytes)?
-        .call_method1("cast", ("I",))?
-        .cast_into()?)
+    // A `memoryview` of `bytes` is read-only.
+    let bytes = PyBytes::new(py, bytes);
+    let view = PyMemoryView::from(&bytes)?.call_method1("cast", ("I",))?;
+    Ok(U32Buffer(view))
 }

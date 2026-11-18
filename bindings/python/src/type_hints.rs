@@ -97,3 +97,20 @@ impl<'py> IntoPyObject<'py> for AddedTokens<'py> {
         Ok(self.0)
     }
 }
+
+/// What `Encoding.ids_buffer` and the other buffer getters return, typed `Buffer`.
+///
+/// The stubs promise only the buffer protocol, so the class behind it can change.
+pub struct U32Buffer<'py>(pub Bound<'py, PyAny>);
+
+impl<'py> IntoPyObject<'py> for U32Buffer<'py> {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = Infallible;
+
+    const OUTPUT_TYPE: PyStaticExpr = type_hint_identifier!("typing_extensions", "Buffer");
+
+    fn into_pyobject(self, _py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        Ok(self.0)
+    }
+}
