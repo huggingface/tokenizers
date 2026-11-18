@@ -2,15 +2,6 @@ use crate::Result;
 
 use super::bucket_vocab_store::BucketVocabStore;
 
-#[derive(Clone, PartialEq, Debug, Default)]
-pub(crate) struct AddedTokenFlags {
-    pub special: bool,
-    pub normalized: bool,
-    pub single_word: bool,
-    pub lstrip: bool,
-    pub rstrip: bool,
-}
-
 /// The key to have a fast byte matching alrogithm is to skip failures fast and reject quickly
 /// potential candidates. What we do here:
 /// 1. memchr / nibble SIMD scan of potential candidates. `pshufb` does parallel lookup in a 16-byte
@@ -431,14 +422,6 @@ impl Buckets {
     pub fn is_empty(&self) -> bool {
         self.vocab.is_empty()
     }
-    /// Every token's bytes with its internal id.
-    pub(crate) fn token_bytes(&self) -> Vec<(Vec<u8>, u32)> {
-        self.vocab.byte_content()
-    }
-    /// Every token with its internal id.
-    pub(crate) fn tokens(&self) -> Vec<(String, u32)> {
-        self.vocab.content()
-    }
     pub(crate) fn token_to_internal_id(&self, token: &str) -> Option<u32> {
         self.vocab.token_to_id(token)
     }
@@ -542,7 +525,7 @@ mod bench {
     }
 
     fn run(name: &str, b: &Buckets, pma: &DoubleArrayAhoCorasick<usize>, bytes: &[u8]) {
-        let m = NaiveMatcher::new(&b.token_bytes()); // built once, outside the timed loop
+        let m = NaiveMatcher::new(&b.vocab.byte_content()); // built once, outside the timed loop
         let (o, n) = (scan_opt(b, bytes), scan_naive(&m, bytes));
         let cand = bytes
             .iter()

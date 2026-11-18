@@ -265,16 +265,10 @@ impl Tokenizer {
         padding: Option<PaddingParams>,
         truncation: Option<TruncationParams>,
     ) -> Self {
-        let added_id_min = added_vocabulary
-            .get_added_tokens_decoder()
-            .keys()
-            .copied()
-            .min()
-            .unwrap_or(u32::MAX);
+        let added_id_min = added_vocabulary.lowest_vocab_id().unwrap_or(u32::MAX);
         let added_outside_model = added_vocabulary
-            .get_vocab()
-            .keys()
-            .filter(|token| model.token_to_id(token).is_none())
+            .contents()
+            .filter(|content| model.token_to_id(content).is_none())
             .count();
         let total_vocab_size = model.get_vocab_size() + added_outside_model;
         Self {
@@ -584,7 +578,7 @@ impl Tokenizer {
         self.inner.decoder.as_ref()
     }
 
-    /// The added vocabulary, whose `get_added_tokens_decoder` is the `added_tokens` array.
+    /// The added vocabulary, whose `tokens` are the `added_tokens` array.
     pub fn get_added_vocabulary(&self) -> &BucketAddedVocabulary {
         &self.inner.added_vocabulary
     }

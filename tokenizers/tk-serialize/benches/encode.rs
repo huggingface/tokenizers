@@ -19,6 +19,7 @@ use tk_encode::pipeline::{
 };
 
 const BATCH_SIZE: usize = 1_000;
+const WORDS_PER_ADDED_TOKEN: usize = 8;
 
 /// `deepseek-v4` because it is the one config in `../data` that exercises every stage this bench
 /// can reach: a real pre-tokenizer that actually splits English, a BPE model, and 1283 added
@@ -32,6 +33,56 @@ const FIXTURES: [(&str, &str); 1] = [("encode-deepseek", "../data/deepseek-v4.js
 fn load(path: &str) -> Tokenizer {
     let canonical = tk_convert::canonicalize_file(path).unwrap();
     tk_serialize::from_json(&canonical).unwrap()
+}
+
+/// The `content` of each added token in the config at `path` whose `normalized` flag is
+/// `normalized`.
+fn added_token_contents(path: &str, normalized: bool) -> Vec<String> {
+    let config: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let mut contents = Vec::new();
+    for token in config["added_tokens"].as_array().unwrap() {
+        if token["normalized"] == normalized {
+            contents.push(token["content"].as_str().unwrap().to_owned());
+        }
+    }
+    contents
+}
+
+/// `lines` with one of `tokens` after every [`WORDS_PER_ADDED_TOKEN`] words, taking each of
+/// `tokens` in turn.
+fn splice_added_tokens(lines: &[&str], tokens: &[String]) -> Vec<String> {
+    let mut tokens = tokens.iter().cycle();
+    let mut words = 0;
+    let mut spliced_lines = Vec::with_capacity(lines.len());
+    for line in lines {
+        let mut spliced = String::with_capacity(2 * line.len());
+        for word in line.split(' ') {
+            spliced.push_str(word);
+            spliced.push(' ');
+            words += 1;
+            if words % WORDS_PER_ADDED_TOKEN == 0 {
+                spliced.push_str(tokens.next().unwrap());
+                spliced.push(' ');
+            }
+        }
+        spliced_lines.push(spliced);
+    }
+    spliced_lines
+}
+
+fn scan_added_tokens(tokenizer: &Tokenizer, lines: &[impl AsRef<str>], normalized: bool) {
+    for line in lines {
+        let segments = SpecialSegmentIterator::new(
+            line.as_ref(),
+            tokenizer.get_added_vocabulary(),
+            normalized,
+            false,
+        );
+        for segment in segments {
+            black_box(&segment);
+        }
+    }
 }
 
 fn pre_tokenize(tokenizer: &Tokenizer, text: &str, spans: &mut Vec<Span>) {
@@ -84,20 +135,34 @@ pub fn encode(c: &mut Criterion) {
 
         // ---- stage 1: the added-token scan, over the raw input ----
         group.bench_function("stage/added-tokens", |b| {
-            b.iter(|| {
-                for line in &lines {
-                    let segments = SpecialSegmentIterator::new(
-                        line,
-                        tokenizer.get_added_vocabulary(),
-                        false,
-                        false,
-                    );
-                    for segment in segments {
-                        black_box(&segment);
-                    }
-                }
-            })
+            b.iter(|| scan_added_tokens(&tokenizer, &lines, false))
         });
+
+        // `big.txt` holds no added token, so the row above never reads a matched token's flags
+        // or id. These two splice the config's own tokens into the text.
+        for (row, normalized) in [
+            ("stage/added-tokens, raw matches", false),
+            ("stage/added-tokens, normalized matches", true),
+        ] {
+            let tokens = added_token_contents(path, normalized);
+            if tokens.is_empty() {
+                continue;
+            }
+            let mut spliced = splice_added_tokens(&lines, &tokens);
+            if normalized {
+                for line in &mut spliced {
+                    *line = normalize_all(tokenizer.get_normalizers(), line, 0)
+                        .unwrap()
+                        .into_owned();
+                }
+            }
+            let bytes: usize = spliced.iter().map(String::len).sum();
+            group.throughput(Throughput::Bytes(bytes as u64));
+            group.bench_function(row, |b| {
+                b.iter(|| scan_added_tokens(&tokenizer, &spliced, normalized))
+            });
+        }
+        group.throughput(Throughput::Bytes(data.len() as u64));
 
         // ---- stage 2: normalization ----
         // Skipped when the config has no normalizer: `normalize_all` over an empty slice returns

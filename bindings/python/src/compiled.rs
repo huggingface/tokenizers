@@ -1,8 +1,8 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{PyBytes, PyDict};
+use pyo3::types::{IntoPyDict, PyBytes, PyDict};
 use tk::PaddingParams;
 use tk::TruncationParams;
 use tk::pipeline;
@@ -265,16 +265,12 @@ impl CompiledTokenizer {
     #[getter]
     fn added_tokens<'py>(&self, py: Python<'py>) -> PyResult<AddedTokens<'py>> {
         let added_tokens = self.added_tokens.get_or_try_init(py, || {
-            let decoder = self
+            let added_tokens = self
                 .pipeline
                 .get_added_vocabulary()
-                .get_added_tokens_decoder();
-            // The core returns a HashMap, which has no order. A BTreeMap sorts it by id.
-            let by_id: BTreeMap<u32, AddedToken> = decoder
-                .into_iter()
-                .map(|(id, token)| (id, token.into()))
-                .collect();
-            PyResult::Ok(by_id.into_pyobject(py)?.unbind())
+                .tokens()
+                .map(|(id, token)| (id, AddedToken::from(token)));
+            PyResult::Ok(added_tokens.into_py_dict(py)?.unbind())
         })?;
         Ok(AddedTokens(added_tokens.bind(py).copy()?))
     }
