@@ -1,5 +1,6 @@
 //! The encode thread pool and its knobs: [`max_threads`] / [`set_max_threads`].
 
+use arc_swap::{ArcSwapOption, Guard};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
@@ -18,24 +19,38 @@ static MAX_THREADS: AtomicUsize = AtomicUsize::new(0);
 static SERIAL_DEFAULT: AtomicBool = AtomicBool::new(false);
 
 /// The cached pool, keyed by the worker count it was built for: a change rebuilds it.
-struct CachedPool {
+struct Slot {
     /// `None` when `max_threads()` is 1 or the build failed: cached too, so a serial process skips
     /// the rebuild path.
-    pool: Option<Arc<rayon::ThreadPool>>,
+    pool: Option<rayon::ThreadPool>,
     /// `max_threads() - 1` at build time.
     workers: usize,
 }
 
-type PoolCache = Mutex<Option<CachedPool>>;
+struct PoolCache {
+    /// Read without a lock: every encode looks the pool up, concurrent callers included.
+    slot: ArcSwapOption<Slot>,
+    /// Held while one caller builds the pool, so concurrent callers don't each build one.
+    build: Mutex<()>,
+}
+
+impl PoolCache {
+    const fn new() -> Self {
+        Self {
+            slot: ArcSwapOption::const_empty(),
+            build: Mutex::new(()),
+        }
+    }
+}
 
 /// The pool cache until the first `fork()`.
-static FIRST_POOL_CACHE: PoolCache = Mutex::new(None);
+static FIRST_POOL_CACHE: PoolCache = PoolCache::new();
 
 /// The pool cache [`pool`] reads: [`FIRST_POOL_CACHE`], or a fresh one in a forked child.
 ///
-/// `fork()` copies the whole memory but only the calling thread: the child's copy of the cache may
-/// be locked by a thread that doesn't exist there, and its pool has no worker threads (dropping it
-/// can deadlock). So the child points this at a fresh cache, and leaks the old one.
+/// `fork()` copies the whole memory but only the calling thread: the child's copy of the build lock
+/// may be held by a thread that doesn't exist there, and its pool has no worker threads (dropping
+/// it can deadlock). So the child points this at a fresh cache, and leaks the old one.
 static POOL_CACHE: AtomicPtr<PoolCache> = AtomicPtr::new((&raw const FIRST_POOL_CACHE).cast_mut());
 
 fn pool_cache() -> &'static PoolCache {
@@ -58,7 +73,7 @@ pub fn register_fork_handler() {
     fork::watch();
     // allocating is fine here: glibc and libSystem unlock malloc before running child handlers
     extern "C" fn switch_to_fresh_cache() {
-        POOL_CACHE.store(Box::leak(Box::new(Mutex::new(None))), Ordering::Release);
+        POOL_CACHE.store(Box::leak(Box::new(PoolCache::new())), Ordering::Release);
     }
     REGISTERED.call_once(|| {
         // SAFETY: the handler only allocates and stores an atomic
@@ -74,11 +89,11 @@ pub fn register_fork_handler() {}
 /// How many times [`try_lock_briefly`] retries a held lock before giving up.
 const LOCK_ATTEMPTS: u32 = 64;
 
-/// Takes the [`pool_cache`] lock, or gives up after [`LOCK_ATTEMPTS`] tries: the holder may be
-/// building a pool, and encoding serially beats waiting for it.
-fn try_lock_briefly() -> Option<MutexGuard<'static, Option<CachedPool>>> {
+/// Takes `lock`, or gives up after [`LOCK_ATTEMPTS`] tries: the holder is building a pool, and
+/// encoding serially beats waiting for it.
+fn try_lock_briefly(lock: &Mutex<()>) -> Option<MutexGuard<'_, ()>> {
     for attempt in 0..LOCK_ATTEMPTS {
-        match pool_cache().try_lock() {
+        match lock.try_lock() {
             Ok(g) => return Some(g),
             Err(TryLockError::Poisoned(p)) => return Some(p.into_inner()),
             Err(TryLockError::WouldBlock) if attempt < LOCK_ATTEMPTS / 2 => std::hint::spin_loop(),
@@ -88,18 +103,47 @@ fn try_lock_briefly() -> Option<MutexGuard<'static, Option<CachedPool>>> {
     None
 }
 
-pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
+/// The encode pool, borrowed from the cache. Usually without touching the slot's refcount: that is
+/// paid only when the thread holds too many guards at once, or a rebuild swaps the slot meanwhile.
+pub(crate) struct Pool(Guard<Option<Arc<Slot>>>);
+
+impl Pool {
+    /// The cached pool, if it was built for `workers` and has threads; `Err` if it must be built.
+    fn cached(cache: &PoolCache, workers: usize) -> Result<Option<Self>, ()> {
+        let slot = cache.slot.load();
+        match slot.as_deref() {
+            Some(s) if s.workers == workers => Ok(s.pool.is_some().then(|| Self(slot))),
+            _ => Err(()),
+        }
+    }
+}
+
+impl std::ops::Deref for Pool {
+    type Target = rayon::ThreadPool;
+
+    fn deref(&self) -> &rayon::ThreadPool {
+        self.0
+            .as_deref()
+            .and_then(|slot| slot.pool.as_ref())
+            .expect("[BUG] a `Pool` always holds a slot with a thread pool")
+    }
+}
+
+pub(crate) fn pool() -> Option<Pool> {
     register_fork_handler();
 
     // the caller is one of the `max_threads`. Read once and stored as the key: a racing
     // `set_max_threads` is caught by the next call.
     let workers = max_threads() - 1;
-    // callers that find the lock held encode serially, so only one of them builds a pool
-    let mut cache = try_lock_briefly()?;
-    if let Some(cached) = cache.as_ref()
-        && cached.workers == workers
-    {
-        return cached.pool.clone();
+    let cache = pool_cache();
+    if let Ok(pool) = Pool::cached(cache, workers) {
+        return pool;
+    }
+    // callers that find a build in progress encode serially, so only one of them builds a pool
+    let _building = try_lock_briefly(&cache.build)?;
+    // it may have finished between our check and the lock
+    if let Ok(pool) = Pool::cached(cache, workers) {
+        return pool;
     }
     let pool = if workers == 0 {
         None
@@ -110,13 +154,12 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
             .thread_name(|i| format!("tk-encode-{i}"))
             .build()
             .ok()
-            .map(Arc::new)
     };
-    *cache = Some(CachedPool {
-        pool: pool.clone(),
-        workers,
-    });
-    pool
+    let slot = Arc::new(Slot { pool, workers });
+    cache.slot.store(Some(slot.clone()));
+    slot.pool
+        .is_some()
+        .then(|| Pool(Guard::from_inner(Some(slot))))
 }
 
 /// Max threads one encode uses, caller included: the shared pool holds `max_threads() - 1`, so 1
@@ -162,7 +205,8 @@ mod tests {
     use super::*;
     use std::sync::PoisonError;
 
-    /// Tests touching the process-wide pool run one at a time: they hold its lock.
+    /// Tests touching the process-wide pool run one at a time: a resize reads as a rebuild, and some
+    /// hold its build lock.
     static POOL_TESTS: Mutex<()> = Mutex::new(());
 
     /// Forks a child that runs `child` and `_exit`s with its code, killed after 10s instead of
@@ -183,7 +227,7 @@ mod tests {
     }
 
     /// [`pool`], waiting out a build by another test's encode: meanwhile, `pool()` says serial.
-    fn built_pool() -> Option<Arc<rayon::ThreadPool>> {
+    fn built_pool() -> Option<Pool> {
         (0..1_000).find_map(|_| {
             pool().or_else(|| {
                 std::thread::sleep(std::time::Duration::from_millis(1));
@@ -241,25 +285,32 @@ mod tests {
         let callers: Vec<_> = (0..32)
             .map(|_| {
                 std::thread::spawn(|| {
-                    (0..2_000)
-                        .filter_map(|_| pool())
-                        .map(|pool| Arc::as_ptr(&pool) as usize)
-                        .collect::<std::collections::HashSet<_>>()
+                    // every distinct slot is kept alive, so a freed one's address can't be reused
+                    // by a duplicate and pass for it
+                    let mut held: Vec<Arc<Slot>> = Vec::new();
+                    for pool in (0..2_000).filter_map(|_| pool()) {
+                        let slot = Guard::into_inner(pool.0).expect("a `Pool` holds a slot");
+                        if !held.iter().any(|h| Arc::ptr_eq(h, &slot)) {
+                            held.push(slot);
+                        }
+                    }
+                    held
                 })
             })
             .collect();
-        let seen: std::collections::HashSet<_> = callers
+        let held: Vec<Arc<Slot>> = callers
             .into_iter()
             .flat_map(|caller| caller.join().unwrap())
             .collect();
+        let seen: std::collections::HashSet<_> = held.iter().map(Arc::as_ptr).collect();
         set_max_threads(0);
         assert_eq!(seen.len(), 1, "contended callers built pools of their own");
     }
 
-    /// A child forked while another thread holds the cache lock (as a build does) still gets a pool.
+    /// A child forked while another thread builds a pool (holding the build lock) still gets one.
     #[cfg(unix)]
     #[test]
-    fn child_forked_mid_lock_gets_a_pool() {
+    fn child_forked_mid_build_gets_a_pool() {
         let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
         if max_threads() == 1 {
             return; // no pool on a one-core machine
@@ -267,7 +318,7 @@ mod tests {
         register_fork_handler();
         let (held_tx, held_rx) = std::sync::mpsc::channel();
         let holder = std::thread::spawn(move || {
-            let _held = try_lock_briefly();
+            let _held = try_lock_briefly(&pool_cache().build);
             held_tx.send(()).unwrap();
             std::thread::sleep(std::time::Duration::from_millis(50));
         });
@@ -291,16 +342,17 @@ mod tests {
         if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
+        let slot = |pool: &Pool| (*pool.0).as_ref().map_or(0, |s| Arc::as_ptr(s) as usize);
         let size = max_threads();
         let parent = built_pool().expect("a pool");
         // a fork while a worker starts can hang the child's own thread spawns (std's lock)
         parent.broadcast(|_| ());
-        let parent = Arc::as_ptr(&parent) as usize;
+        let parent = slot(&parent);
         let ok = in_forked_child(|| {
             // the parent's size (a child defaults to serial), so only the fork tells the pools apart
             set_max_threads(size);
             let Some(pool) = pool() else { return 1 };
-            if Arc::as_ptr(&pool) as usize == parent {
+            if slot(&pool) == parent {
                 return 2;
             }
             // hangs (and the alarm kills the child) if the pool has no workers
