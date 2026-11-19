@@ -50,7 +50,13 @@ impl Decode for WordPiece {
                     *token = format!(" {token}");
                 }
             }
-            if self.cleanup {
+            // Keep these byte pairs in sync with the patterns in cleanup().
+            if self.cleanup
+                && token.as_bytes().windows(2).any(|pair| {
+                    pair[0] == b' '
+                        && matches!(pair[1], b'.' | b'?' | b'!' | b',' | b'\'' | b'n' | b'd')
+                })
+            {
                 *token = cleanup(token);
             }
         }
@@ -79,5 +85,50 @@ mod tests {
                 .unwrap(),
             "##uelo Araújo Noguera"
         );
+    }
+
+    #[test]
+    fn wordpiece_cleanup_preserves_all_replacements() {
+        let decoder = WordPiece::new("##".to_string(), true);
+        for (input, expected) in [
+            ("hello .", "hello."),
+            ("hello ?", "hello?"),
+            ("hello !", "hello!"),
+            ("hello ,", "hello,"),
+            ("a ' b", "a'b"),
+            ("ca n't", "can't"),
+            ("i 'm", "i'm"),
+            ("i do not", "i don't"),
+            ("it 's", "it's"),
+            ("i 've", "i've"),
+            ("we 're", "we're"),
+            ("你好 世界", "你好 世界"),
+        ] {
+            assert_eq!(decoder.decode(vec![input.to_owned()]).unwrap(), expected);
+        }
+        assert_eq!(
+            decoder
+                .decode(["hello", "##s", ".", "world"].map(String::from).to_vec())
+                .unwrap(),
+            "hellos. world"
+        );
+    }
+
+    #[test]
+    fn wordpiece_cleanup_matches_reference_for_short_inputs() {
+        let decoder = WordPiece::new("##".to_string(), true);
+        let alphabet = [' ', '.', '?', '!', ',', '\'', 'n', 'd', 'a', '你'];
+        for a in alphabet {
+            for b in alphabet {
+                for c in alphabet {
+                    let input: String = [a, b, c].into_iter().collect();
+                    assert_eq!(
+                        decoder.decode(vec![input.clone()]).unwrap(),
+                        cleanup(&input),
+                        "input: {input:?}"
+                    );
+                }
+            }
+        }
     }
 }
