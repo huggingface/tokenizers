@@ -77,8 +77,8 @@ pub(crate) struct Buckets {
     first_byte_to_bucket_id: [u8; 256],
     // we use optimized SIMD instructions (main one being `pshufb`) to scan potential special tokens when there are multiple unique starting bytes, noting that we have one bucket per starting byte.
     // The algo is taken from http://0x80.pl/notesen/2018-10-18-simd-byte-lookup.html, specifically the "Special case 1 - small sets"
-    lo16: [u8; 16],
-    hi16: [u8; 16],
+    // `None` past 8 high nibbles; see `build_nibble_table`.
+    nibble_table: Option<NibbleTable>,
     buckets: Box<[Bucket]>,
     // efficient AHashMap equivalent build on the premise that we know in advance all the keys: we
     // are in a close addressing problem.
@@ -89,8 +89,7 @@ impl Buckets {
     pub(crate) fn new() -> Self {
         Self {
             first_byte_to_bucket_id: [0xFF; 256], // 0xFF = no bucket for this first byte
-            lo16: [0; 16],
-            hi16: [0; 16],
+            nibble_table: None,
             buckets: Box::default(),
             vocab: BucketVocabStore::new(),
         }
@@ -102,15 +101,12 @@ impl Buckets {
         buckets: Box<[Bucket]>,
     ) -> Result<Self> {
         let vocab = BucketVocabStore::build(tokens)?;
-        let mut new = Self {
+        Ok(Self {
+            nibble_table: Self::build_nibble_table(&first_byte_to_bucket_id),
             first_byte_to_bucket_id,
-            lo16: [0; 16],
-            hi16: [0; 16],
             buckets,
             vocab,
-        };
-        new.build_nibble_table();
-        Ok(new)
+        })
     }
 
     /// Used by the AddedVocabulary when a new token is added, we recreate the entire structure.
@@ -192,9 +188,12 @@ impl Buckets {
     // So the lo[0xc] = 0b00010000 ->
     //                  ...x....
     // stores half the row in the u8 format. (0-255)
-    fn build_nibble_table(&mut self) {
+    //
+    // `None` when the first bytes span more than 8 high nibbles, since a row bit is one of the
+    // 8 bits of a table entry. The scan then falls back to `scalar_match`.
+    fn build_nibble_table(first_byte_to_bucket_id: &[u8; 256]) -> Option<NibbleTable> {
         // we build the nibble table from the candidate first_byte_to_bucket_id
-        let candidates: [bool; 256] = self.first_byte_to_bucket_id.map(|v| v != 0xFF);
+        let candidates: [bool; 256] = first_byte_to_bucket_id.map(|v| v != 0xFF);
         let (mut lo, mut hi) = ([0u8; 16], [0u8; 16]);
         let (mut next, mut bit, mut has) = (0u32, [0u8; 16], [false; 16]);
         for h in 0..16 {
@@ -203,8 +202,13 @@ impl Buckets {
             // unique id associated with that match.
             if (0..16).any(|l| candidates[(h << 4) | l]) {
                 if next >= 8 {
-                    return;
-                } // >8 high nibbles -> fallback to the general implementation TODO:
+                    log::warn!(
+                        "added tokens start with bytes from more than 8 high-nibble rows, the \
+                         most the SIMD scan supports: they are matched with a byte-by-byte scan \
+                         instead"
+                    );
+                    return None;
+                }
                 let counter = 1u8 << next;
                 next += 1;
                 hi[h] = counter;
@@ -223,10 +227,10 @@ impl Buckets {
                 }
             }
         }
-        (self.lo16, self.hi16) = (lo, hi);
+        Some(NibbleTable { lo16: lo, hi16: hi })
     }
     #[cfg(all(test, target_arch = "aarch64"))] // test-only helper for the NEON nibble matcher
-    fn nibble_match_bytes(&self, bytes: &[u8]) -> Option<usize> {
+    fn nibble_match_bytes(&self, table: &NibbleTable, bytes: &[u8]) -> Option<usize> {
         // lane index   0     1     2     3     4    ...  (16 lanes, one register)
         // input byte  'a'   'b'   '<'   'd'   'e'   ...
         // hex         61    62    3C    64    65    ...
@@ -251,8 +255,8 @@ impl Buckets {
         // SAFETY: NEON is baseline on aarch64; the only memory op is the 16-byte load below,
         // kept in bounds by the `i + 16 <= n` guard.
         unsafe {
-            let lov = vld1q_u8(self.lo16.as_ptr()); // load a 16bytes array in registers
-            let hiv = vld1q_u8(self.hi16.as_ptr());
+            let lov = vld1q_u8(table.lo16.as_ptr()); // load a 16bytes array in registers
+            let hiv = vld1q_u8(table.hi16.as_ptr());
             let m0f = vdupq_n_u8(0x0f); // prepare 0 mask used to get low nibbles
             while i + 16 <= n {
                 let v = vld1q_u8(bytes.as_ptr().add(i)); // in bounds: i + 16 <= n
@@ -361,13 +365,13 @@ impl Buckets {
     /// > it in place — so a false candidate never triggers a NEON reload or window re-align (the
     /// > restart penalty). lo/hi/m0f are loaded once for the whole scan.
     #[cfg(target_arch = "aarch64")]
-    fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
+    fn neon_mask_match(&self, bytes: &[u8], table: &NibbleTable) -> Option<(u32, u32, u32)> {
         use core::arch::aarch64::*;
         let n = bytes.len();
         // SAFETY: NEON is baseline on aarch64; the only memory op is the guarded 16-byte load.
         unsafe {
-            let lov = vld1q_u8(self.lo16.as_ptr());
-            let hiv = vld1q_u8(self.hi16.as_ptr());
+            let lov = vld1q_u8(table.lo16.as_ptr());
+            let hiv = vld1q_u8(table.hi16.as_ptr());
             let m0f = vdupq_n_u8(0x0f);
             let mut base = 0usize;
             while base + 16 <= n {
@@ -396,10 +400,14 @@ impl Buckets {
         }
     }
 
-    /// Portable scalar fallback until the SSE2/AVX2 nibble path lands.
-    #[cfg(not(target_arch = "aarch64"))]
+    /// Two or more buckets: [`Self::neon_mask_match`] where the target has NEON and the
+    /// [`NibbleTable`] exists, else [`Self::scalar_match`].
     fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
-        self.scalar_match(bytes, 0)
+        match &self.nibble_table {
+            #[cfg(target_arch = "aarch64")]
+            Some(table) => self.neon_mask_match(bytes, table),
+            _ => self.scalar_match(bytes, 0),
+        }
     }
 
     /// Looks up every byte of `bytes[start..]` in `first_byte_to_bucket_id`.
@@ -437,6 +445,14 @@ impl Buckets {
     pub(crate) fn internal_id_to_token_bytes(&self, internal_id: u32) -> Option<&[u8]> {
         self.vocab.id_to_token_bytes(internal_id)
     }
+}
+
+/// The two lookup tables of the nibble scan.
+#[derive(Clone)]
+#[cfg_attr(not(target_arch = "aarch64"), allow(dead_code))]
+struct NibbleTable {
+    lo16: [u8; 16],
+    hi16: [u8; 16],
 }
 
 impl Default for Buckets {
@@ -645,18 +661,18 @@ mod tests {
         expected_lo16[(b'a' & 0x0f) as usize] |= 0b01; // a -> lo16[1]
         expected_lo16[(b'd' & 0x0f) as usize] |= 0b01; // d -> lo16[4]
         expected_lo16[(b't' & 0x0f) as usize] |= 0b10; // t -> lo16[4]  => lo16[4] = 0b11  (bottom collision!)
-        let mut fake_bucket = Buckets::build(
+        let fake_bucket = Buckets::build(
             vec![("ha".as_bytes().to_vec(), 0)],
             first_byte_to_bucket,
             Box::new([]),
         )
         .unwrap();
-        fake_bucket.build_nibble_table();
-        assert_eq!(fake_bucket.lo16, expected_lo16);
-        assert_eq!(fake_bucket.hi16, expected_hi16);
-        assert!(fake_bucket.nibble_match_bytes("pardis".as_bytes()) == Some(1));
+        let table = fake_bucket.nibble_table.as_ref().unwrap();
+        assert_eq!(table.lo16, expected_lo16);
+        assert_eq!(table.hi16, expected_hi16);
+        assert!(fake_bucket.nibble_match_bytes(table, "pardis".as_bytes()) == Some(1));
         assert_eq!(
-            fake_bucket.nibble_match_bytes("where is toad".as_bytes()),
+            fake_bucket.nibble_match_bytes(table, "where is toad".as_bytes()),
             Some(9)
         );
     }
@@ -732,5 +748,20 @@ mod tests {
         // if ]] then it will exit early to ask to move the pointer?
         assert_eq!(fake_vocab.match_bytes(b"]FLS]>"), Some((3, 0, 5)));
         assert_eq!(fake_vocab.match_bytes(b"]]FLS]>"), Some((3, 1, 5)));
+    }
+
+    #[test]
+    fn added_tokens_whose_first_bytes_span_more_than_8_high_nibbles_are_found() {
+        // First bytes in 9 of the 16 high-nibble rows, one more than the nibble table holds.
+        let tokens: Vec<(Vec<u8>, u32)> =
+            ["\n\n", " x", "<s>", "[CLS]", "ab", "|x", "é", "中", "😀"]
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (s.as_bytes().to_vec(), i as u32))
+                .collect();
+        let buckets = Buckets::from_tokens(tokens).unwrap();
+        let mut text = b"<s>".to_vec();
+        text.extend_from_slice(&[b'z'; 40]);
+        assert_eq!(buckets.match_bytes(&text), Some((2, 0, 3)));
     }
 }
