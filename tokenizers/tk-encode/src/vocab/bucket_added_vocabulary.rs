@@ -229,14 +229,6 @@ impl AddedVocabulary {
         }
     }
 
-    /// Every added token with its internal id, raw tokens first.
-    fn tokens(&self) -> impl Iterator<Item = (String, u32)> {
-        self.vocab
-            .tokens()
-            .into_iter()
-            .chain(self.normalized_vocab.tokens())
-    }
-
     fn matcher(&self, normalized: bool) -> &Buckets {
         if normalized {
             &self.normalized_vocab
@@ -262,11 +254,14 @@ impl AddedVocabulary {
         self.vocab.is_empty() && self.normalized_vocab.is_empty()
     }
 
-    /// Get the additional vocabulary (union of both matchers; normalized tokens appear by their
-    /// normalized form).
+    /// Get the additional vocabulary: the content of each added token with its id.
     pub(crate) fn get_vocab(&self) -> AHashMap<String, u32> {
-        self.tokens()
-            .map(|(token, internal_id)| (token, self.ids.vocab_id(internal_id)))
+        self.added_tokens
+            .iter()
+            .enumerate()
+            .map(|(internal_id, token)| {
+                (token.content.clone(), self.ids.vocab_id(internal_id as u32))
+            })
             .collect::<AHashMap<String, u32>>()
     }
 
@@ -750,6 +745,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(vocab.get_added_tokens_decoder()[&0].content, "Hello");
+        assert_eq!(vocab.get_vocab().get("Hello"), Some(&0));
         // Decoding writes the normalized form, which the decoder can invert.
         assert_eq!(vocab.id_to_token_bytes(0).unwrap().0, b"hello");
         assert_eq!(vocab.id_to_token_bytes(1).unwrap().0, b"[CLS]");

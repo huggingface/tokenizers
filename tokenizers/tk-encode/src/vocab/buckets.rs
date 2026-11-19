@@ -426,10 +426,6 @@ impl Buckets {
     pub(crate) fn token_bytes(&self) -> Vec<(Vec<u8>, u32)> {
         self.vocab.byte_content()
     }
-    /// Every token with its internal id.
-    pub(crate) fn tokens(&self) -> Vec<(String, u32)> {
-        self.vocab.content()
-    }
     pub(crate) fn token_to_internal_id(&self, token: &str) -> Option<u32> {
         self.vocab.token_to_id(token)
     }
