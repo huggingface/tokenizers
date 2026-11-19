@@ -4,12 +4,12 @@ dynamic = ["version"]
 requires-python = ">=3.11"
 readme = "README.md"
 description = "Reworked tokenizers Python bindings, over the pipeline encode path (not for release yet)"
-dependencies = ["huggingface_hub>=0.16.4,<3.0", "typing_extensions>=4.6"]
+dependencies = ["huggingface_hub>=0.16.4,<3.0"]
 
 [dependency-groups]
 dev = [
     "maturin>=1.0,<2.0",
-    # The tests pass numpy arrays to `decode` and read the `*_dlpack` getters with numpy.
+    # The tests read the `*_dlpack` getters with `numpy.from_dlpack`.
     "numpy",
     "pytest",
     "ruff",

@@ -4,8 +4,6 @@
 from collections.abc import Sequence as Sequence2
 from typing import final
 
-from typing_extensions import Buffer
-
 from . import CompiledTokenizer, Component, Encoding, Regex
 
 @final
@@ -80,7 +78,7 @@ class DecodeStream:
         ...     print(stream.step(tokenizer, id) or "", end="")
     """
     def __new__(
-        cls, /, ids: Encoding | Sequence2[int] | Buffer | None = None, skip_special_tokens: bool = False
+        cls, /, ids: Encoding | Sequence2[int] | None = None, skip_special_tokens: bool = False
     ) -> DecodeStream: ...
     def step(self, /, tokenizer: CompiledTokenizer, id: int | Sequence2[int]) -> str | None:
         """

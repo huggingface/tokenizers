@@ -38,7 +38,6 @@ np.from_dlpack(encoding.attention_mask_dlpack)  # array([1, 1, ...])
 
 compiled.encode("Hello", add_special_tokens=False).ids  # no [CLS]/[SEP]
 compiled.decode(encoding.ids)                           # "hello there, how are you?"
-compiled.decode(np.array(encoding.ids, dtype=np.uint32))  # a uint32 buffer, such as a numpy array, works too
 compiled.decode(encoding.ids, skip_special_tokens=False)
 
 # Pad one call. `length=None` pads each batch to its longest item.

@@ -5,8 +5,6 @@ from collections.abc import Sequence
 from os import PathLike
 from typing import Any, Final, Literal, final
 
-from typing_extensions import Buffer
-
 from . import decoders as decoders
 from . import models as models
 from . import normalizers as normalizers
@@ -133,7 +131,7 @@ class CompiledTokenizer:
         """
         The added tokens, indexed by their token id, in ascending id order.
         """
-    def decode(self, /, ids: Encoding | Sequence[int] | Buffer, skip_special_tokens: bool = True) -> str:
+    def decode(self, /, ids: Encoding | Sequence[int], skip_special_tokens: bool = True) -> str:
         """
         Decodes token ids back into text
 
@@ -146,7 +144,7 @@ class CompiledTokenizer:
         Returns:
             str
         """
-    def decode_tokens(self, /, ids: Encoding | Sequence[int] | Buffer, skip_special_tokens: bool = False) -> list[str]:
+    def decode_tokens(self, /, ids: Encoding | Sequence[int], skip_special_tokens: bool = False) -> list[str]:
         """
         Converts token ids to their string representation. This does NOT apply the decoder.
 

@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
-use pyo3::buffer::PyBuffer;
 use pyo3::exceptions::PyTypeError;
 use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
@@ -14,11 +13,10 @@ use crate::added_token::AddedToken;
 use crate::encoding::Encoding;
 
 /// The `ids` argument of `Tokenizer.decode` and `Tokenizer.decode_tokens`, typed
-/// `Encoding | Sequence[int] | Buffer`.
+/// `Encoding | Sequence[int]`.
 ///
 /// An `Encoding` is read in place, no copy.
-/// A 1-D buffer of `uint32`, such as a numpy array, is copied in one block.
-/// Any other sequence is copied into a `Vec<u32>` one element at a time.
+/// A sequence, such as a list or a numpy array, is copied into a `Vec<u32>` one element at a time.
 pub enum TokenIds<'py> {
     Encoding(Bound<'py, Encoding>),
     Copied(Vec<u32>),
@@ -32,19 +30,12 @@ impl<'py> FromPyObject<'_, 'py> for TokenIds<'py> {
         type_hint_subscript!(
             type_hint_identifier!("collections.abc", "Sequence"),
             type_hint_identifier!("builtins", "int")
-        ),
-        // `collections.abc.Buffer` needs Python 3.12. A numpy array is a buffer but not a `Sequence`.
-        type_hint_identifier!("typing_extensions", "Buffer")
+        )
     );
 
     fn extract(obj: Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
         if let Ok(encoding) = obj.extract::<Bound<'py, Encoding>>() {
             return Ok(Self::Encoding(encoding));
-        }
-        if let Ok(buffer) = PyBuffer::<u32>::get(&obj)
-            && buffer.dimensions() == 1
-        {
-            return buffer.to_vec(obj.py()).map(Self::Copied);
         }
         obj.extract::<Vec<u32>>().map(Self::Copied)
     }
