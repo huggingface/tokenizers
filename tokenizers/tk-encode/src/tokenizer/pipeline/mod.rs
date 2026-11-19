@@ -896,15 +896,18 @@ impl Tokenizer {
         // Byte-level tokens average ~4 bytes
         let mut out: Vec<u8> = Vec::with_capacity(ids.len() * 4);
         for &id in ids {
-            if id >= self.inner.added_id_min
-                && let Some((bytes, flags)) = self.inner.added_vocabulary.id_to_token_bytes(id)
-            {
-                if !skip_special_tokens || !flags.special {
-                    out.extend_from_slice(bytes);
-                }
+            // Fetch added token metadata
+            let added = if id >= self.inner.added_id_min {
+                self.inner.added_vocabulary.id_to_token_bytes(id)
+            } else {
+                None
+            };
+            if skip_special_tokens && added.is_some_and(|(_, flags)| flags.special) {
                 continue;
             }
-            if let Some(bytes) = bpe.id_to_token_bytes(id) {
+            // Prefer the model vocab's bytes over the added token bytes
+            let bytes = bpe.id_to_token_bytes(id).or(added.map(|(bytes, _)| bytes));
+            if let Some(bytes) = bytes {
                 out.extend_from_slice(bytes);
             }
         }
