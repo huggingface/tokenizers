@@ -2,15 +2,6 @@ use crate::Result;
 
 use super::bucket_vocab_store::BucketVocabStore;
 
-#[derive(Clone, PartialEq, Debug, Default)]
-pub(crate) struct AddedTokenFlags {
-    pub special: bool,
-    pub normalized: bool,
-    pub single_word: bool,
-    pub lstrip: bool,
-    pub rstrip: bool,
-}
-
 /// The key to have a fast byte matching alrogithm is to skip failures fast and reject quickly
 /// potential candidates. What we do here:
 /// 1. memchr / nibble SIMD scan of potential candidates. `pshufb` does parallel lookup in a 16-byte
