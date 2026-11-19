@@ -460,8 +460,7 @@ impl PatternMatcher for AddedVocabulary {
                 continue;
             }
             if metadata.lstrip {
-                match_start =
-                    skip_whitespace_backward(&input[..match_end], match_start).max(search_offset)
+                match_start = skip_whitespace_backward(input, match_start).max(search_offset)
             }
             if metadata.rstrip {
                 match_end = skip_whitespace_forward(input, match_end)
