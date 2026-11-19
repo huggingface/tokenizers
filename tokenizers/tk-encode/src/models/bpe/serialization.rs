@@ -106,20 +106,13 @@ impl BPE {
             merges.push((token(left)?, token(right)?));
         }
 
-        let (unk_token, fuse_unk, byte_fallback) = match &self.atoms {
-            Atoms::Bytes => (None, false, false),
+        let unk_token = self.unk_token.map(token).transpose()?;
+        let byte_fallback = matches!(
+            self.atoms,
             Atoms::Chars {
-                unk_token,
-                fuse_unk,
-                byte_fallback,
-            } => {
-                let unk = match *unk_token {
-                    Some(internal) => Some(token(internal)?),
-                    None => None,
-                };
-                (unk, *fuse_unk, byte_fallback.is_some())
+                byte_fallback: Some(_)
             }
-        };
+        );
         let (prefix, suffix): (&[u8], &[u8]) = match &self.affixes {
             Some(affixes) => (&affixes.prefix, &affixes.suffix),
             None => (&[], &[]),
@@ -132,7 +125,7 @@ impl BPE {
             unk_token,
             continuing_subword_prefix: affix(prefix)?,
             end_of_word_suffix: affix(suffix)?,
-            fuse_unk,
+            fuse_unk: self.fuse_unk,
             byte_fallback,
             ignore_merges: self.vocab.all_foldable(),
             dropout: None,
@@ -224,19 +217,32 @@ impl BPE {
                 .copied()
                 .filter(|&internal| internal != NO_SYMBOL)
         };
+        let unk_token = unk_token
+            .map(|name| {
+                vocab
+                    .get(&name)
+                    .copied()
+                    .and_then(to_internal)
+                    .ok_or(Error::UnkTokenOutOfVocabulary(name))
+            })
+            .transpose()?;
         let (vocab, atoms) = if byte_level {
             let missing: Vec<u8> = VALID_UTF8_BYTES
                 .into_iter()
                 .flatten()
                 .filter(|&byte| tables.byte_internal[byte as usize] == NO_SYMBOL)
                 .collect();
-            if !missing.is_empty() {
+            if !missing.is_empty() && unk_token.is_none() {
                 warn!(
                     "this byte-level vocabulary has no token for bytes {missing:02X?}: they will be \
                      ignored at encoding."
                 );
             }
-            (byte_level::transform_vocab(vocab)?, Atoms::Bytes)
+            let missing_bytes = tables.byte_internal.contains(&NO_SYMBOL);
+            (
+                byte_level::transform_vocab(vocab)?,
+                Atoms::Bytes { missing_bytes },
+            )
         } else {
             let vocab = BucketVocabStore::build(
                 vocab
@@ -244,15 +250,6 @@ impl BPE {
                     .map(|(k, v)| (k.into_bytes(), v))
                     .collect(),
             )?;
-            let unk_token = if let Some(unk_str) = unk_token {
-                let token_id = vocab
-                    .token_to_id(&unk_str)
-                    .ok_or_else(|| Error::UnkTokenOutOfVocabulary(unk_str.clone()))?;
-                Some(token_id)
-            } else {
-                None
-            };
-            let unk_token = unk_token.map(|external| to_internal(external).unwrap_or(NO_SYMBOL));
             let fallback_lookup = if byte_fallback {
                 let mut fallback_lookup = [NO_SYMBOL; 256];
                 for b in 0u8..=255 {
@@ -298,8 +295,6 @@ impl BPE {
             (
                 vocab,
                 Atoms::Chars {
-                    fuse_unk,
-                    unk_token,
                     byte_fallback: fallback_lookup,
                 },
             )
@@ -319,6 +314,8 @@ impl BPE {
         });
         let mut built = Self {
             atoms,
+            unk_token,
+            fuse_unk,
             tables,
             affixes,
             cache_capacity,
