@@ -236,6 +236,20 @@ impl CompiledTokenizer {
         py.detach(|| self.pipeline.decode(ids, skip_special_tokens))
             .map_err(err)
     }
+    /// Decodes byte-level BPE token IDs to bytes, preserving incomplete UTF-8.
+    #[pyo3(signature = (ids, *, skip_special_tokens=true))]
+    fn decode_bytes<'py>(
+        &self,
+        py: Python<'py>,
+        ids: TokenIds<'_>,
+        skip_special_tokens: bool,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        let ids = ids.as_slice();
+        let bytes = py
+            .detach(|| self.pipeline.decode_bytes(ids, skip_special_tokens))
+            .map_err(err)?;
+        Ok(PyBytes::new(py, &bytes))
+    }
 
     /// Converts token ids to their string representation. This does NOT apply the decoder.
     ///
