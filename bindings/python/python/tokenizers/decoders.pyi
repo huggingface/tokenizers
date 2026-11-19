@@ -2,10 +2,7 @@
 # Regenerate with `make stubs` in bindings/python.
 
 from collections.abc import Sequence as Sequence2
-from typing import Any, final
-
-from numpy import integer
-from numpy.typing import NDArray
+from typing import final
 
 from . import CompiledTokenizer, Component, Encoding, Regex
 
@@ -81,7 +78,7 @@ class DecodeStream:
         ...     print(stream.step(tokenizer, id) or "", end="")
     """
     def __new__(
-        cls, /, ids: Encoding | Sequence2[int] | NDArray[integer[Any]] | None = None, skip_special_tokens: bool = False
+        cls, /, ids: Encoding | Sequence2[int] | None = None, skip_special_tokens: bool = False
     ) -> DecodeStream: ...
     def step(self, /, tokenizer: CompiledTokenizer, id: int | Sequence2[int]) -> str | None:
         """

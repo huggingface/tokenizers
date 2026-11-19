@@ -5,9 +5,6 @@ from collections.abc import Sequence
 from os import PathLike
 from typing import Any, Final, Literal, final
 
-from numpy import integer, uint32
-from numpy.typing import NDArray
-
 from . import decoders as decoders
 from . import models as models
 from . import normalizers as normalizers
@@ -134,9 +131,7 @@ class CompiledTokenizer:
         """
         The added tokens, indexed by their token id, in ascending id order.
         """
-    def decode(
-        self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = True
-    ) -> str:
+    def decode(self, /, ids: Encoding | Sequence[int], skip_special_tokens: bool = True) -> str:
         """
         Decodes token ids back into text
 
@@ -149,9 +144,7 @@ class CompiledTokenizer:
         Returns:
             str
         """
-    def decode_tokens(
-        self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = False
-    ) -> list[str]:
+    def decode_tokens(self, /, ids: Encoding | Sequence[int], skip_special_tokens: bool = False) -> list[str]:
         """
         Converts token ids to their string representation. This does NOT apply the decoder.
 
@@ -342,6 +335,24 @@ class Component:
     def __repr__(self, /) -> str: ...
 
 @final
+class DLPackExporter:
+    """
+    One field of an `Encoding`, for array libraries to read through DLPack.
+
+    `torch.tensor` and `numpy.from_dlpack` each get their own `int64` copy of the field.
+    """
+    def __dlpack__(
+        self,
+        /,
+        *,
+        stream: Any | None = None,
+        max_version: tuple[int, int] | None = None,
+        dl_device: tuple[int, int] | None = None,
+        copy: bool | None = None,
+    ) -> Any: ...
+    def __dlpack_device__(self, /) -> tuple[int, int]: ...
+
+@final
 class Encoding:
     """
     Text encoded to token ids by a tokenizer.
@@ -369,9 +380,9 @@ class Encoding:
         A list of ints.
         """
     @property
-    def attention_mask_array(self, /) -> NDArray[uint32]:
+    def attention_mask_dlpack(self, /) -> DLPackExporter:
         """
-        Returns a copy of the attention mask, as a `uint32` numpy array.
+        The attention mask, for `torch.tensor` and `numpy.from_dlpack` to read as `int64`.
         When the encoding is padded: 1 for token ids, 0 for padding tokens.
         """
     @property
@@ -380,9 +391,9 @@ class Encoding:
         The id of each token, as a list of ints.
         """
     @property
-    def ids_array(self, /) -> NDArray[uint32]:
+    def ids_dlpack(self, /) -> DLPackExporter:
         """
-        Returns a copy of the id of each token, as a `uint32` numpy array.
+        The id of each token, for `torch.tensor` and `numpy.from_dlpack` to read as `int64`.
         """
     @property
     def type_ids(self, /) -> list[int]:
@@ -390,9 +401,9 @@ class Encoding:
         The type id of each token, as a list of ints.
         """
     @property
-    def type_ids_array(self, /) -> NDArray[uint32]:
+    def type_ids_dlpack(self, /) -> DLPackExporter:
         """
-        Returns a copy of the type id of each token, as a `uint32` numpy array.
+        The type id of each token, for `torch.tensor` and `numpy.from_dlpack` to read as `int64`.
         """
 
 @final
