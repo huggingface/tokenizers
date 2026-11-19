@@ -83,7 +83,7 @@ checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
 name = "bitcannon"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.5"
 
 [[package]]
 name = "bitflags"
@@ -1146,7 +1146,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tk-convert"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.5"
 dependencies = [
  "bitcannon",
  "serde_json",
@@ -1155,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "tk-encode"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.5"
 dependencies = [
  "ahash",
  "bitcannon",
@@ -1179,7 +1179,7 @@ dependencies = [
 
 [[package]]
 name = "tk-serialize"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.5"
 dependencies = [
  "base64 0.22.1",
  "bitcannon",
@@ -1189,7 +1189,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers"
-version = "1.0.0-dev.2"
+version = "1.0.0-rc.5"
 dependencies = [
  "tk-convert",
  "tk-encode",
@@ -1198,7 +1198,7 @@ dependencies = [
 
 [[package]]
 name = "tokenizers-python"
-version = "1.0.0-dev.2"
+version = "1.0.0-rc.5"
 dependencies = [
  "base64 0.22.1",
  "dlpark",
