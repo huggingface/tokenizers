@@ -44,7 +44,8 @@ impl Pattern for &SysRegex {
 
         let mut prev = 0;
         let mut splits = Vec::with_capacity(inside.len());
-        for (start, end) in self.find_iter(inside) {
+        for found in self.find_iter(inside) {
+            let (start, end) = found?;
             if prev != start {
                 splits.push(((prev, start), false));
             }
@@ -131,5 +132,13 @@ mod tests {
             vec![((0, 16), false), ((16, 17), true), ((17, 45), false)]
         );
         do_test!("aaa", &is_whitespace => vec![((0, 3), false)]);
+    }
+
+    #[test]
+    #[cfg(feature = "fancy-regex")] // needs a system-regex backend
+    fn refuses_a_match_overlapping_the_previous_one() {
+        // `\K` inside a look-behind moves a match start back into the previous match.
+        let regex = SysRegex::new(r"(?<=\K.).|.").unwrap();
+        do_test!("Hello", &regex => @ERROR);
     }
 }

@@ -155,7 +155,8 @@ impl Split {
 // grammar, see "What the spans guarantee" in its docs. The search route forwards the offsets of
 // `Pattern::find_matches` through `pipeline::split_matches`, and every `Pattern` here reports
 // boundaries: a regex matches on a `&str`, and `Literal` holds the bytes of a `&str` pattern, which
-// well-formed UTF-8 can only contain starting and ending on a boundary.
+// well-formed UTF-8 can only contain starting and ending on a boundary. No span is reversed:
+// `SysRegex::find_iter` errors on a match that is reversed or overlaps the previous one.
 unsafe impl pipeline::PreTokenize for Split {
     fn pre_tokenize(
         &self,
