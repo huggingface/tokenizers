@@ -229,7 +229,7 @@ impl Buckets {
         }
         Some(NibbleTable { lo16: lo, hi16: hi })
     }
-    #[cfg(all(test, target_arch = "aarch64"))] // test-only helper for the NEON nibble matcher
+    #[cfg(all(test, target_arch = "aarch64", target_endian = "little"))] // test-only helper for the NEON nibble matcher
     fn nibble_match_bytes(&self, table: &NibbleTable, bytes: &[u8]) -> Option<usize> {
         // lane index   0     1     2     3     4    ...  (16 lanes, one register)
         // input byte  'a'   'b'   '<'   'd'   'e'   ...
@@ -364,7 +364,8 @@ impl Buckets {
     /// >=2 buckets: classify each 16-byte window ONCE, then pop EVERY candidate lane and `match_fast`
     /// > it in place — so a false candidate never triggers a NEON reload or window re-align (the
     /// > restart penalty). lo/hi/m0f are loaded once for the whole scan.
-    #[cfg(target_arch = "aarch64")]
+    // The `shrn` movemask assumes little-endian lane order; big-endian uses `scalar_match`.
+    #[cfg(all(target_arch = "aarch64", target_endian = "little"))]
     fn neon_mask_match(&self, bytes: &[u8], table: &NibbleTable) -> Option<(u32, u32, u32)> {
         use core::arch::aarch64::*;
         let n = bytes.len();
@@ -404,7 +405,7 @@ impl Buckets {
     /// [`NibbleTable`] exists, else [`Self::scalar_match`].
     fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
         match &self.nibble_table {
-            #[cfg(target_arch = "aarch64")]
+            #[cfg(all(target_arch = "aarch64", target_endian = "little"))]
             Some(table) => self.neon_mask_match(bytes, table),
             _ => self.scalar_match(bytes, 0),
         }
@@ -449,7 +450,10 @@ impl Buckets {
 
 /// The two lookup tables of the nibble scan.
 #[derive(Clone)]
-#[cfg_attr(not(target_arch = "aarch64"), allow(dead_code))]
+#[cfg_attr(
+    not(all(target_arch = "aarch64", target_endian = "little")),
+    allow(dead_code)
+)]
 struct NibbleTable {
     lo16: [u8; 16],
     hi16: [u8; 16],
@@ -637,7 +641,7 @@ mod bench {
 mod tests {
     use super::*;
 
-    #[cfg(target_arch = "aarch64")] // calls the NEON-only nibble_match_bytes
+    #[cfg(all(target_arch = "aarch64", target_endian = "little"))] // calls the NEON-only nibble_match_bytes
     #[test]
     fn test_build_nibble_table() {
         let mut first_byte_to_bucket = [0xFFu8; 256];
