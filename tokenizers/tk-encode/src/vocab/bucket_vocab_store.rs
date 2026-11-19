@@ -387,6 +387,7 @@ impl BucketVocabStore {
             .all(|(e, _)| e.id & FOLD_BIT != 0)
     }
 
+    #[cfg(any(feature = "unigram", test))]
     pub fn content(&self) -> Vec<(String, u32)> {
         self.entries
             .iter()

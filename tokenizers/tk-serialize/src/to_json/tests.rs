@@ -110,7 +110,6 @@ const TEXTS: &[&str] = &[
 /// Read a real config, write it, read it back, encode with both. A *writer* refusal is a failure,
 /// not a skip: everything the reader builds, the writer must describe.
 // The fixtures in `data/` are 1.0 files, so they go through tk-convert first.
-#[ignore = "llama-2 fails: the writer emits a normalized added token's normalized content (backlog #18)"]
 #[test]
 fn round_trip_preserves_ids_on_every_real_config() {
     let mut configs = 0usize;
