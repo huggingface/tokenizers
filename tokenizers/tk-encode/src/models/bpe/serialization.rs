@@ -305,7 +305,7 @@ impl BPE {
             )
         };
         // A byte-level vocab is keyed by raw bytes, so its affixes are mapped the same way.
-        let key_bytes = |affix: &str| -> Box<[u8]> {
+        let convert_byte_level = |affix: &str| -> Box<[u8]> {
             if byte_level {
                 affix.chars().flat_map(byte_level::reverse_lookup).collect()
             } else {
@@ -313,8 +313,8 @@ impl BPE {
             }
         };
         let affixes = (!prefix.is_empty() || !suffix.is_empty()).then(|| Affixes {
-            prefix: key_bytes(&prefix),
-            suffix: key_bytes(&suffix),
+            prefix: convert_byte_level(&prefix),
+            suffix: convert_byte_level(&suffix),
             to_internal: external_to_internal.into_boxed_slice(),
         });
         let mut built = Self {

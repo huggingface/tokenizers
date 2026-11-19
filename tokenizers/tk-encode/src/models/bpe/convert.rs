@@ -1,7 +1,5 @@
 //! Converting a pretoken into internal symbols, in the shape the merge engine that will process
 //! it (`merge_multipass` or `merge_hot_cold_queue`) wants to start from.
-use rand::seq;
-
 use crate::models::bpe::At;
 use crate::models::bpe::merge_hot_cold_queue::{Entry, MergeQueue, QueueScratch};
 use crate::models::bpe::model::{Atoms, BPE};
@@ -12,10 +10,9 @@ use crate::vocab::bucket_vocab_store::BucketVocabStore;
 /// XLM) and `continuing_subword_prefix`. An atom's symbol then depends on its position in the
 /// word, so those models take a slow path that looks each decorated atom up in the vocab.
 pub(super) struct Affixes {
-    /// `continuing_subword_prefix` and `end_of_word_suffix` as they appear in the vocab's keys:
-    /// mapped to raw bytes for a byte-level vocab, like its keys (see
-    /// `byte_level::transform_vocab`), else their UTF-8.
+    /// `continuing_subword_prefix` mapped to raw bytes
     pub(super) prefix: Box<[u8]>,
+    /// `end_of_word_suffix` mapped to raw bytes
     pub(super) suffix: Box<[u8]>,
     /// Dense `external vocab id -> internal symbol id`, [`NO_SYMBOL`] where there is none. Dense
     /// beats a hash here because external ids are `0..vocab_size`: 4 bytes a slot and one load,
