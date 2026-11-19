@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::sync::OnceLock;
 use std::sync::TryLockError;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -21,6 +22,8 @@ pub use rayon::current_num_threads;
 
 /// See [`max_threads`]. 0 means the default.
 static MAX_THREADS: AtomicUsize = AtomicUsize::new(0);
+/// Set by [`default_to_serial`].
+static SERIAL_DEFAULT: AtomicBool = AtomicBool::new(false);
 
 /// The cached pool, keyed by the worker count it was built for: a change rebuilds it.
 struct CachedPool {
@@ -48,13 +51,19 @@ fn pool_cache() -> &'static PoolCache {
     unsafe { &*POOL_CACHE.load(Ordering::Acquire) }
 }
 
-/// Registers the fork handler that gives a forked child a fresh pool cache.
+/// Registers the fork handlers: the one that gives a forked child a fresh pool cache, and the fork
+/// counter behind a forked child's serial default.
 ///
 /// `Once`: no caller proceeds before the handler is registered.
+///
+/// Every encode registers them, and building a tokenizer or calling [`max_threads`] /
+/// [`set_max_threads`] starts the counter. A process that may fork before any of those (a binding,
+/// at import) calls this first, so its children still default to serial.
 #[cfg(unix)]
-fn register_fork_handler() {
+pub fn register_fork_handler() {
     use std::sync::Once;
     static REGISTERED: Once = Once::new();
+    fork::watch();
     // allocating is fine here: glibc and libSystem unlock malloc before running child handlers
     extern "C" fn switch_to_fresh_cache() {
         POOL_CACHE.store(Box::leak(Box::new(Mutex::new(None))), Ordering::Release);
@@ -68,7 +77,7 @@ fn register_fork_handler() {
 }
 
 #[cfg(not(unix))]
-fn register_fork_handler() {}
+pub fn register_fork_handler() {}
 
 /// How many times [`try_lock_briefly`] retries a held lock before giving up.
 const LOCK_ATTEMPTS: u32 = 64;
@@ -122,16 +131,24 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
 /// means serial.
 ///
 /// A value set with [`set_max_threads`] always wins, and forked children inherit it. Unset, it is
-/// `available_parallelism()` (affinity mask, cgroup quota), except in a forked child, which can't
-/// know how many siblings share the cores and runs serially. A fork is only detected if tk-encode
-/// was used before it (a tokenizer built, `max_threads` or `set_max_threads` called).
+/// `available_parallelism()` (affinity mask, cgroup quota), except in a forked child or after
+/// [`default_to_serial`]: those can't know how many siblings share the cores and run serially. A
+/// fork is only detected if tk-encode was used before it (a tokenizer built, `max_threads`,
+/// `set_max_threads` or [`register_fork_handler`] called).
 pub fn max_threads() -> usize {
     fork::watch();
     match MAX_THREADS.load(Ordering::Acquire) {
-        0 if fork::generation() > 0 => 1,
+        0 if fork::generation() > 0 || SERIAL_DEFAULT.load(Ordering::Relaxed) => 1,
         0 => available_parallelism(),
         n => n,
     }
+}
+
+/// Make the default [`max_threads`] 1, as in a forked child: for a process that, like a
+/// multiprocessing worker started by spawn, can't know how many siblings share the cores. A value
+/// set with [`set_max_threads`] still wins.
+pub fn default_to_serial() {
+    SERIAL_DEFAULT.store(true, Ordering::Relaxed);
 }
 
 /// Cached: on Linux it reads the cgroup quota from files, too slow for every encode.
