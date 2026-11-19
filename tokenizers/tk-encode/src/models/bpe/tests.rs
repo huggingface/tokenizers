@@ -592,6 +592,25 @@ fn byte_level_end_of_word_suffix_decorates_the_last_byte() {
 }
 
 #[test]
+fn byte_level_affixes_serialize_in_the_projected_alphabet() {
+    // "Ġ" is the space byte, stored as 0x20 once the vocab is mapped to raw bytes
+    let mut vocab: Vocab = (0..=255u8)
+        .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
+        .collect();
+    vocab.insert("ĠaĠ".into(), 256);
+    let config = BpeConfig {
+        vocab,
+        continuing_subword_prefix: Some("Ġ".into()),
+        end_of_word_suffix: Some("Ġ".into()),
+        byte_level: true,
+        ..Default::default()
+    };
+    let config = BPE::from_config(config).unwrap().to_config().unwrap();
+    assert_eq!(config.continuing_subword_prefix.as_deref(), Some("Ġ"));
+    assert_eq!(config.end_of_word_suffix.as_deref(), Some("Ġ"));
+}
+
+#[test]
 fn byte_level_id_to_token_spells_the_projected_alphabet() {
     let pipeline = byte_level_bpe(&[(" he", 300)], &[], true).unwrap();
     assert_eq!(pipeline.id_to_token(300).as_deref(), Some("Ġhe"));
