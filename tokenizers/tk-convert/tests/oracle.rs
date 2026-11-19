@@ -104,6 +104,13 @@ const TEXTS: &[&str] = &[
     // A digit and a symbol new in Unicode 17.
     " \u{11DE0}",
     " \u{1FAEA}",
+    // Words that are not tokens, but hash to the vocabulary slot and 32-bit digest of one (#2722).
+    "qbekcftbwnlsih",
+    "tmqubotshhvnsf",
+    "hhzgvyhgjfkpzg",
+    "sjuukwdidocfjd",
+    "vaywlcsnzcherg",
+    "dchlljzmccoune",
 ];
 
 /// [`TEXTS`] plus inputs long enough for the parallel encoder and the hot/cold queue to take over.
@@ -393,4 +400,9 @@ fn parakeet_tdt_0_6b_v3() {
 #[test]
 fn deepseek_v4() {
     assert_matches_released("deepseek-v4", "deepseek-v4.json");
+}
+
+#[test]
+fn glm_5_2() {
+    assert_matches_released("glm-5.2", "glm-5.2.json");
 }

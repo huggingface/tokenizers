@@ -432,6 +432,21 @@ mod tests {
         }
     }
 
+    // The MPHF sends "hello" to the slot of the 7-byte token, and their hashes share the top 32 bits.
+    #[test]
+    fn absent_word_sharing_a_digest_with_a_token_is_not_found() {
+        let tokens: [&[u8]; 5] = [b"h", b"e", b"l", b"o", b"1Y\x04\x0b'v\x18"];
+        let vocab = BucketVocabStore::build(
+            tokens
+                .iter()
+                .zip(0u32..)
+                .map(|(token, id)| (token.to_vec(), id))
+                .collect(),
+        )
+        .unwrap();
+        assert_eq!(vocab.get_bytes(b"hello"), None);
+    }
+
     // The key is a little-endian pack of the word with its length on top -- not whatever a `u64`
     // load of those bytes happens to give. Built with shifts here so the expected value is the
     // same on a big-endian target.
