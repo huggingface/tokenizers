@@ -475,3 +475,29 @@ fn classifier_matches_onig_categories() {
         &bad[..bad.len().min(20)]
     );
 }
+
+/// The Digits pre-tokenizer splits on `mask::NUMERIC`, which stands for `char::is_numeric`.
+/// `char::is_numeric` follows the Unicode version of the toolchain, so a new rustc can leave the tables stale.
+#[test]
+fn numeric_mask_matches_std_is_numeric() {
+    use bitcannon::classify::{in_mask, mask};
+
+    let chars: Vec<char> = (0..=0x10FFFFu32).filter_map(char::from_u32).collect();
+    let text: String = chars.iter().collect();
+    let mut tags = vec![0u8; text.len()];
+    classify(text.as_bytes(), &mut tags);
+
+    let mut bad = Vec::new();
+    for (&c, (i, _)) in chars.iter().zip(text.char_indices()) {
+        if in_mask(tags[i], mask::NUMERIC) != c.is_numeric() {
+            bad.push(format!("U+{:04X} tag={:#04x}", c as u32, tags[i]));
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "{} code points disagree with std (Unicode {:?}). Regenerate the tables with `cargo run -p bitmap_gen`. First: {:#?}",
+        bad.len(),
+        char::UNICODE_VERSION,
+        &bad[..bad.len().min(20)]
+    );
+}
