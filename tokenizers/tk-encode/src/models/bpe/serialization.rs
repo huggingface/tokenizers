@@ -120,14 +120,18 @@ impl BPE {
                 (unk, *fuse_unk, byte_fallback.is_some())
             }
         };
-        let affix = |s: &str| (!s.is_empty()).then(|| s.to_string());
+        let (prefix, suffix): (&[u8], &[u8]) = match &self.affixes {
+            Some(affixes) => (&affixes.prefix, &affixes.suffix),
+            None => (&[], &[]),
+        };
+        let affix = |bytes: &[u8]| (!bytes.is_empty()).then(|| spell(bytes)).transpose();
         Ok(BpeConfig {
             vocab: vocab.into_iter().collect(),
             merges,
             byte_level,
             unk_token,
-            continuing_subword_prefix: self.affixes.as_ref().and_then(|a| affix(&a.prefix)),
-            end_of_word_suffix: self.affixes.as_ref().and_then(|a| affix(&a.suffix)),
+            continuing_subword_prefix: affix(prefix)?,
+            end_of_word_suffix: affix(suffix)?,
             fuse_unk,
             byte_fallback,
             ignore_merges: self.vocab.all_foldable(),
@@ -300,9 +304,17 @@ impl BPE {
                 },
             )
         };
+        // A byte-level vocab is keyed by raw bytes, so its affixes are mapped the same way.
+        let convert_byte_level = |affix: &str| -> Box<[u8]> {
+            if byte_level {
+                affix.chars().flat_map(byte_level::reverse_lookup).collect()
+            } else {
+                affix.as_bytes().into()
+            }
+        };
         let affixes = (!prefix.is_empty() || !suffix.is_empty()).then(|| Affixes {
-            prefix,
-            suffix,
+            prefix: convert_byte_level(&prefix),
+            suffix: convert_byte_level(&suffix),
             to_internal: external_to_internal.into_boxed_slice(),
         });
         let mut built = Self {
