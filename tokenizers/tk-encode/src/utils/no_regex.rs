@@ -24,7 +24,7 @@ impl SysRegex {
         )
     }
 
-    pub fn find_iter(&self, _inside: &str) -> std::iter::Empty<(usize, usize)> {
+    pub fn find_iter(&self, _inside: &str) -> std::iter::Empty<crate::Result<(usize, usize)>> {
         // Unreachable: no `SysRegex` is ever constructed without a backend.
         std::iter::empty()
     }
