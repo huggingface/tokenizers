@@ -134,6 +134,50 @@ impl std::hash::Hash for AddedToken {
         self.content.hash(state);
     }
 }
+/// An [`AddedToken`] as [`AddedVocabulary`] keeps it.
+#[derive(Clone)]
+pub(crate) struct AddedTokenEntry {
+    /// `None` when the content is the bytes the matcher holds for this token.
+    original_content: Option<String>,
+    single_word: bool,
+    lstrip: bool,
+    rstrip: bool,
+    normalized: bool,
+    pub(crate) special: bool,
+}
+
+impl AddedTokenEntry {
+    fn new(token: AddedToken, matcher_bytes: &[u8]) -> Self {
+        Self {
+            original_content: (token.content.as_bytes() != matcher_bytes).then_some(token.content),
+            single_word: token.single_word,
+            lstrip: token.lstrip,
+            rstrip: token.rstrip,
+            normalized: token.normalized,
+            special: token.special,
+        }
+    }
+
+    fn content<'a>(&'a self, matcher_bytes: &'a [u8]) -> &'a str {
+        match &self.original_content {
+            Some(content) => content,
+            None => str::from_utf8(matcher_bytes)
+                .expect("AddedTokenEntry::new drops only a content the matcher holds"),
+        }
+    }
+
+    fn to_added_token(&self, matcher_bytes: &[u8]) -> AddedToken {
+        AddedToken {
+            content: self.content(matcher_bytes).to_string(),
+            single_word: self.single_word,
+            lstrip: self.lstrip,
+            rstrip: self.rstrip,
+            normalized: self.normalized,
+            special: self.special,
+        }
+    }
+}
+
 ///
 /// A vocabulary built on top of the Model
 ///
@@ -152,7 +196,7 @@ impl std::hash::Hash for AddedToken {
 #[derive(Clone)]
 pub struct AddedVocabulary {
     ids: InternalIds,
-    added_tokens: Box<[AddedToken]>, // indexed by internal id
+    added_tokens: Box<[AddedTokenEntry]>, // indexed by internal id
     normalized_vocab: Buckets,
     vocab: Buckets,
 }
@@ -254,13 +298,21 @@ impl AddedVocabulary {
         self.vocab.is_empty() && self.normalized_vocab.is_empty()
     }
 
+    fn matcher_bytes(&self, internal_id: u32, entry: &AddedTokenEntry) -> &[u8] {
+        self.matcher(entry.normalized)
+            .internal_id_to_token_bytes(internal_id)
+            .expect("add_tokens stores each internal id in the matcher its normalized flag names")
+    }
+
     /// Get the additional vocabulary: the content of each added token with its id.
     pub(crate) fn get_vocab(&self) -> AHashMap<String, u32> {
         self.added_tokens
             .iter()
             .enumerate()
-            .map(|(internal_id, token)| {
-                (token.content.clone(), self.ids.vocab_id(internal_id as u32))
+            .map(|(internal_id, entry)| {
+                let internal_id = internal_id as u32;
+                let content = entry.content(self.matcher_bytes(internal_id, entry));
+                (content.to_string(), self.ids.vocab_id(internal_id))
             })
             .collect::<AHashMap<String, u32>>()
     }
@@ -270,7 +322,11 @@ impl AddedVocabulary {
         self.added_tokens
             .iter()
             .enumerate()
-            .map(|(internal_id, token)| (self.ids.vocab_id(internal_id as u32), token.clone()))
+            .map(|(internal_id, entry)| {
+                let internal_id = internal_id as u32;
+                let token = entry.to_added_token(self.matcher_bytes(internal_id, entry));
+                (self.ids.vocab_id(internal_id), token)
+            })
             .collect::<AHashMap<u32, AddedToken>>()
     }
 
@@ -280,19 +336,15 @@ impl AddedVocabulary {
             .map(|internal_id| self.ids.vocab_id(internal_id))
     }
 
-    /// The bytes decoding writes for the added token `id`, with the token, or `None` when
+    /// The bytes decoding writes for the added token `id`, with its entry, or `None` when
     /// `id` is not an added token.
     ///
     /// A token added with `normalized` gives its normalized form (e.g. byte-level encoding), so
     /// the configured `Decoder` can invert the normalization. Any other token gives its `content`.
-    pub(crate) fn id_to_token_bytes(&self, id: u32) -> Option<(&[u8], &AddedToken)> {
+    pub(crate) fn id_to_token_bytes(&self, id: u32) -> Option<(&[u8], &AddedTokenEntry)> {
         let internal_id = self.ids.internal_id(id)?;
-        let token = &self.added_tokens[internal_id as usize];
-        let bytes = self
-            .matcher(token.normalized)
-            .internal_id_to_token_bytes(internal_id)
-            .expect("add_tokens stores each internal id in the matcher its normalized flag names");
-        Some((bytes, token))
+        let entry = &self.added_tokens[internal_id as usize];
+        Some((self.matcher_bytes(internal_id, entry), entry))
     }
 
     /// Add some tokens to the vocabulary
@@ -323,7 +375,7 @@ impl AddedVocabulary {
             .into_iter()
             .chain(self.normalized_vocab.token_bytes());
         for (form, internal_id) in existing_tokens {
-            let token = self.added_tokens[internal_id as usize].clone();
+            let token = self.added_tokens[internal_id as usize].to_added_token(&form);
             entries.insert(self.ids.vocab_id(internal_id), (form, token));
         }
         let mut seen: AHashMap<String, u32> = AHashMap::new();
@@ -376,13 +428,14 @@ impl AddedVocabulary {
         let (mut raw_tokens, mut norm_tokens) = (Vec::new(), Vec::new());
         for (internal_id, (vocab_id, (form, token))) in entries.into_iter().enumerate() {
             let internal_id = internal_id as u32;
-            if token.normalized {
+            let normalized = token.normalized;
+            added_tokens.push(AddedTokenEntry::new(token, &form));
+            if normalized {
                 norm_tokens.push((form, internal_id));
             } else {
                 raw_tokens.push((form, internal_id));
             }
             vocab_ids.push(vocab_id);
-            added_tokens.push(token);
         }
         let vocab = Buckets::from_tokens(raw_tokens)?;
         let normalized_vocab = Buckets::from_tokens(norm_tokens)?;
@@ -746,6 +799,13 @@ mod tests {
 
         assert_eq!(vocab.get_added_tokens_decoder()[&0].content, "Hello");
         assert_eq!(vocab.get_vocab().get("Hello"), Some(&0));
+        assert_eq!(vocab.get_added_tokens_decoder()[&1].content, "[CLS]");
+        // The matcher already holds `[CLS]`, so the entry stores no second copy.
+        assert_eq!(
+            vocab.added_tokens[0].original_content.as_deref(),
+            Some("Hello")
+        );
+        assert_eq!(vocab.added_tokens[1].original_content, None);
         // Decoding writes the normalized form, which the decoder can invert.
         assert_eq!(vocab.id_to_token_bytes(0).unwrap().0, b"hello");
         assert_eq!(vocab.id_to_token_bytes(1).unwrap().0, b"[CLS]");
