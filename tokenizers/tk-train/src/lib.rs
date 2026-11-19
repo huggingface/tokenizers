@@ -19,6 +19,7 @@
 compile_error!("tk-train needs at least one model feature: bpe, unigram, wordpiece or wordlevel");
 
 pub mod added_token_serde;
+pub mod parallelism;
 pub mod progress;
 mod trainable;
 mod trainer;

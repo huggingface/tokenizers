@@ -21,9 +21,9 @@ name = "tk_train"
 path = "src/lib.rs"
 
 [dependencies]
-tk-encode = { path = "../tk-encode", version = "0.1.0-dev.2", default-features = false, features = [
-  "parallelism",
-] }
+tk-encode = { path = "../tk-encode", version = "0.1.0-dev.2", default-features = false }
+rayon = "1.12"
+rayon-cond = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 ahash = { version = "0.8.11", features = ["serde"] }
 # The word type and merge queue of the BPE trainers, which are `bpe`-gated.
