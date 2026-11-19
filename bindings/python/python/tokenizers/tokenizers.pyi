@@ -149,6 +149,12 @@ class CompiledTokenizer:
         Returns:
             str
         """
+    def decode_bytes(
+        self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], *, skip_special_tokens: bool = True
+    ) -> bytes:
+        """
+        Decodes byte-level BPE token IDs to bytes, preserving incomplete UTF-8.
+        """
     def decode_tokens(
         self, /, ids: Encoding | Sequence[int] | NDArray[integer[Any]], skip_special_tokens: bool = False
     ) -> list[str]:

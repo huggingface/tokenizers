@@ -882,7 +882,11 @@ impl Tokenizer {
         if let Model::BPE(bpe) = &self.inner.model
             && bpe.is_byte_level()
         {
-            return Ok(self.decode_byte_level(bpe, ids, skip_special_tokens));
+            let bytes = self.decode_byte_level(bpe, ids, skip_special_tokens);
+            return Ok(match String::from_utf8(bytes) {
+                Ok(decoded) => decoded,
+                Err(invalid) => String::from_utf8_lossy(invalid.as_bytes()).into_owned(),
+            });
         }
         let tokens = self.decode_tokens(ids, skip_special_tokens);
         match &self.inner.decoder {
@@ -890,9 +894,18 @@ impl Tokenizer {
             None => Ok(tokens.join(" ")),
         }
     }
+    /// Decodes byte-level BPE token IDs to bytes, preserving incomplete UTF-8.
+    pub fn decode_bytes(&self, ids: &[u32], skip_special_tokens: bool) -> Result<Vec<u8>> {
+        match &self.inner.model {
+            Model::BPE(bpe) if bpe.is_byte_level() => {
+                Ok(self.decode_byte_level(bpe, ids, skip_special_tokens))
+            }
+            _ => Err("decode_bytes requires a byte-level BPE tokenizer".into()),
+        }
+    }
 
     /// Decode for a byte-level BPE, whose vocab entries are already decoded raw bytes.
-    fn decode_byte_level(&self, bpe: &BPE, ids: &[u32], skip_special_tokens: bool) -> String {
+    fn decode_byte_level(&self, bpe: &BPE, ids: &[u32], skip_special_tokens: bool) -> Vec<u8> {
         // Byte-level tokens average ~4 bytes
         let mut out: Vec<u8> = Vec::with_capacity(ids.len() * 4);
         for &id in ids {
@@ -908,10 +921,7 @@ impl Tokenizer {
                 out.extend_from_slice(bytes);
             }
         }
-        match String::from_utf8(out) {
-            Ok(decoded) => decoded,
-            Err(invalid) => String::from_utf8_lossy(invalid.as_bytes()).into_owned(),
-        }
+        out
     }
 
     /// Decode several id sequences at once, one `String` per input. Mirrors the
