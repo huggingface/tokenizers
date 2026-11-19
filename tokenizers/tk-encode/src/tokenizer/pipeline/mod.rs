@@ -712,9 +712,9 @@ impl Tokenizer {
         ids.iter()
             .filter_map(|&id| {
                 if id >= self.inner.added_id_min
-                    && let Some((bytes, flags)) = self.inner.added_vocabulary.id_to_token_bytes(id)
+                    && let Some((bytes, token)) = self.inner.added_vocabulary.id_to_token_bytes(id)
                 {
-                    return (!skip_special_tokens || !flags.special)
+                    return (!skip_special_tokens || !token.special)
                         .then(|| String::from_utf8_lossy(bytes).into_owned());
                 }
                 self.inner.model.id_to_token(id)
@@ -897,9 +897,9 @@ impl Tokenizer {
         let mut out: Vec<u8> = Vec::with_capacity(ids.len() * 4);
         for &id in ids {
             if id >= self.inner.added_id_min
-                && let Some((bytes, flags)) = self.inner.added_vocabulary.id_to_token_bytes(id)
+                && let Some((bytes, token)) = self.inner.added_vocabulary.id_to_token_bytes(id)
             {
-                if !skip_special_tokens || !flags.special {
+                if !skip_special_tokens || !token.special {
                     out.extend_from_slice(bytes);
                 }
                 continue;
