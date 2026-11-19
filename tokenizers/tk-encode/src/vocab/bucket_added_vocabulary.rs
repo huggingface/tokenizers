@@ -39,13 +39,26 @@ fn is_ws(cp: u32) -> bool {
         char::from_u32(cp).is_some_and(|c| c.is_whitespace())
     }
 }
-fn is_single_word(bytes: &[u8], match_start: usize, match_end: usize) -> bool {
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct WordNeighbors {
+    pub(crate) before: Option<char>,
+    pub(crate) after: Option<char>,
+}
+
+fn is_single_word(
+    bytes: &[u8],
+    match_start: usize,
+    match_end: usize,
+    neighbors: WordNeighbors,
+) -> bool {
     // FIXME: we use chr conversion for now, this can be inproved by using bitmap.
     // This is the equivalent of `\w`, so its letters, numbers and underscore
     let s = unsafe { std::str::from_utf8_unchecked(bytes) };
     let before_ok = s[..match_start]
         .chars()
         .next_back()
+        .or(neighbors.before)
         .is_none_or(|c| !is_word_char(c));
     if !before_ok {
         return false;
@@ -53,6 +66,7 @@ fn is_single_word(bytes: &[u8], match_start: usize, match_end: usize) -> bool {
     let after_ok = s[match_end..]
         .chars()
         .next()
+        .or(neighbors.after)
         .is_none_or(|c| !is_word_char(c));
     before_ok && after_ok
 }
@@ -317,6 +331,10 @@ impl AddedVocabulary {
             .map(|internal_id| self.ids.vocab_id(internal_id))
     }
 
+    pub(crate) fn contains_id(&self, id: u32) -> bool {
+        self.ids.internal_id(id).is_some()
+    }
+
     /// The bytes decoding writes for the added token `id`, with the token's flags, or `None` when
     /// `id` is not an added token.
     ///
@@ -430,15 +448,21 @@ impl AddedVocabulary {
         self.normalized_vocab = normalized_vocab;
         Ok(total - ignored)
     }
-}
 
-impl PatternMatcher for AddedVocabulary {
-    fn extract_next(
+    pub(crate) fn with_word_neighbors(&self, neighbors: WordNeighbors) -> impl PatternMatcher + '_ {
+        ContextualMatcher {
+            vocabulary: self,
+            neighbors,
+        }
+    }
+    #[inline]
+    fn extract_next_with_neighbors(
         &self,
         bytes: &[u8],
         search_offset: usize,
         normalized: bool,
         encode_special_tokens: bool,
+        neighbors: WordNeighbors,
     ) -> Option<((usize, usize), u32)> {
         let vocab = self.matcher(normalized);
         let mut search = search_offset;
@@ -457,7 +481,7 @@ impl PatternMatcher for AddedVocabulary {
             }
             // single_word: reject unless the token is a standalone word (neither neighbour
             // char is a word char). Checked on the raw byte bounds, before any strip.
-            if metadata.single_word && !is_single_word(bytes, match_start, match_end) {
+            if metadata.single_word && !is_single_word(bytes, match_start, match_end, neighbors) {
                 search = match_start + 1;
                 continue;
             }
@@ -471,6 +495,47 @@ impl PatternMatcher for AddedVocabulary {
             return Some(((match_start, match_end), self.ids.vocab_id(internal_id)));
         }
         None
+    }
+}
+
+impl PatternMatcher for AddedVocabulary {
+    fn extract_next(
+        &self,
+        bytes: &[u8],
+        search_offset: usize,
+        normalized: bool,
+        encode_special_tokens: bool,
+    ) -> Option<((usize, usize), u32)> {
+        self.extract_next_with_neighbors(
+            bytes,
+            search_offset,
+            normalized,
+            encode_special_tokens,
+            WordNeighbors::default(),
+        )
+    }
+}
+
+struct ContextualMatcher<'a> {
+    vocabulary: &'a AddedVocabulary,
+    neighbors: WordNeighbors,
+}
+
+impl PatternMatcher for ContextualMatcher<'_> {
+    fn extract_next(
+        &self,
+        bytes: &[u8],
+        search_offset: usize,
+        normalized: bool,
+        encode_special_tokens: bool,
+    ) -> Option<((usize, usize), u32)> {
+        self.vocabulary.extract_next_with_neighbors(
+            bytes,
+            search_offset,
+            normalized,
+            encode_special_tokens,
+            self.neighbors,
+        )
     }
 }
 

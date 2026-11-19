@@ -166,6 +166,7 @@ class CompiledTokenizer:
         encode_special_tokens: bool = False,
         padding: Padding | None = ...,
         truncation: Truncation | None = ...,
+        untrusted_spans: Sequence[tuple[int, int]] | None = None,
     ) -> Encoding:
         """
         Encodes the given text, or pair of texts, to token ids.
@@ -185,6 +186,12 @@ class CompiledTokenizer:
             truncation: `Truncation` or `None`
                 Truncation options. Pass `None` to disable truncation.
                 When omitted, uses the truncation the tokenizer had when compiled.
+            untrusted_spans: list[tuple[int, int]] or None
+                Half-open UTF-8 byte ranges in a single text. Ranges must be nonempty,
+                sorted, and non-overlapping. Adjacent ranges are treated as one.
+                Added tokens are not matched inside or across these ranges. Encoding
+                raises `ValueError` if the model emits an added token ID in untrusted
+                text. Range boundaries can change nearby tokenization.
 
         Returns:
             Encoding

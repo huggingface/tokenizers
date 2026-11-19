@@ -94,18 +94,24 @@ impl CompiledTokenizer {
     ///     truncation: `Truncation` or `None`
     ///         Truncation options. Pass `None` to disable truncation.
     ///         When omitted, uses the truncation the tokenizer had when compiled.
+    ///     untrusted_spans: list[tuple[int, int]] or None
+    ///         Half-open UTF-8 byte ranges in a single text. Ranges must be nonempty,
+    ///         sorted, and non-overlapping. Adjacent ranges are treated as one.
+    ///         Added tokens are not matched inside or across these ranges. Encoding
+    ///         raises `ValueError` if the model emits an added token ID in untrusted
+    ///         text. Range boundaries can change nearby tokenization.
     ///
     /// Returns:
     ///     Encoding
-    #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
+    #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig, untrusted_spans=None))]
     fn encode(
-        &self,
-        py: Python<'_>,
+        slf: &Bound<'_, Self>,
         input: PyInput,
         add_special_tokens: bool,
         encode_special_tokens: bool,
         padding: OverrideSentinel<PaddingParams>,
         truncation: OverrideSentinel<TruncationParams>,
+        untrusted_spans: Option<Vec<(usize, usize)>>,
     ) -> PyResult<Encoding> {
         let options = encode_options(
             add_special_tokens,
@@ -114,8 +120,21 @@ impl CompiledTokenizer {
             truncation,
         );
         // py.detach releases the GIL while the Rust code runs.
-        let encoding = py
-            .detach(|| self.encode_one(input, &options))
+        let tokenizer = slf.get();
+        let encoding = slf
+            .py()
+            .detach(|| match untrusted_spans {
+                Some(spans) if !spans.is_empty() => {
+                    let PyInput::Single(text) = input else {
+                        return Err("untrusted_spans requires a single text".into());
+                    };
+                    let spans: Vec<_> = spans.into_iter().map(|(start, end)| start..end).collect();
+                    tokenizer
+                        .pipeline
+                        .encode_with_untrusted_spans(&text, &spans, &options)
+                }
+                _ => tokenizer.encode_one(input, &options),
+            })
             .map_err(err)?;
         Ok(Encoding::from(encoding))
     }
