@@ -392,34 +392,26 @@ impl Buckets {
                 }
                 base += 16;
             }
-            // scalar tail (< 16 bytes left)
-            let mut i = base;
-            while i < n {
-                let bucket = self.first_byte_to_bucket_id[bytes[i] as usize];
-                if bucket != 0xFF
-                    && let Some((id, len)) = self.match_fast(bytes, i, bucket as u32)
-                {
-                    return Some((id, i as u32, len));
-                }
-                i += 1;
-            }
-            None
+            self.scalar_match(bytes, base)
         }
     }
 
     /// Portable scalar fallback until the SSE2/AVX2 nibble path lands.
     #[cfg(not(target_arch = "aarch64"))]
     fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
-        let n = bytes.len();
-        let mut i = 0usize;
-        while i < n {
-            let bucket = self.first_byte_to_bucket_id[bytes[i] as usize];
+        self.scalar_match(bytes, 0)
+    }
+
+    /// Looks up every byte of `bytes[start..]` in `first_byte_to_bucket_id`.
+    fn scalar_match(&self, bytes: &[u8], start: usize) -> Option<(u32, u32, u32)> {
+        for (i, &byte) in bytes[start..].iter().enumerate() {
+            let pos = start + i;
+            let bucket = self.first_byte_to_bucket_id[byte as usize];
             if bucket != 0xFF
-                && let Some((id, len)) = self.match_fast(bytes, i, bucket as u32)
+                && let Some((id, len)) = self.match_fast(bytes, pos, bucket as u32)
             {
-                return Some((id, i as u32, len));
+                return Some((id, pos as u32, len));
             }
-            i += 1;
         }
         None
     }
