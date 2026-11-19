@@ -62,31 +62,30 @@ impl Sequence {
         )
     }
 
-    pub(crate) fn with_mapped_spans(
+    pub(crate) fn with_mapped_pre_tokens(
         &self,
         text: &str,
         scratch: &mut pipeline::PreTokenizerScratch,
         spans: &mut Vec<pipeline::Span>,
-        mut consume: impl FnMut(&str, &[pipeline::Span]) -> Result<()>,
+        mut consume: impl FnMut(pipeline::PreTokens<'_>) -> Result<()>,
     ) -> Result<()> {
         let index = self.byte_map.ok_or("the Sequence has no ByteMap")?;
         let (prefix, suffix) = self.pre_tokenizers.split_at(index);
-        let mut pieces = Vec::new();
-        split_children(prefix, text, scratch, &mut pieces)?;
+        let mut prefix_spans = Vec::new();
+        let pieces = pipeline::pre_tokens(&SequencePart(prefix), text, scratch, &mut prefix_spans)?;
 
         let table = &*BYTES_CHAR_LOOKUP;
         let mut mapped = String::new();
-        for piece in pieces {
+        for (_, piece) in pieces.iter() {
             mapped.clear();
-            mapped.extend(text[piece.range()].bytes().map(|byte| table[byte as usize]));
+            mapped.extend(piece.bytes().map(|byte| table[byte as usize]));
             if mapped.len() > u32::MAX as usize {
                 return Err("sequence too long to pre-tokenize after ByteMap".into());
             }
             // A suffix split can cut between two mapped bytes of one original UTF-8
             // character. Keep its ranges in the mapped string rather than rebasing them.
-            spans.clear();
-            split_children(suffix, &mapped, scratch, spans)?;
-            consume(&mapped, spans)?;
+            let pre_tokens = pipeline::pre_tokens(&SequencePart(suffix), &mapped, scratch, spans)?;
+            consume(pre_tokens)?;
         }
         Ok(())
     }
@@ -144,6 +143,22 @@ unsafe impl pipeline::PreTokenize for Sequence {
         }
 
         split_children(&self.pre_tokenizers, text, scratch, out)
+    }
+}
+
+#[derive(Debug)]
+struct SequencePart<'a>(&'a [PreTokenizer]);
+
+// SAFETY: the children uphold `PreTokenize`; `split_children` only rebases their
+// spans within the original text. An empty list emits the whole input span.
+unsafe impl pipeline::PreTokenize for SequencePart<'_> {
+    fn pre_tokenize(
+        &self,
+        text: &str,
+        scratch: &mut pipeline::PreTokenizerScratch,
+        out: &mut Vec<pipeline::Span>,
+    ) -> Result<()> {
+        split_children(self.0, text, scratch, out)
     }
 }
 

@@ -41,8 +41,8 @@ mod pre_tokenizer;
 
 pub use normalizer::{Normalize, Normalizer, NormalizerChain, normalize_all};
 pub use post_processor::{PostProcessor, Template};
-pub use pre_tokenizer::{PreTokenize, PreTokenizer, PreTokenizerScratch};
-pub(crate) use pre_tokenizer::{split_delimiter, split_matches};
+pub use pre_tokenizer::{PreTokenize, PreTokenizer, PreTokenizerScratch, PreTokens};
+pub(crate) use pre_tokenizer::{pre_tokens, split_delimiter, split_matches};
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
@@ -815,35 +815,21 @@ impl Tokenizer {
                                 text: normalized_chunk,
                                 ..
                             } => {
-                                // A [`Span`] holds `u32` offsets, which breaks the `PreTokenize` contract the
-                                // `str::get_unchecked` below relies on.
                                 // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),
-                                // which is why this is checked here and not on `input`.
-                                if normalized_chunk.len() > u32::MAX as usize {
-                                    return Err(format!(
-                                        "sequence too long to pre-tokenize: {} bytes after normalization, the limit is {}",
-                                        normalized_chunk.len(),
-                                        u32::MAX
-                                    )
-                                    .into());
-                                }
-                                // Pre-tokenize the chunk of normalized text
+                                // so the length limit of `pre_tokens` applies to the normalized chunk.
                                 let EncodeScratch {
                                     model: model_scratch,
                                     pre_tokens,
                                     split: pre_tokenizer_scratch,
                                 } = &mut *scratch;
                                 if let Some(sequence) = byte_mapped_sequence {
-                                    sequence.with_mapped_spans(
+                                    sequence.with_mapped_pre_tokens(
                                         normalized_chunk,
                                         pre_tokenizer_scratch,
                                         pre_tokens,
-                                        |mapped, spans| {
-                                            // The suffix splitters produce valid UTF-8 ranges
-                                            // within `mapped`, which the model slices unchecked.
+                                        |pre_tokens| {
                                             self.inner.model.tokenize_spans(
-                                                mapped,
-                                                spans,
+                                                pre_tokens,
                                                 model_scratch,
                                                 output,
                                             )
@@ -851,29 +837,13 @@ impl Tokenizer {
                                     )?;
                                     continue;
                                 }
-                                pre_tokens.clear();
-                                self.inner.pre_tokenizer.pre_tokenize(
+                                let pre_tokens = self.inner.pre_tokenizer.pre_tokens(
                                     normalized_chunk,
                                     pre_tokenizer_scratch,
                                     pre_tokens,
                                 )?;
-                                output.reserve(pre_tokens.len());
-                                #[cfg(debug_assertions)]
-                                for pre_token in pre_tokens.iter() {
-                                    let range = pre_token.range();
-                                    debug_assert!(
-                                        range.start <= range.end
-                                            && normalized_chunk.is_char_boundary(range.start)
-                                            && normalized_chunk.is_char_boundary(range.end),
-                                        "{:?} broke the PreTokenize contract: emitted {pre_token:?} for {normalized_chunk:?}",
-                                        self.inner.pre_tokenizer,
-                                    );
-                                }
-                                // The whole span list at once; see Tokenize::tokenize_spans.
-                                // SAFETY: `PreTokenize` guarantees every span is a valid range of
-                                // `normalized_chunk`, which is what lets the model slice it unchecked.
+                                output.reserve(pre_tokens.spans().len());
                                 self.inner.model.tokenize_spans(
-                                    normalized_chunk,
                                     pre_tokens,
                                     model_scratch,
                                     output,
@@ -1085,13 +1055,12 @@ pub trait Tokenize {
     /// work to hoist out of the loop.
     fn tokenize_spans(
         &self,
-        chunk: &str,
-        spans: &[Span],
+        pre_tokens: PreTokens<'_>,
         scratch: &mut Self::Scratch,
         output: &mut Vec<Token>,
     ) -> Result<()> {
-        for span in spans {
-            self.tokenize(&chunk[span.range()], scratch, output)?;
+        for (_, sequence) in pre_tokens.iter() {
+            self.tokenize(sequence, scratch, output)?;
         }
         Ok(())
     }
@@ -1198,28 +1167,29 @@ impl Tokenize for Model {
         }
     }
 
+    // inlining was measured faster (4% e2e) on x86
+    #[inline(always)]
     fn tokenize_spans(
         &self,
-        chunk: &str,
-        spans: &[Span],
+        pre_tokens: PreTokens<'_>,
         scratch: &mut Self::Scratch,
         output: &mut Vec<Token>,
     ) -> Result<()> {
         match (self, scratch) {
             (Self::BPE(model), ModelScratch::BPE(scratch)) => {
-                model.tokenize_spans(chunk, spans, scratch, output)
+                model.tokenize_spans(pre_tokens, scratch, output)
             }
             #[cfg(feature = "unigram")]
             (Self::Unigram(model), ModelScratch::Unigram(scratch)) => {
-                model.tokenize_spans(chunk, spans, scratch, output)
+                model.tokenize_spans(pre_tokens, scratch, output)
             }
             #[cfg(feature = "wordlevel")]
             (Self::WordLevel(model), ModelScratch::WordLevel(scratch)) => {
-                model.tokenize_spans(chunk, spans, scratch, output)
+                model.tokenize_spans(pre_tokens, scratch, output)
             }
             #[cfg(feature = "wordpiece")]
             (Self::WordPiece(model), ModelScratch::WordPiece(scratch)) => {
-                model.tokenize_spans(chunk, spans, scratch, output)
+                model.tokenize_spans(pre_tokens, scratch, output)
             }
             _ => unreachable!(),
         }

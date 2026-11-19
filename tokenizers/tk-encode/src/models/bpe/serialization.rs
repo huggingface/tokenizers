@@ -9,7 +9,6 @@ use crate::utils::byte_level::{self};
 use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use std::ops::RangeInclusive;
-use std::str::from_utf8_unchecked;
 
 /// Every byte a `&str` can hold except 0xF1 | 0xF2, which are UTF-8 lead bytes that prefix unassigned codepoints
 const VALID_UTF8_BYTES: [RangeInclusive<u8>; 3] = [0x00..=0xBF, 0xC2..=0xF0, 0xF3..=0xF4];
@@ -152,17 +151,11 @@ impl BPE {
             return Err(Error::InvalidDropout.into());
         }
 
-        let mut max_len = 0;
-        for key in vocab.keys() {
-            if max_len < key.len() {
-                max_len = key.len();
-            }
-        }
-        let prefix_len = config
+        let prefix = config
             .continuing_subword_prefix
-            .as_ref()
-            .map_or(0, |prefix| prefix.len());
-        let mut buffer: Vec<u8> = vec![0; max_len];
+            .as_deref()
+            .unwrap_or_default();
+        let mut buffer = String::new();
         let merges: MergeMap = merges
             .into_iter()
             .enumerate()
@@ -173,15 +166,19 @@ impl BPE {
                 let b_id = vocab
                     .get(&b)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
-                buffer[0..a.len()].copy_from_slice(a.as_bytes());
-                let b_len = b.len() - prefix_len;
-                let merge_len = a.len() + b_len;
-                buffer[a.len()..merge_len].copy_from_slice(&b.as_bytes()[prefix_len..]);
-                // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8, even considering prefix_len
-                let new_token = unsafe { from_utf8_unchecked(&buffer[..merge_len]) };
+                let Some(b_suffix) = b.strip_prefix(prefix) else {
+                    return Err(Error::MergeTokenWithoutPrefix {
+                        token: b,
+                        prefix: prefix.to_owned(),
+                    }
+                    .into());
+                };
+                buffer.clear();
+                buffer.push_str(&a);
+                buffer.push_str(b_suffix);
                 let new_id = vocab
-                    .get(new_token)
-                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(new_token.to_owned()))?;
+                    .get(&buffer)
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(buffer.clone()))?;
                 Ok(((*a_id, *b_id), (i as u32, *new_id)))
             })
             .collect::<Result<MergeMap>>()?;

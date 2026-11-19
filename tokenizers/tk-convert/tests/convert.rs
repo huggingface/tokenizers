@@ -348,44 +348,46 @@ fn nonterminal_byte_level_splits_the_mapped_text() {
                   "12": 6, "123": 7, "4": 8, "!": 9, "a": 10, "Ġ": 11, "aĠ": 12},
         "merges": [["Î", "²"], ["1", "2"], ["12", "3"], ["a", "Ġ"]]
     }"#;
-    for use_regex in [true, false] {
-        let extra = format!(
-            r#", "pre_tokenizer": {{"type": "Sequence", "pretokenizers": [
-                {{"type": "Punctuation", "behavior": "Contiguous"}},
+    for prefix in [r#"{"type": "Punctuation", "behavior": "Contiguous"},"#, ""] {
+        for use_regex in [true, false] {
+            let extra = format!(
+                r#", "pre_tokenizer": {{"type": "Sequence", "pretokenizers": [
+                {prefix}
                 {{"type": "ByteLevel", "add_prefix_space": false, "use_regex": {use_regex}}},
                 {{"type": "Digits", "individual_digits": false}},
                 {{"type": "Split", "pattern": {{"Regex": "[0-9][0-9][0-9]"}},
                   "behavior": "Isolated"}}
             ]}}, "decoder": {{"type": "ByteLevel"}}"#
-        );
-        let canonical = done(model, &extra);
-        assert_eq!(canonical["model"]["byte_level"], false);
-        let once = canonical.to_string();
-        assert_eq!(
-            serde_json::from_str::<Value>(&canonicalize_str(&once).unwrap()).unwrap(),
-            canonical
-        );
-        let pipeline = tk_serialize::from_json(&once).unwrap();
-        let saved = tk_serialize::to_json(&pipeline).unwrap();
-        let reopened = tk_serialize::from_json(&saved).unwrap();
-        for tokenizer in [pipeline, reopened] {
-            // β maps to Î². Digits isolates ², so the otherwise valid Î+² merge
-            // cannot fire. The final split isolates 123 from the trailing digit.
-            let mut ids = Vec::new();
-            tokenizer
-                .encode_into("β1234!", &EncodeOptions::no_specials(), &mut ids)
-                .unwrap();
-            assert_eq!(ids, [0, 1, 7, 8, 9]);
-            assert_eq!(
-                tokenizer.decode(Token::cast_slice(&ids), false).unwrap(),
-                "β1234!"
             );
-            ids.clear();
-            tokenizer
-                .encode_into("a ", &EncodeOptions::no_specials(), &mut ids)
-                .unwrap();
-            let expected: &[u32] = if use_regex { &[10, 11] } else { &[12] };
-            assert_eq!(Token::cast_slice(&ids), expected);
+            let canonical = done(model, &extra);
+            assert_eq!(canonical["model"]["byte_level"], false);
+            let once = canonical.to_string();
+            assert_eq!(
+                serde_json::from_str::<Value>(&canonicalize_str(&once).unwrap()).unwrap(),
+                canonical
+            );
+            let pipeline = tk_serialize::from_json(&once).unwrap();
+            let saved = tk_serialize::to_json(&pipeline).unwrap();
+            let reopened = tk_serialize::from_json(&saved).unwrap();
+            for tokenizer in [pipeline, reopened] {
+                // β maps to Î². Digits isolates ², so the otherwise valid Î+² merge
+                // cannot fire. The final split isolates 123 from the trailing digit.
+                let mut ids = Vec::new();
+                tokenizer
+                    .encode_into("β1234!", &EncodeOptions::no_specials(), &mut ids)
+                    .unwrap();
+                assert_eq!(ids, [0, 1, 7, 8, 9]);
+                assert_eq!(
+                    tokenizer.decode(Token::cast_slice(&ids), false).unwrap(),
+                    "β1234!"
+                );
+                ids.clear();
+                tokenizer
+                    .encode_into("a ", &EncodeOptions::no_specials(), &mut ids)
+                    .unwrap();
+                let expected: &[u32] = if use_regex { &[10, 11] } else { &[12] };
+                assert_eq!(Token::cast_slice(&ids), expected);
+            }
         }
     }
 }

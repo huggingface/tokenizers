@@ -262,8 +262,6 @@ fn fuse_unk_applies_to_models_with_affixes() {
 
 #[test]
 fn rejects_unsupported_configs() {
-    // no merges: the merge-map derivation underflows on merges whose right token
-    // is shorter than continuing_subword_prefix (pre-existing, unrelated)
     let build = |options: BpeConfig| {
         BPE::from_config(BpeConfig {
             vocab: v(HELLO_VOCAB),
@@ -421,16 +419,50 @@ fn byte_fallback_missing_code_with_prefix_errors() {
 #[test]
 fn rejects_merge_token_out_of_vocabulary() {
     // The merge-map derivation is now part of this constructor, so its errors are its own.
+    // "z" is not in the vocab. "e" and "l" are, but the token they merge into is not.
+    for (merge, missing) in [(("h", "z"), "z"), (("e", "l"), "el")] {
+        let err = BPE::from_config(BpeConfig {
+            vocab: v(HELLO_VOCAB),
+            merges: m(&[merge]),
+            ..BpeConfig::default()
+        })
+        .err()
+        .unwrap();
+        match err.downcast_ref::<Error>() {
+            Some(Error::MergeTokenOutOfVocabulary(token)) => assert_eq!(token, missing),
+            other => panic!("expected MergeTokenOutOfVocabulary, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn merges_a_right_token_carrying_the_prefix() {
+    let model = BPE::from_config(BpeConfig {
+        vocab: v(&[("a", 0), ("##b", 1), ("ab", 2)]),
+        merges: m(&[("a", "##b")]),
+        continuing_subword_prefix: Some("##".into()),
+        ..BpeConfig::default()
+    })
+    .unwrap();
+    assert_eq!(pipeline_ids(&model, "ab"), vec![2]);
+}
+
+#[test]
+fn rejects_merge_token_without_prefix() {
+    // Cutting the prefix's length off "xé" would split the "é".
     let err = BPE::from_config(BpeConfig {
-        vocab: v(HELLO_VOCAB),
-        merges: m(&[("h", "z")]),
+        vocab: v(&[("a", 0), ("xé", 1)]),
+        merges: m(&[("a", "xé")]),
+        continuing_subword_prefix: Some("##".into()),
         ..BpeConfig::default()
     })
     .err()
     .unwrap();
     match err.downcast_ref::<Error>() {
-        Some(Error::MergeTokenOutOfVocabulary(token)) => assert_eq!(token, "z"),
-        other => panic!("expected MergeTokenOutOfVocabulary, got {other:?}"),
+        Some(Error::MergeTokenWithoutPrefix { token, prefix }) => {
+            assert_eq!((token.as_str(), prefix.as_str()), ("xé", "##"));
+        }
+        other => panic!("expected MergeTokenWithoutPrefix, got {other:?}"),
     }
 }
 
