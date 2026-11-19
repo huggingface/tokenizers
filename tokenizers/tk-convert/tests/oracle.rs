@@ -104,6 +104,8 @@ const TEXTS: &[&str] = &[
     // A digit and a symbol new in Unicode 17.
     " \u{11DE0}",
     " \u{1FAEA}",
+    // pplx-embed-v1-0.6b lists the model token for this character again as an added token.
+    "\u{2f57}",
 ];
 
 /// [`TEXTS`] plus inputs long enough for the parallel encoder and the hot/cold queue to take over.
@@ -393,4 +395,12 @@ fn parakeet_tdt_0_6b_v3() {
 #[test]
 fn deepseek_v4() {
     assert_matches_released("deepseek-v4", "deepseek-v4.json");
+}
+
+#[test]
+fn pplx_embed_v1_0_6b() {
+    assert_matches_released(
+        "pplx-embed-v1-0.6b",
+        "fixtures/models/pplx-embed-v1-0.6b.json",
+    );
 }
