@@ -401,12 +401,57 @@ impl Buckets {
         }
     }
 
-    /// Two or more buckets: [`Self::neon_mask_match`] where the target has NEON and the
-    /// [`NibbleTable`] exists, else [`Self::scalar_match`].
+    /// The x86_64 twin of [`Self::neon_mask_match`], on `pshufb`.
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "ssse3")]
+    fn ssse3_mask_match(&self, bytes: &[u8], table: &NibbleTable) -> Option<(u32, u32, u32)> {
+        use core::arch::x86_64::*;
+        let n = bytes.len();
+        // SAFETY: both tables are 16 bytes, and `loadu` takes any alignment.
+        let (lov, hiv) = unsafe {
+            (
+                _mm_loadu_si128(table.lo16.as_ptr().cast()),
+                _mm_loadu_si128(table.hi16.as_ptr().cast()),
+            )
+        };
+        let low_nibble_mask = _mm_set1_epi8(0x0f);
+        let mut base = 0usize;
+        while base + 16 <= n {
+            // SAFETY: in bounds, `base + 16 <= n`.
+            let input_bits = unsafe { _mm_loadu_si128(bytes.as_ptr().add(base).cast()) };
+            let input_low_nibbles = _mm_and_si128(input_bits, low_nibble_mask);
+            let low_match = _mm_shuffle_epi8(lov, input_low_nibbles);
+            // SSE2 has no 8-bit shift. Shift the u16 lanes, then drop the bits from the next byte.
+            let input_high_nibbles = _mm_and_si128(_mm_srli_epi16(input_bits, 4), low_nibble_mask);
+            let high_match = _mm_shuffle_epi8(hiv, input_high_nibbles);
+
+            let misses = _mm_cmpeq_epi8(_mm_and_si128(low_match, high_match), _mm_setzero_si128());
+            let mut mask = !_mm_movemask_epi8(misses) as u32 & 0xffff;
+            while mask != 0 {
+                let pos = base + mask.trailing_zeros() as usize;
+                let bucket = self.first_byte_to_bucket_id[bytes[pos] as usize] as u32;
+                if let Some((id, len)) = self.match_fast(bytes, pos, bucket) {
+                    return Some((id, pos as u32, len));
+                }
+                mask &= mask - 1; // drop this lane, try the next in the window
+            }
+            base += 16;
+        }
+        self.scalar_match(bytes, base)
+    }
+
+    /// Two or more buckets: [`Self::neon_mask_match`] or [`Self::ssse3_mask_match`] where the
+    /// target has one and the [`NibbleTable`] exists, else [`Self::scalar_match`].
     fn nibble_mask_match(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
         match &self.nibble_table {
             #[cfg(all(target_arch = "aarch64", target_endian = "little"))]
             Some(table) => self.neon_mask_match(bytes, table),
+            // `pshufb` is SSSE3, which the default x86_64 targets don't enable.
+            #[cfg(target_arch = "x86_64")]
+            Some(table) if std::arch::is_x86_feature_detected!("ssse3") => {
+                // SAFETY: SSSE3 was detected on the line above.
+                unsafe { self.ssse3_mask_match(bytes, table) }
+            }
             _ => self.scalar_match(bytes, 0),
         }
     }
@@ -451,7 +496,10 @@ impl Buckets {
 /// The two lookup tables of the nibble scan.
 #[derive(Clone)]
 #[cfg_attr(
-    not(all(target_arch = "aarch64", target_endian = "little")),
+    not(any(
+        all(target_arch = "aarch64", target_endian = "little"),
+        target_arch = "x86_64"
+    )),
     allow(dead_code)
 )]
 struct NibbleTable {
@@ -752,6 +800,30 @@ mod tests {
         // if ]] then it will exit early to ask to move the pointer?
         assert_eq!(fake_vocab.match_bytes(b"]FLS]>"), Some((3, 0, 5)));
         assert_eq!(fake_vocab.match_bytes(b"]]FLS]>"), Some((3, 1, 5)));
+    }
+
+    #[test]
+    fn match_is_found_at_every_offset_behind_false_candidates() {
+        let tokens = vec![(b"<|eos|>".to_vec(), 0), (b"[CLS]".to_vec(), 1)];
+        let buckets = Buckets::from_tokens(tokens).unwrap();
+        // 70 bytes are four 16-byte windows and a 6-byte scalar tail. Every `<` and `[` in them
+        // is a candidate that matches nothing.
+        let haystack: Vec<u8> = b"a<b[c".iter().cycle().take(70).copied().collect();
+        assert_eq!(buckets.match_bytes(&haystack), None);
+        for pos in 0..=65 {
+            let mut text = haystack.clone();
+            text[pos..pos + 5].copy_from_slice(b"[CLS]");
+            assert_eq!(buckets.match_bytes(&text), Some((1, pos as u32, 5)));
+        }
+    }
+
+    #[test]
+    fn first_byte_is_found_before_a_byte_with_a_low_nibble_above_7() {
+        let tokens = vec![(b"<|eos|>".to_vec(), 0), (b"[CLS]".to_vec(), 1)];
+        let buckets = Buckets::from_tokens(tokens).unwrap();
+        // x86 has no 8-bit shift, so the 16-bit one moves the low nibble of `|` (0x7C) into the
+        // lane of `<`. Left unmasked, its top bit makes `pshufb` zero that lane.
+        assert_eq!(buckets.match_bytes(b"<|eos|>zzzzzzzzz"), Some((0, 0, 7)));
     }
 
     #[test]
