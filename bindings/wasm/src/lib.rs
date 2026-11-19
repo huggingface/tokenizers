@@ -1,16 +1,20 @@
 use tokenizers::canonicalize_str;
 use tokenizers::from_json;
-use tokenizers::pipeline;
+use tokenizers::pipeline::{self, Inputs, Token};
 use tsify::Ts;
 
 use wasm_bindgen::prelude::*;
 
+mod encoding;
 mod hub;
+mod input;
 mod options;
 
 use options::convert_encode_options;
 
+pub use encoding::Encoding;
 pub use hub::PretrainedOptions;
+pub use input::TextInput;
 pub use options::EncodeOptions;
 
 #[wasm_bindgen]
@@ -21,8 +25,8 @@ pub use options::EncodeOptions;
 ///
 /// @example
 /// ```ts
-/// using tokenizer = Tokenizer.from_json(json);
-/// const ids = tokenizer.encode("Hello world");
+/// using tokenizer = Tokenizer.fromJson(json);
+/// const { ids } = tokenizer.encode("Hello world");
 /// ```
 pub struct Tokenizer(pipeline::Tokenizer);
 
@@ -33,6 +37,7 @@ impl Tokenizer {
     /// @param json - The contents of a `tokenizer.json` file.
     /// @returns The tokenizer.
     /// @throws If `json` is not valid JSON or does not describe a tokenizer.
+    #[wasm_bindgen(js_name = fromJson)]
     pub fn from_json(json: &str) -> Result<Self, JsError> {
         let canonical = canonicalize_str(json)?;
         let tok = from_json(&canonical).map_err(js_err)?;
@@ -41,55 +46,103 @@ impl Tokenizer {
 
     /// Downloads `tokenizer.json` from a repo on the Hugging Face Hub and loads it.
     ///
-    /// @param repoName - The id of a model repo, such as `"openai-community/gpt2"`.
+    /// @param identifier - The id of a model repo, such as `"openai-community/gpt2"`.
     /// @param options - See {@link PretrainedOptions}.
     /// @returns The tokenizer.
     /// @throws If the download fails, or the file does not describe a tokenizer.
     ///
     /// @example
     /// ```ts
-    /// using tokenizer = await Tokenizer.from_pretrained("openai-community/gpt2");
-    /// using pinned = await Tokenizer.from_pretrained("openai-community/gpt2", { revision: "607a30d" });
-    /// using private = await Tokenizer.from_pretrained("user/private-model", { token: "hf_xxxxxxxxxxxxxxxxxxxxxxxx" });
+    /// using tokenizer = await Tokenizer.fromPretrained("openai-community/gpt2");
+    /// using pinned = await Tokenizer.fromPretrained("openai-community/gpt2", { revision: "607a30d" });
+    /// using private = await Tokenizer.fromPretrained("user/private-model", { token: "hf_xxxxxxxxxxxxxxxxxxxxxxxx" });
     /// ```
+    #[wasm_bindgen(js_name = fromPretrained)]
     pub async fn from_pretrained(
-        repo_name: String,
+        identifier: String,
         options: Option<Ts<PretrainedOptions>>,
     ) -> Result<Tokenizer, JsValue> {
-        let json = hub::fetch_tokenizer_json(&repo_name, options).await?;
+        let json = hub::fetch_tokenizer_json(&identifier, options).await?;
         Ok(Self::from_json(&json)?)
     }
 
-    /// Encodes the given text to token ids.
+    /// Encodes the given text, or pair of texts, to token ids.
     ///
-    /// @param text - The text to encode into tokens.
+    /// @param input - A text, or a pair of texts given as a two-item array. The post-processor
+    /// joins a pair, for example as `[CLS] A [SEP] B [SEP]`.
     /// @param options - Settings for this call: whether to add special tokens, padding or
     /// truncation. Defaults to the tokenizer's config. See {@link EncodeOptions}.
-    /// @returns The token ids.
-    /// @throws If the options do not match {@link EncodeOptions}.
+    /// @returns The {@link Encoding}.
+    /// @throws If the input is not a text or a pair, or the options do not match {@link EncodeOptions}.
     pub fn encode(
         &self,
-        text: &str,
+        input: Ts<TextInput>,
         options: Option<Ts<EncodeOptions>>,
-    ) -> Result<Vec<u32>, JsError> {
+    ) -> Result<Encoding, JsError> {
+        let input = input.to_rust()?;
         let options = convert_encode_options(options)?;
-        let encodings = self.0.encode(text, &options).wait().map_err(js_err)?;
-        let ids = encodings
-            .first()
-            .map(|e| e.ids().iter().map(|t| t.id()).collect())
-            .unwrap_or_default();
-        Ok(ids)
+        let encoding = self
+            .0
+            .encode(input, &options)
+            .wait()
+            .map_err(js_err)?
+            .pop()
+            .expect("encoding a single input gives exactly one encoding");
+        Ok(Encoding(encoding))
+    }
+
+    /// Encodes the given text, or pair of texts, and returns the token of each id.
+    ///
+    /// Shorthand for `decodeTokens(encode(input, options).ids)`.
+    ///
+    /// @param input - A text, or a pair of texts given as a two-item array.
+    /// @param options - Settings for this call. See {@link EncodeOptions}.
+    /// @returns The token of each id, special tokens included.
+    /// @throws If the input is not a text or a pair, or the options do not match {@link EncodeOptions}.
+    pub fn tokenize(
+        &self,
+        input: Ts<TextInput>,
+        options: Option<Ts<EncodeOptions>>,
+    ) -> Result<Vec<String>, JsError> {
+        let encoding = self.encode(input, options)?;
+        Ok(self.decode_tokens(Token::cast_slice(encoding.0.ids()), None))
+    }
+
+    /// Encodes a batch of texts, or pairs of texts.
+    ///
+    /// @param inputs - The batch to encode. Each item is a text, or a pair of texts given as a
+    /// two-item array. A batch can mix both.
+    /// @param options - Settings for this call, applied to every item. See {@link EncodeOptions}.
+    /// @returns The {@link Encoding} of each item, in input order.
+    /// @throws If an item is not a text or a pair, or the options do not match {@link EncodeOptions}.
+    #[wasm_bindgen(js_name = encodeBatch)]
+    pub fn encode_batch(
+        &self,
+        inputs: Vec<Ts<TextInput>>,
+        options: Option<Ts<EncodeOptions>>,
+    ) -> Result<Vec<Encoding>, JsError> {
+        let inputs = inputs
+            .into_iter()
+            .map(|input| Ok(input.to_rust()?.into()))
+            .collect::<Result<_, JsError>>()?;
+        let options = convert_encode_options(options)?;
+        let encodings = self
+            .0
+            .encode(Inputs::Batch(inputs), &options)
+            .wait()
+            .map_err(js_err)?;
+        Ok(encodings.into_iter().map(Encoding).collect())
     }
 
     /// Decodes token ids back into text.
     ///
-    /// @param ids - The ids to convert. Can be the result of {@link Tokenizer.encode}.
-    /// @param skip_special_tokens - Whether special tokens are ignored. `true` when not specified.
+    /// @param ids - The ids to convert, such as {@link Encoding.ids}.
+    /// @param skipSpecialTokens - Whether special tokens are ignored. `true` when not specified.
     /// @returns The decoded text.
     pub fn decode(
         &self,
         ids: &[u32],
-        skip_special_tokens: Option<bool>,
+        #[wasm_bindgen(js_name = skipSpecialTokens)] skip_special_tokens: Option<bool>,
     ) -> Result<String, JsError> {
         self.0
             .decode(ids, skip_special_tokens.unwrap_or(true))
@@ -99,10 +152,15 @@ impl Tokenizer {
     /// Converts token ids to their tokens. This does not run the decoder, so each token keeps its
     /// spelling in the vocabulary: a byte-level BPE token reads `Ġworld`, not ` world`.
     ///
-    /// @param ids - The ids to convert. Can be the result of {@link Tokenizer.encode}.
-    /// @param skip_special_tokens - Whether special tokens are ignored. `false` when not specified.
+    /// @param ids - The ids to convert, such as {@link Encoding.ids}.
+    /// @param skipSpecialTokens - Whether special tokens are ignored. `false` when not specified.
     /// @returns The token of each id found in the vocabulary. Ids not in the vocabulary are dropped.
-    pub fn decode_tokens(&self, ids: &[u32], skip_special_tokens: Option<bool>) -> Vec<String> {
+    #[wasm_bindgen(js_name = decodeTokens)]
+    pub fn decode_tokens(
+        &self,
+        ids: &[u32],
+        #[wasm_bindgen(js_name = skipSpecialTokens)] skip_special_tokens: Option<bool>,
+    ) -> Vec<String> {
         self.0
             .decode_tokens(ids, skip_special_tokens.unwrap_or(false))
     }
