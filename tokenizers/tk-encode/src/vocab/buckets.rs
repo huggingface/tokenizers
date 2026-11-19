@@ -77,7 +77,7 @@ pub(crate) struct Buckets {
     first_byte_to_bucket_id: [u8; 256],
     // we use optimized SIMD instructions (main one being `pshufb`) to scan potential special tokens when there are multiple unique starting bytes, noting that we have one bucket per starting byte.
     // The algo is taken from http://0x80.pl/notesen/2018-10-18-simd-byte-lookup.html, specifically the "Special case 1 - small sets"
-    // `None` past 8 high nibbles; see `build_nibble_table`.
+    // `None` when the NibbleTable can' be built, see `build_nibble_table`
     nibble_table: Option<NibbleTable>,
     buckets: Box<[Bucket]>,
     // efficient AHashMap equivalent build on the premise that we know in advance all the keys: we
@@ -203,9 +203,8 @@ impl Buckets {
             if (0..16).any(|l| candidates[(h << 4) | l]) {
                 if next >= 8 {
                     log::warn!(
-                        "added tokens start with bytes from more than 8 high-nibble rows, the \
-                         most the SIMD scan supports: they are matched with a byte-by-byte scan \
-                         instead"
+                        "Added tokens first bytes have more than 8 distinct high nibbles! \
+                         Cannot build the NibbleTable for fast SIMD scan, falling back to the slow scalar search."
                     );
                     return None;
                 }
@@ -229,6 +228,7 @@ impl Buckets {
         }
         Some(NibbleTable { lo16: lo, hi16: hi })
     }
+
     #[cfg(all(test, target_arch = "aarch64", target_endian = "little"))] // test-only helper for the NEON nibble matcher
     fn nibble_match_bytes(&self, table: &NibbleTable, bytes: &[u8]) -> Option<usize> {
         // lane index   0     1     2     3     4    ...  (16 lanes, one register)
@@ -364,7 +364,7 @@ impl Buckets {
     /// >=2 buckets: classify each 16-byte window ONCE, then pop EVERY candidate lane and `match_fast`
     /// > it in place — so a false candidate never triggers a NEON reload or window re-align (the
     /// > restart penalty). lo/hi/m0f are loaded once for the whole scan.
-    // The `shrn` movemask assumes little-endian lane order; big-endian uses `scalar_match`.
+    // The `shrn` movemask assumes little-endian lane order; big-endian fallbacks `scalar_match`.
     #[cfg(all(target_arch = "aarch64", target_endian = "little"))]
     fn neon_mask_match(&self, bytes: &[u8], table: &NibbleTable) -> Option<(u32, u32, u32)> {
         use core::arch::aarch64::*;
