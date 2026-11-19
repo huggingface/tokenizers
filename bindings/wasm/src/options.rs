@@ -33,20 +33,20 @@ pub struct EncodeOptions {
     /// Padding for this call, replacing the tokenizer's configured padding.
     /// `false` disables padding.
     /// Defaults to the tokenizer's config when omitted.
-    #[tsify(optional, type = "false | PaddingOptions")]
-    padding: Option<Setting<PaddingOptions>>,
+    #[tsify(optional, type = "false | Padding")]
+    padding: Option<Setting<Padding>>,
     /// Truncation for this call, replacing the tokenizer's configured truncation.
     /// `false` disables truncation.
     /// Defaults to the tokenizer's config when omitted.
-    #[tsify(optional, type = "false | TruncationOptions")]
-    truncation: Option<Setting<TruncationOptions>>,
+    #[tsify(optional, type = "false | Truncation")]
+    truncation: Option<Setting<Truncation>>,
 }
 
 /// Padding for one call. It replaces the tokenizer's configured padding as a whole, so a field
 /// left out takes the value noted on the field, not the configured one.
 #[derive(Tsify, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct PaddingOptions {
+struct Padding {
     /// `right` when left out, or `left`: whether padding tokens are appended to the right or
     /// prepended to the left of encoded tokens.
     #[tsify(optional)]
@@ -73,7 +73,7 @@ struct PaddingOptions {
 /// field left out takes the value noted on the field, not the configured one.
 #[derive(Tsify, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct TruncationOptions {
+struct Truncation {
     /// The maximum number of tokens, including special tokens, to keep. Encodings with more tokens
     /// get truncated.
     max_length: u32,
@@ -112,8 +112,8 @@ pub(crate) fn convert_encode_options(
     let mut encode_options = pipeline::EncodeOptions::default();
     encode_options.add_special_tokens = options.add_special_tokens.unwrap_or(true);
     encode_options.encode_special_tokens = options.encode_special_tokens.unwrap_or(false);
-    encode_options.padding = into_override(options.padding, PaddingOptions::params);
-    encode_options.truncation = into_override(options.truncation, TruncationOptions::params);
+    encode_options.padding = into_override(options.padding, Padding::params);
+    encode_options.truncation = into_override(options.truncation, Truncation::params);
     Ok(encode_options)
 }
 
@@ -125,7 +125,7 @@ fn into_override<O, T>(setting: Option<Setting<O>>, params: fn(O) -> T) -> Overr
     }
 }
 
-impl PaddingOptions {
+impl Padding {
     fn params(self) -> PaddingParams {
         let mut params = PaddingParams::default();
         params.strategy = self.length.map_or(PaddingStrategy::BatchLongest, |length| {
@@ -143,7 +143,7 @@ impl PaddingOptions {
     }
 }
 
-impl TruncationOptions {
+impl Truncation {
     fn params(self) -> TruncationParams {
         let mut params = TruncationParams::default();
         params.max_length = self.max_length as usize;
