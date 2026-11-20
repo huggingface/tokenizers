@@ -12,7 +12,7 @@ authors = [
 ]
 edition = "2024"
 name = "tokenizers"
-version = "1.0.0-dev.2"
+version = "1.0.0-rc.6.dev.0"
 repository = "https://github.com/huggingface/tokenizers"
 documentation = "https://docs.rs/tokenizers/"
 license = "Apache-2.0"
@@ -39,9 +39,9 @@ path = "src/lib.rs"
 bench = false
 
 [dependencies]
-tk-encode = { path = "tk-encode", version = "0.1.0-dev.2", default-features = false }
-tk-convert = { path = "tk-convert", version = "0.1.0-dev.2", default-features = false }
-tk-serialize = { path = "tk-serialize", version = "0.1.0-dev.2", default-features = false, features = [
+tk-encode = { path = "tk-encode", version = "0.1.0-rc.6.dev.0", default-features = false }
+tk-convert = { path = "tk-convert", version = "0.1.0-rc.6.dev.0", default-features = false }
+tk-serialize = { path = "tk-serialize", version = "0.1.0-rc.6.dev.0", default-features = false, features = [
   "deserialize",
 ] }
 
