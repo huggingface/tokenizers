@@ -1,4 +1,4 @@
-.PHONY: style check-style test
+.PHONY: style check-style data test
 
 DATA_DIR = data
 
@@ -20,8 +20,10 @@ check-style:
 
 TESTS_RESOURCES = $(DATA_DIR)/small.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json
 
+data: $(TESTS_RESOURCES)
+
 # Launch the test suite
-test: $(TESTS_RESOURCES)
+test: data
 	npm run test
 
 # small.txt is derived locally; everything else is fetched from the Hub by name.
