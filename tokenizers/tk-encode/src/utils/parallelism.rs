@@ -8,6 +8,7 @@ use rayon_cond::CondIterator;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use std::sync::OnceLock;
 use std::sync::TryLockError;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::AtomicUsize;
@@ -19,13 +20,15 @@ pub use rayon::current_num_threads;
 /// TODO: deprecate
 pub(crate) const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
 
-/// 0 means deafult value
-static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
-/// Bumped by [`set_num_threads`], so the next [`pool`] call builds a pool with the new count.
+/// See [`max_threads`]. 0 means the default.
+static MAX_THREADS: AtomicUsize = AtomicUsize::new(0);
+/// Bumped by [`set_max_threads`], so the next [`pool`] call builds a pool with the new count.
 static POOL_GEN: AtomicUsize = AtomicUsize::new(0);
 
 struct CachedPool {
-    pool: Arc<rayon::ThreadPool>,
+    /// `None` when `max_threads()` is 1 or the build failed: cached too, so a serial process skips
+    /// the rebuild path.
+    pool: Option<Arc<rayon::ThreadPool>>,
     generation: usize,
 }
 
@@ -94,44 +97,50 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     if let Some(cached) = cache.as_ref()
         && cached.generation == generation
     {
-        return Some(cached.pool.clone());
+        return cached.pool.clone();
     }
-    let num_threads = num_threads();
-    // no pool for a single thread
-    if num_threads == 1 {
-        *cache = None;
-        return None;
-    }
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(num_threads)
-        .thread_name(|i| format!("tk-encode-{i}"))
-        .build()
-        .ok()?;
-    let pool = Arc::new(pool);
+    // the caller is one of the `max_threads`
+    let workers = max_threads() - 1;
+    let pool = if workers == 0 {
+        None
+    } else {
+        // a failed build (thread limit) is cached as serial too, rather than retried every encode
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(workers)
+            .thread_name(|i| format!("tk-encode-{i}"))
+            .build()
+            .ok()
+            .map(Arc::new)
+    };
     *cache = Some(CachedPool {
         pool: pool.clone(),
         generation,
     });
-    Some(pool)
+    pool
 }
 
-pub(crate) fn num_threads() -> usize {
-    match NUM_THREADS.load(Ordering::Acquire) {
-        // 0 == default value
-        0 => std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1),
+/// Max threads per encode, caller included: the shared pool holds `max_threads() - 1`, so 1 means
+/// serial. Defaults to `available_parallelism()` (affinity mask, cgroup quota).
+pub fn max_threads() -> usize {
+    match MAX_THREADS.load(Ordering::Acquire) {
+        0 => available_parallelism(),
         n => n,
     }
+}
+
+/// Cached: on Linux it reads the cgroup quota from files, too slow for every encode.
+fn available_parallelism() -> usize {
+    static CORES: OnceLock<usize> = OnceLock::new();
+    *CORES.get_or_init(|| std::thread::available_parallelism().map_or(1, |n| n.get()))
 }
 
 fn invalidate() {
     POOL_GEN.fetch_add(1, Ordering::SeqCst);
 }
 
-/// Passing in 0 will reset to the default value
-pub fn set_num_threads(n: usize) {
-    NUM_THREADS.store(n, Ordering::Release);
+/// Set [`max_threads`] process-wide; `0` restores the default. Takes effect on the next encode.
+pub fn set_max_threads(n: usize) {
+    MAX_THREADS.store(n, Ordering::Release);
     invalidate();
 }
 
@@ -285,11 +294,37 @@ mod tests {
         assert_eq!(v.into_maybe_par_iter().sum::<u32>(), 21);
     }
 
+    /// [`pool`], waiting out a build by another test's encode: meanwhile, `pool()` says serial.
+    fn built_pool() -> Option<Arc<rayon::ThreadPool>> {
+        (0..1_000).find_map(|_| {
+            pool().or_else(|| {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                None
+            })
+        })
+    }
+
+    /// The caller counts: the pool holds `max - 1` threads, none for a max of 1.
+    #[test]
+    fn max_threads_counts_the_caller() {
+        let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        set_max_threads(3);
+        assert_eq!(max_threads(), 3);
+        assert_eq!(built_pool().expect("a pool").current_num_threads(), 2);
+        set_max_threads(1);
+        assert!(pool().is_none(), "one thread is the caller alone");
+        set_max_threads(0);
+        assert_eq!(
+            max_threads(),
+            std::thread::available_parallelism().map_or(1, |n| n.get())
+        );
+    }
+
     /// Contended callers must reuse the cached pool, not build their own.
     #[test]
     fn concurrent_callers_share_one_pool() {
         let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
-        if num_threads() == 1 {
+        if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
         // start stale, so the callers race the rebuild too
@@ -316,7 +351,7 @@ mod tests {
     #[test]
     fn child_forked_mid_lock_gets_a_pool() {
         let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
-        if num_threads() == 1 {
+        if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
         register_fork_handler();
@@ -337,7 +372,7 @@ mod tests {
     #[test]
     fn child_runs_on_a_pool_of_its_own() {
         let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
-        if num_threads() == 1 {
+        if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
         let parent = pool().expect("a pool");
