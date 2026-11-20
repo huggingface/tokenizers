@@ -656,6 +656,83 @@ mod tests {
         }
     }
 
+    /// [`WordCache::emit_inline_hits`] is a shortcut for [`WordCache::lookup`]. It must write the
+    /// ids a lookup returns for each word it answers, and stop at the first word whose home slot
+    /// does not hold inline ids: a word with four ids ends the first run, a word that was never
+    /// stored ends the second.
+    #[test]
+    fn a_run_of_inline_hits_writes_what_lookup_returns() {
+        let mut cache = WordCache::new(1 << 8);
+        let stored: [(&[u8], &[u32]); 5] = [
+            (b"the", &[1]),
+            (b"sixteen-byte-wd?", &[2, 3, 4]),
+            (b"a", &[5, 6]),
+            (b"spilled", &[7, 8, 9, 10]),
+            (b"after", &[11]),
+        ];
+        for (word, ids) in stored {
+            store(&mut cache, word, ids);
+        }
+        let words: Vec<&[u8]> = stored
+            .iter()
+            .map(|&(word, _)| word)
+            .chain([&b"never-stored"[..]])
+            .collect();
+        let signatures: Vec<Signature> = words.iter().map(|word| Signature::new(word)).collect();
+        let homes: std::collections::HashSet<usize> = signatures
+            .iter()
+            .map(|&signature| cache.home(signature))
+            .collect();
+        assert_eq!(
+            homes.len(),
+            words.len(),
+            "pick words with distinct home slots"
+        );
+
+        let mut next = 0;
+        let mut answers = Vec::new();
+        while next < words.len() {
+            let run = &signatures[next..];
+            let mut out = vec![0u32; MAX_INLINE_IDS * run.len()];
+            // SAFETY: `out` holds `MAX_INLINE_IDS` ids per signature of the run.
+            let (answered, written) = unsafe { cache.emit_inline_hits(run, out.as_mut_ptr()) };
+            let mut ids = out[..written].iter();
+            for word in &words[next..next + answered] {
+                let expected = cache
+                    .lookup(word)
+                    .hit()
+                    .expect("the run answered this word");
+                let got: Vec<u32> = ids.by_ref().take(expected.len()).copied().collect();
+                assert_eq!(got, expected, "{word:?}");
+            }
+            answers.push(answered);
+            next += answered + 1;
+        }
+        assert_eq!(answers, [3, 1]);
+    }
+
+    /// A one-home table sends every word to slot 0. The run must not answer a word that has only
+    /// part of the stored word's signature: ten `a`s against nine (another length), against a
+    /// last byte changed (another tail), and against a first byte changed (another head).
+    #[test]
+    fn a_run_does_not_answer_a_word_with_part_of_the_signature() {
+        let mut cache = WordCache::new(1);
+        store(&mut cache, b"aaaaaaaaaa", &[1]);
+        let answered = |word: &[u8]| {
+            let mut out = [0u32; MAX_INLINE_IDS];
+            // SAFETY: `out` holds `MAX_INLINE_IDS` ids for the one signature.
+            unsafe {
+                cache
+                    .emit_inline_hits(&[Signature::new(word)], out.as_mut_ptr())
+                    .0
+            }
+        };
+        assert_eq!(answered(b"aaaaaaaaaa"), 1);
+        for near in [&b"aaaaaaaaa"[..], b"aaaaaaaaab", b"baaaaaaaaa"] {
+            assert_eq!(answered(near), 0, "{near:?}");
+        }
+    }
+
     /// Two words past [`Signature::BYTES`] with the same length, start and end have the same
     /// signature, home slot and tag. A lookup that stopped at the signature would hand one
     /// word the other's ids. One id each, so the words are spilled only for their bytes.

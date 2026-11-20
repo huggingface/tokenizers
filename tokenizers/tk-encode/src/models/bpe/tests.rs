@@ -133,6 +133,59 @@ fn cached_ids_match_uncached() {
     }
 }
 
+// `tokenize_spans` answers words a batch at a time, most of them straight from the cache.
+// It must give the ids of the same words tokenized one by one with no cache. More words than
+// two batches, with repeats, a word past 16 bytes, a word with more than three ids, and short
+// words at the very end of the text, where fewer than 8 bytes are left to read.
+#[test]
+fn a_chunk_of_words_encodes_like_its_words_one_by_one() {
+    use crate::pipeline::{PreTokenizer, PreTokenizerScratch};
+    use crate::pre_tokenizers::whitespace::WhitespaceSplit;
+
+    let cached = hello(BpeConfig::default()).unwrap();
+    let uncached = hello(BpeConfig {
+        cache_capacity: 0,
+        ..Default::default()
+    })
+    .unwrap();
+    let words = [
+        "hello",
+        "hell",
+        "o",
+        "hellohellohellohello",
+        "oleholeh",
+        "helo",
+        "lo",
+    ];
+    let text: Vec<&str> = words
+        .iter()
+        .cycle()
+        .take(5 * words.len() + 3)
+        .copied()
+        .collect();
+    let text = text.join(" ");
+    let expected: Vec<u32> = text
+        .split(' ')
+        .flat_map(|word| pipeline_ids(&uncached, word))
+        .collect();
+
+    let pre_tokenizer = PreTokenizer::WhitespaceSplit(WhitespaceSplit);
+    let mut scratch = cached.init_scratch();
+    assert!(scratch.word_cache.is_some(), "nothing is being cached");
+    for pass in 0..2 {
+        let mut spans = Vec::new();
+        let pre_tokens = pre_tokenizer
+            .pre_tokens(&text, &mut PreTokenizerScratch::default(), &mut spans)
+            .unwrap();
+        let mut out = Vec::new();
+        cached
+            .tokenize_spans(pre_tokens, &mut scratch, &mut out)
+            .unwrap();
+        let got: Vec<u32> = out.iter().map(|token| token.id()).collect();
+        assert_eq!(got, expected, "pass {pass}");
+    }
+}
+
 #[test]
 fn unknown_char_without_unk_is_dropped() {
     let pipeline = hello(BpeConfig::default()).unwrap();
