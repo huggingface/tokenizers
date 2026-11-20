@@ -143,23 +143,25 @@ impl<'a> WordCache {
         dst: *mut u32,
     ) -> (usize, usize) {
         let slots = self.cached_words.as_ptr();
-        let mut written = 0;
-        for (answered, &signature) in signatures.iter().enumerate() {
+        let mut next = dst;
+        let mut answered = 0;
+        for &signature in signatures {
             // SAFETY: a home is masked with `placement_mask` (`next_pow2 - 1`), and the table
             // holds `next_pow2 + WINDOW_SIZE` slots.
             let slot = unsafe { *slots.add(self.home(signature)) };
             if !slot.holds_inline(signature) {
-                return (answered, written);
+                break;
             }
-            // SAFETY: `written <= MAX_INLINE_IDS * answered`, and the caller left room for
-            // `MAX_INLINE_IDS` more.
+            // SAFETY: `next` is at most `MAX_INLINE_IDS * answered` past `dst`, and the caller
+            // left room for `MAX_INLINE_IDS` more.
             unsafe {
-                dst.add(written)
-                    .copy_from_nonoverlapping(slot.payload.as_ptr(), MAX_INLINE_IDS);
+                next.copy_from_nonoverlapping(slot.payload.as_ptr(), MAX_INLINE_IDS);
+                next = next.add(slot.ids_len());
             }
-            written += slot.ids_len();
+            answered += 1;
         }
-        (signatures.len(), written)
+        // SAFETY: `next` was derived from `dst` and only moved forward.
+        (answered, unsafe { next.offset_from_unsigned(dst) })
     }
 
     /// [`Self::lookup`] for a caller that already holds the word's signature.
@@ -209,9 +211,8 @@ impl<'a> WordCache {
             signature,
             tag,
         } = placement;
-        // A slot keeps the word's length in 16 bits. `u16::MAX` itself stands for "longer", which
-        // no slot holds, so a longer word is never cached and never hits.
-        if stored_len(signature.len) == u16::MAX {
+        // A slot has 24 bits for the word's length, so a longer word is not cached.
+        if signature.len > WordCacheSlot::MAX_WORD_BYTES {
             return;
         }
         let uncovered = Signature::uncovered(word);
@@ -299,12 +300,6 @@ fn tag_of(signature: Signature) -> u8 {
     ((signature.hash >> (64 - 8)) as u8).max(WordCache::EMPTY + 1)
 }
 
-/// A word's length as a slot stores it. `u16::MAX` stands for every longer word.
-#[inline(always)]
-fn stored_len(len: usize) -> u16 {
-    u16::try_from(len).unwrap_or(u16::MAX)
-}
-
 /// Packs bytes four to a `u32`, zero padding the last one. The `u32`s read back as the same
 /// bytes in memory order.
 fn pack_bytes(bytes: &[u8]) -> impl Iterator<Item = u32> + '_ {
@@ -329,7 +324,7 @@ fn pack_bytes(bytes: &[u8]) -> impl Iterator<Item = u32> + '_ {
 /// ```text
 /// ┌───────────┬───────────┬──────────┬──────────┬──────────┬──────────────────────────┐
 /// │   head    │   tail    │  id[0]   │  id[1]   │  id[2]   │           meta           │
-/// │    u64    │    u64    │   u32    │   u32    │   u32    │ word_len << 16 | ids_len │
+/// │    u64    │    u64    │   u32    │   u32    │   u32    │ word_len << 8 | ids_len  │
 /// └───────────┴───────────┴──────────┴──────────┴──────────┴──────────────────────────┘
 /// 0           8           16         20         24         28                       32 bytes
 /// ```
@@ -341,7 +336,7 @@ fn pack_bytes(bytes: &[u8]) -> impl Iterator<Item = u32> + '_ {
 /// ```text
 /// ┌───────────┬───────────┬──────────┬──────────┬────────────┬──────────────────────────┐
 /// │   head    │   tail    │  start   │   end    │ generation │           meta           │
-/// │    u64    │    u64    │   u32    │   u32    │    u32     │ word_len << 16 | SPILLED │
+/// │    u64    │    u64    │   u32    │   u32    │    u32     │ word_len << 8 | SPILLED  │
 /// └───────────┴───────────┴──────────┴──────────┴────────────┴──────────────────────────┘
 /// 0           8           16         20         24           28                       32 bytes
 /// ```
@@ -351,14 +346,14 @@ pub struct WordCacheSlot {
     head: u64,
     tail: u64,
     payload: [u32; 3],
-    /// The word's [`stored_len`] in the top 16 bits. The number of inline ids in the low 8, or
+    /// The word's length in the top 24 bits. The number of inline ids in the low 8, or
     /// [`Self::SPILLED`].
     meta: u32,
 }
 
 const _: () = assert!(
     (MAX_INLINE_IDS + 1).is_power_of_two(),
-    "WordCacheSlot::NOT_INLINE is a bit mask: it needs MAX_INLINE_IDS to be all ones"
+    "WordCacheSlot::INLINE_IDS is a bit mask: it needs MAX_INLINE_IDS to be all ones"
 );
 // 32-byte size and alignment, so a read is always contained in a cache line
 const _: () = assert!(size_of::<WordCacheSlot>() == 32);
@@ -369,15 +364,18 @@ impl WordCacheSlot {
     /// (values are stored in a buffer)
     const SPILLED: u32 = 0xFF;
 
-    /// The bits of `meta` that are zero only when it counts [`MAX_INLINE_IDS`] ids or fewer.
-    const NOT_INLINE: u32 = 0xFF & !(MAX_INLINE_IDS as u32);
+    /// The longest word whose length fits in `meta`.
+    const MAX_WORD_BYTES: usize = (1 << 24) - 1;
+
+    /// The bits of `meta` that hold up to [`MAX_INLINE_IDS`]: an inline hit ignores them.
+    const INLINE_IDS: u64 = MAX_INLINE_IDS as u64;
 
     fn new(signature: Signature, payload: [u32; 3], ids_len: u32) -> Self {
         Self {
             head: signature.head,
             tail: signature.tail,
             payload,
-            meta: len_bits(signature) | ids_len,
+            meta: (signature.len as u32) << 8 | ids_len,
         }
     }
 
@@ -412,11 +410,12 @@ impl WordCacheSlot {
 }
 
 impl WordCacheSlot {
+    // Both compare lengths as `u64`: a word too long for `meta` then matches no slot.
     #[inline(always)]
     fn has_signature(&self, signature: Signature) -> bool {
         self.head == signature.head
             && self.tail == signature.tail
-            && self.meta & 0xFFFF_0000 == len_bits(signature)
+            && u64::from(self.meta >> 8) == signature.len as u64
     }
 
     /// [`Self::has_signature`] with the ids inline, in one compare of `meta`.
@@ -425,7 +424,7 @@ impl WordCacheSlot {
     fn holds_inline(&self, signature: Signature) -> bool {
         self.head == signature.head
             && self.tail == signature.tail
-            && self.meta & (0xFFFF_0000 | Self::NOT_INLINE) == len_bits(signature)
+            && u64::from(self.meta) & !Self::INLINE_IDS == (signature.len as u64) << 8
     }
 
     #[inline(always)]
@@ -444,12 +443,6 @@ impl WordCacheSlot {
             CacheSlotType::SelfContained(SelfContained(self))
         }
     }
-}
-
-/// The word's [`stored_len`], where a slot's `meta` keeps it.
-#[inline(always)]
-fn len_bits(signature: Signature) -> u32 {
-    u32::from(stored_len(signature.len)) << 16
 }
 
 /// Convenience wrapper around [`WordCacheSlot`] to discriminate
@@ -651,12 +644,12 @@ mod tests {
         assert_eq!(cache.lookup(&word).hit(), Some(&ids[..]));
     }
 
-    /// A slot has 16 bits for the word's length. Two words past that limit would look alike
+    /// A slot has 24 bits for the word's length. Two words past that limit would look alike
     /// to a slot that truncated their lengths, so neither is cached.
     #[test]
     fn a_word_too_long_for_a_slot_is_never_cached() {
         let mut cache = WordCache::new(1 << 8);
-        for len in [u16::MAX as usize, u16::MAX as usize + 1, 1 << 17] {
+        for len in [1 << 24, (1 << 24) + 5] {
             let word = vec![b'q'; len];
             store(&mut cache, &word, &[1, 2, 3, 4]);
             assert_eq!(cache.lookup(&word).hit(), None, "len {len}");

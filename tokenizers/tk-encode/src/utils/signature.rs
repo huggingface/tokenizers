@@ -27,6 +27,19 @@ pub(crate) struct Signature {
 
 const SEEDS: [u64; 2] = [0x243F_6A88_85A3_08D3, 0x1319_8A2E_0370_7344];
 
+/// `LOW_BYTES[n]` keeps the low `n` bytes of a `u64`.
+const LOW_BYTES: [u64; 9] = [
+    0,
+    0xFF,
+    0xFFFF,
+    0xFF_FFFF,
+    0xFFFF_FFFF,
+    0xFF_FFFF_FFFF,
+    0xFFFF_FFFF_FFFF,
+    0xFF_FFFF_FFFF_FFFF,
+    u64::MAX,
+];
+
 impl Signature {
     /// The longest word a signature holds whole.
     pub(crate) const BYTES: usize = 16;
@@ -60,11 +73,7 @@ impl Signature {
         }
         let len = word.len();
         let short = len.min(8);
-        let mask = if short == 8 {
-            u64::MAX
-        } else {
-            (1 << (8 * short)) - 1
-        };
+        let mask = LOW_BYTES[short];
         // SAFETY: `readable >= 8` bytes exist from the word's start. The second read starts
         // `len - short` bytes in: at the start when `len < 8`, 8 bytes before the end otherwise.
         let (head, tail) = unsafe {

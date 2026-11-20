@@ -219,7 +219,7 @@ impl BPE {
         if let Some(cache) = word_cache.as_ref() {
             match cache.lookup_signed(bytes, signature) {
                 Lookup::Hit(ids) => {
-                    output.extend(ids.iter().copied().map(Token::from));
+                    output.extend(ids.iter().map(|&id| Token::from(id)));
                     return;
                 }
                 Lookup::Miss(at) => insert_at = Some(at),
