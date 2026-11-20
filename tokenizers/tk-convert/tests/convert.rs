@@ -101,6 +101,23 @@ fn walk(node: &Value, f: &mut impl FnMut(&Map<String, Value>)) {
 // ---- the model ------------------------------------------------------------------------------
 
 #[test]
+fn preserves_vocab_order() {
+    // Source order differs from both alphabetical token order and numeric ID order.
+    let input = r#"{"version": "1.0", "model": {"type": "BPE",
+        "vocab": {"z": 0, "b": 2, "a": 1}, "merges": []}}"#;
+    let output = canonicalize_str(input).unwrap();
+    let value: Value = serde_json::from_str(&output).unwrap();
+    let tokens: Vec<_> = value["model"]["vocab"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(tokens, ["z", "b", "a"]);
+    assert_eq!(output, canonicalize_str(&output).unwrap());
+}
+
+#[test]
 fn infers_a_missing_model_type() {
     // `merges` **must** beat `continuing_subword_prefix`: a serialized BPE writes that key as
     // null, so gpt2 would otherwise read as a WordPiece with no merges.
