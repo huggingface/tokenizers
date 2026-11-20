@@ -198,7 +198,7 @@ impl BPE {
     /// whole vocabulary. The two agree on ids: `prove_fold` only sets the bit for an entry that
     /// merging its own text reproduces. A folded word is inserted too, so its later occurrences
     /// come off the cache.
-    fn tokenize_signed(
+    fn tokenize_with_signature(
         &self,
         sequence: &str,
         signature: Signature,
@@ -217,7 +217,7 @@ impl BPE {
 
         let mut insert_at = None;
         if let Some(cache) = word_cache.as_ref() {
-            match cache.lookup_signed(bytes, signature) {
+            match cache.lookup_with_signature(bytes, signature) {
                 Lookup::Hit(ids) => {
                     output.extend(ids.iter().map(|&id| Token::from(id)));
                     return;
@@ -293,7 +293,7 @@ impl pipeline::Tokenize for BPE {
         output: &mut Vec<Token>,
     ) -> Result<()> {
         let signature = Signature::new(sequence.as_bytes());
-        self.tokenize_signed(sequence, signature, scratch, output);
+        self.tokenize_with_signature(sequence, signature, scratch, output);
         Ok(())
     }
 
@@ -301,7 +301,7 @@ impl pipeline::Tokenize for BPE {
     ///
     /// For each batch, [`read_signatures`] reads every word's signature first. Then
     /// [`WordCache::emit_inline_hits`] answers runs of words straight from the cache, and
-    /// [`Self::tokenize_signed`] takes each word that a run stops on.
+    /// [`Self::tokenize_with_signature`] takes each word that a run stops on.
     // Inlining measure faster on x86
     #[inline(always)]
     fn tokenize_spans(
@@ -333,7 +333,7 @@ impl pipeline::Tokenize for BPE {
                         break;
                     }
                 }
-                self.tokenize_signed(batch.text(next), signatures[next], scratch, output);
+                self.tokenize_with_signature(batch.text(next), signatures[next], scratch, output);
                 next += 1;
             }
         }

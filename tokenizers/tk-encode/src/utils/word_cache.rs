@@ -114,7 +114,7 @@ impl<'a> WordCache {
     // Only `unigram` and `wordpiece` call this. `bpe` holds the signature already.
     #[cfg_attr(not(any(feature = "unigram", feature = "wordpiece")), allow(dead_code))]
     pub fn lookup(&'a self, word: &[u8]) -> Lookup<'a> {
-        self.lookup_signed(word, Signature::new(word))
+        self.lookup_with_signature(word, Signature::new(word))
     }
 
     /// Starts loading the home slot of the word with this signature, so that a lookup a few
@@ -128,7 +128,7 @@ impl<'a> WordCache {
     /// buffer. Returns how many words it answered and how many ids it wrote.
     ///
     /// It stops at the first word whose home slot does not hold it with inline ids. That word
-    /// goes through [`Self::lookup_signed`]. On text the cache has seen, nearly every word is
+    /// goes through [`Self::lookup_with_signature`]. On text the cache has seen, nearly every word is
     /// answered here, so this loop is kept to a few loads, compares and stores per word.
     ///
     /// # Safety
@@ -165,7 +165,7 @@ impl<'a> WordCache {
     }
 
     /// [`Self::lookup`] for a caller that already holds the word's signature.
-    pub fn lookup_signed(&'a self, word: &[u8], signature: Signature) -> Lookup<'a> {
+    pub fn lookup_with_signature(&'a self, word: &[u8], signature: Signature) -> Lookup<'a> {
         let home = self.home(signature);
         let tag = tag_of(signature);
         let tag_window = self.tag_window(home);
