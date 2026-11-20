@@ -67,7 +67,7 @@ fn bs_cl100k(
     _l: &mut [u64],
     o: &mut [Span],
 ) -> usize {
-    bitcannon::bitcannon_cl100k(t, g, s, f, o)
+    bitcannon::bitcannon_cl100k::<3>(t, g, s, f, o)
 }
 fn bs_qwen(
     t: &[u8],
@@ -77,7 +77,7 @@ fn bs_qwen(
     _l: &mut [u64],
     o: &mut [Span],
 ) -> usize {
-    bitcannon::bitcannon_qwen(t, g, s, f, o)
+    bitcannon::bitcannon_cl100k::<1>(t, g, s, f, o)
 }
 fn bs_o200k(
     t: &[u8],

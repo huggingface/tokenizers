@@ -1,7 +1,7 @@
 //! **cl100k_base** (tiktoken) / Llama-3 -- and byte-for-byte the regex **GLM-4.6** ships:
 //! `(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+`
 //!
-//! Rule 3's digit cap is the family's only knob, so it is a plain argument: 3 = cl100k / Llama-3 /
+//! Rule 3's digit cap is the family's only knob, so it is a const generic: 3 = cl100k / Llama-3 /
 //! GLM, 1 = **Qwen** (`\p{N}`), 0 or >= 64 = an unbounded `\p{N}+`.
 //!
 //! The atom table and the class decode are shared with GPT-2 in [`super::family_gpt`].
@@ -12,37 +12,14 @@ use crate::{
     trail_run, was, will,
 };
 
-/// cl100k_base / Llama-3 / GLM-4.6 — rule 3 is `\p{N}{1,3}`.
+/// The cl100k family, with rule 3 as `\p{N}{1,DIGIT_CAP}` (values in the module doc).
 #[must_use]
-pub fn bitcannon_cl100k(
-    text: &[u8],
-    tags: &[u8],
-    starts: &mut [u64],
-    flag: &mut [u64],
-    out: &mut [Span],
-) -> usize {
-    cl100k(text, tags, starts, flag, out, 3)
-}
-
-/// Qwen2 / Qwen3 — cl100k character-for-character except rule 3 is a bare `\p{N}`.
-#[must_use]
-pub fn bitcannon_qwen(
-    text: &[u8],
-    tags: &[u8],
-    starts: &mut [u64],
-    flag: &mut [u64],
-    out: &mut [Span],
-) -> usize {
-    cl100k(text, tags, starts, flag, out, 1)
-}
-
-fn cl100k(
+pub fn bitcannon_cl100k<const DIGIT_CAP: usize>(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],
     _flag: &mut [u64],
     out: &mut [Span],
-    digit_cap: usize,
 ) -> usize {
     let ntext = text.len();
     if ntext == 0 {
@@ -98,8 +75,8 @@ fn cl100k(
             let l_start =
                 cur.l & lead & !bk.l & !(bk.ws & !bk.nl) & !((osf << 1) | u64::from(prev_osf));
 
-            // ── rule 3 `\p{N}{1,digit_cap}`
-            let groups = dig.starts(digit_cap, cur.n, lead, cur.cont, was(pv.n));
+            // ── rule 3 `\p{N}{1,DIGIT_CAP}`
+            let groups = dig.starts(DIGIT_CAP, cur.n, lead, cur.cont, was(pv.n));
 
             // ── the other-run's `[\r\n]*` tail swallows the newlines directly behind it.
             let nl_m = ((bk.other & cur.nl & lead) as u128) | u128::from(nl_run);
@@ -114,7 +91,7 @@ fn cl100k(
 
             // ── carries ────────────────────────────────────────────────────────────────────────
             nl_run = nl_e >> 64 != 0;
-            dig.commit(digit_cap, groups, cur.n, lead, valid, len, will(x.nx.n));
+            dig.commit(DIGIT_CAP, groups, cur.n, lead, valid, len, will(x.nx.n));
             let tws = trail_run(cur.ws, valid, len);
             anl.commit(
                 x.base,
