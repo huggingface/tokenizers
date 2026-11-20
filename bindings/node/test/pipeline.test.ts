@@ -190,7 +190,7 @@ test('a truncation direction other than left or right is refused', () => {
 })
 
 // Its post-processor wraps every text in `[CLS] ... [SEP]`.
-const BERT = new URL('../data/bert-wiki.json', import.meta.url).pathname
+const BERT = fileURLToPath(new URL('../data/bert-wiki.json', import.meta.url))
 
 test('decode skips special tokens unless told otherwise', () => {
   const tok = Tokenizer.fromFile(BERT)

@@ -60,9 +60,6 @@ jobs:
             target: x86_64-pc-windows-msvc
             build: yarn build --target x86_64-pc-windows-msvc
           - host: windows-latest
-            target: i686-pc-windows-msvc
-            build: yarn build --target i686-pc-windows-msvc
-          - host: windows-latest
             target: aarch64-pc-windows-msvc
             build: yarn build --target aarch64-pc-windows-msvc
           - host: ubuntu-latest
@@ -190,6 +187,29 @@ jobs:
           path: ${{ env.APP_NAME }}.darwin-universal.node
           if-no-files-found: error
 
+  fixtures:
+    # Fetched once here so the test matrix needs neither make nor uv, and the Makefile stays the only fixture list.
+    name: Fetch test fixtures
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Fetch test fixtures
+        working-directory: ./bindings/node
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make data HF="uvx --from huggingface_hub hf"
+      - name: Upload test fixtures
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: node-test-fixtures
+          path: bindings/node/data
+          if-no-files-found: error
   test:
     # Loads each shipped binary on a machine that can run it and runs the test suite.
     # armv7 and Android would need emulation and stay untested.
@@ -209,9 +229,6 @@ jobs:
           - host: windows-latest
             target: x86_64-pc-windows-msvc
             arch: x64
-          - host: windows-latest
-            target: i686-pc-windows-msvc
-            arch: x86
           - host: windows-11-arm
             target: aarch64-pc-windows-msvc
             arch: arm64
@@ -232,6 +249,7 @@ jobs:
     needs:
       - build
       - universal-macOS
+      - fixtures
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -248,12 +266,11 @@ jobs:
         with:
           name: bindings-${{ matrix.settings.target }}
           path: ./bindings/node
-      - name: Fetch test fixture
-        shell: bash
-        run: |
-          mkdir -p bindings/node/data
-          curl -fsSL --retry 3 -o bindings/node/data/tokenizer-wiki.json \
-            https://huggingface.co/datasets/hf-internal-testing/tokenizers-test-data/resolve/main/tokenizer-wiki.json
+      - name: Download test fixtures
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: node-test-fixtures
+          path: ./bindings/node/data
       - name: Test (host)
         if: ${{ !matrix.settings.docker }}
         working-directory: ./bindings/node
