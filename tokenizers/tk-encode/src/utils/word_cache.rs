@@ -207,7 +207,7 @@ impl<'a> WordCache {
         ids: impl ExactSizeIterator<Item = u32>,
     ) {
         let InsertPlacement {
-            index,
+            mut index,
             signature,
             tag,
         } = placement;
@@ -233,6 +233,9 @@ impl<'a> WordCache {
                 self.spilled_generation = self.spilled_generation.wrapping_add(1);
                 if self.spilled_generation == 0 {
                     self.reset();
+                    // The placement was chosen in the table as it was. In the empty one, a slot
+                    // past the home slot sits behind an empty slot, where no lookup reaches it.
+                    index = self.home(signature);
                 }
             }
             let start = self.spilled_buffer.len();

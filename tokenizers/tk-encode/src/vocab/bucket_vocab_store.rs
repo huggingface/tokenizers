@@ -28,14 +28,14 @@ const VOCAB_ID_MASK: u32 = FOLD_BIT - 1;
 
 /// The [`Mphf`] key of a word.
 ///
-/// A word its signature holds whole reuses the signature's hash. A longer word hashes all of its
-/// bytes, because two tokens with one signature would otherwise be one key.
+/// A word its signature holds whole takes [`Signature::vocabulary_key`]. A longer word hashes all
+/// of its bytes, because two tokens with one signature would otherwise be one key.
 #[inline(always)]
 fn mphf_key(word: &[u8], signature: Signature) -> u64 {
     if signature.len > Signature::BYTES {
         hash_long(word)
     } else {
-        signature.hash
+        signature.vocabulary_key()
     }
 }
 

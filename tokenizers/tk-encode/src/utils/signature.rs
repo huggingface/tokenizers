@@ -20,8 +20,10 @@ pub(crate) struct Signature {
     /// The last eight bytes, little-endian. Equal to `head` when the word is 8 bytes or shorter.
     pub(crate) tail: u64,
     pub(crate) len: usize,
-    /// 64 bits computed from the three fields above, which spread signatures over a table.
-    /// Computed once here, for every table that looks the word up.
+    /// 64 bits computed from the three fields above, which place the signature in the word cache.
+    ///
+    /// The cache compares whole signatures, so this hash only has to spread them, with one
+    /// multiply. The vocabulary takes [`Self::vocabulary_key`].
     pub(crate) hash: u64,
 }
 
@@ -31,6 +33,22 @@ const SEEDS: [u64; 4] = [
     0xA409_3822_299F_31D0,
     0x082E_FA98_EC4E_6C89,
 ];
+
+/// One unrelated value per word length, for [`Signature::hash`]. Lengths 32 apart share one.
+const LENGTH_SEEDS: [u64; 32] = {
+    let mut seeds = [0; 32];
+    let mut state = SEEDS[2];
+    let mut i = 0;
+    while i < seeds.len() {
+        // splitmix64
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let z = (state ^ (state >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        let z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        seeds[i] = z ^ (z >> 31);
+        i += 1;
+    }
+    seeds
+};
 
 /// `LOW_BYTES[n]` keeps the low `n` bytes of a `u64`.
 const LOW_BYTES: [u64; 9] = [
@@ -103,21 +121,33 @@ impl Signature {
             .unwrap_or_default()
     }
 
-    /// The hash is two 64x64 to 128 bit multiplies, the shape wyhash and rapidhash use for an
-    /// input of 16 bytes or less.
-    // The length goes in after the first multiply. Xored into `tail` before it, `"\n"` and 7
-    // tabs hashed like `"\n"` and 10 tabs: two tokens of bigscience/bloomz-560m.
+    // `tail` is rotated because a word of 8 bytes or less has `tail == head`: unrotated, two such
+    // words whose heads differ by `SEEDS[0] ^ SEEDS[1]` would multiply the same two numbers.
     #[inline(always)]
     fn from_parts(head: u64, tail: u64, len: usize) -> Self {
-        let product = u128::from(head ^ SEEDS[0]) * u128::from(tail ^ SEEDS[1]);
-        let (low, high) = (product as u64, (product >> 64) as u64);
-        let product = u128::from(low ^ SEEDS[2] ^ len as u64) * u128::from(high ^ SEEDS[3]);
+        let product = u128::from(head ^ SEEDS[0]) * u128::from(tail.rotate_left(32) ^ SEEDS[1]);
+        let folded = product as u64 ^ (product >> 64) as u64;
         Self {
             head,
             tail,
             len,
-            hash: product as u64 ^ (product >> 64) as u64,
+            hash: folded ^ LENGTH_SEEDS[len % LENGTH_SEEDS.len()],
         }
+    }
+
+    /// A well mixed 64-bit key, for the vocabulary's perfect hash: it needs one key per token.
+    ///
+    /// Two 64x64 to 128 bit multiplies, the shape wyhash and rapidhash use for an input of 16
+    /// bytes or less. Twice the multiplies of [`Self::hash`], which is why the word cache does
+    /// not use it: only a word the cache does not hold reaches the vocabulary.
+    // The length goes in after the first multiply. Xored into `tail` before it, `"\n"` and 7
+    // tabs got the key of `"\n"` and 10 tabs: two tokens of bigscience/bloomz-560m.
+    #[inline]
+    pub(crate) fn vocabulary_key(self) -> u64 {
+        let product = u128::from(self.head ^ SEEDS[0]) * u128::from(self.tail ^ SEEDS[1]);
+        let (low, high) = (product as u64, (product >> 64) as u64);
+        let product = u128::from(low ^ SEEDS[2] ^ self.len as u64) * u128::from(high ^ SEEDS[3]);
+        product as u64 ^ (product >> 64) as u64
     }
 }
 
@@ -188,13 +218,15 @@ mod tests {
         }
     }
 
-    /// A hash that xors the length into the last eight bytes gives these two words one hash:
+    /// A key that xors the length into the last eight bytes is the same for these two words:
     /// their tails differ by `0x0A ^ 0x09`, their lengths by `8 ^ 11`, the same bits. Both are
-    /// tokens of bigscience/bloomz-560m, and the vocabulary needs a hash of its own per token.
+    /// tokens of bigscience/bloomz-560m, and the vocabulary needs a key of its own per token.
     #[test]
-    fn a_newline_and_seven_tabs_does_not_hash_like_a_newline_and_ten() {
+    fn a_newline_and_seven_tabs_does_not_get_the_key_of_a_newline_and_ten() {
         let (seven, ten) = (b"\n\t\t\t\t\t\t\t", b"\n\t\t\t\t\t\t\t\t\t\t");
-        assert_ne!(Signature::new(seven).hash, Signature::new(ten).hash);
+        let (seven, ten) = (Signature::new(seven), Signature::new(ten));
+        assert_ne!(seven.vocabulary_key(), ten.vocabulary_key());
+        assert_ne!(seven.hash, ten.hash);
     }
 
     #[test]
