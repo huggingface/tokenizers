@@ -111,6 +111,11 @@ impl<'a> WordCache {
     /// On [Lookup::Hit], returns the ids it encodes to.
     /// On [Lookup::Miss], returns the location in [Self::cached_words] where it should be inserted
     #[inline]
+    // Only `unigram` and `wordpiece` call this. `bpe` holds the signature already.
+    #[cfg_attr(
+        not(any(feature = "unigram", feature = "wordpiece")),
+        allow(dead_code)
+    )]
     pub fn lookup(&'a self, word: &[u8]) -> Lookup<'a> {
         let signature = Signature::new(word);
         self.lookup_hashed(word, signature, signature.hash())

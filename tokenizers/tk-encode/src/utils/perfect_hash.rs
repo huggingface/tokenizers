@@ -16,6 +16,8 @@ pub(crate) type Mphf = FastPtrHash<NoHash, u64>;
 /// Spreads an integer key over all 64 bits, for use as an [`Mphf`] key.
 ///
 /// `mix` is a bijection, so distinct integers stay distinct keys.
+// Only `utils/unicode.rs` calls it, which is `normalizers`-gated.
+#[cfg(feature = "normalizers")]
 #[inline(always)]
 pub(crate) fn mix(z: u64) -> u64 {
     let z = z.wrapping_mul(0x9E37_79B9_7F4A_7C15);
