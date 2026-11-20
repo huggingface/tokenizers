@@ -5,9 +5,10 @@ use ptr_hash::PtrHashParams;
 use std::fmt;
 
 use crate::Result;
-use crate::utils::perfect_hash::{Mphf, mix};
+use crate::utils::perfect_hash::Mphf;
+use crate::utils::signature::Signature;
 
-static KEY_HASHER: RandomState = RandomState::with_seeds(
+static LONG_WORD_HASHER: RandomState = RandomState::with_seeds(
     0x243F_6A88_85A3_08D3,
     0x1319_8A2E_0370_7344,
     0xA409_3822_299F_31D0,
@@ -25,114 +26,57 @@ const FOLD_BIT: u32 = 1 << 31;
 /// The id half. 2^31 ids is far past any vocabulary.
 const VOCAB_ID_MASK: u32 = FOLD_BIT - 1;
 
-pub(crate) const INLINE_KEY_BYTES: usize = 7;
-
+/// The [`Mphf`] key of a word, given its signature and that signature's [`Signature::hash`].
 ///
-///
-///
-///
-/// # Safety
-/// `inline(always)`, and the long-word arm is a separate `inline(never)` function, because plain
-/// `#[inline]` left this outlined: a profile of warm english had 8.3% of self time inside
-/// `key_and_hash`, for what should be a masked load, an `or` and a multiply. LLVM weighs the whole
-/// body when it decides, and the body used to contain the ahash call for a word too long to pack, so
-/// the cheap path paid for the expensive one's size. Splitting them lets the pack inline into the
-/// span loop while the hash stays a call -- which is also the shape it wants, since the long arm is
-/// already dominated by hashing rather than by call overhead.
+/// A word its signature holds whole reuses the signature's hash. A longer word hashes all of its
+/// bytes, because two tokens with one signature would otherwise be one key.
 #[inline(always)]
-pub(crate) fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) {
-    let len = word.len();
-    if len > INLINE_KEY_BYTES || readable < 8 {
-        return key_and_hash(word);
-    }
-    // SAFETY: `readable >= 8` bytes exist from `word.as_ptr()`, and `len <= 7 < 8`.
-    // `from_le_bytes` rather than a `cast::<u64>()` reinterpret, because the key layout is
-    // little-endian: `key_and_hash` builds it with `u32::from_le_bytes`. A native load on a
-    // big-endian host would keep `word[8-len..8]` instead of `word[0..len]` once masked, and
-    // put `LEN_TAG` over `word[0]`.
-    let raw = u64::from_le_bytes(unsafe { word.as_ptr().cast::<[u8; 8]>().read_unaligned() });
-    // SAFETY: `len <= INLINE_KEY_BYTES == 7`, and both tables have 8 entries.
-    let (mask, tag) = unsafe { (*KEY_MASK.get_unchecked(len), *LEN_TAG.get_unchecked(len)) };
-    let key = (raw & mask) | tag;
-    debug_assert_eq!(
-        key,
-        key_and_hash(word).0,
-        "masked load must match the stitched pack"
-    );
-    (key, mix(key))
-}
-
-/// A word too long to pack into the key: hash it for real. Kept out of line so that the packing
-/// path above and in [`key_and_hash`] can be inlined without dragging ahash in with them. Not
-/// `#[cold]` on purpose -- for CJK this is the *common* arm, and telling the predictor otherwise
-/// would cost more than the call.
-#[inline(never)]
-fn key_and_hash_long(word: &[u8]) -> (u64, u64) {
-    let hash = KEY_HASHER.hash_one(word);
-    (hash, hash)
-}
-
-#[inline(always)]
-pub(crate) fn key_and_hash(word: &[u8]) -> (u64, u64) {
-    let len = word.len();
-    if len > INLINE_KEY_BYTES {
-        return key_and_hash_long(word);
-    }
-    let raw = if len >= 4 {
-        let head = u32::from_le_bytes(word[..4].try_into().unwrap()) as u64;
-        let tail = u32::from_le_bytes(word[len - 4..].try_into().unwrap()) as u64;
-        head | tail << (8 * (len - 4))
-    } else if len >= 1 {
-        let first = word[0] as u64;
-        let middle = (word[len / 2] as u64) << (8 * (len / 2));
-        let last = (word[len - 1] as u64) << (8 * (len - 1));
-        first | middle | last
+fn mphf_key(word: &[u8], signature: Signature, signature_hash: u64) -> u64 {
+    if signature.len > Signature::BYTES {
+        hash_long(word)
     } else {
-        0
-    };
-    let key = raw | (len as u64) << 56;
-    (key, mix(key))
+        signature_hash
+    }
 }
 
-/// One MPHF slot: eight bytes, so a probe is a single load.
+// Out of line so that `mphf_key` inlines without ahash. Not `#[cold]`: for CJK this is the common arm.
+#[inline(never)]
+fn hash_long(word: &[u8]) -> u64 {
+    LONG_WORD_HASHER.hash_one(word)
+}
+
+/// One MPHF slot: the [`Signature`] of the token placed there, and its id.
 ///
-/// The hash picks the slot and `digest` confirms it -- the key itself is never stored, which is why
-/// a query cannot tell a collision from a hit on its own and does not need to (see [`BucketVocabStore::get_bytes`]).
-/// A slot the build never wrote stays [`Default`], and occupancy is read off the parallel `spans`.
-#[derive(Clone, Copy, Debug, Default)]
+/// The perfect hash sends a word that is not a token to some token's slot. A lookup therefore
+/// compares the word's signature with the entry's, see [`BucketVocabStore::get_foldable`].
+#[derive(Clone, Copy, Debug)]
 #[repr(C)]
 struct Entry {
-    digest: u32,
+    head: u64,
+    tail: u64,
     /// The token id in the low 31 bits, [`FOLD_BIT`] in the top.
     id: u32,
+    len: u32,
 }
 
-const _: () = assert!(size_of::<Entry>() == 8);
+const _: () = assert!(size_of::<Entry>() == 24);
 
-static KEY_MASK: [u64; 8] = [
-    0x0000_0000_0000_0000,
-    0x0000_0000_0000_00FF,
-    0x0000_0000_0000_FFFF,
-    0x0000_0000_00FF_FFFF,
-    0x0000_0000_FFFF_FFFF,
-    0x0000_00FF_FFFF_FFFF,
-    0x0000_FFFF_FFFF_FFFF,
-    0x00FF_FFFF_FFFF_FFFF,
-];
-static LEN_TAG: [u64; 8] = [
-    0 << 56,
-    1 << 56,
-    2 << 56,
-    3 << 56,
-    4 << 56,
-    5 << 56,
-    6 << 56,
-    7 << 56,
-];
+impl Entry {
+    /// A slot the build never wrote. A token is at most `u16::MAX` bytes long, so this length
+    /// matches no word that could be one.
+    const VACANT: Self = Self {
+        head: 0,
+        tail: 0,
+        id: 0,
+        len: u32::MAX,
+    };
 
-#[inline(always)]
-fn digest_of(hash: u64) -> u32 {
-    (hash >> 32) as u32
+    #[inline(always)]
+    fn has_signature(self, signature: Signature) -> bool {
+        self.head == signature.head
+            && self.tail == signature.tail
+            && self.len as usize == signature.len
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -196,9 +140,11 @@ impl BucketVocabStore {
     pub(crate) fn build(tokens: Vec<(Vec<u8>, u32)>) -> Result<Self> {
         let n = tokens.len();
 
+        let signatures: Vec<Signature> = tokens.iter().map(|(s, _)| Signature::new(s)).collect();
         let keys: Vec<u64> = tokens
             .iter()
-            .map(|(s, _)| key_and_hash(s.as_slice()).1)
+            .zip(&signatures)
+            .map(|((s, _), &signature)| mphf_key(s, signature, signature.hash()))
             .collect();
 
         let mut unique_entries: HashMap<u64, usize> = HashMap::with_capacity(n);
@@ -236,7 +182,7 @@ impl BucketVocabStore {
 
         // FastPtrHash is non-minimal: `index()` may return a slot up to `max_index()` (>= n),
         // so `entries` must be sized to cover the whole slot range. Slots never written by the
-        // build loop stay as the default `Entry { len: 0, .. }` (phantom/padding slots), which
+        // build loop stay [`Entry::VACANT`] with a default `Span { len: 0, .. }`, which
         // enumeration/count paths filter out via `len > 0`.
         let n_slots = mphf.max_index();
 
@@ -248,10 +194,10 @@ impl BucketVocabStore {
             .max()
             .unwrap_or(0);
         let mut bytes = Vec::with_capacity(total);
-        let mut entries = vec![Entry::default(); n_slots];
+        let mut entries = vec![Entry::VACANT; n_slots];
         let mut spans = vec![Span::default(); n_slots];
         let mut id_to_slot = vec![u32::MAX; id_space];
-        for (s, id) in &tokens {
+        for (((s, id), &signature), key) in tokens.iter().zip(&signatures).zip(&keys) {
             assert!(
                 s.len() <= u16::MAX as usize,
                 "token longer than 65535 bytes"
@@ -260,11 +206,12 @@ impl BucketVocabStore {
                 *id <= VOCAB_ID_MASK,
                 "token id {id} needs bit 31, which holds FOLD_BIT"
             );
-            let (_, hash) = key_and_hash(s.as_slice());
-            let slot = mphf.index(&hash);
+            let slot = mphf.index(key);
             entries[slot] = Entry {
-                digest: digest_of(hash),
+                head: signature.head,
+                tail: signature.tail,
                 id: *id,
+                len: s.len() as u32,
             };
             spans[slot] = Span {
                 start: bytes.len() as u32,
@@ -297,30 +244,47 @@ impl BucketVocabStore {
         }
     }
 
-    /// This function is the equivalent of `get` on a HashaMap, it return the id
-    /// corresponding to the key `q`. Since `mphf` always return a slot, we check
-    /// whether the token indexed by that slot actually match the query. We don't
-    /// care about collisions on query because of this!
+    /// The id of the token equal to `word`, like `get` on a `HashMap`.
     #[inline]
-    pub(crate) fn get_bytes(&self, q: &[u8]) -> Option<u32> {
-        if self.entries.is_empty() {
-            return None;
-        }
-        let (_, hash) = key_and_hash(q);
-        let slot = self.mphf.index(&hash);
-        let e = self.entries[slot];
-        (e.digest == digest_of(hash)).then_some(e.id & VOCAB_ID_MASK)
+    pub(crate) fn get_bytes(&self, word: &[u8]) -> Option<u32> {
+        let signature = Signature::new(word);
+        let (id, _) = self.get_foldable(word, signature, signature.hash())?;
+        Some(id)
     }
 
+    /// The id of the token equal to `word` and whether it folds, for a caller that already holds
+    /// the word's signature and its [`Signature::hash`].
+    ///
+    /// The perfect hash returns a slot for any word. The word is that slot's token when the
+    /// signatures are equal and, for a word its signature does not hold whole, the remaining
+    /// bytes are too.
     #[inline]
-    pub(crate) fn get_keyed_foldable(&self, key: u64, hash: u64) -> Option<(u32, bool)> {
-        let _ = key;
+    pub(crate) fn get_foldable(
+        &self,
+        word: &[u8],
+        signature: Signature,
+        signature_hash: u64,
+    ) -> Option<(u32, bool)> {
         if self.entries.is_empty() {
             return None;
         }
-        let slot = self.mphf.index(&hash);
-        let e = self.entries[slot];
-        (e.digest == digest_of(hash)).then_some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
+        let slot = self.mphf.index(&mphf_key(word, signature, signature_hash));
+        let entry = self.entries[slot];
+        (entry.has_signature(signature) && self.holds_uncovered(slot, word))
+            .then_some((entry.id & VOCAB_ID_MASK, entry.id & FOLD_BIT != 0))
+    }
+
+    /// Whether the token at `slot`, whose signature is `word`'s, also has the bytes of `word`
+    /// that the signature leaves out.
+    #[inline]
+    fn holds_uncovered(&self, slot: usize, word: &[u8]) -> bool {
+        let uncovered = Signature::uncovered(word);
+        if uncovered.is_empty() {
+            return true;
+        }
+        let span = self.spans[slot];
+        let token = &self.bytes[span.start as usize..][..span.len as usize];
+        Signature::uncovered(token) == uncovered
     }
 
     /// Records that this token folds to itself. Called once per entry at load, after the proof.
@@ -432,55 +396,41 @@ mod tests {
         }
     }
 
-    // The key is a little-endian pack of the word with its length on top -- not whatever a `u64`
-    // load of those bytes happens to give. Built with shifts here so the expected value is the
-    // same on a big-endian target.
+    /// The perfect hash sends every word to some slot, so a word that is not a token lands on a
+    /// token's. A 16-byte and a 17-byte word, because the longer one is hashed another way.
     #[test]
-    fn inline_key_is_little_endian() {
-        let words: [&[u8]; 8] = [
-            b"",
-            b"a",
-            b" the",
-            b"hello",
-            b"abcdefg",
-            &[0x00],
-            &[0xff, 0x00],
-            &[0x80, 0x7f, 0x01, 0xfe, 0x00, 0x11, 0xc0],
-        ];
-        for word in words {
-            let mut expect = (word.len() as u64) << 56;
-            for (i, b) in word.iter().enumerate() {
-                expect |= (*b as u64) << (8 * i);
+    fn a_word_that_is_not_a_token_is_not_found() {
+        let tokens: [&[u8]; 3] = [b"h", b"sixteen-byte-tok", b"seventeen-byte-tok"];
+        let vocab = BucketVocabStore::build(
+            tokens
+                .iter()
+                .zip(0u32..)
+                .map(|(token, id)| (token.to_vec(), id))
+                .collect(),
+        )
+        .unwrap();
+        for i in 0..1000u32 {
+            for word in [format!("w{i}"), format!("{i:016}"), format!("{i:017}")] {
+                assert_eq!(vocab.get_bytes(word.as_bytes()), None, "{word:?}");
             }
-            assert_eq!(key_and_hash(word), (expect, mix(expect)), "{word:?}");
         }
     }
 
-    // The fast path masks one 8-byte load instead of stitching the word together, so both have to
-    // land on the same key. On big-endian a native load gives a different one: the mask keeps the
-    // wrong end of the word and the length tag lands on `word[0]`.
+    /// A word past [`Signature::BYTES`] with a token's length, start and end has that token's
+    /// signature. The first such word the perfect hash sends to the token's slot must still not
+    /// be found: only the bytes in between tell the two apart.
     #[test]
-    fn fast_path_matches_stitched_pack() {
-        // Words are slices of a bigger buffer -- that is what makes 8 bytes readable past the end.
-        let buf: &[u8] = b"\x00\xffhello \xc0\xc1world\x80\x7f\x01\xfe\x00 the quick\xff";
-        for start in 0..8 {
-            for len in 0..=INLINE_KEY_BYTES + 3 {
-                let word = &buf[start..start + len];
-                let want = key_and_hash(word);
-                let readable = buf.len() - start;
-                assert_eq!(
-                    key_and_hash_readable(word, readable),
-                    want,
-                    "start {start} len {len}"
-                );
-                // Under 8 readable bytes the load would run off the end, so it must not happen.
-                assert_eq!(
-                    key_and_hash_readable(word, len),
-                    want,
-                    "start {start} len {len}"
-                );
-            }
-        }
+    fn a_word_with_a_tokens_signature_is_not_found() {
+        let token = b"01234567-token--89abcdef";
+        let vocab = BucketVocabStore::build(vec![(token.to_vec(), 0)]).unwrap();
+        let slot = vocab.id_to_slot[0] as usize;
+        let word = (0u32..)
+            .map(|i| format!("01234567{i:08}89abcdef").into_bytes())
+            .find(|word| vocab.mphf.index(&hash_long(word)) == slot)
+            .unwrap();
+        assert_eq!(Signature::new(&word), Signature::new(token));
+        assert_eq!(vocab.get_bytes(&word), None);
+        assert_eq!(vocab.get_bytes(token), Some(0));
     }
 
     #[test]

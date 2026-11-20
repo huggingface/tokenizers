@@ -73,6 +73,14 @@ impl<'a> PreTokens<'a> {
         self.spans
     }
 
+    /// These pre-tokens, `size` spans at a time.
+    pub fn batches(&self, size: usize) -> impl Iterator<Item = PreTokens<'a>> + use<'a> {
+        let chunk = self.chunk;
+        self.spans
+            .chunks(size)
+            .map(move |spans| Self { chunk, spans })
+    }
+
     /// Every span with the text it covers.
     pub fn iter(&self) -> impl Iterator<Item = (Span, &'a str)> + use<'a> {
         let chunk = self.chunk;

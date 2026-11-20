@@ -457,9 +457,11 @@ impl pipeline::Tokenize for Unigram {
         // Sampling skipped the lookup, so `placement` is `None` and this stores
         // nothing, which is what `samples` says has to happen.
         if let Some(at) = placement {
-            scratch
-                .word_cache
-                .insert(at, output[start..].iter().map(|token| token.id()));
+            scratch.word_cache.insert(
+                at,
+                sequence.as_bytes(),
+                output[start..].iter().map(|token| token.id()),
+            );
         }
         Ok(())
     }

@@ -12,8 +12,12 @@ use crate::models::bpe::tables::BpeTables;
 use crate::pipeline::{self, PreTokens, Token};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, char_to_byte};
+use crate::utils::signature::Signature;
 use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
-use crate::vocab::bucket_vocab_store::{BucketVocabStore, key_and_hash, key_and_hash_readable};
+use crate::vocab::bucket_vocab_store::BucketVocabStore;
+
+/// How many words [`BPE::tokenize_spans`] reads the signatures of before it looks any of them up.
+const BATCH: usize = 16;
 
 const GATE_MULTI: u16 = 8;
 const GATE_ASCII: u16 = 24;
@@ -160,10 +164,10 @@ impl BPE {
     }
 
     #[inline(always)]
-    fn fold_id_keyed(&self, key: u64, hash: u64) -> Option<u32> {
+    fn fold_id(&self, word: &[u8], signature: Signature, signature_hash: u64) -> Option<u32> {
         // One probe; the foldable bit is part of the id that probe already returned. Which entries
         // carry it was settled at load -- see `from_merge_map`.
-        let (id, foldable) = self.vocab.get_keyed_foldable(key, hash)?;
+        let (id, foldable) = self.vocab.get_foldable(word, signature, signature_hash)?;
         foldable.then_some(id)
     }
 
@@ -220,7 +224,8 @@ impl pipeline::Tokenize for BPE {
         }
 
         let bytes = sequence.as_bytes();
-        let (key, hash) = key_and_hash(bytes);
+        let signature = Signature::new(bytes);
+        let hash = signature.hash();
 
         let BpeScratch {
             symbols,
@@ -231,7 +236,7 @@ impl pipeline::Tokenize for BPE {
         // Cache before fold, for the reason given in `tokenize_spans`: the cache is one load and
         // the fold is an MPHF probe, so the fold must not run ahead of it.
         let insert_at = if let Some(cache) = word_cache.as_mut() {
-            match cache.lookup_keyed(key, hash) {
+            match cache.lookup_hashed(bytes, signature, hash) {
                 Lookup::Hit(ids) => {
                     output.extend(ids.iter().copied().map(Token::from));
                     return Ok(());
@@ -242,12 +247,12 @@ impl pipeline::Tokenize for BPE {
             None
         };
 
-        if let Some(id) = self.fold_id_keyed(key, hash) {
+        if let Some(id) = self.fold_id(bytes, signature, hash) {
             output.push(Token::from(id));
             if let Some(cache) = word_cache.as_mut()
                 && let Some(at) = insert_at
             {
-                cache.insert(at, std::iter::once(id));
+                cache.insert(at, bytes, std::iter::once(id));
             }
             return Ok(());
         }
@@ -263,7 +268,7 @@ impl pipeline::Tokenize for BPE {
         if let Some(cache) = word_cache.as_mut()
             && let Some(at) = insert_at
         {
-            cache.insert(at, output[start..].iter().map(|token| token.id()));
+            cache.insert(at, bytes, output[start..].iter().map(|token| token.id()));
         }
 
         Ok(())
@@ -312,95 +317,108 @@ impl pipeline::Tokenize for BPE {
         // of what gigatoken's `ProbeView` does by carrying the table base and mask across a chunk.
         let mut cache_slot = word_cache.as_mut();
 
-        for (span, sequence) in pre_tokens.iter() {
-            if sequence.is_empty() {
-                continue;
-            }
-
-            if cursor + MAX_INLINE_IDS > capacity {
-                // SAFETY: `cursor` counts what has been written so far.
-                unsafe { output.set_len(cursor) };
-                output.reserve(spans.len() + MAX_INLINE_IDS);
-                capacity = output.capacity();
-                // `reserve` may have moved the buffer.
-                // SAFETY: `cursor` is what was written so far, so it is within the new allocation.
-                dst = unsafe { output.as_mut_ptr().add(cursor) };
-            }
-
-            // The cache goes first. It is one direct-mapped load; the fold is an MPHF probe, which
-            // is a pilot load plus a dependent entry load into the whole vocabulary. Running the
-            // fold ahead of the cache paid that on every pre-token including the ones the cache
-            // was about to answer, and on a warm cache that is nearly all of them.
-            //
-            // The two still agree on ids: `prove_fold` only sets the bit for an entry that merging
-            // its own text reproduces, so a folded word and a merged word give the same answer.
-            // What changes is that a foldable word now gets *inserted*, so its second and later
-            // occurrences come off the cache instead of re-probing the vocabulary.
-            let (key, hash) =
-                key_and_hash_readable(sequence.as_bytes(), chunk.len() - span.start as usize);
-
-            let mut placement = None;
-            if let Some(cache) = cache_slot.as_deref_mut() {
-                // SAFETY: the capacity check above leaves `MAX_INLINE_IDS` slots past `cursor`, and
-                // `Token` is a transparent `u32`.
-                let found = unsafe { cache.probe_emit_keyed(key, hash, dst.cast::<u32>()) };
-                match found {
-                    ProbeEmit::Wrote(n) => {
-                        cursor += n;
-                        // SAFETY: the probe wrote `n <= MAX_INLINE_IDS` ids, which the capacity
-                        // check above reserved room for.
-                        dst = unsafe { dst.add(n) };
-                        continue;
-                    }
-                    ProbeEmit::Hit(ids) => {
-                        // SAFETY: `cursor` counts what has been written so far.
-                        unsafe { output.set_len(cursor) };
-                        output.extend(ids.iter().map(|&id| Token::from(id)));
-                        cursor = output.len();
-                        capacity = output.capacity();
-                        // SAFETY: `cursor == output.len()`, inside the (possibly moved) allocation.
-                        dst = unsafe { output.as_mut_ptr().add(cursor) };
-                        continue;
-                    }
-                    ProbeEmit::Miss(at) => placement = Some(at),
+        // A word's signature costs the same whatever its length, with no branch. So a batch of
+        // signatures is read first, and each word's home slot starts loading while the others are
+        // still being read. When the lookups run, the slots are in the CPU cache.
+        let mut probes = [(Signature::default(), 0u64); BATCH];
+        for batch in pre_tokens.batches(BATCH) {
+            for (probe, (span, sequence)) in probes.iter_mut().zip(batch.iter()) {
+                let readable = chunk.len() - span.start as usize;
+                let signature = Signature::new_readable(sequence.as_bytes(), readable);
+                let hash = signature.hash();
+                if let Some(cache) = cache_slot.as_deref() {
+                    cache.prefetch(hash);
                 }
+                *probe = (signature, hash);
             }
 
-            // Cache miss. The fold still answers a word that is its own vocabulary entry in one
-            // probe, which beats running the merge engine for it.
-            if let Some(id) = self.fold_id_keyed(key, hash) {
-                // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
-                unsafe { dst.write(Token::from(id)) };
-                cursor += 1;
-                // SAFETY: one id written, and the capacity check reserved MAX_INLINE_IDS >= 1.
-                dst = unsafe { dst.add(1) };
+            for (&(signature, hash), (_, sequence)) in probes.iter().zip(batch.iter()) {
+                if sequence.is_empty() {
+                    continue;
+                }
+                let bytes = sequence.as_bytes();
+
+                if cursor + MAX_INLINE_IDS > capacity {
+                    // SAFETY: `cursor` counts what has been written so far.
+                    unsafe { output.set_len(cursor) };
+                    output.reserve(spans.len() + MAX_INLINE_IDS);
+                    capacity = output.capacity();
+                    // `reserve` may have moved the buffer.
+                    // SAFETY: `cursor` is what was written so far, so it is within the new allocation.
+                    dst = unsafe { output.as_mut_ptr().add(cursor) };
+                }
+
+                // The cache goes first. It is one direct-mapped load; the fold is an MPHF probe,
+                // which is a pilot load plus a dependent entry load into the whole vocabulary.
+                //
+                // The two still agree on ids: `prove_fold` only sets the bit for an entry that
+                // merging its own text reproduces, so a folded word and a merged word give the
+                // same answer. A foldable word gets *inserted*, so its second and later
+                // occurrences come off the cache instead of re-probing the vocabulary.
+                let mut placement = None;
+                if let Some(cache) = cache_slot.as_deref_mut() {
+                    // SAFETY: the capacity check above leaves `MAX_INLINE_IDS` slots past `cursor`,
+                    // and `Token` is a transparent `u32`.
+                    let found =
+                        unsafe { cache.probe_emit(bytes, signature, hash, dst.cast::<u32>()) };
+                    match found {
+                        ProbeEmit::Wrote(n) => {
+                            cursor += n;
+                            // SAFETY: the probe wrote `n <= MAX_INLINE_IDS` ids, which the capacity
+                            // check above reserved room for.
+                            dst = unsafe { dst.add(n) };
+                            continue;
+                        }
+                        ProbeEmit::Hit(ids) => {
+                            // SAFETY: `cursor` counts what has been written so far.
+                            unsafe { output.set_len(cursor) };
+                            output.extend(ids.iter().map(|&id| Token::from(id)));
+                            cursor = output.len();
+                            capacity = output.capacity();
+                            // SAFETY: `cursor == output.len()`, inside the (possibly moved) allocation.
+                            dst = unsafe { output.as_mut_ptr().add(cursor) };
+                            continue;
+                        }
+                        ProbeEmit::Miss(at) => placement = Some(at),
+                    }
+                }
+
+                // Cache miss. The fold still answers a word that is its own vocabulary entry in
+                // one probe, which beats running the merge engine for it.
+                if let Some(id) = self.fold_id(bytes, signature, hash) {
+                    // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
+                    unsafe { dst.write(Token::from(id)) };
+                    cursor += 1;
+                    // SAFETY: one id written, and the capacity check reserved MAX_INLINE_IDS >= 1.
+                    dst = unsafe { dst.add(1) };
+                    if let Some(cache) = cache_slot.as_deref_mut()
+                        && let Some(at) = placement
+                    {
+                        cache.insert(at, bytes, std::iter::once(id));
+                    }
+                    continue;
+                }
+
+                // SAFETY: `cursor` counts what the fast paths wrote.
+                unsafe { output.set_len(cursor) };
+                let start = output.len();
+                self.merge_word(sequence, symbols, queue);
+                // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
+                output.extend(
+                    symbols
+                        .iter()
+                        .map(|&symbol| Token::from(self.tables.unmap.at(symbol as usize))),
+                );
                 if let Some(cache) = cache_slot.as_deref_mut()
                     && let Some(at) = placement
                 {
-                    cache.insert(at, std::iter::once(id));
+                    cache.insert(at, bytes, output[start..].iter().map(|token| token.id()));
                 }
-                continue;
+                cursor = output.len();
+                capacity = output.capacity();
+                // SAFETY: `cursor == output.len()`; `extend` above may have moved the buffer.
+                dst = unsafe { output.as_mut_ptr().add(cursor) };
             }
-
-            // SAFETY: `cursor` counts what the fast paths wrote.
-            unsafe { output.set_len(cursor) };
-            let start = output.len();
-            self.merge_word(sequence, symbols, queue);
-            // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
-            output.extend(
-                symbols
-                    .iter()
-                    .map(|&symbol| Token::from(self.tables.unmap.at(symbol as usize))),
-            );
-            if let Some(cache) = cache_slot.as_deref_mut()
-                && let Some(at) = placement
-            {
-                cache.insert(at, output[start..].iter().map(|token| token.id()));
-            }
-            cursor = output.len();
-            capacity = output.capacity();
-            // SAFETY: `cursor == output.len()`; `extend` above may have moved the buffer.
-            dst = unsafe { output.as_mut_ptr().add(cursor) };
         }
         // SAFETY: `cursor` counts every token written, by the fast paths and the slow one alike.
         unsafe { output.set_len(cursor) };

@@ -275,7 +275,11 @@ impl pipeline::Tokenize for WordPiece {
         let start = output.len();
         self.tokenize_word(sequence, candidate, output)?;
 
-        word_cache.insert(placement, output[start..].iter().map(|token| token.id()));
+        word_cache.insert(
+            placement,
+            sequence.as_bytes(),
+            output[start..].iter().map(|token| token.id()),
+        );
         Ok(())
     }
 }

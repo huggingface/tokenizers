@@ -1214,6 +1214,7 @@ dependencies = [
  "libc",
  "log",
  "memchr",
+ "prefetch-index",
  "ptr_hash",
  "rand",
  "rayon",

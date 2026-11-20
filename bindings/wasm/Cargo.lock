@@ -1084,6 +1084,7 @@ dependencies = [
  "fancy-regex",
  "log",
  "memchr",
+ "prefetch-index",
  "ptr_hash",
  "rand",
  "spm_precompiled",
