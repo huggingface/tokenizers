@@ -1,14 +1,16 @@
 use std::{
+    marker::PhantomData,
     mem,
     sync::{
         Mutex, PoisonError,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicPtr, AtomicUsize, Ordering},
     },
 };
 
 use bitcannon::Span;
 
 use crate::pipeline::{Model, ModelScratch, PreTokenizerScratch, Tokenize};
+use crate::utils::fork;
 
 #[derive(Default)]
 pub(crate) struct EncodeScratch {
@@ -39,15 +41,70 @@ fn scratch_shard() -> usize {
 ///
 /// The reusability matters because the scratch buffer may hold cache structures which are more useful when reused,
 /// and less importantly it saves an extra allocation for an fresh buffer every time.
-pub(super) struct ScratchPool(Box<[Mutex<Vec<EncodeScratch>>]>);
+///
+/// A forked child gets fresh sub-pools: a thread that didn't survive the fork may have held one
+/// of the inherited ones, and would never unlock it.
+pub(super) struct ScratchPool {
+    /// Never null, freed only on drop: sub-pools replaced after a fork are leaked.
+    shards: AtomicPtr<Shards>,
+    /// Keeps the auto traits of an owned [`Shards`].
+    _owns: PhantomData<Box<Shards>>,
+}
+
+struct Shards {
+    /// The [`fork::generation`] these sub-pools were created in.
+    fork_generation: usize,
+    shards: [Mutex<Vec<EncodeScratch>>; SCRATCH_SHARDS],
+}
+
+impl Shards {
+    fn new() -> Self {
+        Self {
+            fork_generation: fork::generation(),
+            shards: std::array::from_fn(|_| Mutex::new(Vec::new())),
+        }
+    }
+}
 
 impl ScratchPool {
     pub(crate) fn new() -> Self {
-        Self(
-            (0..SCRATCH_SHARDS)
-                .map(|_| Mutex::new(Vec::new()))
-                .collect(),
-        )
+        fork::watch();
+        Self {
+            shards: AtomicPtr::new(Box::into_raw(Box::new(Shards::new()))),
+            _owns: PhantomData,
+        }
+    }
+
+    /// The sub-pools, replaced by fresh ones if this process forked since they were created.
+    fn shards(&self) -> &[Mutex<Vec<EncodeScratch>>; SCRATCH_SHARDS] {
+        let current = self.shards.load(Ordering::Acquire);
+        // SAFETY: never null, and only freed by `drop`, which has `&mut self`
+        let shards = unsafe { &*current };
+        if shards.fork_generation == fork::generation() {
+            return &shards.shards;
+        }
+        self.replace_after_fork(current)
+    }
+
+    #[cold]
+    fn replace_after_fork(
+        &self,
+        stale: *mut Shards,
+    ) -> &[Mutex<Vec<EncodeScratch>>; SCRATCH_SHARDS] {
+        let fresh = Box::into_raw(Box::new(Shards::new()));
+        match self
+            .shards
+            .compare_exchange(stale, fresh, Ordering::AcqRel, Ordering::Acquire)
+        {
+            // `stale` is leaked: a thread lost to the fork may still hold its locks
+            // SAFETY: just allocated, and only freed by `drop`
+            Ok(_) => unsafe { &(*fresh).shards },
+            Err(_) => {
+                // SAFETY: never shared, another thread replaced `stale` first
+                drop(unsafe { Box::from_raw(fresh) });
+                self.shards()
+            }
+        }
     }
 
     /// Get a scratch buffer from the pool, wrapped in a [`ScratchGuard`].
@@ -62,8 +119,9 @@ impl ScratchPool {
 
     pub(crate) fn get_with<'a>(&'a self, init: impl FnOnce() -> EncodeScratch) -> ScratchGuard<'a> {
         let shard = scratch_shard();
+        let shards = self.shards();
         // The Mutex lock is held just long enough to pop the scratch out of the sub-pool
-        let mut taken = self.0[shard]
+        let mut taken = shards[shard]
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop();
@@ -81,17 +139,25 @@ impl ScratchPool {
     ///
     /// `try_lock` so a miss skips a busy sub-pool instead of queueing behind its owner.
     fn take_from_another(&self, own: usize) -> Option<EncodeScratch> {
-        (1..self.0.len())
-            .map(|step| (own + step) % self.0.len())
-            .find_map(|shard| self.0[shard].try_lock().ok()?.pop())
+        let shards = self.shards();
+        (1..shards.len())
+            .map(|step| (own + step) % shards.len())
+            .find_map(|shard| shards[shard].try_lock().ok()?.pop())
     }
 
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
-        self.0
+        self.shards()
             .iter()
             .map(|shard| shard.lock().unwrap_or_else(PoisonError::into_inner).len())
             .sum()
+    }
+}
+
+impl Drop for ScratchPool {
+    fn drop(&mut self) {
+        // SAFETY: allocated by `Box::into_raw` and never freed elsewhere
+        drop(unsafe { Box::from_raw(*self.shards.get_mut()) });
     }
 }
 
@@ -112,8 +178,8 @@ impl Drop for ScratchGuard<'_> {
     fn drop(&mut self) {
         // Steals the scratch buffer from self, replaces it with ModelScratch::default()
         let scratch = mem::take(&mut self.scratch);
-        // Push the scratch back in the pool
-        self.pool.0[self.shard]
+        // Push the scratch back in the pool, into fresh sub-pools if it was taken before a fork
+        self.pool.shards()[self.shard]
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(scratch);
@@ -474,5 +540,68 @@ mod tests {
         };
         let cache = bpe.word_cache.as_mut().expect("BPE encodes with a cache");
         assert_eq!(cache.lookup(b"helo").hit(), Some(&[5u32, 3][..]));
+    }
+
+    /// Run `child` in a forked child, which exits with its return value; whether that was 0.
+    #[cfg(unix)]
+    fn in_forked_child(child: impl FnOnce() -> i32) -> bool {
+        // SAFETY: the child only runs `child`, then `_exit`s
+        let pid = unsafe { libc::fork() };
+        if pid == 0 {
+            // SAFETY: plain libc calls; a hung child gets killed instead of hanging the test
+            unsafe {
+                libc::alarm(10);
+                libc::_exit(child());
+            }
+        }
+        let mut status = 0;
+        // SAFETY: waits on the child forked above
+        assert_eq!(unsafe { libc::waitpid(pid, &mut status, 0) }, pid);
+        libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0
+    }
+
+    /// A child forked while another thread held a sub-pool's lock must still encode: that thread
+    /// is gone and never unlocks it.
+    #[cfg(unix)]
+    #[test]
+    fn a_sub_pool_locked_at_fork_time_does_not_hang_the_child() {
+        let pool = ScratchPool::new();
+        let shard = scratch_shard();
+        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        std::thread::scope(|scope| {
+            let pool = &pool;
+            scope.spawn(move || {
+                let _held = pool.shards()[shard].lock().unwrap();
+                locked_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            });
+            locked_rx.recv().unwrap();
+            let child_encoded = in_forked_child(|| {
+                drop(pool.get_with(EncodeScratch::default));
+                0
+            });
+            release_tx.send(()).unwrap();
+            assert!(child_encoded, "the child hung on the sub-pool lock");
+        });
+    }
+
+    /// A scratch taken before a fork goes back to the child's fresh sub-pools, and the parent's
+    /// stay its own.
+    #[cfg(unix)]
+    #[test]
+    fn a_scratch_taken_before_a_fork_returns_to_the_childs_pool() {
+        let pool = ScratchPool::new();
+        let guard = pool.get_with(EncodeScratch::default);
+        drop(pool.get_with(EncodeScratch::default));
+        assert_eq!(pool.len(), 1);
+        let child_ok = in_forked_child(|| {
+            let fresh = pool.len() == 0;
+            drop(guard);
+            i32::from(!(fresh && pool.len() == 1))
+        });
+        assert!(child_ok, "the child reused the parent's sub-pools");
+        // the parent's copy of the guard went back to the parent's sub-pools
+        assert_eq!(pool.len(), 2);
     }
 }
