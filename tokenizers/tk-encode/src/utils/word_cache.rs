@@ -96,7 +96,9 @@ impl<'a> WordCache {
             );
         }
         let n: usize = next_pow2 + Self::WINDOW_SIZE;
-        let spilled_budget = 16 * n;
+        // 16 per slot held the ids alone. A word longer than its signature now keeps its other
+        // bytes here too, about half as much again on Chinese and Japanese text.
+        let spilled_budget = 24 * n;
         Self {
             cached_words: vec![WordCacheSlot::default(); n].into_boxed_slice(),
             quick_lookup: vec![0; n].into_boxed_slice(),
