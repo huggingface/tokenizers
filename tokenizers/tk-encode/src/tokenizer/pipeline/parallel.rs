@@ -10,6 +10,7 @@ use crate::pipeline::{
     EncodeHandle, EncodeOptions, Encoding, Input, Inputs, Segment, SpecialSegmentIterator, Token,
     Tokenizer,
 };
+use crate::utils::fork;
 
 /// Which half of an [`Input::Pair`] a chunk was cut from. [`Input::Single`] is all `A`.
 ///
@@ -126,6 +127,8 @@ struct EncodeBatch {
     /// Cursor that each thread increments to add a completed chunk to the completion queue
     next_completed: CachePadded<AtomicUsize>,
     side_a_len: Vec<usize>,
+    /// [`fork::generation`] at planning time; if it moves, the workers died in a fork.
+    fork_gen: usize,
 }
 
 impl EncodeBatch {
@@ -228,6 +231,8 @@ pub(crate) struct StreamingIter {
     batch: Arc<EncodeBatch>,
     next: usize,
     completed: usize,
+    /// After crossing a fork: what is left to yield.
+    orphaned: Option<std::vec::IntoIter<(usize, Result<Encoding>)>>,
 }
 
 impl StreamingIter {
@@ -236,7 +241,37 @@ impl StreamingIter {
             batch,
             next: 0,
             completed: 0,
+            orphaned: None,
         }
+    }
+
+    /// In a forked child: the inputs not yielded yet, finished ones with their encoding (published
+    /// past `next`, possibly behind a slot a dead worker reserved), the rest as errors.
+    fn salvage(&self) -> Vec<(usize, Result<Encoding>)> {
+        let mut pending = vec![true; self.batch.len()];
+        for i in 0..self.next {
+            if let Some(seq) = self.batch.completed_seq(i) {
+                pending[seq] = false;
+            }
+        }
+        let mut out = Vec::new();
+        for i in self.next..self.batch.len() {
+            if let Some(seq) = self.batch.completed_seq(i) {
+                pending[seq] = false;
+                out.push((seq, self.batch.take_encoding(seq)));
+            }
+        }
+        out.extend(
+            (0..self.batch.len())
+                .filter(|&seq| pending[seq])
+                .map(|seq| {
+                    (
+                        seq,
+                        Err("encode started before a fork; encode again in the child".into()),
+                    )
+                }),
+        );
+        out
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -248,9 +283,18 @@ impl Iterator for StreamingIter {
     type Item = (usize, Result<Encoding>);
 
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(rest) = &mut self.orphaned {
+            return rest.next();
+        }
         if self.completed == self.batch.len() {
             return None;
         }
+        // Checked up front, so a child that crossed a fork never waits or assists.
+        if fork::generation() != self.batch.fork_gen {
+            self.orphaned = Some(self.salvage().into_iter());
+            return self.next();
+        }
+        // No fork check in here: only the forking thread survives a fork, and it isn't in this loop.
         let mut scratch = None;
         loop {
             if let Some(seq) = self.batch.completed_seq(self.next) {
@@ -475,6 +519,8 @@ pub(crate) fn encode(tok: &Tokenizer, inputs: Inputs, options: &EncodeOptions) -
             tok.resolve_padding(&options.padding).cloned(),
         );
     };
+    // so `fork::generation` below sees a fork that strands this batch
+    fork::watch();
     let Plan {
         chunks,
         tasks,
@@ -507,6 +553,7 @@ pub(crate) fn encode(tok: &Tokenizer, inputs: Inputs, options: &EncodeOptions) -
         side_a_len,
         chunks,
         tasks,
+        fork_gen: fork::generation(),
     });
     for _ in 0..pool_threads {
         let batch = batch.clone();
