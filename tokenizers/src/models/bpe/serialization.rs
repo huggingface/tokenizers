@@ -59,6 +59,7 @@ impl<'de> Deserialize<'de> for BPE {
                 "fuse_unk",
                 "byte_fallback",
                 "ignore_merges",
+                "cache_capacity",
                 "vocab",
                 "merges",
             ],
@@ -124,6 +125,11 @@ impl<'de> Visitor<'de> for BPEVisitor {
                 "ignore_merges" => {
                     if let Some(suffix) = map.next_value()? {
                         builder = builder.ignore_merges(suffix);
+                    }
+                }
+                "cache_capacity" => {
+                    if let Some(capacity) = map.next_value()? {
+                        builder = builder.cache_capacity(capacity);
                     }
                 }
                 "vocab" => vocab = Some(map.next_value()?),
@@ -234,5 +240,31 @@ mod test {
         bpe.ignore_merges = false;
         let bpe_string = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"vocab":{"<unk>":0,"a":1,"b":2},"merges":[]}"#;
         assert_eq!(serde_json::from_str::<BPE>(bpe_string).unwrap(), bpe);
+    }
+
+    #[test]
+    fn test_deserialization_cache_capacity() {
+        use crate::tokenizer::Model;
+        use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
+
+        let default_json = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":false,"vocab":{"<unk>":0,"a":1,"b":2},"merges":[]}"#;
+        let bpe_default: BPE = serde_json::from_str(default_json).unwrap();
+        assert_eq!(bpe_default.cache_capacity(), Some(DEFAULT_CACHE_CAPACITY));
+
+        let disabled = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":false,"cache_capacity":0,"vocab":{"<unk>":0,"a":1,"b":2},"merges":[]}"#;
+        let bpe_disabled: BPE = serde_json::from_str(disabled).unwrap();
+        assert_eq!(bpe_disabled.cache_capacity(), None);
+
+        let custom = r#"{"type":"BPE","dropout":null,"unk_token":"<unk>","continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":false,"cache_capacity":128,"vocab":{"<unk>":0,"a":1,"b":2},"merges":[]}"#;
+        let bpe_custom: BPE = serde_json::from_str(custom).unwrap();
+        assert_eq!(bpe_custom.cache_capacity(), Some(128));
+        assert_eq!(
+            bpe_disabled.tokenize("ab").unwrap(),
+            bpe_custom.tokenize("ab").unwrap()
+        );
+
+        // Verify serialization output remains unchanged (does not emit cache_capacity)
+        let re_ser = serde_json::to_string(&bpe_disabled).unwrap();
+        assert!(!re_ser.contains("cache_capacity"));
     }
 }
