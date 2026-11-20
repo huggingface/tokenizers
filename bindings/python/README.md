@@ -60,11 +60,8 @@ padded.encode("Hello", padding=None)
 
 ## multiprocessing and Worker processes
 
-Every class here can be pickled, so a tokenizer can be sent to a worker process and its encodings
-sent back: `multiprocessing`, a PyTorch `DataLoader`, `datasets.map(num_proc=...)`.
-
-A pickled `CompiledTokenizer` carries its whole `tokenizer.json`, and unpickling compiles it again.
-With the `"spawn"` start method, we recommend compiling the tokenizer once per worker to avoid unpickle compilation overhead.
+A `CompiledTokenizer` cannot be pickled. With the `"spawn"` start method, send the `Tokenizer` to each
+worker process and compile it there, once.
 
 ```python
 def compile_tokenizer(tokenizer):
@@ -80,8 +77,8 @@ with multiprocessing.get_context("spawn").Pool(4, initializer=compile_tokenizer,
     encoded = list(pool.imap(encode, texts, chunksize=32))
 ```
 
-With the `"fork"` start method, compiling before starting the pool is recommended: the workers inherit the compiled tokenizer
-and nothing is pickled.
+With the `"fork"` start method, compile before starting the pool and read the compiled tokenizer from a global:
+the workers inherit it and nothing is pickled.
 
 ## Developers
 
