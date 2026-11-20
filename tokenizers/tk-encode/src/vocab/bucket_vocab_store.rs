@@ -96,9 +96,10 @@ pub(crate) fn key_and_hash(word: &[u8]) -> (u64, u64) {
 
 /// One MPHF slot: eight bytes, so a probe is a single load.
 ///
-/// The hash picks the slot and `digest` confirms it -- the key itself is never stored, which is why
-/// a query cannot tell a collision from a hit on its own and does not need to (see [`BucketVocabStore::get_bytes`]).
-/// A slot the build never wrote stays [`Default`], and occupancy is read off the parallel `spans`.
+/// The hash picks the slot and `digest` rejects the obvious misses. A non-member still lands in
+/// some slot, and a 32-bit digest is not an identity check: two different 64-bit hashes can share
+/// one. [`BucketVocabStore::get_bytes`] confirms the slot against the stored token bytes.
+/// A slot the build never wrote stays [`Default`], and occupancy is the reverse `id_to_slot` link.
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 struct Entry {
@@ -297,10 +298,11 @@ impl BucketVocabStore {
         }
     }
 
-    /// This function is the equivalent of `get` on a HashaMap, it return the id
-    /// corresponding to the key `q`. Since `mphf` always return a slot, we check
-    /// whether the token indexed by that slot actually match the query. We don't
-    /// care about collisions on query because of this!
+    /// The id for `q`, or `None` when `q` is not in the vocabulary.
+    ///
+    /// The MPHF returns a slot for every hash, including hashes of tokens that were never
+    /// inserted. The slot's 32-bit digest only rejects most of those. The stored bytes are
+    /// the membership check.
     #[inline]
     pub(crate) fn get_bytes(&self, q: &[u8]) -> Option<u32> {
         if self.entries.is_empty() {
@@ -308,19 +310,44 @@ impl BucketVocabStore {
         }
         let (_, hash) = key_and_hash(q);
         let slot = self.mphf.index(&hash);
-        let e = self.entries[slot];
-        (e.digest == digest_of(hash)).then_some(e.id & VOCAB_ID_MASK)
+        self.confirmed_entry(slot, hash, q)
+            .map(|e| e.id & VOCAB_ID_MASK)
     }
 
+    /// Same probe as [`Self::get_bytes`], also reporting the fold bit packed into the id.
+    ///
+    /// `hash` is the one [`key_and_hash`] already computed for `q`. Passing it in avoids a
+    /// second hash on the fold path. `key` is unused here: for a long token it is that hash,
+    /// and a shared high-32 digest is exactly the collision this check exists to reject.
     #[inline]
-    pub(crate) fn get_keyed_foldable(&self, key: u64, hash: u64) -> Option<(u32, bool)> {
+    pub(crate) fn get_keyed_foldable(&self, key: u64, hash: u64, q: &[u8]) -> Option<(u32, bool)> {
         let _ = key;
         if self.entries.is_empty() {
             return None;
         }
         let slot = self.mphf.index(&hash);
-        let e = self.entries[slot];
-        (e.digest == digest_of(hash)).then_some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
+        let e = self.confirmed_entry(slot, hash, q)?;
+        Some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
+    }
+
+    /// The entry at `slot` when it is the token `q`, and not a digest collision or an empty slot.
+    #[inline(always)]
+    fn confirmed_entry(&self, slot: usize, hash: u64, q: &[u8]) -> Option<&Entry> {
+        let e = self.entries.get(slot)?;
+        if e.digest != digest_of(hash) {
+            return None;
+        }
+        // A slot the build never wrote is a zero `Entry`. Its id is 0, which is also a legal
+        // token id, so the digest alone cannot tell the two apart. A written slot is the one
+        // `id_to_slot` points back at.
+        let id = e.id & VOCAB_ID_MASK;
+        if self.id_to_slot.get(id as usize).copied() != Some(slot as u32) {
+            return None;
+        }
+        let sp = self.spans[slot];
+        let start = sp.start as usize;
+        let bytes = self.bytes.get(start..start + sp.len as usize)?;
+        (bytes == q).then_some(e)
     }
 
     /// Records that this token folds to itself. Called once per entry at load, after the proof.
@@ -481,6 +508,26 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn digest_prefix_collision_is_not_a_hit() {
+        // "hello" and this vocab entry share the high 32 bits of their key hash and nothing else.
+        // ignore_merges folds a whole-word hit, so accepting the digest used to encode "hello" as id 4.
+        let other = b"1Y\x04\x0b'v\x18".to_vec();
+        let vocab = BucketVocabStore::build(vec![
+            (b"h".to_vec(), 0),
+            (b"e".to_vec(), 1),
+            (b"l".to_vec(), 2),
+            (b"o".to_vec(), 3),
+            (other.clone(), 4),
+        ])
+        .unwrap();
+        assert_eq!(vocab.get_bytes(b"hello"), None);
+        assert_eq!(vocab.get_bytes(&other), Some(4));
+        assert_eq!(vocab.get_bytes(b"h"), Some(0));
+        let (_, hash) = key_and_hash(b"hello");
+        assert_eq!(vocab.get_keyed_foldable(0, hash, b"hello"), None);
     }
 
     #[test]

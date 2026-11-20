@@ -238,6 +238,27 @@ fn ignore_merges_prefers_whole_word() {
 }
 
 #[test]
+fn ignore_merges_does_not_fold_a_digest_collision() {
+    // Same pair as the vocab-store test: "hello" is not an entry, but its hash shares a 32-bit
+    // digest with the last one. With ignore_merges every entry folds, so a digest-only probe
+    // returns that entry's id instead of the characters.
+    let pipeline = BPE::from_config(BpeConfig {
+        vocab: v(&[
+            ("h", 0),
+            ("e", 1),
+            ("l", 2),
+            ("o", 3),
+            ("1Y\u{4}\u{b}'v\u{18}", 4),
+        ]),
+        merges: vec![],
+        ignore_merges: true,
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(pipeline_ids(&pipeline, "hello"), vec![0, 1, 2, 2, 3]);
+}
+
+#[test]
 fn fuse_unk_applies_to_models_with_affixes() {
     let build = |continuing_subword_prefix: Option<&str>, end_of_word_suffix: Option<&str>| {
         BPE::from_config(BpeConfig {
