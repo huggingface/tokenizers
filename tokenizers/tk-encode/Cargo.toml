@@ -69,6 +69,8 @@ normalizers = [
 unicode-scripts = []
 http = ["hf-hub"]
 parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
+# Keeps what only a config writer reads. `tk-serialize/serialize` turns it on.
+serialize = []
 
 [dev-dependencies]
 # Test-only: one `#[cfg(test)]` cross-check in `vocab/buckets.rs`.
