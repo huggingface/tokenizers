@@ -1,6 +1,4 @@
-import numpy as np
 import pytest
-import torch
 
 from tokenizers import Padding
 
@@ -8,6 +6,7 @@ FIELDS = ("ids", "type_ids", "attention_mask")
 
 
 def test_torch_reads_each_field_as_int64(bert):
+    torch = pytest.importorskip("torch")
     encoding = bert.encode("Hello there", padding=Padding(length=8, pad_id=3))
 
     for field in FIELDS:
@@ -17,6 +16,7 @@ def test_torch_reads_each_field_as_int64(bert):
 
 
 def test_numpy_reads_each_field_as_int64(bert):
+    np = pytest.importorskip("numpy")
     encoding = bert.encode("Hello there", padding=Padding(length=8, pad_id=3))
 
     for field in FIELDS:
@@ -40,6 +40,7 @@ def test_dlpack_refuses_copy_false(bert):
 
 
 def test_empty_encoding_exports_an_empty_tensor(gpt2):
+    torch = pytest.importorskip("torch")
     ids = torch.tensor(gpt2.encode("").ids_dlpack)
 
     assert ids.shape == (0,)

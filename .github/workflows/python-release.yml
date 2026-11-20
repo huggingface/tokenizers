@@ -191,9 +191,9 @@ jobs:
           - { runner: ubuntu-24.04-arm, python: "3.11" }
           - { runner: ubuntu-24.04-arm, python: "3.14" }
           - { runner: ubuntu-24.04-arm, python: "3.14t" }
-          - { runner: macos-15-intel,   python: "3.11" }
-          - { runner: macos-15-intel,   python: "3.14" }
-          - { runner: macos-15-intel,   python: "3.14t" }
+          - { runner: macos-15-intel,   python: "3.11", torch: false }
+          - { runner: macos-15-intel,   python: "3.14", torch: false }
+          - { runner: macos-15-intel,   python: "3.14t", torch: false }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
@@ -212,6 +212,7 @@ jobs:
       - name: test the wheel
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          INSTALL_TORCH: ${{ matrix.config.torch != false }}
         run: |
           ls dist
 
@@ -224,9 +225,14 @@ jobs:
           # --no-build: a missing wheel is an error, not a source build
           uv pip install tokenizers --no-index --no-deps --no-build --find-links dist --reinstall
 
-          # Install deps and pytest: tokenizers is already satisfied, so this only pulls its
-          # dependencies and pytest from PyPI.
-          uv pip install tokenizers pytest
+          # Install deps and test tools: tokenizers is already satisfied, so this only pulls its
+          # dependencies, pytest and the DLPack readers.
+          uv pip install tokenizers pytest numpy
+          # torch ships no macOS x86_64 wheels, so the torch tests skip there. The CPU backend
+          # skips the multi-GB CUDA wheels on Linux.
+          if [[ "$INSTALL_TORCH" == "true" ]]; then
+            uv pip install torch --torch-backend cpu
+          fi
 
           # Download data
           make test-data HF="uvx --from huggingface_hub hf"
