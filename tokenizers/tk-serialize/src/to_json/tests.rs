@@ -243,10 +243,10 @@ const REWRITTEN: &[(&str, &str, &str)] = &[
                 r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first"}"#),
     // The reader gives ids in the order of the array, not the ids it declares: `<b>` comes first
     // and takes 4. The writer lists the tokens by id.
-    ("added_tokens", r#"[{"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true},
-        {"id": 4, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false}]"#,
-        r#"[{"id": 4, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true},
-        {"id": 5, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false}]"#),
+    ("added_tokens", r#"[{"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true, "control": true},
+        {"id": 4, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false, "control": false}]"#,
+        r#"[{"id": 4, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true, "control": true},
+        {"id": 5, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false, "control": false}]"#),
 ];
 
 /// `strip_accents: null` means "decide from `lowercase`", which is why the reader requires the key.

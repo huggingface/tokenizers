@@ -37,6 +37,8 @@ class AddedToken:
             Defaults to `not special`.
         special:
             Skip the token when decoding with `skip_special_tokens`.
+        control:
+            Whether the token is a control token
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __getstate__(self, /) -> dict:
@@ -55,6 +57,7 @@ class AddedToken:
         rstrip: bool = False,
         normalized: bool | None = None,
         special: bool = False,
+        control: bool = False,
     ) -> AddedToken: ...
     def __reduce__(self, /) -> tuple[Any, tuple[dict]]:
         """
@@ -71,6 +74,11 @@ class AddedToken:
     def content(self, /) -> str:
         """
         The text of the token.
+        """
+    @property
+    def control(self, /) -> bool:
+        """
+        Whether the added token is a control token
         """
     @property
     def lstrip(self, /) -> bool:
