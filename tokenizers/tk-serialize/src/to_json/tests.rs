@@ -243,10 +243,10 @@ const REWRITTEN: &[(&str, &str, &str)] = &[
                 r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first"}"#),
     // Ascending id order is load-bearing: the reader replays added tokens in that order, and
     // `add_tokens` reuses a model id when the token is already in the vocabulary.
-    ("added_tokens", r#"[{"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true},
-        {"id": 4, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false}]"#,
-        r#"[{"id": 4, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false},
-        {"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true}]"#),
+    ("added_tokens", r#"[{"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true, "control": true},
+        {"id": 4, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false, "control": false}]"#,
+        r#"[{"id": 4, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false, "control": false},
+        {"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true, "control": true}]"#),
 ];
 
 /// `strip_accents: null` means "decide from `lowercase`", which is why the reader requires the key.

@@ -161,13 +161,14 @@ fn write_entries_at(
 
 pub(crate) fn added_token(token: &AddedToken) -> String {
     format!(
-        "AddedToken({}, single_word={}, lstrip={}, rstrip={}, normalized={}, special={})",
+        "AddedToken({}, single_word={}, lstrip={}, rstrip={}, normalized={}, special={}, control={})",
         tk::str_to_json(&token.content),
         python_bool(token.single_word),
         python_bool(token.lstrip),
         python_bool(token.rstrip),
         python_bool(token.normalized),
         python_bool(token.special),
+        python_bool(token.control),
     )
 }
 

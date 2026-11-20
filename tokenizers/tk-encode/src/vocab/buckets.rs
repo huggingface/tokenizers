@@ -5,6 +5,7 @@ use super::bucket_vocab_store::BucketVocabStore;
 #[derive(Clone, PartialEq, Debug, Default)]
 pub(crate) struct AddedTokenFlags {
     pub special: bool,
+    pub control: bool,
     pub normalized: bool,
     pub single_word: bool,
     pub lstrip: bool,
