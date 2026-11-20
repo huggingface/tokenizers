@@ -25,7 +25,12 @@ pub(crate) struct Signature {
     pub(crate) hash: u64,
 }
 
-const SEEDS: [u64; 2] = [0x243F_6A88_85A3_08D3, 0x1319_8A2E_0370_7344];
+const SEEDS: [u64; 4] = [
+    0x243F_6A88_85A3_08D3,
+    0x1319_8A2E_0370_7344,
+    0xA409_3822_299F_31D0,
+    0x082E_FA98_EC4E_6C89,
+];
 
 /// `LOW_BYTES[n]` keeps the low `n` bytes of a `u64`.
 const LOW_BYTES: [u64; 9] = [
@@ -98,11 +103,15 @@ impl Signature {
             .unwrap_or_default()
     }
 
-    /// The hash is one 64x64 to 128 bit multiply with its two halves xored, the shape foldhash
-    /// uses for an input of 16 bytes or less.
+    /// The hash is two 64x64 to 128 bit multiplies, the shape wyhash and rapidhash use for an
+    /// input of 16 bytes or less.
+    // The length goes in after the first multiply. Xored into `tail` before it, `"\n"` and 7
+    // tabs hashed like `"\n"` and 10 tabs: two tokens of bigscience/bloomz-560m.
     #[inline(always)]
     fn from_parts(head: u64, tail: u64, len: usize) -> Self {
-        let product = u128::from(head ^ SEEDS[0]) * u128::from(tail ^ SEEDS[1] ^ len as u64);
+        let product = u128::from(head ^ SEEDS[0]) * u128::from(tail ^ SEEDS[1]);
+        let (low, high) = (product as u64, (product >> 64) as u64);
+        let product = u128::from(low ^ SEEDS[2] ^ len as u64) * u128::from(high ^ SEEDS[3]);
         Self {
             head,
             tail,
@@ -177,6 +186,15 @@ mod tests {
                 assert_ne!(Signature::new(a), Signature::new(b), "{a:?} / {b:?}");
             }
         }
+    }
+
+    /// A hash that xors the length into the last eight bytes gives these two words one hash:
+    /// their tails differ by `0x0A ^ 0x09`, their lengths by `8 ^ 11`, the same bits. Both are
+    /// tokens of bigscience/bloomz-560m, and the vocabulary needs a hash of its own per token.
+    #[test]
+    fn a_newline_and_seven_tabs_does_not_hash_like_a_newline_and_ten() {
+        let (seven, ten) = (b"\n\t\t\t\t\t\t\t", b"\n\t\t\t\t\t\t\t\t\t\t");
+        assert_ne!(Signature::new(seven).hash, Signature::new(ten).hash);
     }
 
     #[test]
