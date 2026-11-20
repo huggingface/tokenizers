@@ -308,6 +308,16 @@ impl AddedVocabulary {
             .collect::<AHashMap<u32, AddedToken>>()
     }
 
+    /// Whether `token` is the content of an added token marked special.
+    ///
+    /// Decode uses this so `skip_special_tokens` drops every id that prints as that content,
+    /// not only the id the added vocabulary stored. CamemBERT lists `<unk>` twice: the model
+    /// unk id and a different added id that carries the special flag.
+    pub(crate) fn is_special_content(&self, token: &str) -> bool {
+        self.token_to_internal_id(token)
+            .is_some_and(|internal_id| self.token_metadata[internal_id as usize].special)
+    }
+
     /// Get the id matching one of our token if it exists
     pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
         self.token_to_internal_id(token)
