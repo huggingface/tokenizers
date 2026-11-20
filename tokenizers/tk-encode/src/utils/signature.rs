@@ -20,14 +20,12 @@ pub(crate) struct Signature {
     /// The last eight bytes, little-endian. Equal to `head` when the word is 8 bytes or shorter.
     pub(crate) tail: u64,
     pub(crate) len: usize,
+    /// 64 bits computed from the three fields above, which spread signatures over a table.
+    /// Computed once here, for every table that looks the word up.
+    pub(crate) hash: u64,
 }
 
-const SEEDS: [u64; 4] = [
-    0x243F_6A88_85A3_08D3,
-    0x1319_8A2E_0370_7344,
-    0xA409_3822_299F_31D0,
-    0x082E_FA98_EC4E_6C89,
-];
+const SEEDS: [u64; 2] = [0x243F_6A88_85A3_08D3, 0x1319_8A2E_0370_7344];
 
 impl Signature {
     /// The longest word a signature holds whole.
@@ -36,11 +34,7 @@ impl Signature {
     pub(crate) fn new(word: &[u8]) -> Self {
         let len = word.len();
         if let (Some(head), Some(tail)) = (word.first_chunk(), word.last_chunk()) {
-            return Self {
-                head: u64::from_le_bytes(*head),
-                tail: u64::from_le_bytes(*tail),
-                len,
-            };
+            return Self::from_parts(u64::from_le_bytes(*head), u64::from_le_bytes(*tail), len);
         }
         // Overlapping fixed-size reads: a copy into a padded buffer is a `memcpy` call per word.
         let head = if let (Some(low), Some(high)) = (word.first_chunk(), word.last_chunk()) {
@@ -52,11 +46,7 @@ impl Signature {
         } else {
             0
         };
-        Self {
-            head,
-            tail: head,
-            len,
-        }
+        Self::from_parts(head, head, len)
     }
 
     /// [`Self::new`] for a word inside a larger buffer, with `readable` bytes from the word's
@@ -84,11 +74,11 @@ impl Signature {
                 start.add(len - short).cast::<[u8; 8]>().read_unaligned(),
             )
         };
-        Self {
-            head: u64::from_le_bytes(head) & mask,
-            tail: u64::from_le_bytes(tail) & mask,
+        Self::from_parts(
+            u64::from_le_bytes(head) & mask,
+            u64::from_le_bytes(tail) & mask,
             len,
-        }
+        )
     }
 
     /// The bytes of `word` its signature does not hold: empty unless the word is longer than
@@ -99,14 +89,17 @@ impl Signature {
             .unwrap_or_default()
     }
 
-    /// 64 bits that spread signatures over a table. Two 64x64 to 128 bit multiplies, the shape
-    /// wyhash and rapidhash use for an input of 16 bytes or less.
+    /// The hash is one 64x64 to 128 bit multiply with its two halves xored, the shape foldhash
+    /// uses for an input of 16 bytes or less.
     #[inline(always)]
-    pub(crate) fn hash(self) -> u64 {
-        let product = u128::from(self.head ^ SEEDS[0]) * u128::from(self.tail ^ SEEDS[1]);
-        let (low, high) = (product as u64, (product >> 64) as u64);
-        let product = u128::from(low ^ SEEDS[2] ^ self.len as u64) * u128::from(high ^ SEEDS[3]);
-        product as u64 ^ (product >> 64) as u64
+    fn from_parts(head: u64, tail: u64, len: usize) -> Self {
+        let product = u128::from(head ^ SEEDS[0]) * u128::from(tail ^ SEEDS[1] ^ len as u64);
+        Self {
+            head,
+            tail,
+            len,
+            hash: product as u64 ^ (product >> 64) as u64,
+        }
     }
 }
 
@@ -122,11 +115,11 @@ mod tests {
             })
         };
         let short = word.len().min(8);
-        Signature {
-            head: pack(&word[..short]),
-            tail: pack(&word[word.len() - short..]),
-            len: word.len(),
-        }
+        Signature::from_parts(
+            pack(&word[..short]),
+            pack(&word[word.len() - short..]),
+            word.len(),
+        )
     }
 
     /// Words are slices of a larger buffer, which is what makes 8 bytes readable past a short one.

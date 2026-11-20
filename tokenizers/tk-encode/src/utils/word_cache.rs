@@ -112,67 +112,60 @@ impl<'a> WordCache {
     /// On [Lookup::Miss], returns the location in [Self::cached_words] where it should be inserted
     #[inline]
     // Only `unigram` and `wordpiece` call this. `bpe` holds the signature already.
-    #[cfg_attr(
-        not(any(feature = "unigram", feature = "wordpiece")),
-        allow(dead_code)
-    )]
+    #[cfg_attr(not(any(feature = "unigram", feature = "wordpiece")), allow(dead_code))]
     pub fn lookup(&'a self, word: &[u8]) -> Lookup<'a> {
-        let signature = Signature::new(word);
-        self.lookup_hashed(word, signature, signature.hash())
+        self.lookup_signed(word, Signature::new(word))
     }
 
-    /// Starts loading the home slot of the word with this [`Signature::hash`], so that a lookup a
-    /// few words later finds it in the CPU cache.
+    /// Starts loading the home slot of the word with this signature, so that a lookup a few
+    /// words later finds it in the CPU cache.
     #[inline(always)]
-    pub fn prefetch(&self, hash: u64) {
-        prefetch_index(&*self.cached_words, self.home(hash));
+    pub fn prefetch(&self, signature: Signature) {
+        prefetch_index(&*self.cached_words, self.home(signature));
     }
 
-    /// [`Self::lookup`] that emits straight into the caller's buffer, for a caller that already
-    /// holds the word's signature and its [`Signature::hash`].
+    /// Answers the leading words of a batch straight from their home slots, into the caller's
+    /// buffer. Returns how many words it answered and how many ids it wrote.
     ///
-    /// An inline hit writes its ids through `dst` and reports how many count, so the caller neither
-    /// re-reads the slot nor branches on the payload. A spilled hit or a miss comes back as
-    /// [`ProbeEmit::Hit`] / [`ProbeEmit::Miss`] with nothing written.
+    /// It stops at the first word whose home slot does not hold it with inline ids. That word
+    /// goes through [`Self::lookup_signed`]. On text the cache has seen, nearly every word is
+    /// answered here, so this loop is kept to a few loads, compares and stores per word.
     ///
     /// # Safety
     ///
-    /// `dst` must be valid for writes of [`MAX_INLINE_IDS`] `u32`s. The inline path fills every
-    /// lane unconditionally -- lanes past `ids_len` are written with whatever the slot holds -- so
-    /// the room has to be there even when fewer ids end up counting.
-    #[inline]
-    pub unsafe fn probe_emit(
-        &'a self,
-        word: &[u8],
-        signature: Signature,
-        hash: u64,
+    /// `dst` must be valid for writes of [`MAX_INLINE_IDS`] `u32`s per signature. A hit writes
+    /// every inline lane, whatever its number of ids.
+    // Out of line: inside the encode loop, the table's address and mask were reloaded per word.
+    #[inline(never)]
+    pub unsafe fn emit_inline_hits(
+        &self,
+        signatures: &[Signature],
         dst: *mut u32,
-    ) -> ProbeEmit<'a> {
-        // SAFETY: a home is masked with `placement_mask` (`next_pow2 - 1`), and the table holds
-        // `next_pow2 + WINDOW_SIZE` slots.
-        let slot = unsafe { *self.cached_words.as_ptr().add(self.home(hash)) };
-        // A slot with inline ids never holds a word longer than its signature: see `insert`.
-        if slot.has_signature(signature) && !slot.is_spilled() {
-            // SAFETY: the caller guarantees room for `MAX_INLINE_IDS`.
-            unsafe {
-                for (lane, &payload) in slot.payload.iter().enumerate().take(MAX_INLINE_IDS) {
-                    dst.add(lane).write(payload);
-                }
+    ) -> (usize, usize) {
+        let slots = self.cached_words.as_ptr();
+        let mut written = 0;
+        for (answered, &signature) in signatures.iter().enumerate() {
+            // SAFETY: a home is masked with `placement_mask` (`next_pow2 - 1`), and the table
+            // holds `next_pow2 + WINDOW_SIZE` slots.
+            let slot = unsafe { *slots.add(self.home(signature)) };
+            if !slot.holds_inline(signature) {
+                return (answered, written);
             }
-            return ProbeEmit::Wrote(slot.ids_len as usize);
+            // SAFETY: `written <= MAX_INLINE_IDS * answered`, and the caller left room for
+            // `MAX_INLINE_IDS` more.
+            unsafe {
+                dst.add(written)
+                    .copy_from_nonoverlapping(slot.payload.as_ptr(), MAX_INLINE_IDS);
+            }
+            written += slot.ids_len();
         }
-        match self.lookup_hashed(word, signature, hash) {
-            Lookup::Hit(ids) => ProbeEmit::Hit(ids),
-            Lookup::Miss(at) => ProbeEmit::Miss(at),
-        }
+        (signatures.len(), written)
     }
 
-    /// [`Self::lookup`] for a caller that already holds the word's signature and its
-    /// [`Signature::hash`].
-    #[inline]
-    pub fn lookup_hashed(&'a self, word: &[u8], signature: Signature, hash: u64) -> Lookup<'a> {
-        let home = self.home(hash);
-        let tag = tag_of(hash);
+    /// [`Self::lookup`] for a caller that already holds the word's signature.
+    pub fn lookup_signed(&'a self, word: &[u8], signature: Signature) -> Lookup<'a> {
+        let home = self.home(signature);
+        let tag = tag_of(signature);
         let tag_window = self.tag_window(home);
         let (candidates, first_empty) = tag_window.find_matches_and_first_empty(tag);
 
@@ -254,8 +247,8 @@ impl<'a> WordCache {
 
 impl<'a> WordCache {
     #[inline(always)]
-    fn home(&self, hash: u64) -> usize {
-        (hash & self.placement_mask) as usize
+    fn home(&self, signature: Signature) -> usize {
+        (signature.hash & self.placement_mask) as usize
     }
 
     /// Whether `slot`, whose signature is `word`'s, also holds the bytes of `word` that the
@@ -267,8 +260,8 @@ impl<'a> WordCache {
         }
         // `insert` spills every word longer than its signature, bytes right after the ids.
         let (_, ids_end) = Spilled(slot).ids_offsets();
-        let stored = &self.spilled_buffer[ids_end..ids_end + uncovered.len().div_ceil(4)];
-        pack_bytes(uncovered).eq(stored.iter().copied())
+        let stored: &[u8] = bytemuck::cast_slice(&self.spilled_buffer[ids_end..]);
+        stored[..uncovered.len()] == *uncovered
     }
 
     /// Helper to fetch the ids from the word
@@ -300,11 +293,10 @@ impl<'a> WordCache {
     }
 }
 
-/// The tag of a word, from its [`Signature::hash`].
 #[inline(always)]
-fn tag_of(hash: u64) -> u8 {
+fn tag_of(signature: Signature) -> u8 {
     // At least 0x01, otherwise it can be mistaken for an EMPTY slot
-    ((hash >> (64 - 8)) as u8).max(WordCache::EMPTY + 1)
+    ((signature.hash >> (64 - 8)) as u8).max(WordCache::EMPTY + 1)
 }
 
 /// A word's length as a slot stores it. `u16::MAX` stands for every longer word.
@@ -313,17 +305,18 @@ fn stored_len(len: usize) -> u16 {
     u16::try_from(len).unwrap_or(u16::MAX)
 }
 
-/// Packs bytes four to a `u32`, zero padding the last one.
+/// Packs bytes four to a `u32`, zero padding the last one. The `u32`s read back as the same
+/// bytes in memory order.
 fn pack_bytes(bytes: &[u8]) -> impl Iterator<Item = u32> + '_ {
     let (quads, rest) = bytes.as_chunks::<4>();
     let last = (!rest.is_empty()).then(|| {
         let mut padded = [0u8; 4];
         padded[..rest.len()].copy_from_slice(rest);
-        u32::from_le_bytes(padded)
+        u32::from_ne_bytes(padded)
     });
     quads
         .iter()
-        .map(|&quad| u32::from_le_bytes(quad))
+        .map(|&quad| u32::from_ne_bytes(quad))
         .chain(last)
 }
 
@@ -334,11 +327,11 @@ fn pack_bytes(bytes: &[u8]) -> impl Iterator<Item = u32> + '_ {
 ///
 /// The token ids are encoded inline in the cache slot:
 /// ```text
-/// ┌───────────┬───────────┬──────────┬──────────┬──────────┬─────────┬──────┬──────────┐
-/// │   head    │   tail    │  id[0]   │  id[1]   │  id[2]   │ ids_len │ _pad │ word_len │
-/// │    u64    │    u64    │   u32    │   u32    │   u32    │   u8    │  u8  │   u16    │
-/// └───────────┴───────────┴──────────┴──────────┴──────────┴─────────┴──────┴──────────┘
-/// 0           8           16         20         24         28        29     30       32 bytes
+/// ┌───────────┬───────────┬──────────┬──────────┬──────────┬──────────────────────────┐
+/// │   head    │   tail    │  id[0]   │  id[1]   │  id[2]   │           meta           │
+/// │    u64    │    u64    │   u32    │   u32    │   u32    │ word_len << 16 | ids_len │
+/// └───────────┴───────────┴──────────┴──────────┴──────────┴──────────────────────────┘
+/// 0           8           16         20         24         28                       32 bytes
 /// ```
 ///
 /// ## spilled: every other word
@@ -346,11 +339,11 @@ fn pack_bytes(bytes: &[u8]) -> impl Iterator<Item = u32> + '_ {
 /// The token ids are stored in [`WordCache::spilled_buffer`], followed by the bytes of the word
 /// that its signature leaves out. The slot holds the offsets of the ids in that buffer.
 /// ```text
-/// ┌───────────┬───────────┬──────────┬──────────┬────────────┬─────────┬──────┬──────────┐
-/// │   head    │   tail    │  start   │   end    │ generation │ SPILLED │ _pad │ word_len │
-/// │    u64    │    u64    │   u32    │   u32    │    u32     │   u8    │  u8  │   u16    │
-/// └───────────┴───────────┴──────────┴──────────┴────────────┴─────────┴──────┴──────────┘
-/// 0           8           16         20         24           28        29     30       32 bytes
+/// ┌───────────┬───────────┬──────────┬──────────┬────────────┬──────────────────────────┐
+/// │   head    │   tail    │  start   │   end    │ generation │           meta           │
+/// │    u64    │    u64    │   u32    │   u32    │    u32     │ word_len << 16 | SPILLED │
+/// └───────────┴───────────┴──────────┴──────────┴────────────┴──────────────────────────┘
+/// 0           8           16         20         24           28                       32 bytes
 /// ```
 #[repr(C, align(32))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -358,11 +351,15 @@ pub struct WordCacheSlot {
     head: u64,
     tail: u64,
     payload: [u32; 3],
-    ids_len: u8,
-    _pad: u8,
-    word_len: u16,
+    /// The word's [`stored_len`] in the top 16 bits. The number of inline ids in the low 8, or
+    /// [`Self::SPILLED`].
+    meta: u32,
 }
 
+const _: () = assert!(
+    (MAX_INLINE_IDS + 1).is_power_of_two(),
+    "WordCacheSlot::NOT_INLINE is a bit mask: it needs MAX_INLINE_IDS to be all ones"
+);
 // 32-byte size and alignment, so a read is always contained in a cache line
 const _: () = assert!(size_of::<WordCacheSlot>() == 32);
 const _: () = assert!(align_of::<WordCacheSlot>() == 32);
@@ -370,16 +367,17 @@ const _: () = assert!(align_of::<WordCacheSlot>() == 32);
 impl WordCacheSlot {
     /// A sentinel value that discriminates an inline slot (ids are stored in the slot) from a spilled slot
     /// (values are stored in a buffer)
-    const SPILLED: u8 = 0xFF;
+    const SPILLED: u32 = 0xFF;
 
-    fn new(signature: Signature, payload: [u32; 3], ids_len: u8) -> Self {
+    /// The bits of `meta` that are zero only when it counts [`MAX_INLINE_IDS`] ids or fewer.
+    const NOT_INLINE: u32 = 0xFF & !(MAX_INLINE_IDS as u32);
+
+    fn new(signature: Signature, payload: [u32; 3], ids_len: u32) -> Self {
         Self {
             head: signature.head,
             tail: signature.tail,
             payload,
-            ids_len,
-            _pad: 0,
-            word_len: stored_len(signature.len),
+            meta: len_bits(signature) | ids_len,
         }
     }
 
@@ -397,7 +395,7 @@ impl WordCacheSlot {
         ids: impl ExactSizeIterator<Item = u32>,
     ) -> Self {
         assert!(ids.len() <= MAX_INLINE_IDS);
-        let ids_len = ids.len() as u8;
+        let ids_len = ids.len() as u32;
         let mut payload = [0u32; 3];
         for (slot, id) in payload.iter_mut().zip(ids) {
             *slot = id;
@@ -418,11 +416,25 @@ impl WordCacheSlot {
     fn has_signature(&self, signature: Signature) -> bool {
         self.head == signature.head
             && self.tail == signature.tail
-            && self.word_len == stored_len(signature.len)
+            && self.meta & 0xFFFF_0000 == len_bits(signature)
+    }
+
+    /// [`Self::has_signature`] with the ids inline, in one compare of `meta`.
+    /// Such a slot never holds a word longer than its signature: [`WordCache::insert`] spills it.
+    #[inline(always)]
+    fn holds_inline(&self, signature: Signature) -> bool {
+        self.head == signature.head
+            && self.tail == signature.tail
+            && self.meta & (0xFFFF_0000 | Self::NOT_INLINE) == len_bits(signature)
+    }
+
+    #[inline(always)]
+    fn ids_len(&self) -> usize {
+        (self.meta & 0xFF) as usize
     }
 
     fn is_spilled(self) -> bool {
-        self.ids_len == Self::SPILLED
+        self.meta & 0xFF == Self::SPILLED
     }
 
     fn variant<'a>(&'a self) -> CacheSlotType<'a> {
@@ -432,6 +444,12 @@ impl WordCacheSlot {
             CacheSlotType::SelfContained(SelfContained(self))
         }
     }
+}
+
+/// The word's [`stored_len`], where a slot's `meta` keeps it.
+#[inline(always)]
+fn len_bits(signature: Signature) -> u32 {
+    u32::from(stored_len(signature.len)) << 16
 }
 
 /// Convenience wrapper around [`WordCacheSlot`] to discriminate
@@ -460,8 +478,7 @@ pub struct SelfContained<'a>(&'a WordCacheSlot);
 
 impl<'a> SelfContained<'a> {
     fn ids(self) -> &'a [u32] {
-        let len = self.0.ids_len;
-        &self.0.payload[0..len as usize]
+        &self.0.payload[..self.0.ids_len()]
     }
 }
 
@@ -472,12 +489,6 @@ pub struct InsertPlacement {
 }
 
 pub enum Lookup<'a> {
-    Hit(&'a [u32]),
-    Miss(InsertPlacement),
-}
-
-pub enum ProbeEmit<'a> {
-    Wrote(usize),
     Hit(&'a [u32]),
     Miss(InsertPlacement),
 }
@@ -563,7 +574,7 @@ mod tests {
     fn words_homed_in(cache: &WordCache, range: std::ops::Range<usize>, n: usize) -> Vec<Vec<u8>> {
         (0u32..)
             .map(|i| format!("w{i}").into_bytes())
-            .filter(|word| range.contains(&cache.home(Signature::new(word).hash())))
+            .filter(|word| range.contains(&cache.home(Signature::new(word))))
             .take(n)
             .collect()
     }
@@ -739,7 +750,7 @@ mod tests {
     #[test]
     fn a_live_tag_is_never_the_empty_marker() {
         for i in 0..100_000u32 {
-            let tag = tag_of(Signature::new(&i.to_le_bytes()).hash());
+            let tag = tag_of(Signature::new(&i.to_le_bytes()));
             assert_ne!(tag, WordCache::EMPTY, "word {i}");
         }
     }
@@ -773,8 +784,8 @@ mod tests {
     #[test]
     fn a_tag_collision_is_confirmed_against_the_signature() {
         let mut cache = WordCache::new(1 << 8);
-        let hash = Signature::new(b"beta").hash();
-        let (index, tag) = (cache.home(hash), tag_of(hash));
+        let signature = Signature::new(b"beta");
+        let (index, tag) = (cache.home(signature), tag_of(signature));
         cache.quick_lookup[index] = tag;
         cache.cached_words[index] =
             WordCacheSlot::new_self_contained(Signature::new(b"decoy"), [7].into_iter());
@@ -922,7 +933,7 @@ mod tests {
         let mut cache = WordCache::new(1 << 6);
         let word = b"a-word-past-sixteen-bytes";
         let signature = Signature::new(word);
-        let tag = tag_of(signature.hash());
+        let tag = tag_of(signature);
         for i in 0..3 * (SPILLED_BUDGET / 8) {
             let at = InsertPlacement {
                 index: 0,

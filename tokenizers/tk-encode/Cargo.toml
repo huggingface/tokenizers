@@ -39,6 +39,8 @@ thiserror = "2"
 ahash = "0.8.12"
 memchr = "2.8.3"
 wide = "1.6.1"
+# Already in the tree: `wide` builds on it. Gives the word cache a byte view of its `u32` buffer.
+bytemuck = "1.25"
 ########### Optional dependencies ############################
 rayon = { version = "1.12", optional = true }
 rayon-cond = { version = "0.4", optional = true }

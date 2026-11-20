@@ -26,16 +26,16 @@ const FOLD_BIT: u32 = 1 << 31;
 /// The id half. 2^31 ids is far past any vocabulary.
 const VOCAB_ID_MASK: u32 = FOLD_BIT - 1;
 
-/// The [`Mphf`] key of a word, given its signature and that signature's [`Signature::hash`].
+/// The [`Mphf`] key of a word.
 ///
 /// A word its signature holds whole reuses the signature's hash. A longer word hashes all of its
 /// bytes, because two tokens with one signature would otherwise be one key.
 #[inline(always)]
-fn mphf_key(word: &[u8], signature: Signature, signature_hash: u64) -> u64 {
+fn mphf_key(word: &[u8], signature: Signature) -> u64 {
     if signature.len > Signature::BYTES {
         hash_long(word)
     } else {
-        signature_hash
+        signature.hash
     }
 }
 
@@ -144,7 +144,7 @@ impl BucketVocabStore {
         let keys: Vec<u64> = tokens
             .iter()
             .zip(&signatures)
-            .map(|((s, _), &signature)| mphf_key(s, signature, signature.hash()))
+            .map(|((s, _), &signature)| mphf_key(s, signature))
             .collect();
 
         let mut unique_entries: HashMap<u64, usize> = HashMap::with_capacity(n);
@@ -247,28 +247,22 @@ impl BucketVocabStore {
     /// The id of the token equal to `word`, like `get` on a `HashMap`.
     #[inline]
     pub(crate) fn get_bytes(&self, word: &[u8]) -> Option<u32> {
-        let signature = Signature::new(word);
-        let (id, _) = self.get_foldable(word, signature, signature.hash())?;
+        let (id, _) = self.get_foldable(word, Signature::new(word))?;
         Some(id)
     }
 
     /// The id of the token equal to `word` and whether it folds, for a caller that already holds
-    /// the word's signature and its [`Signature::hash`].
+    /// the word's signature.
     ///
     /// The perfect hash returns a slot for any word. The word is that slot's token when the
     /// signatures are equal and, for a word its signature does not hold whole, the remaining
     /// bytes are too.
     #[inline]
-    pub(crate) fn get_foldable(
-        &self,
-        word: &[u8],
-        signature: Signature,
-        signature_hash: u64,
-    ) -> Option<(u32, bool)> {
+    pub(crate) fn get_foldable(&self, word: &[u8], signature: Signature) -> Option<(u32, bool)> {
         if self.entries.is_empty() {
             return None;
         }
-        let slot = self.mphf.index(&mphf_key(word, signature, signature_hash));
+        let slot = self.mphf.index(&mphf_key(word, signature));
         let entry = self.entries[slot];
         (entry.has_signature(signature) && self.holds_uncovered(slot, word))
             .then_some((entry.id & VOCAB_ID_MASK, entry.id & FOLD_BIT != 0))

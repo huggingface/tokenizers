@@ -81,6 +81,12 @@ impl<'a> PreTokens<'a> {
             .map(move |spans| Self { chunk, spans })
     }
 
+    /// The text span `index` covers.
+    pub fn text(&self, index: usize) -> &'a str {
+        // SAFETY: `new_unchecked` requires every span to be a char-boundary range of `chunk`.
+        unsafe { self.chunk.get_unchecked(self.spans[index].range()) }
+    }
+
     /// Every span with the text it covers.
     pub fn iter(&self) -> impl Iterator<Item = (Span, &'a str)> + use<'a> {
         let chunk = self.chunk;

@@ -1159,6 +1159,7 @@ version = "0.1.0-rc.6.dev.0"
 dependencies = [
  "ahash",
  "bitcannon",
+ "bytemuck",
  "dary_heap",
  "fancy-regex",
  "libc",
