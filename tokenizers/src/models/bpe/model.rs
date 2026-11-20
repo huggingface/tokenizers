@@ -2,11 +2,10 @@ use super::{super::OrderedVocabIter, trainer::BpeTrainer, Error, Pair, Word};
 use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
-use ahash::AHashMap;
+use ahash::{AHashMap, RandomState};
 use serde_json::Value;
 use std::borrow::Cow;
-use std::cell::RefCell;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::RwLock;
 
 use std::collections::HashMap;
 use std::str::from_utf8_unchecked;
@@ -21,21 +20,33 @@ pub type Vocab = AHashMap<String, u32>;
 type VocabR = AHashMap<u32, String>;
 pub type MergeMap = AHashMap<Pair, (u32, u32)>;
 
-/// Process-wide monotonic counter used to assign a unique generation id
-/// to every `BpeCache`, so per-instance thread-local caches never collide.
-static NEXT_CACHE_ID: AtomicU64 = AtomicU64::new(0);
+const CACHE_SHARDS: usize = 64;
 
-/// Per-BPE cache descriptor.
+type CacheEntries = Box<[(u32, u32)]>;
+
+#[repr(align(64))]
+#[derive(Debug, Default)]
+struct CacheShard {
+    map: RwLock<AHashMap<Box<str>, CacheEntries>>,
+}
+
+#[inline]
+fn shard_cap(capacity: usize, shard_idx: usize) -> usize {
+    let base = capacity / CACHE_SHARDS;
+    let rem = capacity % CACHE_SHARDS;
+    base + usize::from(shard_idx < rem)
+}
+
+/// Sharded per-BPE tokenization cache.
 ///
-/// BPE no longer keeps a shared `RwLock<AHashMap>` cache: the encode hot
-/// path reads and writes only the thread-local `BPE_LOCAL_CACHE` below,
-/// keyed by `(BpeCache::id, sequence)`.  This struct only carries the
-/// per-instance generation id and capacity so existing `clear_cache()`
-/// and `resize_cache()` APIs keep their meaning: `clear()` bumps the id,
-/// invalidating every thread's entries for this BPE in one shot.
+/// Replaces the thread-local cache with a fixed 64-shard `RwLock` map
+/// owned directly by `BPE`: total capacity stays bounded regardless of
+/// thread count, `Drop` frees all entries automatically, and sharding
+/// avoids single-lock atomic contention across concurrent encodes.
 #[derive(Debug)]
 pub(crate) struct BpeCache {
-    id: AtomicU64,
+    shards: Box<[CacheShard]>,
+    hash_builder: RandomState,
     pub capacity: usize,
 }
 
@@ -48,45 +59,58 @@ impl PartialEq for BpeCache {
 
 impl BpeCache {
     pub(crate) fn new(capacity: usize) -> Self {
+        let shards: Vec<CacheShard> = (0..CACHE_SHARDS).map(|_| CacheShard::default()).collect();
         Self {
-            id: AtomicU64::new(NEXT_CACHE_ID.fetch_add(1, Ordering::Relaxed)),
+            shards: shards.into_boxed_slice(),
+            hash_builder: RandomState::new(),
             capacity,
         }
     }
 
-    /// Return a fresh `BpeCache` with the same capacity but a new id,
+    /// Return a fresh `BpeCache` with the same capacity,
     /// used by `impl Clone for BPE`.
     pub(crate) fn fresh(&self) -> Self {
         Self::new(self.capacity)
     }
 
-    /// Current generation id.  Bumped on `clear()`.
-    pub(crate) fn id(&self) -> u64 {
-        self.id.load(Ordering::Relaxed)
+    #[inline]
+    fn shard_index(&self, key: &str) -> usize {
+        (self.hash_builder.hash_one(key) as usize) & (CACHE_SHARDS - 1)
     }
 
-    /// Invalidate every thread's thread-local entries for this BPE by
-    /// advancing the generation id; the next lookup re-computes.
+    /// Clear all cached entries across every shard.
     pub(crate) fn clear(&self) {
-        self.id.store(
-            NEXT_CACHE_ID.fetch_add(1, Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
+        for shard in &*self.shards {
+            shard.map.write().unwrap().clear();
+        }
     }
 
+    /// Resize the cache capacity and immediately evict/shrink excess entries.
     pub(crate) fn resize(&mut self, capacity: usize) {
         self.capacity = capacity;
+        for (idx, shard) in self.shards.iter().enumerate() {
+            let cap = shard_cap(capacity, idx);
+            let mut map = shard.map.write().unwrap();
+            if cap == 0 {
+                map.clear();
+            } else if map.len() > cap {
+                let excess = map.len() - cap;
+                let keys: Vec<Box<str>> = map.keys().take(excess).cloned().collect();
+                for k in keys {
+                    map.remove(&k);
+                }
+            }
+            map.shrink_to(cap);
+        }
     }
-}
 
-thread_local! {
-    /// Per-thread BPE tokenization cache.  This is the only BPE cache
-    /// on the hot path: there is no shared global map, so lookups and
-    /// inserts need no atomic synchronization at all.  The outer map is
-    /// keyed by `BpeCache::id` so multiple `BPE` instances sharing the
-    /// same rayon worker thread never see each other's entries.
-    static BPE_LOCAL_CACHE: RefCell<AHashMap<u64, AHashMap<String, Word>>> =
-        RefCell::new(AHashMap::new());
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.shards
+            .iter()
+            .map(|s| s.map.read().unwrap().len())
+            .sum()
+    }
 }
 pub type Merges = Vec<(String, String)>;
 
@@ -445,9 +469,18 @@ impl BPE {
 
     /// Resize the cache
     pub fn resize_cache(&mut self, capacity: usize) {
-        if let Some(ref mut cache) = self.cache {
+        if capacity == 0 {
+            self.cache = None;
+        } else if let Some(ref mut cache) = self.cache {
             cache.resize(capacity);
+        } else {
+            self.cache = Some(BpeCache::new(capacity));
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn cache_capacity(&self) -> Option<usize> {
+        self.cache.as_ref().map(|c| c.capacity)
     }
 
     pub fn get_vocab(&self) -> HashMap<String, u32> {
@@ -555,6 +588,19 @@ impl BPE {
             .map(move |(id, offsets)| Token::new(id, self.vocab_r[&id].clone(), offsets))
     }
 
+    fn entries_to_tokens(&self, entries: &[(u32, u32)]) -> Vec<Token> {
+        let mut pos = 0usize;
+        entries
+            .iter()
+            .map(|&(id, len)| {
+                let next_pos = pos + len as usize;
+                let token = Token::new(id, self.vocab_r[&id].clone(), (pos, next_pos));
+                pos = next_pos;
+                token
+            })
+            .collect()
+    }
+
     fn tokenize_with_cache(&self, sequence: &str) -> Result<Vec<Token>> {
         if self.ignore_merges {
             if let Some(id) = self.vocab.get(sequence) {
@@ -570,20 +616,33 @@ impl BPE {
             let word = self.merge_word(sequence)?;
             return Ok(self.word_to_tokens(&word).collect());
         };
-        let cache_id = cache.id();
-        BPE_LOCAL_CACHE.with(|cell| {
-            let mut by_bpe = cell.borrow_mut();
-            let local = by_bpe.entry(cache_id).or_default();
-            if let Some(hit) = local.get(sequence) {
-                return Ok(self.word_to_tokens(hit).collect());
+        let shard_idx = cache.shard_index(sequence);
+        let shard = &cache.shards[shard_idx];
+        if let Ok(map) = shard.map.try_read() {
+            if let Some(hit) = map.get(sequence) {
+                return Ok(self.entries_to_tokens(hit));
             }
-            let word = self.merge_word(sequence)?;
-            let ret: Vec<Token> = self.word_to_tokens(&word).collect();
-            if sequence.len() < MAX_LENGTH && local.len() < cache.capacity {
-                local.insert(sequence.to_owned(), word);
+        }
+        let word = self.merge_word(sequence)?;
+        let ret: Vec<Token> = self.word_to_tokens(&word).collect();
+        if sequence.len() < MAX_LENGTH {
+            let cap = shard_cap(cache.capacity, shard_idx);
+            if cap > 0 {
+                let should_insert = shard
+                    .map
+                    .try_read()
+                    .map(|map| map.len() < cap)
+                    .unwrap_or(false);
+                if should_insert {
+                    if let Ok(mut map) = shard.map.try_write() {
+                        if map.len() < cap && !map.contains_key(sequence) {
+                            map.insert(sequence.into(), word.to_compact());
+                        }
+                    }
+                }
             }
-            Ok(ret)
-        })
+        }
+        Ok(ret)
     }
 }
 
@@ -742,6 +801,123 @@ mod tests {
         assert_eq!(ids_b, vec![0u32, 1, 2, 2, 3], "bpe_b has no merges");
         assert_eq!(ids_a2, ids_a, "bpe_a second call must match first");
         assert_eq!(ids_b2, ids_b, "bpe_b second call must match first");
+    }
+
+    #[test]
+    fn test_cache_bounded_across_threads_and_lifecycle() {
+        use std::sync::Arc;
+
+        let vocab: Vocab = [
+            ("a", 0u32),
+            ("b", 1),
+            ("c", 2),
+            ("d", 3),
+            ("ab", 4),
+            ("cd", 5),
+        ]
+        .iter()
+        .map(|(s, i)| ((*s).into(), *i))
+        .collect();
+        let merges: Merges = vec![("a".into(), "b".into()), ("c".into(), "d".into())];
+
+        let bpe_uncached = BpeBuilder::default()
+            .vocab_and_merges(vocab.clone(), merges.clone())
+            .cache_capacity(0)
+            .build()
+            .unwrap();
+        assert!(bpe_uncached.cache.is_none());
+
+        let cap = 128;
+        let bpe = Arc::new(
+            BpeBuilder::default()
+                .vocab_and_merges(vocab.clone(), merges.clone())
+                .cache_capacity(cap)
+                .build()
+                .unwrap(),
+        );
+
+        let inputs: Vec<String> = (0..500)
+            .map(|i| {
+                let mut s = String::new();
+                for bit in 0..9 {
+                    s.push(if (i >> bit) & 1 == 0 {
+                        if bit % 2 == 0 {
+                            'a'
+                        } else {
+                            'b'
+                        }
+                    } else if bit % 2 == 0 {
+                        'c'
+                    } else {
+                        'd'
+                    });
+                }
+                s
+            })
+            .collect();
+
+        // Expected outputs from uncached path
+        let expected: Vec<Vec<Token>> = inputs
+            .iter()
+            .map(|s| bpe_uncached.tokenize(s).unwrap())
+            .collect();
+
+        let inputs = Arc::new(inputs);
+        let expected = Arc::new(expected);
+
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let bpe = Arc::clone(&bpe);
+                let inputs = Arc::clone(&inputs);
+                let expected = Arc::clone(&expected);
+                std::thread::spawn(move || {
+                    for _ in 0..2 {
+                        for (s, exp) in inputs.iter().zip(expected.iter()) {
+                            assert_eq!(&bpe.tokenize(s).unwrap(), exp);
+                        }
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        let len_after_mt = bpe.cache.as_ref().unwrap().len();
+        assert!(
+            len_after_mt > 0 && len_after_mt <= cap,
+            "cache len {} must be bounded by {}",
+            len_after_mt,
+            cap
+        );
+
+        // clear_cache must immediately empty every shard
+        bpe.clear_cache();
+        assert_eq!(bpe.cache.as_ref().unwrap().len(), 0);
+
+        // Repopulate and test resize_cache shrinking + disabling + re-enabling
+        let mut bpe_mut = Arc::try_unwrap(bpe).unwrap_or_else(|_| panic!("single owner"));
+        for s in inputs.iter() {
+            let _ = bpe_mut.tokenize(s).unwrap();
+        }
+        assert!(bpe_mut.cache.as_ref().unwrap().len() <= cap);
+
+        bpe_mut.resize_cache(32);
+        let len_after_shrink = bpe_mut.cache.as_ref().unwrap().len();
+        assert!(
+            len_after_shrink <= 32,
+            "cache len {} must shrink to <= 32",
+            len_after_shrink
+        );
+
+        bpe_mut.resize_cache(0);
+        assert!(bpe_mut.cache.is_none());
+        assert_eq!(bpe_mut.tokenize(&inputs[0]).unwrap(), expected[0]);
+
+        bpe_mut.resize_cache(64);
+        assert_eq!(bpe_mut.cache.as_ref().unwrap().capacity, 64);
+        assert_eq!(bpe_mut.tokenize(&inputs[0]).unwrap(), expected[0]);
+        assert_eq!(bpe_mut.cache.as_ref().unwrap().len(), 1);
     }
 
     #[test]

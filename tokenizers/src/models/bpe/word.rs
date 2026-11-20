@@ -266,6 +266,10 @@ impl Word {
             offset
         })
     }
+
+    pub(super) fn to_compact(&self) -> Box<[(u32, u32)]> {
+        self.symbols.iter().map(|s| (s.c, s.len as u32)).collect()
+    }
 }
 
 #[cfg(test)]
