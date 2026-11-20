@@ -1,6 +1,6 @@
 [package]
 name = "tk-train"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.6.dev.0"
 edition = "2024"
 authors = [
   "Arthur Zucker <arthur@huggingface.co>",
@@ -21,7 +21,7 @@ name = "tk_train"
 path = "src/lib.rs"
 
 [dependencies]
-tk-encode = { path = "../tk-encode", version = "0.1.0-dev.2", default-features = false, features = [
+tk-encode = { path = "../tk-encode", version = "0.1.0-rc.6.dev.0", default-features = false, features = [
   "parallelism",
 ] }
 serde = { version = "1.0", features = ["derive"] }
