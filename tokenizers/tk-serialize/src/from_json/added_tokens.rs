@@ -36,6 +36,7 @@ pub(super) fn read_added_tokens(cfg: Option<&Json<'_>>) -> Result<Vec<BucketAdde
         token.rstrip = entry.need(&owner, "rstrip", Json::as_bool)?;
         token.normalized = entry.need(&owner, "normalized", Json::as_bool)?;
         token.special = entry.need(&owner, "special", Json::as_bool)?;
+        token.control = entry.need(&owner, "control", Json::as_bool)?;
         out.push(token);
     }
     Ok(out)

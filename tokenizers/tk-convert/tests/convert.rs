@@ -597,3 +597,30 @@ fn keeps_role_to_token() {
     canonicalize_value(&mut v).unwrap();
     assert_eq!(v["role_to_token"], serde_json::json!({"bos_token": "<s>"}));
 }
+
+#[test]
+fn fills_a_missing_control_and_keeps_a_declared_one() {
+    let v = done(
+        UNIGRAM,
+        r#", "added_tokens": [{"id": 0, "content": "<a>"},
+                              {"id": 1, "content": "<b>", "control": true}]"#,
+    );
+    assert_eq!(v["added_tokens"][0]["control"], false);
+    assert_eq!(v["added_tokens"][1]["control"], true);
+}
+
+#[test]
+fn refuses_added_tokens_that_are_not_an_array_of_objects() {
+    // The reader takes anything but an array as "no added tokens", and would drop them silently.
+    let mut not_an_array = config(UNIGRAM, r#", "added_tokens": {}"#);
+    assert!(matches!(
+        canonicalize_value(&mut not_an_array).unwrap_err(),
+        ConvertError::AddedTokensNotArray { .. }
+    ));
+    // An added token needs its `content` and `id` keys, which only an object has.
+    let mut not_an_object = config(UNIGRAM, r#", "added_tokens": ["<a>"]"#);
+    assert!(matches!(
+        canonicalize_value(&mut not_an_object).unwrap_err(),
+        ConvertError::AddedTokenNotObject { .. }
+    ));
+}
