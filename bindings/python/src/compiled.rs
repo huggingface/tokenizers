@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{PyBytes, PyDict};
+use pyo3::types::PyDict;
 use tk::PaddingParams;
 use tk::TruncationParams;
 use tk::pipeline;
@@ -11,7 +11,7 @@ use tk::pipeline::Input;
 use tk::pipeline::Inputs;
 use tk::pipeline::Token;
 use tk::pipeline::Tokenizer;
-use tk::{from_json, to_json};
+use tk::to_json;
 
 use crate::added_token::AddedToken;
 use crate::encoding::Encoding;
@@ -26,8 +26,7 @@ use crate::type_hints::TokenIds;
 /// ids back into text.
 ///
 /// A compiled tokenizer is immutable and can be shared across threads.
-/// Pickling serializes to the JSON config, and unpickling compiles the CompiledTokenizer
-/// again from that JSON config.
+/// It cannot be pickled: send the `Tokenizer` to a worker process and call `compile()` there.
 #[pyclass(frozen, dict, module = "tokenizers")]
 pub struct CompiledTokenizer {
     pipeline: Tokenizer,
@@ -350,32 +349,6 @@ impl CompiledTokenizer {
     /// Returns `self`: a compiled tokenizer cannot be changed, so a copy would be identical.
     fn __deepcopy__<'py>(slf: Bound<'py, Self>, _memo: &Bound<'py, PyDict>) -> Bound<'py, Self> {
         slf
-    }
-
-    /// Pickle rebuilds a `CompiledTokenizer` by calling `_unpickle` with these arguments.
-    ///
-    /// The pickle holds the whole `tokenizer.json`, written from the built tokenizer, and unpickling
-    /// compiles it again.
-    fn __reduce__<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> PyResult<(Bound<'py, PyAny>, (Bound<'py, PyBytes>,))> {
-        // py.detach releases the GIL while the Rust code runs.
-        let json = py.detach(|| to_json(&self.pipeline)).map_err(err)?;
-        // Bytes, not str, for the same reason as `Tokenizer.__reduce__`.
-        let json = PyBytes::new(py, json.as_bytes());
-        Ok((py.get_type::<Self>().getattr("_unpickle")?, (json,)))
-    }
-
-    #[staticmethod]
-    fn _unpickle(py: Python<'_>, json: &[u8]) -> PyResult<Self> {
-        let json = std::str::from_utf8(json).map_err(err)?;
-        // py.detach releases the GIL while the Rust code runs.
-        let pipeline = py.detach(|| from_json(json)).map_err(err)?;
-        Ok(Self {
-            pipeline,
-            added_tokens: PyOnceLock::new(),
-        })
     }
 
     fn __repr__(&self, py: Python<'_>) -> PyResult<String> {

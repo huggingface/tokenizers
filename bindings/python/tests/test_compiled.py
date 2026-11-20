@@ -27,14 +27,10 @@ def test_copy(gpt2):
     assert copy.deepcopy(gpt2) is gpt2
 
 
-def test_pickle(gpt2_spec):
-    gpt2_spec.padding = Padding(length=12, pad_id=EOT)
-    compiled = gpt2_spec.compile()
-
-    restored = pickle.loads(pickle.dumps(compiled))
-
-    assert restored.encode(TEXT) == compiled.encode(TEXT)
-    assert len(restored.encode(TEXT)) == 12
+# Unpickling would compile again, so a compiled tokenizer has no `__reduce__`.
+def test_refuses_pickle(gpt2):
+    with pytest.raises(TypeError, match="cannot pickle"):
+        pickle.dumps(gpt2)
 
 
 def test_compile_error(tmp_path):

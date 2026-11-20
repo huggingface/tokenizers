@@ -10,8 +10,8 @@ from tokenizers import Padding, Tokenizer, Truncation
 TEXTS = ["Hello there", "General Kenobi", "You are a bold one"]
 
 
-def test_pickle_tokenizer(bert):
-    restored = pickle.loads(pickle.dumps(bert))
+def test_pickle_tokenizer(bert, bert_spec):
+    restored = pickle.loads(pickle.dumps(bert_spec)).compile()
 
     assert [e.ids for e in restored.encode_batch(TEXTS)] == [e.ids for e in bert.encode_batch(TEXTS)]
 
@@ -64,8 +64,8 @@ def test_pickle_truncation():
     assert pickle.loads(pickle.dumps(truncation)) == truncation
 
 
-def _encode_batch(tokenizer, texts):
-    return tokenizer.encode_batch(texts)
+def _compile_and_encode_batch(tokenizer, texts):
+    return tokenizer.compile().encode_batch(texts)
 
 
 def test_multiprocessing(gpt2_spec):
@@ -74,7 +74,7 @@ def test_multiprocessing(gpt2_spec):
     gpt2 = gpt2_spec.compile()
 
     with multiprocessing.get_context("spawn").Pool(1) as pool:
-        encoded = pool.apply(_encode_batch, (gpt2, TEXTS))
+        encoded = pool.apply(_compile_and_encode_batch, (gpt2_spec, TEXTS))
 
     assert [e.ids for e in encoded] == [e.ids for e in gpt2.encode_batch(TEXTS)]
     assert [e.attention_mask for e in encoded] == [e.attention_mask for e in gpt2.encode_batch(TEXTS)]
@@ -101,7 +101,7 @@ def test_fork_encode(gpt2):
 # Regression test for issue 2559
 @fork_only
 @fork_warning
-def test_fork_encode_pickle(gpt2):
+def test_fork_encode_pickle(gpt2, gpt2_spec):
     with multiprocessing.get_context("fork").Pool(4) as pool:
-        encoded = pool.starmap_async(_encode_batch, [(gpt2, TEXTS)] * 4).get(timeout=60)
+        encoded = pool.starmap_async(_compile_and_encode_batch, [(gpt2_spec, TEXTS)] * 4).get(timeout=60)
     assert [[e.ids for e in batch] for batch in encoded] == [[e.ids for e in gpt2.encode_batch(TEXTS)]] * 4
