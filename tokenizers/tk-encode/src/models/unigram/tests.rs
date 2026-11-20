@@ -261,3 +261,29 @@ fn sampling_is_never_cached() {
 
     assert_eq!(scratch.word_cache.lookup(b"abcd").hit(), None);
 }
+
+#[test]
+fn multibyte_prefixes_preserve_best_path_and_unknown_spans() {
+    let vocab = vec![
+        ("<unk>".to_string(), 0.0),
+        ("é".to_string(), -2.0),
+        ("é東".to_string(), -1.0),
+        ("東".to_string(), -2.0),
+        ("🙂".to_string(), -1.0),
+    ];
+    for optimized in [false, true] {
+        let mut model = Unigram::from(vocab.clone(), Some(0), false).unwrap();
+        model.set_optimized(optimized);
+        model.resize_cache(0);
+        let tokens = model.tokenize("é東🙂жé").unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(2, "é東".into(), (0, 5)),
+                Token::new(4, "🙂".into(), (5, 9)),
+                Token::new(0, "ж".into(), (9, 11)),
+                Token::new(1, "é".into(), (11, 13)),
+            ]
+        );
+    }
+}
