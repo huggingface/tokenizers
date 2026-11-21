@@ -653,3 +653,67 @@ fn byte_level_drops_bytes_real_text_can_contain() {
     let want: Vec<u32> = "ab".repeat(64).bytes().map(u32::from).collect();
     assert_eq!(pipeline_ids(&pipeline, &long), want);
 }
+
+#[test]
+fn byte_level_unmerged_multibyte_char_does_not_fold() {
+    let byte_tok =
+        |bs: &[u8]| -> String { bs.iter().map(|&b| BYTES_CHAR_LOOKUP[b as usize]).collect() };
+    let mut vocab: Vocab = (0..=255u8)
+        .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
+        .collect();
+    // 2-byte "é" (C3 A9), 3-byte "朝" (E6 9C 9D), 4-byte "😀" (F0 9F 98 80),
+    // partial 2-byte prefix of "朝" (E6 9C), and fully merged 2-byte "ü" (C3 BC).
+    vocab.extend([
+        (projected("é"), 300),
+        (projected("朝"), 301),
+        (projected("😀"), 302),
+        (byte_tok(&[0xE6, 0x9C]), 303),
+        (projected("ü"), 304),
+    ]);
+    let merges = vec![
+        (byte_tok(&[0xE6]), byte_tok(&[0x9C])),
+        (byte_tok(&[0xC3]), byte_tok(&[0xBC])),
+    ];
+    let model = BPE::from_config(BpeConfig {
+        vocab,
+        merges,
+        byte_level: true,
+        ..Default::default()
+    })
+    .unwrap();
+
+    // Multi-byte UTF-8 characters are 2-4 byte atoms: unmerged entries must not bypass merges.
+    assert_eq!(pipeline_ids(&model, "é"), vec![0xC3, 0xA9]);
+    assert_eq!(pipeline_ids(&model, "朝"), vec![303, 0x9D]);
+    assert_eq!(pipeline_ids(&model, "😀"), vec![0xF0, 0x9F, 0x98, 0x80]);
+    assert_eq!(pipeline_ids(&model, "ü"), vec![304]);
+
+    let proven = model.prove_fold();
+    assert!(!proven[300] && !proven[301] && !proven[302] && !proven[303]);
+    assert!(proven[304]);
+
+    let ignored = byte_level_bpe(&[("é", 300)], &[], true).unwrap();
+    assert_eq!(pipeline_ids(&ignored, "é"), vec![300]);
+}
+
+#[test]
+fn byte_level_prefix_multibyte_char_does_not_fold() {
+    let mut vocab: Vocab = (0..=255u8)
+        .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
+        .collect();
+    vocab.extend([
+        (projected("é"), 300),
+        (format!("##{}", BYTES_CHAR_LOOKUP[0xA9]), 301),
+    ]);
+    let model = BPE::from_config(BpeConfig {
+        vocab,
+        merges: vec![],
+        continuing_subword_prefix: Some("##".into()),
+        byte_level: true,
+        ..Default::default()
+    })
+    .unwrap();
+
+    assert!(!model.prove_fold()[300]);
+    assert_eq!(pipeline_ids(&model, "é"), vec![0xC3, 301]);
+}
