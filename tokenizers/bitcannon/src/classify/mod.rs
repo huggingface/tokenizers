@@ -12,17 +12,11 @@ mod wasm;
 
 use atom_tables::ATOM_TABLES;
 
-/// The per-codepoint "atom" categories or "tags" that are used by the finite state machine to emit
-/// spit boundaries.
+/// Per-codepoint tags used by the pre-tokenizers to find split boundaries.
 ///
-/// Proper tags are obtained by composing `(refine << 4) | coarse`: the **low nibble** is this `Atom` (the coarse class every FSM
-/// shares) and the **high nibble** is an optional *refinement* that sub-splits one coarse class for a
-/// pattern that needs finer granularity — e.g. o200k needs case, so `Letter` refines to `Atom::UpperLetter`
-/// (`\p{Lu}∪\p{Lt}`) / `Atom::LowerLetter` (`\p{Ll}`) / plain `Letter` (caseless `\p{Lm}\p{Lo}`). The classifier stays
-/// agnostic (it just emits the table byte); a coarse consumer collapses the refinement for free —
-/// [`in_mask`] masks it off, and the SIMD class path `& 0x0F`s before its 16-entry LUT — so only the FSM
-/// that opted in (o200k) ever sees the high nibble. Ceiling: ≤16 coarse, ≤15 refinements
-/// per class; a >16-coarse scheme would swap the 16-entry LUT for a 256-entry `tbl256` remap.
+/// Class-run masks read the low nibble with [`in_mask`]. Regex models use
+/// the full tag in a 64-entry lookup table, which also encodes distinctions
+/// such as letter case, Script=Han, and onig's category for BERT punctuation.
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[non_exhaustive]
@@ -53,6 +47,11 @@ pub enum Atom {
     // `\p{Ll}` → 0x20, caseless `\p{Lm}\p{Lo}` → 0x00.
     UpperLetter = 0x10,
     LowerLetter = 0x20,
+    // Tokenizers 0.23 uses unicode_categories for BERT punctuation. These
+    // low nibbles encode PUNCT and WORD membership. regex_lut keeps onig's category.
+    BertPunctMark = 0x17,
+    BertPunctSymbol = 0x18,
+    RegexPunct = 0x1A,
     /// Script=Han, refinement 3 of whichever coarse class it lands in. Han is orthogonal to the
     /// general category, including letters, numbers, symbols, marks and punctuation,
     /// so it needs one refinement per coarse class it touches. Nothing else uses high nibble 3, which is what lets kimi's
@@ -62,6 +61,18 @@ pub enum Atom {
     HanMark = 0x36,
     HanPunct = 0x38,
     HanSym = 0x3A,
+    HanRegexPunct = 0x3D, // Han, outside the class-run PUNCT and WORD masks.
+}
+
+/// Expand a regex model's compile-time LUT using the onig categories of the
+/// tags that distinguish BERT punctuation.
+pub(crate) const fn regex_lut(mut lut: [u8; 64]) -> [u8; 64] {
+    use Atom::*;
+    lut[BertPunctMark as usize] = lut[Mark as usize];
+    lut[BertPunctSymbol as usize] = lut[SymOther as usize];
+    lut[RegexPunct as usize] = lut[Punct as usize];
+    lut[HanRegexPunct as usize] = lut[HanPunct as usize];
+    lut
 }
 
 impl Atom {

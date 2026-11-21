@@ -38,8 +38,8 @@ unsafe impl pipeline::PreTokenize for Punctuation {
         scratch: &mut PreTokenizerScratch,
         out: &mut Vec<pipeline::Span>,
     ) -> Result<()> {
-        // atom `PUNCT` == `is_punc` (ASCII-punct ∪ \p{P}), so Isolated/Removed map to the class-runs FSM
-        // byte-exactly. The merge/contiguous behaviors aren't a class-runs shape → keep the scalar split.
+        // PUNCT carries the same ASCII and unicode_categories punctuation as is_punc.
+        // The merge and contiguous behaviors use the scalar delimiter splitter.
         if matches!(self.behavior, Isolated | Removed) {
             scratch.split_on_bits(
                 text.as_bytes(),
@@ -123,6 +123,25 @@ mod tests {
                 ("-countdown", (10, 20)),
             ],
         );
+    }
+
+    #[test]
+    fn unicode_punctuation_matches_split_delimiter() {
+        use crate::pipeline::PreTokenize;
+
+        let mut scratch = PreTokenizerScratch::default();
+        for start in (0..=char::MAX as u32).step_by(256) {
+            let text: String = (start..start + 256).filter_map(char::from_u32).collect();
+            for behavior in [Isolated, Removed] {
+                let mut expected = Vec::new();
+                pipeline::split_delimiter(&text, &mut expected, is_punc, behavior);
+                let mut actual = Vec::new();
+                Punctuation::new(behavior)
+                    .pre_tokenize(&text, &mut scratch, &mut actual)
+                    .unwrap();
+                assert_eq!(actual, expected, "{behavior:?} at U+{start:04X}");
+            }
+        }
     }
 
     #[test]

@@ -26,7 +26,8 @@ const EDGE: &str = "IT'S O'Brien can't 'quoted' l'été rock'n'roll\r\n\
      https://host/a/b?c=1&d=2 path/to//file /\r\n/ ///x \
      CamelCase XMLHttpRequest ĲSSELMEER ǅAMBO ŀl a\u{0301}b \
      日本語1234テスト ½3¼ \u{2168}42\u{2169} #tag @user $9.99 100% \
-     end\n\n\nlines\r\n\r\n  \t  trailing   ";
+     end\n\n\nlines\r\n\r\n  \t  trailing   \
+     a\u{061D}b a\u{166D}b a\u{111C9}b 中\u{16FE2}中";
 
 /// Code points new in Unicode 17, which onig (Unicode 16) still classifies as `\p{Cn}` (unassigned category):
 /// one per general category they were assigned, each against a space, a letter, a digit and punctuation
@@ -442,9 +443,13 @@ fn classifier_matches_onig_categories() {
         // kimi's `[\p{Han}]+`
         (r"\p{Han}", |t| t & 0xF0 == 0x30),
         (r"\p{N}", |t| matches!(t & 0x0F, 1 | 2)), // NumWord | NumOther
-        (r"\p{M}", |t| t == Mark as u8 || t == HanMark as u8),
+        (r"\p{M}", |t| {
+            t == Mark as u8 || t == HanMark as u8 || t == BertPunctMark as u8
+        }),
         (r"[\p{P}\p{S}]", |t| {
-            t == AlphaSymMark as u8 || matches!(t & 0x0F, 7..=10) // Connector..=SymOther
+            t == AlphaSymMark as u8
+                || t == HanRegexPunct as u8
+                || (matches!(t & 0x0F, 7..=10) && t != BertPunctMark as u8)
         }),
         (r"\s", |t| matches!(t & 0x0F, 3..=5)), // Newline | Space | WsOther
     ];

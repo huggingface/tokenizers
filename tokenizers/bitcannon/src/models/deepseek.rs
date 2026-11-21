@@ -32,7 +32,7 @@ pub(crate) const LUT: [u8; 64] = {
     t[0x04] = 4;
     t[0x05] = 5; // Newline | Space | WsOther
     t[0x0F] = CODE_CONT;
-    t
+    crate::classify::regex_lut(t)
 };
 
 streams!(

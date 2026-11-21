@@ -4,10 +4,11 @@
 //! fast3 / bmp_rle / astral)
 use std::collections::HashMap;
 use std::fmt::Write as _;
+use unicode_categories::UnicodeCategories;
 
 /// Onig, the regex engine of tokenizers 0.23, with one compiled [`onig::Regex`] per Unicode property.
 ///
-/// The tables read every property from onig, so they keep its Unicode version (16).
+/// Regex-driven pre-tokenizers use onig's Unicode properties (version 16).
 #[derive(Default)]
 struct Onig(HashMap<&'static str, onig::Regex>);
 
@@ -93,6 +94,17 @@ fn atom(c: char, onig: &mut Onig) -> u8 {
         return if han { 0x3A } else { 10 }; // non-ASCII \p{S}
     }
     12 // control ∪ unassigned
+}
+
+// Preserve the 0.23 BERT punctuation predicate alongside the regex models' onig tag.
+fn with_bert_punctuation(tag: u8, c: char) -> u8 {
+    match (tag, c.is_ascii_punctuation() || c.is_punctuation()) {
+        (6, true) => 0x17,     // U+111C9 is an onig mark: in both WORD and BERT PUNCT.
+        (10, true) => 0x18,    // U+166D is an onig symbol.
+        (8, false) => 0x1A,    // Punctuation added after unicode_categories.
+        (0x38, false) => 0x3D, // Script=Han punctuation added after unicode_categories.
+        _ => tag,
+    }
 }
 
 // extracts the codepoint encoded by `bytes`. It removes the UTF-8 headers
@@ -350,7 +362,7 @@ pub fn generate_atom_tables() -> String {
     // Classify the code space once: `generate_tables` asks about every code point several times.
     let mut onig = Onig::default();
     let tags: Vec<u8> = (0..=0x10FFFFu32)
-        .map(|cp| char::from_u32(cp).map_or(10, |c| atom(c, &mut onig)))
+        .map(|cp| char::from_u32(cp).map_or(10, |c| with_bert_punctuation(atom(c, &mut onig), c)))
         .collect();
     generate_tables("ATOM_TABLES", "atom", &|cp| tags[cp as usize])
 }
