@@ -206,6 +206,7 @@ version = "0.1.0"
 dependencies = [
  "onig",
  "onig_sys",
+ "unicode_categories",
 ]
 
 [[package]]

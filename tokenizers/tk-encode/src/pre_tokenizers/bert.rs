@@ -96,6 +96,16 @@ mod tests {
     #[test]
     fn multibyte_offsets() {
         assert_eq!(
+            pretokenize("a\u{61D}b \u{166D}x\u{111C9}\u{16FE2}z"),
+            vec![
+                ("a\u{61D}b", (0, 4)),
+                ("\u{166D}", (5, 8)),
+                ("x", (8, 9)),
+                ("\u{111C9}", (9, 13)),
+                ("\u{16FE2}z", (13, 18)),
+            ],
+        );
+        assert_eq!(
             pretokenize("café résumé"),
             vec![("café", (0, 5)), ("résumé", (6, 14))],
         );

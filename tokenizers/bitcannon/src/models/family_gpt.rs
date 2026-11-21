@@ -28,7 +28,7 @@ pub(crate) const LUT: [u8; 64] = {
     t[0x3A] = 2; // Han \p{S} — "other", like every other symbol
     t[0x09] = 6; // Apostrophe
     t[0x0F] = CODE_CONT;
-    t
+    crate::classify::regex_lut(t)
 };
 
 streams!(
