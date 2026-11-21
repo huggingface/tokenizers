@@ -203,7 +203,7 @@ fn build<M>(
     )?;
     let model = lower(concrete)?;
 
-    Ok(Tokenizer::from_parts(
+    let tokenizer = Tokenizer::from_parts(
         added_vocabulary,
         normalizers,
         pre_tokenizer,
@@ -213,7 +213,9 @@ fn build<M>(
         read_role_to_token(doc.field("role_to_token"))?,
         read_padding(doc.field("padding"))?,
         read_truncation(doc.field("truncation"))?,
-    ))
+    );
+    tokenizer.validate_byte_map()?;
+    Ok(tokenizer)
 }
 
 /// `{"eos_token": "</s>", ...}`. Absent or `null` means the config declares no roles.

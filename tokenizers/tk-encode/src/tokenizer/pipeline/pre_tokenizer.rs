@@ -210,33 +210,42 @@ impl PreTokenizer {
         scratch: &mut PreTokenizerScratch,
         spans: &'a mut Vec<Span>,
     ) -> Result<PreTokens<'a>> {
-        // A [`Span`] holds `u32` offsets, which cannot address a longer text.
-        if text.len() > u32::MAX as usize {
-            return Err(format!(
-                "sequence too long to pre-tokenize: {} bytes after normalization, the limit is {}",
-                text.len(),
-                u32::MAX
-            )
-            .into());
-        }
-        spans.clear();
-        self.pre_tokenize(text, scratch, spans)?;
-
-        #[cfg(debug_assertions)]
-        for span in spans.iter() {
-            let range = span.range();
-            debug_assert!(
-                range.start <= range.end
-                    && text.is_char_boundary(range.start)
-                    && text.is_char_boundary(range.end),
-                "{self:?} broke the PreTokenize contract: emitted {span:?} for {text:?}",
-            );
-        }
-
-        // SAFETY: `spans` was empty before the call and `text` fits in `u32` offsets, so
-        // `PreTokenize` guarantees every span in it is a valid range of `text`.
-        Ok(unsafe { PreTokens::new_unchecked(text, spans) })
+        pre_tokens(self, text, scratch, spans)
     }
+}
+
+pub(crate) fn pre_tokens<'a>(
+    pre_tokenizer: &(impl PreTokenize + std::fmt::Debug + ?Sized),
+    text: &'a str,
+    scratch: &mut PreTokenizerScratch,
+    spans: &'a mut Vec<Span>,
+) -> Result<PreTokens<'a>> {
+    // A [`Span`] holds `u32` offsets, which cannot address a longer text.
+    if text.len() > u32::MAX as usize {
+        return Err(format!(
+            "sequence too long to pre-tokenize: {} bytes after normalization, the limit is {}",
+            text.len(),
+            u32::MAX
+        )
+        .into());
+    }
+    spans.clear();
+    pre_tokenizer.pre_tokenize(text, scratch, spans)?;
+
+    #[cfg(debug_assertions)]
+    for span in spans.iter() {
+        let range = span.range();
+        debug_assert!(
+            range.start <= range.end
+                && text.is_char_boundary(range.start)
+                && text.is_char_boundary(range.end),
+            "{pre_tokenizer:?} broke the PreTokenize contract: emitted {span:?} for {text:?}",
+        );
+    }
+
+    // SAFETY: `spans` was empty before the call and `text` fits in `u32` offsets, so
+    // `PreTokenize` guarantees every span in it is a valid range of `text`.
+    Ok(unsafe { PreTokens::new_unchecked(text, spans) })
 }
 
 unsafe impl PreTokenize for PreTokenizer {

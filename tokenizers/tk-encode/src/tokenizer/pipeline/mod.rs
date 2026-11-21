@@ -17,6 +17,7 @@ use crate::{
     models::bpe::{BPE, BpeScratch},
     pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
+    pre_tokenizers::sequence::Sequence,
     tokenizer::Decode as _,
     vocab::bucket_added_vocabulary::AddedVocabulary as BucketAddedVocabulary,
 };
@@ -41,7 +42,7 @@ mod pre_tokenizer;
 pub use normalizer::{Normalize, Normalizer, NormalizerChain, normalize_all};
 pub use post_processor::{PostProcessor, Template};
 pub use pre_tokenizer::{PreTokenize, PreTokenizer, PreTokenizerScratch, PreTokens};
-pub(crate) use pre_tokenizer::{split_delimiter, split_matches};
+pub(crate) use pre_tokenizer::{pre_tokens, split_delimiter, split_matches};
 
 /// An output token. Carries only the vocabulary `id`, since offsets and the token
 /// string are dropped, which is all an encode-only caller needs.
@@ -567,6 +568,24 @@ impl Tokenizer {
         &self.inner.pre_tokenizer
     }
 
+    /// Check that a sequence's byte map feeds a BPE model that consumes characters.
+    pub fn validate_byte_map(&self) -> Result<()> {
+        self.byte_mapped_sequence().map(|_| ())
+    }
+
+    fn byte_mapped_sequence(&self) -> Result<Option<&Sequence>> {
+        let PreTokenizer::Sequence(sequence) = &self.inner.pre_tokenizer else {
+            return Ok(None);
+        };
+        if sequence.byte_map_index().is_none() {
+            return Ok(None);
+        }
+        if !matches!(&self.inner.model, Model::BPE(model) if !model.is_byte_level()) {
+            return Err("a ByteMap Sequence requires a BPE model with byte_level: false".into());
+        }
+        Ok(Some(sequence))
+    }
+
     pub fn get_post_processor(&self) -> &PostProcessor {
         &self.inner.post_processor
     }
@@ -762,6 +781,7 @@ impl Tokenizer {
         scratch: &mut EncodeScratch,
         output: &mut Vec<Token>,
     ) -> Result<()> {
+        let byte_mapped_sequence = self.byte_mapped_sequence()?;
         // First, we extract all special tokens from the non-normalized input
         for segment in SpecialSegmentIterator::new(
             input,
@@ -802,6 +822,21 @@ impl Tokenizer {
                                     pre_tokens,
                                     split: pre_tokenizer_scratch,
                                 } = &mut *scratch;
+                                if let Some(sequence) = byte_mapped_sequence {
+                                    sequence.with_mapped_pre_tokens(
+                                        normalized_chunk,
+                                        pre_tokenizer_scratch,
+                                        pre_tokens,
+                                        |pre_tokens| {
+                                            self.inner.model.tokenize_spans(
+                                                pre_tokens,
+                                                model_scratch,
+                                                output,
+                                            )
+                                        },
+                                    )?;
+                                    continue;
+                                }
                                 let pre_tokens = self.inner.pre_tokenizer.pre_tokens(
                                     normalized_chunk,
                                     pre_tokenizer_scratch,

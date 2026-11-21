@@ -68,8 +68,13 @@ There is no `ByteLevel` pre-tokenizer either. Byte-level describes how the vocab
 so it is `"byte_level"` on the model; the split it used to imply is a plain `Split` on the GPT-2
 regex, or nothing at all where it said `use_regex: false`.
 
-tk-convert rewrites a legacy `Metaspace` into that pair, and a legacy `ByteLevel` into the model
-flag plus that `Split`. Spelling it out beats folding it back: the
+When a legacy `ByteLevel` is followed by other members of a pre-tokenizer `Sequence`, the
+canonical sequence contains a `{"type":"ByteMap"}` at the point where the GPT-2 byte map runs.
+Each later member splits the mapped text. A sequence can contain one nonterminal `ByteMap`,
+and its BPE model uses `"byte_level": false` because it receives the mapped characters.
+
+tk-convert rewrites a legacy `Metaspace` into that pair and a terminal `ByteLevel` into the
+model flag plus that `Split`. Spelling it out beats folding it back: the
 legacy tag could not say `drop_whitespace` without a wrapping `WhitespaceSplit`, could not sit
 beside a byte-level model, and forced the normalizer to be last in the chain so a writer could find
 it.
