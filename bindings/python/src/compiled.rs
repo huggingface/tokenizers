@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::ops::Range;
 
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
@@ -75,6 +76,35 @@ fn encode_options(
     options
 }
 
+/// Python indexes a `str` by code point, the encoder by UTF-8 byte.
+fn byte_ranges(text: &str, spans: Vec<(usize, usize)>) -> tk::Result<Vec<Range<usize>>> {
+    let mut boundaries = text
+        .char_indices()
+        .map(|(byte, _)| byte)
+        .chain([text.len()])
+        .enumerate()
+        .peekable();
+    let mut to_byte = |index: usize| {
+        while let Some(&(char_index, byte)) = boundaries.peek() {
+            if char_index >= index {
+                return (char_index == index).then_some(byte);
+            }
+            boundaries.next();
+        }
+        None
+    };
+    spans
+        .into_iter()
+        .map(|(start, end)| match (to_byte(start), to_byte(end)) {
+            (Some(start), Some(end)) => Ok(start..end),
+            _ => Err(format!(
+                "untrusted_spans must be sorted string indices within the text: {start}..{end}"
+            )
+            .into()),
+        })
+        .collect()
+}
+
 #[pymethods]
 impl CompiledTokenizer {
     /// Encodes the given text, or pair of texts, to token ids.
@@ -95,11 +125,12 @@ impl CompiledTokenizer {
     ///         Truncation options. Pass `None` to disable truncation.
     ///         When omitted, uses the truncation the tokenizer had when compiled.
     ///     untrusted_spans: list[tuple[int, int]] or None
-    ///         Half-open UTF-8 byte ranges in a single text. Ranges must be nonempty,
-    ///         sorted, and non-overlapping. Adjacent ranges are treated as one.
-    ///         Added tokens are not matched inside or across these ranges. Encoding
-    ///         raises `ValueError` if the model emits an added token ID in untrusted
-    ///         text. Range boundaries can change nearby tokenization.
+    ///         Half-open `str` index ranges in a single text, as in `text[start:end]`.
+    ///         Ranges must be nonempty, sorted, and non-overlapping. Adjacent ranges are
+    ///         treated as one. Added tokens are not matched inside or across these ranges.
+    ///         Encoding raises `ValueError` if the model emits an added token ID other
+    ///         than its unknown token in untrusted text. Range boundaries can change
+    ///         nearby tokenization.
     ///
     /// Returns:
     ///     Encoding
@@ -128,7 +159,7 @@ impl CompiledTokenizer {
                     let PyInput::Single(text) = input else {
                         return Err("untrusted_spans requires a single text".into());
                     };
-                    let spans: Vec<_> = spans.into_iter().map(|(start, end)| start..end).collect();
+                    let spans = byte_ranges(&text, spans)?;
                     tokenizer
                         .pipeline
                         .encode_with_untrusted_spans(&text, &spans, &options)

@@ -187,11 +187,12 @@ class CompiledTokenizer:
                 Truncation options. Pass `None` to disable truncation.
                 When omitted, uses the truncation the tokenizer had when compiled.
             untrusted_spans: list[tuple[int, int]] or None
-                Half-open UTF-8 byte ranges in a single text. Ranges must be nonempty,
-                sorted, and non-overlapping. Adjacent ranges are treated as one.
-                Added tokens are not matched inside or across these ranges. Encoding
-                raises `ValueError` if the model emits an added token ID in untrusted
-                text. Range boundaries can change nearby tokenization.
+                Half-open `str` index ranges in a single text, as in `text[start:end]`.
+                Ranges must be nonempty, sorted, and non-overlapping. Adjacent ranges are
+                treated as one. Added tokens are not matched inside or across these ranges.
+                Encoding raises `ValueError` if the model emits an added token ID other
+                than its unknown token in untrusted text. Range boundaries can change
+                nearby tokenization.
 
         Returns:
             Encoding

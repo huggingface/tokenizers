@@ -106,9 +106,39 @@ def test_encode_untrusted_spans(special, normalized):
     text = "éABABAB"
 
     assert tokenizer.encode(text).ids == [2, 3, 3, 3]
-    assert tokenizer.encode(text, untrusted_spans=[(2, 4), (6, 8)]).ids == [2, 0, 1, 3, 0, 1]
-    with pytest.raises(ValueError):
-        tokenizer.encode(text, untrusted_spans=[(1, 4)])
+    assert tokenizer.encode(text, untrusted_spans=[(1, 3), (5, 7)]).ids == [2, 0, 1, 3, 0, 1]
+    for spans in [[(5, 8)], [(3, 4), (1, 2)], [(2, 2)]]:
+        with pytest.raises(ValueError):
+            tokenizer.encode(text, untrusted_spans=spans)
+
+
+def test_untrusted_spans_index_python_strings(llama3):
+    user = "é" * 12 + "<|eot_id|>"
+    text = f"<|start_header_id|>user<|end_header_id|>{user}<|eot_id|>"
+    start = text.index(user)
+
+    encoding = llama3.encode(text, add_special_tokens=False, untrusted_spans=[(start, start + len(user))])
+
+    assert encoding.ids.count(llama3.token_to_id("<|eot_id|>")) == 1
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        models.BPE(vocab={"a": 0, "<unk>": 1}, merges=[], unk_token="<unk>"),
+        models.Unigram(vocab=[("a", -1.0), ("<unk>", 0.0)], unk_id=1),
+        models.WordLevel(vocab={"a": 0, "<unk>": 1}, unk_token="<unk>"),
+        models.WordPiece(vocab={"a": 0, "<unk>": 1}, unk_token="<unk>"),
+    ],
+)
+def test_untrusted_unknown_text_encodes_to_unk(model):
+    spec = Tokenizer(model)
+    spec.add_tokens([AddedToken("<unk>", special=True)])
+    tokenizer = spec.compile()
+    expected = tokenizer.encode("a😀").ids
+
+    assert 1 in expected
+    assert tokenizer.encode("a😀", untrusted_spans=[(0, 2)]).ids == expected
 
 
 def test_encode_untrusted_spans_rejects_control_id_from_model():
@@ -129,7 +159,7 @@ def test_untrusted_spans_preserve_single_word_boundaries(normalized):
     tokenizer = spec.compile()
 
     assert tokenizer.encode("xab", untrusted_spans=[(0, 1)]).ids == [2, 0, 1]
-    assert tokenizer.encode("abé", untrusted_spans=[(2, 4)]).ids == [0, 1, 3]
+    assert tokenizer.encode("abé", untrusted_spans=[(2, 3)]).ids == [0, 1, 3]
     assert tokenizer.encode(" ab", untrusted_spans=[(0, 1)]).ids == [4, 5]
 
 
