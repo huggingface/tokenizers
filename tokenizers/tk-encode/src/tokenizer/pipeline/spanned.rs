@@ -94,10 +94,15 @@ impl<'text> SpannedEncoder<'text, '_> {
         let token_start = self.output.len();
         self.tokenizer
             .encode_model(&normalized, self.scratch, &mut self.output)?;
+        let unk_id = inner.model.unk_id();
         if let Some(id) = self.output[token_start..]
             .iter()
             .map(|token| token.id())
-            .find(|&id| id >= inner.added_id_min && inner.added_vocabulary.contains_id(id))
+            .find(|&id| {
+                id >= inner.added_id_min
+                    && Some(id) != unk_id
+                    && inner.added_vocabulary.contains_id(id)
+            })
         {
             return Err(format!("model emitted added token ID {id} in untrusted text").into());
         }

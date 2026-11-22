@@ -683,8 +683,9 @@ impl Tokenizer {
     ///
     /// Untrusted text skips raw and normalized added-token matching regardless of
     /// [`EncodeOptions::encode_special_tokens`]. If the model itself produces an
-    /// added token ID in untrusted text, encoding fails. Post-processing, including
-    /// configured special tokens, still applies to the complete sequence.
+    /// added token ID other than its unknown token in untrusted text, encoding
+    /// fails. Post-processing, including configured special tokens, still applies
+    /// to the complete sequence.
     pub fn encode_with_untrusted_spans(
         &self,
         input: &str,
@@ -1156,6 +1157,19 @@ impl Model {
             Self::WordLevel(model) => model.get_vocab_size(),
             #[cfg(feature = "wordpiece")]
             Self::WordPiece(model) => model.get_vocab_size(),
+        }
+    }
+
+    /// The id the model emits for text outside its vocabulary.
+    pub(crate) fn unk_id(&self) -> Option<u32> {
+        match self {
+            Self::BPE(model) => model.unk_id(),
+            #[cfg(feature = "unigram")]
+            Self::Unigram(model) => model.unk_id().map(|id| id as u32),
+            #[cfg(feature = "wordlevel")]
+            Self::WordLevel(model) => model.vocab().get(model.unk_token()).copied(),
+            #[cfg(feature = "wordpiece")]
+            Self::WordPiece(model) => model.unk_token().and_then(|token| model.token_to_id(token)),
         }
     }
 }
