@@ -113,9 +113,10 @@ def test_encode_untrusted_spans(special, normalized):
 
 
 def test_untrusted_spans_index_python_strings(llama3):
+    prefix = "<|start_header_id|>user<|end_header_id|>"
     user = "é" * 12 + "<|eot_id|>"
-    text = f"<|start_header_id|>user<|end_header_id|>{user}<|eot_id|>"
-    start = text.index(user)
+    text = f"{prefix}{user}<|eot_id|>"
+    start = len(prefix)
 
     encoding = llama3.encode(text, add_special_tokens=False, untrusted_spans=[(start, start + len(user))])
 
