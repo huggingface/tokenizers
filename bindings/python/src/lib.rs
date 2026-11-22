@@ -6,6 +6,7 @@ mod added_tokens_spec;
 mod compiled;
 mod components;
 mod decode_stream;
+mod dlpack;
 mod encoding;
 mod error;
 mod input;
@@ -29,6 +30,8 @@ mod tokenizers {
     use crate::compiled::CompiledTokenizer;
     #[pymodule_export]
     use crate::components::Component;
+    #[pymodule_export]
+    use crate::dlpack::DLPackExporter;
     #[pymodule_export]
     use crate::encoding::Encoding;
     #[pymodule_export]

@@ -214,7 +214,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
-      # Also downloads a tokenizer from the Hub through `from_pretrained`; the token avoids rate limits.
+      # Also downloads a tokenizer from the Hub through `fromPretrained`; the token avoids rate limits.
       - name: Install the tarball and run it under Node
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}

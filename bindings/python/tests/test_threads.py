@@ -4,8 +4,6 @@ import threading
 
 import pytest
 
-from conftest import GPT2
-
 
 def test_concurrent_encode(gpt2):
     texts = [f"Sentence number {n}. " * (n % 17 + 1) for n in range(300)]
@@ -24,21 +22,6 @@ def test_concurrent_encode(gpt2):
 
     assert len(results) == 40
     assert all(run == expected for run in results)
-
-
-def test_read_array_while_decoding_it(gpt2):
-    encoding = gpt2.encode(GPT2.read_text()[:4000])
-    ids = encoding.ids_array
-
-    def decode():
-        for _ in range(100):
-            gpt2.decode(ids)
-
-    decoder = threading.Thread(target=decode)
-    decoder.start()
-    while decoder.is_alive():
-        encoding.ids_array
-    decoder.join()
 
 
 # `sys._is_gil_enabled` exists on every build from 3.13 on, so only the config var tells the two apart.

@@ -7,27 +7,15 @@
   <a href="https://badge.fury.io/js/tokenizers">
     <img alt="Build" src="https://badge.fury.io/js/tokenizers.svg">
   </a>
-  <a href="https://github.com/huggingface/tokenizers/blob/master/LICENSE">
+  <a href="https://github.com/huggingface/tokenizers/blob/main/LICENSE">
     <img alt="GitHub" src="https://img.shields.io/github/license/huggingface/tokenizers.svg?color=blue">
   </a>
 </p>
 <br>
 
-NodeJS implementation of today's most used tokenizers, with a focus on performance and
-versatility. Bindings over the [Rust](https://github.com/huggingface/tokenizers/tree/master/tokenizers) implementation.
-If you are interested in the High-level design, you can go check it there.
-
-## Main features
-
-- Train new vocabularies and tokenize using 4 pre-made tokenizers (Bert WordPiece and the 3
-  most common BPE versions).
-- Extremely fast (both training and tokenization), thanks to the Rust implementation. Takes
-  less than 20 seconds to tokenize a GB of text on a server's CPU.
-- Easy to use, but also extremely versatile.
-- Designed for research and production.
-- Normalization comes with alignments tracking. It's always possible to get the part of the
-  original sentence that corresponds to a given token.
-- Does all the pre-processing: Truncate, Pad, add the special tokens your model needs.
+Node.js bindings over the Rust [`tokenizers`](https://github.com/huggingface/tokenizers/tree/main/tokenizers) library.
+They load a `tokenizer.json`, encode text into token ids and decode ids back into text. They do not build, edit, save or
+train tokenizers.
 
 ## Installation
 
@@ -35,24 +23,28 @@ If you are interested in the High-level design, you can go check it there.
 npm install tokenizers@latest
 ```
 
-## Basic example
+## Usage
 
 ```ts
 import { Tokenizer } from 'tokenizers'
 
-const tokenizer = await Tokenizer.fromFile('tokenizer.json')
-const wpEncoded = await tokenizer.encode('Who is John?')
+const tokenizer = Tokenizer.fromFile('tokenizer.json')
 
-console.log(wpEncoded.getLength())
-console.log(wpEncoded.getTokens())
-console.log(wpEncoded.getIds())
-console.log(wpEncoded.getAttentionMask())
-console.log(wpEncoded.getOffsets())
-console.log(wpEncoded.getOverflowing())
-console.log(wpEncoded.getSpecialTokensMask())
-console.log(wpEncoded.getTypeIds())
-console.log(wpEncoded.getWordIds())
+const encoding = tokenizer.encode('Who is John?')
+console.log(encoding.ids) // Uint32Array of token ids
+console.log(encoding.typeIds) // 0 for the first text of a pair, 1 for the second
+console.log(encoding.attentionMask) // 1 for each token, 0 for each padding token
+
+console.log(tokenizer.tokenize('Who is John?')) // the token of each id
+console.log(tokenizer.decode(encoding.ids)) // back to text
+
+// A pair of texts, and a batch mixing texts and pairs.
+const pair = tokenizer.encode(['Who is John?', 'John is a friend.'])
+const batch = tokenizer.encodeBatch(['Who is John?', ['Who is John?', 'John is a friend.']], { padding: {} })
 ```
+
+Every encode method takes the same options: `addSpecialTokens`, `encodeSpecialTokens`, `padding` and `truncation`. The
+[Node documentation](https://huggingface.co/docs/tokenizers/node) describes them.
 
 ## License
 

@@ -32,15 +32,12 @@ encoding.ids             # [101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102]
 encoding.type_ids        # [0, 0, 0, 0, 0, 0, 0, 0, 0]
 encoding.attention_mask  # [1, 1, 1, 1, 1, 1, 1, 1, 1]
 
-# The same fields as numpy arrays. Each read returns a *new copy* that the caller owns.
-encoding.ids_array             # array([101, 7592, 2045, 1010, 2129, 2024, 2017, 1029, 102], dtype=uint32)
-encoding.type_ids_array        # array([0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=uint32)
-encoding.attention_mask_array  # array([1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=uint32)
-torch.from_numpy(encoding.ids_array)  # no-copy translation
+# The same fields for array libraries, through DLPack. Each read is an `int64` copy.
+torch.tensor(encoding.ids_dlpack)   # tensor([101, 7592, ...]), torch 2.6 or later
+np.from_dlpack(encoding.attention_mask_dlpack)  # array([1, 1, ...])
 
 compiled.encode("Hello", add_special_tokens=False).ids  # no [CLS]/[SEP]
 compiled.decode(encoding.ids)                           # "hello there, how are you?"
-compiled.decode(encoding.ids_array)                     # a numpy array works too
 compiled.decode(encoding.ids, skip_special_tokens=False)
 
 # Pad one call. `length=None` pads each batch to its longest item.

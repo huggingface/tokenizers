@@ -261,6 +261,29 @@ fn fuse_unk_applies_to_models_with_affixes() {
 }
 
 #[test]
+fn end_of_word_suffix_applies_to_single_char_words() {
+    let pipeline = BPE::from_config(BpeConfig {
+        vocab: v(&[
+            ("a", 0),
+            ("b", 1),
+            ("a</w>", 2),
+            ("b</w>", 3),
+            ("##b</w>", 4),
+            ("ab</w>", 5),
+        ]),
+        merges: m(&[("a", "##b</w>")]),
+        continuing_subword_prefix: Some("##".into()),
+        end_of_word_suffix: Some("</w>".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    // a one-character word is both the first and the last character, so it takes the suffix
+    assert_eq!(pipeline_ids(&pipeline, "a"), vec![2]);
+    assert_eq!(pipeline_ids(&pipeline, "b"), vec![3]);
+    assert_eq!(pipeline_ids(&pipeline, "ab"), vec![5]);
+}
+
+#[test]
 fn rejects_unsupported_configs() {
     let build = |options: BpeConfig| {
         BPE::from_config(BpeConfig {
@@ -533,6 +556,39 @@ fn byte_level_ignore_merges_whole_word() {
         pipeline_ids(&pipeline, "zz"),
         vec![u32::from(b'z'), u32::from(b'z')]
     );
+}
+
+#[test]
+fn byte_level_end_of_word_suffix_decorates_the_last_byte() {
+    // "é" is C3 A9, spelled "Ã©" in the projected alphabet
+    let (c3, a9) = (BYTES_CHAR_LOOKUP[0xC3], BYTES_CHAR_LOOKUP[0xA9]);
+    let mut vocab: Vocab = (0..=255u8)
+        .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
+        .collect();
+    vocab.extend([
+        ("x</w>".to_string(), 256),
+        (format!("{a9}</w>"), 257),
+        (format!("{c3}{a9}"), 258),
+        (format!("{a9}x</w>"), 259),
+    ]);
+    let pipeline = BPE::from_config(BpeConfig {
+        vocab,
+        merges: vec![
+            (a9.to_string(), "x</w>".to_string()),
+            (c3.to_string(), a9.to_string()),
+        ],
+        end_of_word_suffix: Some("</w>".into()),
+        byte_level: true,
+        ..Default::default()
+    })
+    .unwrap();
+    // the suffix goes on the last byte of "é", not on the whole character
+    assert_eq!(
+        pipeline_ids(&pipeline, "xé"),
+        vec![u32::from(b'x'), 0xC3, 257]
+    );
+    // merging starts from bytes even though "é" is in the vocab, so (©, x</w>) wins over (Ã, ©)
+    assert_eq!(pipeline_ids(&pipeline, "éx"), vec![0xC3, 259]);
 }
 
 #[test]

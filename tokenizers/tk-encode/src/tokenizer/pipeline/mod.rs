@@ -105,7 +105,7 @@ pub trait PatternMatcher {
     /// Returns `None` if there are no added tokens left in `input`.
     fn extract_next(
         &self,
-        full_input: &[u8],
+        full_input: &str,
         search_offset: usize,
         normalized: bool,
         encode_special_tokens: bool,
@@ -182,7 +182,7 @@ impl<'a, 'b, M: PatternMatcher> Iterator for SpecialSegmentIterator<'a, 'b, M> {
             return None;
         }
         if let Some(((start, end), token)) = self.pattern_matcher.extract_next(
-            self.input.as_bytes(),
+            self.input,
             self.offset,
             self.normalized,
             self.encode_special_tokens,
@@ -954,15 +954,18 @@ impl Tokenizer {
         // Byte-level tokens average ~4 bytes
         let mut out: Vec<u8> = Vec::with_capacity(ids.len() * 4);
         for &id in ids {
-            if id >= self.inner.added_id_min
-                && let Some((bytes, flags)) = self.inner.added_vocabulary.id_to_token_bytes(id)
-            {
-                if !skip_special_tokens || !flags.special {
-                    out.extend_from_slice(bytes);
-                }
+            // Fetch added token metadata
+            let added = if id >= self.inner.added_id_min {
+                self.inner.added_vocabulary.id_to_token_bytes(id)
+            } else {
+                None
+            };
+            if skip_special_tokens && added.is_some_and(|(_, flags)| flags.special) {
                 continue;
             }
-            if let Some(bytes) = bpe.id_to_token_bytes(id) {
+            // Prefer the model vocab's bytes over the added token bytes
+            let bytes = bpe.id_to_token_bytes(id).or(added.map(|(bytes, _)| bytes));
+            if let Some(bytes) = bytes {
                 out.extend_from_slice(bytes);
             }
         }
@@ -1258,7 +1261,7 @@ mod tests {
     impl PatternMatcher for FixedMatcher {
         fn extract_next(
             &self,
-            _bytes: &[u8],
+            _input: &str,
             search_offset: usize,
             _normalized: bool,
             _encode_special_tokens: bool,

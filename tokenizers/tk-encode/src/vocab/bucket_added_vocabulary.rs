@@ -46,15 +46,9 @@ pub(crate) struct WordNeighbors {
     pub(crate) after: Option<char>,
 }
 
-fn is_single_word(
-    bytes: &[u8],
-    match_start: usize,
-    match_end: usize,
-    neighbors: WordNeighbors,
-) -> bool {
+fn is_single_word(s: &str, match_start: usize, match_end: usize, neighbors: WordNeighbors) -> bool {
     // FIXME: we use chr conversion for now, this can be inproved by using bitmap.
     // This is the equivalent of `\w`, so its letters, numbers and underscore
-    let s = unsafe { std::str::from_utf8_unchecked(bytes) };
     let before_ok = s[..match_start]
         .chars()
         .next_back()
@@ -71,12 +65,10 @@ fn is_single_word(
     before_ok && after_ok
 }
 
-fn skip_whitespace_backward(bytes: &[u8], match_start: usize) -> usize {
-    let s = unsafe { std::str::from_utf8_unchecked(bytes) };
+fn skip_whitespace_backward(s: &str, match_start: usize) -> usize {
     s[..match_start].trim_end_matches(|c| is_ws(c as u32)).len()
 }
-fn skip_whitespace_forward(bytes: &[u8], match_start: usize) -> usize {
-    let s = unsafe { std::str::from_utf8_unchecked(bytes) };
+fn skip_whitespace_forward(s: &str, match_start: usize) -> usize {
     s.len()
         - s[match_start..]
             .trim_start_matches(|c| is_ws(c as u32))
@@ -458,12 +450,13 @@ impl AddedVocabulary {
     #[inline]
     fn extract_next_with_neighbors(
         &self,
-        bytes: &[u8],
+        input: &str,
         search_offset: usize,
         normalized: bool,
         encode_special_tokens: bool,
         neighbors: WordNeighbors,
     ) -> Option<((usize, usize), u32)> {
+        let bytes = input.as_bytes();
         let vocab = self.matcher(normalized);
         let mut search = search_offset;
         while search < bytes.len() {
@@ -481,16 +474,15 @@ impl AddedVocabulary {
             }
             // single_word: reject unless the token is a standalone word (neither neighbour
             // char is a word char). Checked on the raw byte bounds, before any strip.
-            if metadata.single_word && !is_single_word(bytes, match_start, match_end, neighbors) {
+            if metadata.single_word && !is_single_word(input, match_start, match_end, neighbors) {
                 search = match_start + 1;
                 continue;
             }
             if metadata.lstrip {
-                match_start =
-                    skip_whitespace_backward(&bytes[..match_end], match_start).max(search_offset)
+                match_start = skip_whitespace_backward(input, match_start).max(search_offset)
             }
             if metadata.rstrip {
-                match_end = skip_whitespace_forward(bytes, match_end)
+                match_end = skip_whitespace_forward(input, match_end)
             }
             return Some(((match_start, match_end), self.ids.vocab_id(internal_id)));
         }
@@ -501,13 +493,13 @@ impl AddedVocabulary {
 impl PatternMatcher for AddedVocabulary {
     fn extract_next(
         &self,
-        bytes: &[u8],
+        input: &str,
         search_offset: usize,
         normalized: bool,
         encode_special_tokens: bool,
     ) -> Option<((usize, usize), u32)> {
         self.extract_next_with_neighbors(
-            bytes,
+            input,
             search_offset,
             normalized,
             encode_special_tokens,
@@ -524,13 +516,13 @@ struct ContextualMatcher<'a> {
 impl PatternMatcher for ContextualMatcher<'_> {
     fn extract_next(
         &self,
-        bytes: &[u8],
+        input: &str,
         search_offset: usize,
         normalized: bool,
         encode_special_tokens: bool,
     ) -> Option<((usize, usize), u32)> {
         self.vocabulary.extract_next_with_neighbors(
-            bytes,
+            input,
             search_offset,
             normalized,
             encode_special_tokens,
@@ -613,7 +605,7 @@ mod tests {
         assert!(vocab.id_to_token_bytes(5).unwrap().1.special);
         assert!(!vocab.id_to_token_bytes(200_001).unwrap().1.special);
 
-        let text = b"say hello<|end|>";
+        let text = "say hello<|end|>";
         assert_eq!(
             vocab.extract_next(text, 0, false, false),
             Some(((9, 16), 200_000))
@@ -649,7 +641,7 @@ mod tests {
     #[test]
     fn changing_normalized_keeps_the_vocab_id() {
         let mut vocab = sparse_vocabulary();
-        let text = b"say hello<|end|>";
+        let text = "say hello<|end|>";
         let model = ModelMock::new(&[]);
         vocab
             .add_tokens(
@@ -664,7 +656,7 @@ mod tests {
             Some(((4, 9), 200_001))
         );
         assert_eq!(
-            vocab.extract_next(b"<|end|>", 0, true, false),
+            vocab.extract_next("<|end|>", 0, true, false),
             Some(((0, 7), 200_000))
         );
         assert_eq!(vocab.extract_next(text, 0, false, false), None);
