@@ -1160,7 +1160,6 @@ impl Model {
         }
     }
 
-    /// The id the model emits for text outside its vocabulary.
     pub(crate) fn unk_id(&self) -> Option<u32> {
         match self {
             Self::BPE(model) => model.unk_id(),

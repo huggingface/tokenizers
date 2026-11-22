@@ -76,8 +76,10 @@ fn encode_options(
     options
 }
 
-/// Python indexes a `str` by code point, the encoder by UTF-8 byte.
-fn byte_ranges(text: &str, spans: Vec<(usize, usize)>) -> tk::Result<Vec<Range<usize>>> {
+fn char_ranges_to_byte_ranges(
+    text: &str,
+    spans: Vec<(usize, usize)>,
+) -> tk::Result<Vec<Range<usize>>> {
     let mut boundaries = text
         .char_indices()
         .map(|(byte, _)| byte)
@@ -124,13 +126,13 @@ impl CompiledTokenizer {
     ///     truncation: `Truncation` or `None`
     ///         Truncation options. Pass `None` to disable truncation.
     ///         When omitted, uses the truncation the tokenizer had when compiled.
-    ///     untrusted_spans: list[tuple[int, int]] or None
-    ///         Half-open `str` index ranges in a single text, as in `text[start:end]`.
-    ///         Ranges must be nonempty, sorted, and non-overlapping. Adjacent ranges are
-    ///         treated as one. Added tokens are not matched inside or across these ranges.
-    ///         Encoding raises `ValueError` if the model emits an added token ID other
-    ///         than its unknown token in untrusted text. Range boundaries can change
-    ///         nearby tokenization.
+    ///     untrusted_spans: Sequence[tuple[int, int]] or None
+    ///         Half-open `str` index ranges `(start, end)` in a single text, with
+    ///         `0 <= start < end <= len(text)`. Ranges must be sorted and non-overlapping.
+    ///         Adjacent ranges are treated as one. Added tokens are not matched inside or
+    ///         across these ranges. Encoding raises `ValueError` if the model emits an added
+    ///         token ID other than its unknown token in untrusted text. Range boundaries can
+    ///         change nearby tokenization.
     ///
     /// Returns:
     ///     Encoding
@@ -159,7 +161,7 @@ impl CompiledTokenizer {
                     let PyInput::Single(text) = input else {
                         return Err("untrusted_spans requires a single text".into());
                     };
-                    let spans = byte_ranges(&text, spans)?;
+                    let spans = char_ranges_to_byte_ranges(&text, spans)?;
                     tokenizer
                         .pipeline
                         .encode_with_untrusted_spans(&text, &spans, &options)
