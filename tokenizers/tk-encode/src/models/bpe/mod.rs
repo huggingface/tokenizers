@@ -2,6 +2,7 @@
 use ahash::AHashMap;
 
 mod convert;
+mod encode;
 mod fold;
 mod merge_hot_cold_queue;
 mod merge_multipass;
@@ -76,5 +77,6 @@ impl<T: Copy> At for [T] {
 }
 
 // Re-export
+pub use encode::BpeScratch;
 pub use model::*;
 pub use serialization::BpeConfig;
