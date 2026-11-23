@@ -89,6 +89,7 @@
 /// - `module` names the `#[pymodule]`, and `python_module` is its path in Python.
 /// - `tokenizer_field` names the field of `TokenizerSpec` that stores the normalizer.
 /// - `items_key` is the JSON key that holds the items of a normalizer `Sequence`.
+///   Leave it out if the kind has no `Sequence` class.
 ///
 /// The classes are then in scope where the macro is called.
 macro_rules! component_module {
@@ -96,9 +97,31 @@ macro_rules! component_module {
         kind: $kind:ident,
         module: $module:ident,
         python_module: $python_module:literal,
-        tokenizer_field: $tokenizer_field:ident,
-        items_key: $items_key:literal
+        tokenizer_field: $tokenizer_field:ident
+        $(, items_key: $items_key:literal)?
         $(, also_exports: [$($export:path),* $(,)?])? $(,)?
+    } $($definitions:tt)*) => {
+        // The `Sequence` class becomes an optional identifier, which the rule below can repeat on.
+        $crate::components::macros::component_module! {
+            @module {
+                kind: $kind,
+                module: $module,
+                python_module: $python_module,
+                tokenizer_field: $tokenizer_field,
+                sequence: [$($items_key => Sequence)?],
+                also_exports: [$($($export),*)?],
+            } $($definitions)*
+        }
+    };
+    (@items_key) => { None };
+    (@items_key $items_key:literal) => { Some($items_key) };
+    (@module {
+        kind: $kind:ident,
+        module: $module:ident,
+        python_module: $python_module:literal,
+        tokenizer_field: $tokenizer_field:ident,
+        sequence: [$($items_key:literal => $sequence:ident)?],
+        also_exports: [$($export:path),*],
     } $(
         $(#[doc = $doc:literal])+
         $class:ident $({
@@ -110,21 +133,22 @@ macro_rules! component_module {
             use pyo3::prelude::*;
 
             use $crate::components::component_spec::ComponentSpec;
-            use $crate::components::macros::field_types::{arg, choice_json, choice_name, value};
+            use $crate::components::macros::field_types::{arg, value};
             use $crate::components::{ComponentKind, JsonFieldsExt};
 
             $crate::components::macros::component_kind! {
                 kind: $kind,
                 python_module: $python_module,
                 tokenizer_field: $tokenizer_field,
-                items_key: Some($items_key),
-                classes: { "Sequence" => Sequence, $(stringify!($class) => $class),* },
+                items_key: $crate::components::macros::component_module!(@items_key $($items_key)?),
+                classes: { $(stringify!($sequence) => $sequence,)? $(stringify!($class) => $class),* },
             }
 
-            $crate::components::macros::sequence_class! {
+            $($crate::components::macros::sequence_class! {
                 kind: $kind,
+                class: $sequence,
                 python_module: $python_module,
-            }
+            })?
 
             $(
                 $(#[doc = $doc])+
@@ -141,7 +165,7 @@ macro_rules! component_module {
                         #[new]
                         #[pyo3(signature = ($($($key $(= $default)?),*)?))]
                         fn new($($($key: arg::$field_type),*)?) -> PyResult<PyClassInitializer<Self>> {
-                            $($($(let $key = choice_json(stringify!($key), $key, $choices)?;)?)*)?
+                            $($($(let $key = $crate::components::macros::field_types::choice_json(stringify!($key), $key, $choices)?;)?)*)?
                             let spec = ComponentSpec::from_literal(serde_json::json!({
                                 "type": stringify!($class),
                                 $($(stringify!($key): $key,)*)?
@@ -159,13 +183,13 @@ macro_rules! component_module {
                                     return Ok(default.into());
                                 })?
                                 let value = slf.field(stringify!($key))?;
-                                $(let value = choice_name(stringify!($key), value, $choices)?;)?
+                                $(let value = $crate::components::macros::field_types::choice_name(stringify!($key), value, $choices)?;)?
                                 Ok(value)
                             }
 
                             #[setter]
                             fn [<set_ $key>](slf: &Bound<'_, Self>, $key: arg::$field_type) -> PyResult<()> {
-                                $(let $key = choice_json(stringify!($key), $key, $choices)?;)?
+                                $(let $key = $crate::components::macros::field_types::choice_json(stringify!($key), $key, $choices)?;)?
                                 slf.set_field(stringify!($key), $key);
                                 Ok(())
                             }
@@ -175,16 +199,16 @@ macro_rules! component_module {
             )*
         }
 
-        pub use classes::{$kind, Sequence, $($class),*};
+        pub use classes::{$kind, $($sequence,)? $($class),*};
 
         #[::pyo3::pymodule]
         pub mod $module {
             #[pymodule_export]
-            use super::{$kind, Sequence, $($class),*};
-            $($(
+            use super::{$kind, $($sequence,)? $($class),*};
+            $(
                 #[pymodule_export]
                 use $export;
-            )*)?
+            )*
         }
     };
 }
