@@ -559,8 +559,8 @@ impl<'a> CachedIds<'a> {
 
     /// Copies the ids to `dst` and returns how many they are.
     ///
-    /// Ids from [`WordCache::spilled_buffer`] are copied [`MAX_CACHED_IDS`] at a time, the word's
-    /// own and what follows them: a copy of one size is a few moves, with no branch on the
+    /// Ids from [`WordCache::spilled_buffer`] are copied [`MAX_CACHED_IDS`] at a time: the word's
+    /// own, then what follows them. A copy of one size is a few moves, with no branch on the
     /// number of ids.
     ///
     /// # Safety
