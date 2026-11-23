@@ -290,14 +290,15 @@ fn ignore_merges_prefers_whole_word() {
     assert_eq!(pipeline_ids(&pipeline, "helo"), vec![5, 3]);
 }
 
-// A word longer than 16 bytes skips the vocabulary, because merging gives the same ids. With
-// `ignore_merges` that is not true of every token: here no merge builds the 20-byte one, so the
-// word has to fold to it. Twenty `l`s that are no token still go through the merges.
+// With `ignore_merges`, a word over 16 bytes still folds to a token that no merge builds.
+// Eight such tokens, each to be found in the list. Twenty `l`s are no token and get merged.
 #[test]
-fn ignore_merges_folds_a_long_token_that_merging_does_not_give() {
-    let long = "hellohellohellohello";
+fn ignore_merges_folds_the_long_tokens_that_merging_does_not_give() {
+    let long: Vec<String> = (4..12).map(|n| "hello".repeat(n)).collect();
     let mut vocab = v(HELLO_VOCAB);
-    vocab.insert(long.into(), 8);
+    for (id, token) in (8..).zip(&long) {
+        vocab.insert(token.clone(), id);
+    }
     let pipeline = BPE::from_config(BpeConfig {
         vocab,
         merges: m(HELLO_MERGES),
@@ -305,7 +306,9 @@ fn ignore_merges_folds_a_long_token_that_merging_does_not_give() {
         ..Default::default()
     })
     .unwrap();
-    assert_eq!(pipeline_ids(&pipeline, long), vec![8]);
+    for (id, token) in (8..).zip(&long) {
+        assert_eq!(pipeline_ids(&pipeline, token), vec![id], "{token}");
+    }
     assert_eq!(pipeline_ids(&pipeline, &"l".repeat(20)), vec![2; 20]);
 }
 

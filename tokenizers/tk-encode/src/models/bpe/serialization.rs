@@ -2,6 +2,7 @@
 
 use super::model::{Atoms, BPE, build_byte_to_gate};
 use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
+use crate::models::bpe::long_folds::LongFolds;
 use crate::models::bpe::tables::{BpeTables, NO_SYMBOL};
 use crate::models::bpe::{Error, MergeMap, Merges, Pair, Vocab};
 use crate::tokenizer::Result;
@@ -324,7 +325,7 @@ impl BPE {
             cache_capacity,
             vocab,
             byte_to_gate: build_byte_to_gate(),
-            long_folds: Box::default(),
+            long_folds: LongFolds::default(),
         };
         // Every entry carries a foldable bit, so the encode path is one probe and one bit test
         // with no policy left in it. The policy is decided here, once: a config that declares
@@ -338,7 +339,7 @@ impl BPE {
         // fold never changes the ids. With it, every token folds, and the long ones that merging
         // does not reproduce still have to.
         if ignore_merges {
-            built.long_folds = built.long_folds(&merged);
+            built.long_folds = LongFolds::new(&built.vocab, &merged);
         }
         let proven = if ignore_merges {
             vec![true; built.vocab.id_space()]

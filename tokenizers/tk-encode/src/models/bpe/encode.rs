@@ -53,9 +53,7 @@ impl BPE {
     fn fold_id(&self, word: &[u8], signature: Signature) -> Option<u32> {
         // 99% of tokens fit a signature, and a word that does not is rarely a token. Merging it
         // gives the same ids, without hashing all of its bytes for a probe that misses.
-        if signature.len > Signature::BYTES
-            && self.long_folds.binary_search(&signature.hash).is_err()
-        {
+        if signature.len > Signature::BYTES && !self.long_folds.may_hold(signature) {
             return None;
         }
         // One probe; the foldable bit is part of the id that probe already returned. Which entries

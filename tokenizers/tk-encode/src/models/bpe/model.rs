@@ -6,11 +6,11 @@ use std::collections::HashMap;
 
 use crate::models::bpe::At;
 use crate::models::bpe::convert::Affixes;
+use crate::models::bpe::long_folds::LongFolds;
 use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_with_queue};
 use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
 use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, char_to_byte};
-use crate::utils::signature::Signature;
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
 const GATE_MULTI: u16 = 8;
@@ -50,10 +50,7 @@ pub struct BPE {
     pub(super) affixes: Option<Affixes>,
     pub(super) vocab: BucketVocabStore,
     pub(super) byte_to_gate: [u16; 256],
-    /// The [`Signature::hash`] of every token longer than a [`Signature`] holds whole that is not
-    /// what merging its own text gives, sorted. Only a word with one of these hashes needs the
-    /// vocabulary: every other long word skips the fold. Empty for most models.
-    pub(super) long_folds: Box<[u64]>,
+    pub(super) long_folds: LongFolds,
     /// Slots for the per-scratch word cache, from the config. `None` disables it.
     pub(super) cache_capacity: Option<usize>,
 }
@@ -154,26 +151,6 @@ impl BPE {
             proven[id as usize] = foldable;
         }
         proven
-    }
-
-    /// The sorted [`Signature::hash`] of every token longer than a [`Signature`] holds whole,
-    /// that a word can equal, and that is not what merging its own text gives. `merged` is
-    /// [`Self::prove_fold`]'s answer.
-    pub(super) fn long_folds(&self, merged: &[bool]) -> Box<[u64]> {
-        let mut hashes: Vec<u64> = Vec::new();
-        for id in 0..self.vocab.id_space() as u32 {
-            let Some(bytes) = self.vocab.id_to_token_bytes(id) else {
-                continue;
-            };
-            if bytes.len() > Signature::BYTES
-                && std::str::from_utf8(bytes).is_ok()
-                && !merged[id as usize]
-            {
-                hashes.push(Signature::new(bytes).hash);
-            }
-        }
-        hashes.sort_unstable();
-        hashes.into_boxed_slice()
     }
 
     /// Converts a word to symbols and merges it. The gate, indexed by the word's first *content*

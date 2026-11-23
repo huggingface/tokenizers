@@ -4,6 +4,7 @@ use ahash::AHashMap;
 mod convert;
 mod encode;
 mod fold;
+mod long_folds;
 mod merge_hot_cold_queue;
 mod merge_multipass;
 mod model;
