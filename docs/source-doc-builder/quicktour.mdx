@@ -109,6 +109,15 @@ The order in which you write the special tokens list matters: here `"[UNK]"` wil
 
 </Tip>
 
+<Tip warning={true}>
+
+If you plan to publish the resulting `tokenizer.json` and trained on proprietary or
+sensitive data, keep in mind that rare corpus-specific subwords can be memorized in the
+vocabulary and merge rules, which enables membership inference against the published
+artifact. Setting `min_frequency` to a non-zero value (e.g., `>= 64`) prunes rare tokens and mitigates this risk. See [USENIX Security 2026](https://www.usenix.org/system/files/usenixsecurity26-tong.pdf) for details.
+
+</Tip>
+
 We could train our tokenizer right now, but it wouldn't be optimal.
 Without a pre-tokenizer that will split our inputs into words, we might
 get tokens that overlap several words: for instance we could get an
