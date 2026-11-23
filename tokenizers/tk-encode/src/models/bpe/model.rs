@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 
 use crate::models::bpe::At;
+use crate::models::bpe::backtrack::Backtracking;
 use crate::models::bpe::convert::Affixes;
 use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_with_queue};
 use crate::models::bpe::merge_multipass::merge_multipass;
@@ -59,6 +60,8 @@ pub struct BPE {
     pub(super) byte_to_gate: [u16; 256],
     /// Slots for the per-scratch word cache, from the config. `None` disables it.
     pub(super) cache_capacity: Option<usize>,
+    /// Encode words that are not vocabulary entries by backtracking instead of merging.
+    pub(super) backtracking: Option<Backtracking>,
 }
 
 // A `BPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
@@ -192,12 +195,33 @@ impl BPE {
             merge_multipass(&self.tables, symbols, first_merge);
         }
     }
+
+    /// Encodes a word that did not fold, appending its external ids to `output`.
+    fn encode_word(
+        &self,
+        sequence: &str,
+        symbols: &mut Vec<u32>,
+        queue_scratch: &mut QueueScratch,
+        output: &mut Vec<Token>,
+    ) -> Result<()> {
+        if let Some(backtracking) = &self.backtracking {
+            return backtracking.encode(sequence.as_bytes(), output, symbols);
+        }
+        self.merge_word(sequence, symbols, queue_scratch);
+        // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
+        output.extend(
+            symbols
+                .iter()
+                .map(|&symbol| Token::from(self.tables.unmap.at(symbol as usize))),
+        );
+        Ok(())
+    }
 }
 
 /// Per-thread scratch for BPE. Every buffer here is cleared, never reallocated, so tokenizing a
 /// sequence does not allocate.
 pub struct BpeScratch {
-    /// Symbols of the word being merged.
+    /// Symbols of the word being merged, or with backtracking, the word's dead-end bitset.
     pub(crate) symbols: Vec<u32>,
     /// Entry arena and the two queue tiers.
     pub(crate) queue: QueueScratch,
@@ -253,13 +277,7 @@ impl pipeline::Tokenize for BPE {
         }
 
         let start = output.len();
-        self.merge_word(sequence, symbols, queue);
-        // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
-        output.extend(
-            symbols
-                .iter()
-                .map(|&symbol| Token::from(self.tables.unmap.at(symbol as usize))),
-        );
+        self.encode_word(sequence, symbols, queue, output)?;
         if let Some(cache) = word_cache.as_mut()
             && let Some(at) = insert_at
         {
@@ -385,13 +403,7 @@ impl pipeline::Tokenize for BPE {
             // SAFETY: `cursor` counts what the fast paths wrote.
             unsafe { output.set_len(cursor) };
             let start = output.len();
-            self.merge_word(sequence, symbols, queue);
-            // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
-            output.extend(
-                symbols
-                    .iter()
-                    .map(|&symbol| Token::from(self.tables.unmap.at(symbol as usize))),
-            );
+            self.encode_word(sequence, symbols, queue, output)?;
             if let Some(cache) = cache_slot.as_deref_mut()
                 && let Some(at) = placement
             {

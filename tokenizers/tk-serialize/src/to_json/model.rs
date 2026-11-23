@@ -18,6 +18,9 @@ pub(super) fn write_model(out: &mut Out, model: &Model) -> Result<()> {
             out.field_bool("fuse_unk", config.fuse_unk);
             out.field_bool("byte_fallback", config.byte_fallback);
             out.field_bool("ignore_merges", config.ignore_merges);
+            if config.backtracking {
+                out.field_bool("backtracking", true);
+            }
             // Byte-level is a property of the vocabulary encoding, so it is stated on the model.
             // A `ByteLevel` pre-tokenizer used to be the only place it lived, which is why the
             // reader had to work out where that tag sat in a `Sequence`.

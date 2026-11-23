@@ -1,5 +1,6 @@
 //! The different functions used to go from the serialized json vocab / merges to building the BPE.
 
+use super::backtrack::Backtracking;
 use super::model::{Atoms, BPE, build_byte_to_gate};
 use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
 use crate::models::bpe::tables::{BpeTables, NO_SYMBOL};
@@ -45,6 +46,9 @@ pub struct BpeConfig {
     /// Slots in the per-scratch word cache; `0` turns caching off. Defaults to
     /// [`DEFAULT_CACHE_CAPACITY`](crate::models::bpe::DEFAULT_CACHE_CAPACITY).
     pub cache_capacity: usize,
+    /// Encode by backtracking with token ids as ranks, instead of applying `merges`. Needs a
+    /// byte-level vocabulary with ids exactly `0..n`, a token for every byte and no affixes.
+    pub backtracking: bool,
 }
 
 impl Default for BpeConfig {
@@ -61,6 +65,7 @@ impl Default for BpeConfig {
             ignore_merges: false,
             dropout: None,
             cache_capacity: DEFAULT_CACHE_CAPACITY,
+            backtracking: false,
         }
     }
 }
@@ -137,6 +142,7 @@ impl BPE {
             ignore_merges: self.vocab.all_foldable(),
             dropout: None,
             cache_capacity: self.cache_capacity.unwrap_or(0),
+            backtracking: self.backtracking.is_some(),
         })
     }
 
@@ -203,6 +209,7 @@ impl BPE {
             dropout,
             cache_capacity,
             byte_level,
+            backtracking,
             ..
         } = config;
         if matches!(&dropout, Some(dropout) if *dropout > 0.0) {
@@ -317,6 +324,11 @@ impl BPE {
             suffix: convert_byte_level(&suffix),
             to_internal: external_to_internal.into_boxed_slice(),
         });
+        let backtracking = if backtracking {
+            Some(build_backtracking(&atoms, affixes.as_ref(), &vocab)?)
+        } else {
+            None
+        };
         let mut built = Self {
             atoms,
             tables,
@@ -324,6 +336,7 @@ impl BPE {
             cache_capacity,
             vocab,
             byte_to_gate: build_byte_to_gate(),
+            backtracking,
         };
         // Every entry carries a foldable bit, so the encode path is one probe and one bit test
         // with no policy left in it. The policy is decided here, once: a config that declares
@@ -332,7 +345,7 @@ impl BPE {
         //
         // Two phases because the proof runs the merge engine, which borrows `built`: work out the
         // answers first, then set the bit on each entry that earned it.
-        let proven = if ignore_merges {
+        let proven = if ignore_merges || built.backtracking.is_some() {
             vec![true; built.vocab.id_space()]
         } else {
             built.prove_fold()
@@ -344,4 +357,36 @@ impl BPE {
         }
         Ok(built)
     }
+}
+
+/// The backtracking engine over a byte-level vocabulary, whose ids are its ranks.
+fn build_backtracking(
+    atoms: &Atoms,
+    affixes: Option<&Affixes>,
+    vocab: &BucketVocabStore,
+) -> Result<Backtracking> {
+    if !matches!(atoms, Atoms::Bytes) {
+        return Err("backtracking BPE needs a byte-level vocabulary".into());
+    }
+    if affixes.is_some() {
+        return Err("backtracking BPE does not support subword affixes".into());
+    }
+    let len = vocab.id_space();
+    let tokens = (0..len as u32)
+        .map(|id| vocab.id_to_token_bytes(id))
+        .collect::<Option<Vec<&[u8]>>>()
+        .filter(|tokens| tokens.len() == vocab.len())
+        .ok_or("backtracking BPE needs vocabulary ids that are exactly 0..n")?;
+    let missing: Vec<u8> = VALID_UTF8_BYTES
+        .into_iter()
+        .flatten()
+        .filter(|&byte| vocab.get_bytes(&[byte]).is_none())
+        .collect();
+    if !missing.is_empty() {
+        return Err(format!(
+            "backtracking BPE needs a token for every byte, missing {missing:02X?}"
+        )
+        .into());
+    }
+    Ok(Backtracking::new(&tokens))
 }

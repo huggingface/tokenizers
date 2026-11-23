@@ -57,6 +57,10 @@ pub(super) fn read_bpe(cfg: &Json<'_>) -> Result<(Vocab, Merges, BpeConfig)> {
         .field("ignore_merges")
         .and_then(Json::as_bool)
         .unwrap_or_default();
+    options.backtracking = cfg
+        .field("backtracking")
+        .and_then(Json::as_bool)
+        .unwrap_or_default();
     options.byte_level = byte_level;
     Ok((vocab, merges, options))
 }

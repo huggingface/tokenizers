@@ -1,6 +1,7 @@
 //! [Byte Pair Encoding](https://www.aclweb.org/anthology/P16-1162/) model.
 use ahash::AHashMap;
 
+mod backtrack;
 mod convert;
 mod fold;
 mod merge_hot_cold_queue;
