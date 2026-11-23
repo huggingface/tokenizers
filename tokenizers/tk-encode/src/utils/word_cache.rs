@@ -173,14 +173,28 @@ impl<'a> WordCache {
     pub fn lookup_with_signature(&'a self, word: &[u8], signature: Signature) -> Lookup<'a> {
         let home = self.home(signature);
         let tag = tag_of(signature);
-        // The scan below stops at the first empty slot, so an empty home slot is a miss already.
-        // On text the cache has not seen, that is most lookups.
-        if self.quick_lookup[home] == Self::EMPTY {
+        // The home slot answers most lookups on its own, and a caller that prefetched it or
+        // just read it has it at hand. The scan below costs a load from the tags and a walk.
+        let slot = &self.cached_words[home];
+        if slot.is_vacant() {
+            // The scan stops at the first empty slot, so this is where it would end.
             return Lookup::Miss(InsertPlacement {
                 index: home,
                 signature,
                 tag,
             });
+        }
+        if slot.has_signature(signature) {
+            if slot.is_stale(self.spilled_generation) {
+                return Lookup::Miss(InsertPlacement {
+                    index: home,
+                    signature,
+                    tag,
+                });
+            }
+            if self.holds_uncovered(slot, word) {
+                return Lookup::Hit(self.get_cached_ids(slot));
+            }
         }
         let tag_window = self.tag_window(home);
         let (candidates, first_empty) = tag_window.find_matches_and_first_empty(tag);
@@ -225,8 +239,9 @@ impl<'a> WordCache {
             signature,
             tag,
         } = placement;
-        // A slot has 24 bits for the word's length, so a longer word is not cached.
-        if signature.len > WordCacheSlot::MAX_WORD_BYTES {
+        // A slot has 24 bits for the word's length, so a longer word is not cached. Nor is the
+        // empty word: with no ids, its slot would be all zeros, which is a vacant slot.
+        if signature.len == 0 || signature.len > WordCacheSlot::MAX_WORD_BYTES {
             return;
         }
         let uncovered = Signature::uncovered(word);
@@ -442,6 +457,13 @@ impl WordCacheSlot {
         self.head == signature.head
             && self.tail == signature.tail
             && u64::from(self.meta) & !Self::INLINE_IDS == (signature.len as u64) << 8
+    }
+
+    /// Whether no insert wrote this slot since the table was created or cleared: it is all zeros,
+    /// which [`WordCache::insert`] never writes.
+    #[inline(always)]
+    fn is_vacant(&self) -> bool {
+        self.head == 0 && self.tail == 0 && self.meta == 0
     }
 
     #[inline(always)]
