@@ -521,9 +521,12 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
     let replacement = if is_byte_level(pretok) {
         Some(split_for(pretok))
     } else if component_type(pretok) == Some("Sequence") {
-        let members = pretok
+        let mut members = pretok
             .get_mut("pretokenizers")
             .and_then(Value::as_array_mut);
+        if let Some(members) = members.as_deref_mut() {
+            move_byte_level_past_digit_splits(members);
+        }
         match members {
             Some(members) if members.last().is_some_and(is_byte_level) => {
                 let bl = members.pop().expect("checked by `last`");
@@ -578,6 +581,43 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
 
 fn adds_prefix_space(byte_level: &Value) -> bool {
     byte_level.get("add_prefix_space").and_then(Value::as_bool) == Some(true)
+}
+
+/// Moves a `ByteLevel` to the end of `members` when every member after it is a `[0-9]` split.
+///
+/// The byte map keeps ASCII digits as they are and turns no other byte into one.
+/// A `[0-9]` split therefore cuts in the same places before and after the map.
+fn move_byte_level_past_digit_splits(members: &mut Vec<Value>) {
+    let Some(at) = members
+        .iter()
+        .position(|m| component_type(m) == Some("ByteLevel"))
+    else {
+        return;
+    };
+    let byte_level = &members[at];
+    // The GPT-2 regex looks past the end of a match (`\s+(?!\S)`), so an earlier cut moves its cuts.
+    // `add_prefix_space` adds a space to each pre-token, and the digit splits make more of them.
+    if byte_level
+        .get("use_regex")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || adds_prefix_space(byte_level)
+    {
+        return;
+    }
+    if members[at + 1..].iter().all(is_digit_split) {
+        let byte_level = members.remove(at);
+        members.push(byte_level);
+    }
+}
+
+fn is_digit_split(member: &Value) -> bool {
+    component_type(member) == Some("Split")
+        && member
+            .get("pattern")
+            .and_then(|p| p.get("Regex"))
+            .and_then(Value::as_str)
+            == Some("[0-9]")
 }
 
 /// Set a boolean on the `model` object.

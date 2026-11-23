@@ -371,6 +371,45 @@ fn a_byte_level_pre_tokenizer_becomes_a_model_flag_and_a_split() {
     assert!(err(UNIGRAM, bl).contains("needs a BPE model"));
 }
 
+#[test]
+fn a_byte_level_before_digit_splits_lowers_like_a_last_member() {
+    // Falcon-H1's shape.
+    let v = done(
+        BPE,
+        r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
+             {"type": "Punctuation", "behavior": "Contiguous"},
+             {"type": "ByteLevel", "use_regex": false},
+             {"type": "Split", "pattern": {"Regex": "[0-9]"}, "behavior": "Isolated"}]}"#,
+    );
+    assert_eq!(v["model"]["byte_level"], true);
+    assert_eq!(
+        v["pre_tokenizer"]["pretokenizers"],
+        serde_json::json!([
+            {"type": "Punctuation", "behavior": "Contiguous"},
+            {"type": "Split", "pattern": {"Regex": "[0-9]"}, "behavior": "Isolated"}])
+    );
+}
+
+#[test]
+fn a_byte_level_before_a_split_it_would_change_is_refused() {
+    // `Digits` matches `²`, which the byte map makes from the second byte of `β`.
+    let digits = r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
+             {"type": "ByteLevel", "use_regex": false}, {"type": "Digits"}]}"#;
+    assert!(err(BPE, digits).contains("last member"));
+
+    // The GPT-2 regex looks past the end of a match, so a `[0-9]` cut in front of it moves its cuts.
+    let gpt2_regex = r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
+             {"type": "ByteLevel"},
+             {"type": "Split", "pattern": {"Regex": "[0-9]"}, "behavior": "Isolated"}]}"#;
+    assert!(err(BPE, gpt2_regex).contains("last member"));
+
+    // `add_prefix_space` would add a space to each piece the `[0-9]` split cuts.
+    let prefix_space = r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
+             {"type": "ByteLevel", "use_regex": false, "add_prefix_space": true},
+             {"type": "Split", "pattern": {"Regex": "[0-9]"}, "behavior": "Isolated"}]}"#;
+    assert!(err(BPE, prefix_space).contains("last member"));
+}
+
 // ---- the post-processor ------------------------------------------------------------------------
 
 #[test]
