@@ -329,31 +329,24 @@ impl Buckets {
     }
 
     /// Find the leftmost added-token match in `bytes`. Returns (internal_id, match_position, match_len).
-    /// Dispatch: 1 bucket -> memchr on the shared first byte; >=2 -> NEON nibble, mask-iterated.
+    /// Dispatch: 1 bucket -> memmem on the shared prefix; >=2 -> NEON nibble, mask-iterated.
     pub(crate) fn match_bytes(&self, bytes: &[u8]) -> Option<(u32, u32, u32)> {
         match self.buckets.len() {
             0 => None,
             1 => {
-                // needle = the bucket's shared first byte. Assumes a non-empty prefix
-                // (false only if a lone 1-byte token is the sole holder of its first byte); store
-                // the first byte explicitly if that case ever appears.
-                // Search for the bucket's whole shared prefix, not just its first byte.
-                //
-                // One byte of a long needle is a poor filter on text that is dense in that byte and
-                // holds no match: `<|endoftext|>` over a corpus full of `<|xs0|>` stops at every `<`
-                // and dies at the third byte. Restarting `memchr` on `&bytes[pos + 1..]` per
-                // candidate then pays its prologue again each time. Measured over the same
-                // one-bucket vocabulary in one process, that cost 0.58 ns/B on a 9.8%-`<` corpus
-                // that matches nothing, against 0.12 for `memmem`, which picks a *rare* byte of the
-                // needle instead. Where candidates are already sparse it costs at most 0.015 ns/B.
-                //
-                // `nibble_mask_match` already avoids this for two or more buckets and calls it the
-                // restart penalty. Same positions in the same order, so the leftmost match is
-                // unchanged and `match_fast` still confirms the length sub-list.
-                for pos in memchr::memmem::find_iter(bytes, &self.buckets[0].prefix) {
+                // memmem looks for the whole prefix, so text full of `<` that never reaches
+                // `<|endoftext|>` costs no restart per `<`, as a first-byte memchr would.
+                let finder = memchr::memmem::Finder::new(&self.buckets[0].prefix);
+                let mut start = 0;
+                while let Some(rest) = bytes.get(start..)
+                    && let Some(offset) = finder.find(rest)
+                {
+                    let pos = start + offset;
                     if let Some((id, len)) = self.match_fast(bytes, pos, 0) {
                         return Some((id, pos as u32, len));
                     }
+                    // The token can start inside this false start: `OAOO` in `OAOAOO`.
+                    start = pos + 1;
                 }
                 None
             }
@@ -679,6 +672,20 @@ mod tests {
             fake_bucket.nibble_match_bytes(table, "where is toad".as_bytes()),
             Some(9)
         );
+    }
+
+    #[test]
+    fn finds_a_lone_one_byte_token() {
+        let buckets = Buckets::from_tokens(vec![(b"x".to_vec(), 0)]).unwrap();
+        assert_eq!(buckets.match_bytes(b"abx"), Some((0, 2, 1)));
+        assert_eq!(buckets.match_bytes(b"ab"), None);
+    }
+
+    #[test]
+    fn finds_a_token_that_overlaps_a_false_start_of_its_prefix() {
+        // The prefix `OAO` is at 0 and again at 2. Only the second one starts the token.
+        let buckets = Buckets::from_tokens(vec![(b"OAOO".to_vec(), 0)]).unwrap();
+        assert_eq!(buckets.match_bytes(b"OAOAOO"), Some((0, 2, 4)));
     }
 
     #[test]
