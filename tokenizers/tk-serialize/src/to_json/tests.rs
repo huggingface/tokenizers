@@ -546,3 +546,49 @@ fn role_to_token_survives_a_round_trip() {
 fn str_to_json_quotes_and_escapes_like_the_writer() {
     assert_eq!(str_to_json("a\"b\\c\n"), r#""a\"b\\c\n""#);
 }
+
+/// A byte-level BPE over every byte, `bc` (256) and `abcd` (257). The bytes of `abcd` merge to
+/// `[a, bc, d]` and stop there.
+fn unmergeable_bpe(backtracking: Option<bool>) -> String {
+    let mut shifted = 0;
+    let mut vocab = serde_json::Map::new();
+    for byte in 0..=255u32 {
+        let char = if matches!(byte, 33..=126 | 161..=172 | 174..=255) {
+            byte
+        } else {
+            shifted += 1;
+            255 + shifted
+        };
+        vocab.insert(char::from_u32(char).unwrap().to_string(), byte.into());
+    }
+    vocab.insert("bc".into(), 256.into());
+    vocab.insert("abcd".into(), 257.into());
+    let mut model = serde_json::json!({"type": "BPE", "byte_level": true, "ignore_merges": true,
+        "vocab": vocab, "merges": [["b", "c"]]});
+    if let Some(backtracking) = backtracking {
+        model["backtracking"] = backtracking.into();
+    }
+    model.to_string()
+}
+
+#[test]
+fn backtracking_reads_and_writes_back() {
+    let encode = |model: &str| {
+        let tokenizer = from_json(&config(&[("model", model)])).expect("the config reads");
+        ids(&tokenizer, "abcdx", &EncodeOptions::default())
+    };
+    let (a, d, x) = (u32::from(b'a'), u32::from(b'd'), u32::from(b'x'));
+    for (backtracking, want_ids, want_field) in [
+        (None, vec![a, 256, d, x], json("null")),
+        (Some(false), vec![a, 256, d, x], json("null")),
+        (Some(true), vec![257, x], json("true")),
+    ] {
+        let model = unmergeable_bpe(backtracking);
+        assert_eq!(encode(&model), want_ids, "backtracking: {backtracking:?}");
+        assert_eq!(
+            written("model", &model)["backtracking"],
+            want_field,
+            "backtracking: {backtracking:?}"
+        );
+    }
+}

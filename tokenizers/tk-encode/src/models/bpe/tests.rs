@@ -653,3 +653,53 @@ fn byte_level_drops_bytes_real_text_can_contain() {
     let want: Vec<u32> = "ab".repeat(64).bytes().map(u32::from).collect();
     assert_eq!(pipeline_ids(&pipeline, &long), want);
 }
+
+#[test]
+fn backtracking_reaches_tokens_merging_cannot() {
+    let build = |backtracking: bool| {
+        let mut vocab: Vocab = (0..=255u8)
+            .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
+            .collect();
+        vocab.insert("bc".into(), 256);
+        vocab.insert("abcd".into(), 257);
+        BPE::from_config(BpeConfig {
+            vocab,
+            merges: m(&[("b", "c")]),
+            byte_level: true,
+            ignore_merges: true,
+            backtracking,
+            ..Default::default()
+        })
+        .unwrap()
+    };
+    let (a, d, x) = (u32::from(b'a'), u32::from(b'd'), u32::from(b'x'));
+    assert_eq!(pipeline_ids(&build(false), "abcdx"), vec![a, 256, d, x]);
+    let backtracking = build(true);
+    assert_eq!(pipeline_ids(&backtracking, "abcdx"), vec![257, x]);
+    assert_eq!(pipeline_ids(&backtracking, "abcd"), vec![257]);
+    assert!(backtracking.to_config().unwrap().backtracking);
+}
+
+#[test]
+fn backtracking_rejects_vocabularies_it_cannot_rank() {
+    assert!(
+        hello(BpeConfig {
+            backtracking: true,
+            ..Default::default()
+        })
+        .is_err()
+    );
+    let mut vocab: Vocab = (0..=255u8)
+        .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
+        .collect();
+    vocab.insert("ab".into(), 300);
+    assert!(
+        BPE::from_config(BpeConfig {
+            vocab,
+            byte_level: true,
+            backtracking: true,
+            ..Default::default()
+        })
+        .is_err()
+    );
+}

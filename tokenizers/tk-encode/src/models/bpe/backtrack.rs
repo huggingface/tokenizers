@@ -164,3 +164,27 @@ impl Backtracking {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encodes_like_ranked_merging() {
+        let cases: &[(&[&str], &str, &[u32])] = &[
+            (&["a", "b", "c", "ab", "ba", "aba"], "aba", &[5]),
+            (&["a", "b", "c", "ab", "ba", "aba"], "abab", &[3, 3]),
+            (&["a", "b", "c", "ab", "ba", "aba"], "cab", &[2, 3]),
+            (&["a", "b", "c", "bc", "ab"], "abc", &[0, 3]),
+        ];
+        for &(tokens, text, want) in cases {
+            let tokens: Vec<&[u8]> = tokens.iter().map(|t| t.as_bytes()).collect();
+            let mut out = Vec::new();
+            Backtracking::new(&tokens)
+                .encode(text.as_bytes(), &mut out, &mut Vec::new())
+                .unwrap();
+            let got: Vec<u32> = out.into_iter().map(Token::id).collect();
+            assert_eq!(got, want, "{text:?} over {tokens:?}");
+        }
+    }
+}
