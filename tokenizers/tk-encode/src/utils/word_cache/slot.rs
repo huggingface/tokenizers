@@ -42,7 +42,7 @@ pub(super) const MAX_INLINE_IDS: usize = 3;
 pub(super) struct WordCacheSlot {
     head: u64,
     tail: u64,
-    payload: [u32; 3],
+    payload: [u32; MAX_INLINE_IDS],
     /// The word's length in the top 24 bits. The number of inline ids in the low 8, or
     /// [`Self::SPILLED`].
     meta: u32,
@@ -66,7 +66,7 @@ impl WordCacheSlot {
     /// The bits of `meta` that hold up to [`MAX_INLINE_IDS`]: an inline hit ignores them.
     const INLINE_IDS: u64 = MAX_INLINE_IDS as u64;
 
-    fn new(signature: Signature, payload: [u32; 3], ids_len: u32) -> Self {
+    fn new(signature: Signature, payload: [u32; MAX_INLINE_IDS], ids_len: u32) -> Self {
         Self {
             head: signature.head,
             tail: signature.tail,
@@ -79,7 +79,7 @@ impl WordCacheSlot {
     pub(super) fn inline(signature: Signature, ids: impl ExactSizeIterator<Item = u32>) -> Self {
         debug_assert!(ids.len() <= MAX_INLINE_IDS);
         let ids_len = ids.len() as u32;
-        let mut payload = [0u32; 3];
+        let mut payload = [0u32; MAX_INLINE_IDS];
         for (lane, id) in payload.iter_mut().zip(ids) {
             *lane = id;
         }
@@ -99,8 +99,8 @@ impl WordCacheSlot {
         self.head == 0 && self.tail == 0 && self.meta == 0
     }
 
-    // This and the two below compare lengths as `u64`: a word too long for `meta` then matches
-    // no slot.
+    // Every compare of a length in this file is on `u64`s: a word too long for `meta` then
+    // matches no slot.
     #[inline(always)]
     pub(super) fn has_signature(&self, signature: Signature) -> bool {
         self.head == signature.head
@@ -159,13 +159,18 @@ impl WordCacheSlot {
     ///
     /// # Safety
     ///
-    /// `dst` must be valid for writes of [`MAX_INLINE_IDS`] `u32`s.
+    /// The slot must hold its ids, and `dst` must be valid for writes of [`MAX_INLINE_IDS`]
+    /// `u32`s.
     #[inline(always)]
     pub(super) unsafe fn copy_inline_ids(&self, dst: *mut u32) -> *mut u32 {
-        // SAFETY: the caller left room for the three lanes, and the count is three at most.
+        // Read before the copy. For all the compiler knows `dst` is this slot, and it loaded
+        // `meta` again after the copy: one more load per word of a run.
+        let ids_len = (self.meta & 0xFF) as usize;
+        // SAFETY: the caller left room for the three lanes, and an inline slot counts three ids
+        // at most.
         unsafe {
             dst.copy_from_nonoverlapping(self.payload.as_ptr(), MAX_INLINE_IDS);
-            dst.add((self.meta & 0xFF) as usize)
+            dst.add(ids_len)
         }
     }
 }

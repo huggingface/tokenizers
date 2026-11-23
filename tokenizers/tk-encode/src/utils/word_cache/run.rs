@@ -1,6 +1,5 @@
 //! The loop that answers a run of words straight from their home slots.
 
-#[cfg(doc)]
 use super::ids::MAX_RUN_IDS;
 use super::table::WordCache;
 use crate::utils::signature::Signature;
@@ -48,8 +47,12 @@ impl WordCache {
                 && (signature.len <= Signature::BYTES
                     || Uncovered::of(word(i)).is_some_and(|bytes| self.spill.holds(record, bytes)))
             {
+                let padded = self.spill.padded_ids(record);
                 // SAFETY: as above, and the record is of no more than `MAX_RUN_IDS` ids.
-                next = unsafe { next.add(self.spill.ids(record).write(next)) };
+                unsafe {
+                    next.cast::<[u32; MAX_RUN_IDS]>().write(*padded);
+                    next = next.add(record.ids_len());
+                }
             } else {
                 break;
             }

@@ -1,3 +1,5 @@
+//! The ids a lookup hands back, and how they are copied out.
+
 #[cfg(doc)]
 use super::spill::SpillBuffer;
 #[cfg(doc)]

@@ -100,6 +100,15 @@ impl SpillBuffer {
         }
     }
 
+    /// The first [`MAX_RUN_IDS`] `u32`s at a record of the current generation: its ids, then
+    /// what is stored after them.
+    #[inline(always)]
+    pub(super) fn padded_ids(&self, record: Record) -> &[u32; MAX_RUN_IDS] {
+        self.buffer[record.start as usize..]
+            .first_chunk()
+            .expect("the buffer ends with MAX_RUN_IDS zeros")
+    }
+
     /// Whether the bytes stored after the ids of `record` are `uncovered`.
     #[inline(always)]
     pub(super) fn holds(&self, record: Record, uncovered: Uncovered<'_>) -> bool {

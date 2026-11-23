@@ -14,7 +14,7 @@ pub struct WordCache {
     /// One slot per cached word. See [`WordCacheSlot`] for more details.
     pub(super) slots: Box<[WordCacheSlot]>,
     /// One byte of hash per slot, scanned to find the slots of a window that may hold a word.
-    pub(super) tags: Box<[u8]>,
+    tags: Box<[u8]>,
     placement_mask: u64,
     /// What does not fit in a slot.
     pub(super) spill: SpillBuffer,
