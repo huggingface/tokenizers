@@ -88,11 +88,16 @@ impl Signature {
         Self::from_parts(head, head, len)
     }
 
-    /// [`Self::new`] for a word inside a larger buffer, with `readable` bytes from the word's
-    /// start to the buffer's end. It reads 8 bytes at the word's start even when the word is
-    /// shorter, which is what spares the branch on the length.
+    /// [`Self::new`] for a word inside a larger buffer. It reads 8 bytes at the word's start
+    /// even when the word is shorter, which is what spares the branch on the length.
+    ///
+    /// # Safety
+    ///
+    /// `readable` bytes must be readable from the word's start: the word, then what follows it
+    /// in the same allocation.
+    // A safe version over two slices was measured: 2 more instructions per word, 1% on English.
     #[inline(always)]
-    pub(crate) fn new_readable(word: &[u8], readable: usize) -> Self {
+    pub(crate) unsafe fn new_readable(word: &[u8], readable: usize) -> Self {
         debug_assert!(readable >= word.len());
         if readable < 8 {
             return Self::new(word);
@@ -100,8 +105,9 @@ impl Signature {
         let len = word.len();
         let short = len.min(8);
         let mask = LOW_BYTES[short];
-        // SAFETY: `readable >= 8` bytes exist from the word's start. The second read starts
-        // `len - short` bytes in: at the start when `len < 8`, 8 bytes before the end otherwise.
+        // SAFETY: the caller vouches for `readable >= 8` bytes from the word's start. The second
+        // read starts `len - short` bytes in: at the start when `len < 8`, 8 bytes before the
+        // end of the word otherwise.
         let (head, tail) = unsafe {
             let start = word.as_ptr();
             (
@@ -175,17 +181,16 @@ mod tests {
                 let word = &buffer[start..start + len];
                 let want = expected(word);
                 assert_eq!(Signature::new(word), want, "start {start} len {len}");
-                let readable = buffer.len() - start;
-                assert_eq!(
-                    Signature::new_readable(word, readable),
-                    want,
-                    "start {start} len {len}"
-                );
-                assert_eq!(
-                    Signature::new_readable(word, len),
-                    want,
-                    "start {start} len {len}"
-                );
+                // SAFETY: the buffer holds `buffer.len() - start` bytes from the word's start, and
+                // the word itself holds `len`.
+                let (in_buffer, alone) = unsafe {
+                    (
+                        Signature::new_readable(word, buffer.len() - start),
+                        Signature::new_readable(word, len),
+                    )
+                };
+                assert_eq!(in_buffer, want, "start {start} len {len}");
+                assert_eq!(alone, want, "start {start} len {len}");
             }
         }
     }

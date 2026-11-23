@@ -28,14 +28,16 @@ fn read_signatures(batch: PreTokens<'_>, signatures: &mut [Signature], cache: Op
         Some(cache) => {
             for (signature, (span, sequence)) in words {
                 let readable = chunk_len - span.start as usize;
-                *signature = Signature::new_readable(sequence.as_bytes(), readable);
+                // SAFETY: a span lies inside its chunk, which holds `readable` bytes from here.
+                *signature = unsafe { Signature::new_readable(sequence.as_bytes(), readable) };
                 cache.prefetch(*signature);
             }
         }
         None => {
             for (signature, (span, sequence)) in words {
                 let readable = chunk_len - span.start as usize;
-                *signature = Signature::new_readable(sequence.as_bytes(), readable);
+                // SAFETY: a span lies inside its chunk, which holds `readable` bytes from here.
+                *signature = unsafe { Signature::new_readable(sequence.as_bytes(), readable) };
             }
         }
     }
