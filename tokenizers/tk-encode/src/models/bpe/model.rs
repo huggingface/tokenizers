@@ -13,7 +13,7 @@ use crate::pipeline::{self, PreTokens, Token};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, char_to_byte};
 use crate::utils::signature::Signature;
-use crate::utils::word_cache::{Lookup, MAX_CACHED_IDS, MAX_INLINE_IDS, WordCache};
+use crate::utils::word_cache::{Lookup, MAX_RUN_IDS, WordCache};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
 /// How many words [`BPE::tokenize_spans`] reads the signatures of before it looks any of them up.
@@ -231,9 +231,9 @@ impl BPE {
         if let Some(cache) = word_cache.as_ref() {
             match cache.lookup_with_signature(bytes, signature) {
                 Lookup::Hit(ids) => {
-                    output.reserve(MAX_CACHED_IDS);
-                    // SAFETY: the spare capacity holds `MAX_CACHED_IDS` ids, and a `Token` is
-                    // laid out as its `u32` id. The hit wrote `written` of them.
+                    output.reserve(ids.room());
+                    // SAFETY: the spare capacity holds `ids.room()` ids, and a `Token` is laid
+                    // out as its `u32` id. The hit wrote `written` of them.
                     unsafe {
                         let dst = output.as_mut_ptr().add(output.len()).cast::<u32>();
                         let written = ids.write(dst);
@@ -265,7 +265,7 @@ impl BPE {
 
     /// Tokenizes a batch of words whose signatures are already read.
     ///
-    /// [`WordCache::emit_inline_hits`] answers runs of words straight from the cache, and
+    /// [`WordCache::emit_home_hits`] answers runs of words straight from the cache, and
     /// [`Self::tokenize_with_signature`] takes each word that a run stops on.
     // Out of line, with the run loop inlined into it: on text the cache has not seen a run is
     // 2 to 5 words long, and a call per run cost more than the run.
@@ -281,12 +281,13 @@ impl BPE {
         while next < signatures.len() {
             if let Some(cache) = scratch.word_cache.as_ref() {
                 let run = &signatures[next..];
-                output.reserve(MAX_INLINE_IDS * run.len());
-                // SAFETY: the spare capacity holds `MAX_INLINE_IDS` ids per word of the run, and a
+                output.reserve(MAX_RUN_IDS * run.len());
+                // SAFETY: the spare capacity holds `MAX_RUN_IDS` ids per word of the run, and a
                 // `Token` is laid out as its `u32` id. The run wrote `written` of them.
                 unsafe {
                     let dst = output.as_mut_ptr().add(output.len()).cast::<u32>();
-                    let (answered, written) = cache.emit_inline_hits(run, dst);
+                    let word = |i| batch.text(next + i).as_bytes();
+                    let (answered, written) = cache.emit_home_hits(run, word, dst);
                     output.set_len(output.len() + written);
                     next += answered;
                 }

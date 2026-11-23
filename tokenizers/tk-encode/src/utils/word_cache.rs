@@ -60,10 +60,11 @@ use crate::utils::signature::Signature;
 
 pub const MAX_INLINE_IDS: usize = 3;
 
-/// The most ids a cached word encodes to. A word with more is not cached.
+/// The most ids of a word that [`WordCache::emit_home_hits`] answers.
 ///
-/// A hit copies this many ids whatever the word's own number: see [`CachedIds::write`].
-pub const MAX_CACHED_IDS: usize = 32;
+/// Up to this number, a hit copies ids at one size whatever the word's own: see
+/// [`CachedIds::write`]. A word with more ids is cached too, and takes the slower lookup.
+pub const MAX_RUN_IDS: usize = 32;
 
 /// A table mapping words (`[u8]`) to the token ids they encode to (`[u32]`)
 pub struct WordCache {
@@ -81,7 +82,7 @@ pub struct WordCache {
     /// Holds what does not fit in a [`WordCacheSlot`]: more than three ids, and the
     /// [`Signature::uncovered`] bytes of a long word, packed four to a `u32` right after its ids.
     ///
-    /// It ends with [`MAX_CACHED_IDS`] zeros, so that many `u32` can be read from the start of
+    /// It ends with [`MAX_RUN_IDS`] zeros, so that many `u32` can be read from the start of
     /// any word's ids.
     spilled_buffer: Vec<u32>,
 }
@@ -138,37 +139,50 @@ impl<'a> WordCache {
     /// Answers the leading words of a batch straight from their home slots, into the caller's
     /// buffer. Returns how many words it answered and how many ids it wrote.
     ///
-    /// It stops at the first word whose home slot does not hold it with inline ids. That word
-    /// goes through [`Self::lookup_with_signature`]. On text the cache has seen, nearly every word is
-    /// answered here, so this loop is kept to a few loads, compares and stores per word.
+    /// It stops at the first word its home slot does not hold, or holds with more than
+    /// [`MAX_RUN_IDS`] ids. That word goes through [`Self::lookup_with_signature`]. On text the
+    /// cache has seen, nearly every word is answered here, so this loop is kept to a few loads,
+    /// compares and stores per word.
+    ///
+    /// `word` gives the bytes of the word at an index of `signatures`. It is only called for a
+    /// word longer than its signature.
     ///
     /// # Safety
     ///
-    /// `dst` must be valid for writes of [`MAX_INLINE_IDS`] `u32`s per signature. A hit writes
-    /// every inline lane, whatever its number of ids.
+    /// `dst` must be valid for writes of [`MAX_RUN_IDS`] `u32`s per signature. A hit writes a
+    /// fixed number of ids, whatever the word's own.
     // Forced into its one caller, a small function of its own: inside the whole encode loop, the
     // table's address and mask were reloaded per word.
     #[inline(always)]
-    pub unsafe fn emit_inline_hits(
+    pub unsafe fn emit_home_hits<'w>(
         &self,
         signatures: &[Signature],
+        word: impl Fn(usize) -> &'w [u8],
         dst: *mut u32,
     ) -> (usize, usize) {
         let slots = self.cached_words.as_ptr();
         let mut next = dst;
         let mut answered = 0;
-        for &signature in signatures {
+        for (i, &signature) in signatures.iter().enumerate() {
             // SAFETY: a home is masked with `placement_mask` (`next_pow2 - 1`), and the table
             // holds `next_pow2 + WINDOW_SIZE` slots.
-            let slot = unsafe { *slots.add(self.home(signature)) };
-            if !slot.holds_inline(signature) {
+            // A reference, not a copy: the calls below take the slot's address, and a copy
+            // would then live on the stack, where each compare of this loop would reload it.
+            let slot = unsafe { &*slots.add(self.home(signature)) };
+            if slot.holds_inline(signature) {
+                // SAFETY: `next` is at most `MAX_RUN_IDS * answered` past `dst`, and the caller
+                // left room for `MAX_RUN_IDS` more.
+                unsafe {
+                    next.copy_from_nonoverlapping(slot.payload.as_ptr(), MAX_INLINE_IDS);
+                    next = next.add(slot.ids_len());
+                }
+            } else if slot.holds_spilled(signature, self.spilled_generation)
+                && (signature.len <= Signature::BYTES || self.holds_uncovered(slot, word(i)))
+            {
+                // SAFETY: as above, and `holds_spilled` saw no more than `MAX_RUN_IDS` ids.
+                unsafe { next = next.add(self.get_cached_ids(slot).write(next)) };
+            } else {
                 break;
-            }
-            // SAFETY: `next` is at most `MAX_INLINE_IDS * answered` past `dst`, and the caller
-            // left room for `MAX_INLINE_IDS` more.
-            unsafe {
-                next.copy_from_nonoverlapping(slot.payload.as_ptr(), MAX_INLINE_IDS);
-                next = next.add(slot.ids_len());
             }
             answered += 1;
         }
@@ -251,22 +265,19 @@ impl<'a> WordCache {
             signature,
             tag,
         } = placement;
-        let n_ids = ids.len();
         // A slot has 24 bits for the word's length, so a longer word is not cached. Nor is the
         // empty word: with no ids, its slot would be all zeros, which is a vacant slot.
-        if signature.len == 0
-            || signature.len > WordCacheSlot::MAX_WORD_BYTES
-            || n_ids > MAX_CACHED_IDS
-        {
+        if signature.len == 0 || signature.len > WordCacheSlot::MAX_WORD_BYTES {
             return;
         }
         let uncovered = Signature::uncovered(word);
+        let n_ids = ids.len();
 
         let slot = if n_ids <= MAX_INLINE_IDS && uncovered.is_empty() {
             WordCacheSlot::new_self_contained(signature, ids)
         } else {
             // The zeros at the end come off, and go back on after this word.
-            let used = self.spilled_buffer.len().saturating_sub(MAX_CACHED_IDS);
+            let used = self.spilled_buffer.len().saturating_sub(MAX_RUN_IDS);
             self.spilled_buffer.truncate(used);
             let needed = n_ids + uncovered.len().div_ceil(4);
             if self.spilled_buffer.len() + needed > self.spilled_budget {
@@ -296,7 +307,7 @@ impl<'a> WordCache {
                 bytemuck::cast_slice_mut(&mut self.spilled_buffer[bytes_start..]);
             stored[..uncovered.len()].copy_from_slice(uncovered);
             self.spilled_buffer
-                .resize(self.spilled_buffer.len() + MAX_CACHED_IDS, 0);
+                .resize(self.spilled_buffer.len() + MAX_RUN_IDS, 0);
             WordCacheSlot::new_spilled(signature, (start, start + n_ids), self.spilled_generation)
         };
 
@@ -312,6 +323,7 @@ impl<'a> WordCache {
     }
 
     /// Whether `slot`, whose signature is `word`'s, also holds its [`Signature::uncovered`] bytes.
+    #[inline(always)]
     fn holds_uncovered(&self, slot: &WordCacheSlot, word: &[u8]) -> bool {
         let uncovered = Signature::uncovered(word);
         if uncovered.is_empty() {
@@ -324,6 +336,7 @@ impl<'a> WordCache {
     }
 
     /// Helper to fetch the ids from the word
+    #[inline(always)]
     fn get_cached_ids(&'a self, word: &'a WordCacheSlot) -> CachedIds<'a> {
         match word.variant() {
             CacheSlotType::SelfContained(word) => word.ids(),
@@ -473,6 +486,18 @@ impl WordCacheSlot {
             && u64::from(self.meta) & !Self::INLINE_IDS == (signature.len as u64) << 8
     }
 
+    /// [`Self::has_signature`] with ids in the buffer that [`WordCache::emit_home_hits`] may
+    /// answer with: stored at `generation`, and no more than [`MAX_RUN_IDS`] of them.
+    #[inline(always)]
+    fn holds_spilled(&self, signature: Signature, generation: u32) -> bool {
+        let [start, end, stored_at] = self.payload;
+        self.head == signature.head
+            && self.tail == signature.tail
+            && u64::from(self.meta) == (signature.len as u64) << 8 | u64::from(Self::SPILLED)
+            && stored_at == generation
+            && (end - start) as usize <= MAX_RUN_IDS
+    }
+
     /// Whether no insert wrote this slot since the table was created or cleared: it is all zeros,
     /// which [`WordCache::insert`] never writes.
     #[inline(always)]
@@ -557,24 +582,30 @@ impl<'a> CachedIds<'a> {
         &self.padded[..self.len]
     }
 
+    /// How many `u32`s [`Self::write`] needs room for.
+    pub fn room(self) -> usize {
+        self.len.max(MAX_RUN_IDS)
+    }
+
     /// Copies the ids to `dst` and returns how many they are.
     ///
-    /// Ids from [`WordCache::spilled_buffer`] are copied [`MAX_CACHED_IDS`] at a time: the word's
-    /// own, then what follows them. A copy of one size is a few moves, with no branch on the
-    /// number of ids.
+    /// Up to [`MAX_RUN_IDS`] ids from [`WordCache::spilled_buffer`] are copied as `MAX_RUN_IDS`:
+    /// the word's own, then what follows them. A copy of one size is a few moves, with no
+    /// branch on the number of ids.
     ///
     /// # Safety
     ///
-    /// `dst` must be valid for writes of [`MAX_CACHED_IDS`] `u32`s.
+    /// `dst` must be valid for writes of [`Self::room`] `u32`s.
     #[inline(always)]
     pub unsafe fn write(self, dst: *mut u32) -> usize {
-        match self.padded.first_chunk::<MAX_CACHED_IDS>() {
-            // SAFETY: the caller left room for `MAX_CACHED_IDS` ids.
-            Some(padded) => unsafe { dst.cast::<[u32; MAX_CACHED_IDS]>().write(*padded) },
-            // Ids inline in a slot, which the batched lookup answers on its own when the slot
-            // is the word's home.
-            // SAFETY: `len` is at most `MAX_INLINE_IDS`, and the caller left room for more.
-            None => unsafe { dst.copy_from_nonoverlapping(self.padded.as_ptr(), self.len) },
+        match self.padded.first_chunk::<MAX_RUN_IDS>() {
+            // SAFETY: the caller left room for `MAX_RUN_IDS` ids.
+            Some(padded) if self.len <= MAX_RUN_IDS => unsafe {
+                dst.cast::<[u32; MAX_RUN_IDS]>().write(*padded)
+            },
+            // More ids than one copy holds, or ids inline in a slot past the word's home.
+            // SAFETY: the caller left room for `len` ids.
+            _ => unsafe { dst.copy_from_nonoverlapping(self.padded.as_ptr(), self.len) },
         }
         self.len
     }
@@ -650,10 +681,14 @@ mod tests {
         }
     }
 
-    /// A word that fills the spilled buffer past its budget on its own, so that storing it
-    /// evicts whatever the buffer holds. It does so with its bytes: one id is all it has.
-    fn filler() -> Vec<u8> {
-        vec![b'f'; 4 * SPILLED_BUDGET]
+    /// How many words [`WordCache::emit_home_hits`] answers at the start of `words`.
+    fn answered(cache: &WordCache, words: &[&[u8]]) -> usize {
+        let signatures: Vec<Signature> = words.iter().map(|word| Signature::new(word)).collect();
+        let mut out = vec![0u32; MAX_RUN_IDS * words.len()];
+        // SAFETY: `out` holds `MAX_RUN_IDS` ids per signature.
+        let (answered, _) =
+            unsafe { cache.emit_home_hits(&signatures, |i| words[i], out.as_mut_ptr()) };
+        answered
     }
 
     fn store(cache: &mut WordCache, word: &[u8], ids: &[u32]) {
@@ -739,7 +774,7 @@ mod tests {
     fn a_very_long_word_round_trips() {
         let mut cache = WordCache::new(1 << 8);
         let word = vec![b'q'; 8192];
-        let ids: Vec<u32> = (0..MAX_CACHED_IDS as u32).collect();
+        let ids: Vec<u32> = (0..2000).collect();
         store(&mut cache, &word, &ids);
         assert_eq!(cache.lookup(&word).hit(), Some(&ids[..]));
     }
@@ -756,28 +791,18 @@ mod tests {
         }
     }
 
-    /// A hit copies [`MAX_CACHED_IDS`] ids whatever the word's own number, so a word with more
-    /// would come back cut short. It is not cached.
-    #[test]
-    fn a_word_with_more_ids_than_a_hit_copies_is_never_cached() {
-        let mut cache = WordCache::new(1 << 8);
-        let ids: Vec<u32> = (0..=MAX_CACHED_IDS as u32).collect();
-        store(&mut cache, b"one-id-too-many", &ids);
-        assert_eq!(cache.lookup(b"one-id-too-many").hit(), None);
-        store(&mut cache, b"just-enough-ids", &ids[1..]);
-        assert_eq!(cache.lookup(b"just-enough-ids").hit(), Some(&ids[1..]));
-    }
-
     /// [`CachedIds::write`] copies a fixed number of ids and reports the real one. Each shape
-    /// of hit: ids in the slot, ids in the buffer, the most ids a word may have. The last word
-    /// stored is the last record of the buffer, where the copy reads past the word's own ids.
+    /// of hit: ids in the slot, ids in the buffer, the most ids one copy holds and one more. The
+    /// last word stored is the last record of the buffer, where the copy reads past its ids.
     #[test]
     fn a_hit_writes_the_ids_it_holds() {
         let mut cache = WordCache::new(1 << 8);
-        let most: Vec<u32> = (100..100 + MAX_CACHED_IDS as u32).collect();
-        let cases: [(&[u8], &[u32]); 4] = [
+        let most: Vec<u32> = (100..100 + MAX_RUN_IDS as u32).collect();
+        let one_more: Vec<u32> = (200..=200 + MAX_RUN_IDS as u32).collect();
+        let cases: [(&[u8], &[u32]); 5] = [
             (b"inline", &[1, 2]),
             (b"most-ids", &most),
+            (b"one-more-id", &one_more),
             (b"a-word-past-sixteen-bytes", &[3]),
             (b"last-stored", &[4, 5, 6, 7]),
         ];
@@ -788,26 +813,29 @@ mod tests {
             let Lookup::Hit(hit) = cache.lookup(word) else {
                 panic!("{word:?} was stored");
             };
-            let mut out = [u32::MAX; MAX_CACHED_IDS];
-            // SAFETY: `out` holds `MAX_CACHED_IDS` ids.
+            let mut out = vec![u32::MAX; hit.room()];
+            // SAFETY: `out` holds `hit.room()` ids.
             let written = unsafe { hit.write(out.as_mut_ptr()) };
             assert_eq!(&out[..written], ids, "{word:?}");
         }
     }
 
-    /// [`WordCache::emit_inline_hits`] is a shortcut for [`WordCache::lookup`]. It must write the
-    /// ids a lookup returns for each word it answers, and stop at the first word whose home slot
-    /// does not hold inline ids: a word with four ids ends the first run, a word that was never
-    /// stored ends the second.
+    /// [`WordCache::emit_home_hits`] is a shortcut for [`WordCache::lookup`]. It must write the
+    /// ids a lookup returns for each word it answers, whether they sit in the slot or in the
+    /// buffer, and stop at the first word it cannot answer: a word with more ids than
+    /// [`MAX_RUN_IDS`] ends the first run, a word that was never stored ends the second.
     #[test]
-    fn a_run_of_inline_hits_writes_what_lookup_returns() {
+    fn a_run_of_home_hits_writes_what_lookup_returns() {
         let mut cache = WordCache::new(1 << 8);
-        let stored: [(&[u8], &[u32]); 5] = [
+        let too_many: Vec<u32> = (100..=100 + MAX_RUN_IDS as u32).collect();
+        let stored: [(&[u8], &[u32]); 7] = [
             (b"the", &[1]),
             (b"sixteen-byte-wd?", &[2, 3, 4]),
             (b"a", &[5, 6]),
             (b"spilled", &[7, 8, 9, 10]),
-            (b"after", &[11]),
+            (b"a-word-past-sixteen-bytes", &[11, 12]),
+            (b"too-many-ids", &too_many),
+            (b"after", &[13]),
         ];
         for (word, ids) in stored {
             store(&mut cache, word, ids);
@@ -832,9 +860,10 @@ mod tests {
         let mut answers = Vec::new();
         while next < words.len() {
             let run = &signatures[next..];
-            let mut out = vec![0u32; MAX_INLINE_IDS * run.len()];
-            // SAFETY: `out` holds `MAX_INLINE_IDS` ids per signature of the run.
-            let (answered, written) = unsafe { cache.emit_inline_hits(run, out.as_mut_ptr()) };
+            let mut out = vec![0u32; MAX_RUN_IDS * run.len()];
+            // SAFETY: `out` holds `MAX_RUN_IDS` ids per signature of the run.
+            let (answered, written) =
+                unsafe { cache.emit_home_hits(run, |i| words[next + i], out.as_mut_ptr()) };
             let mut ids = out[..written].iter();
             for word in &words[next..next + answered] {
                 let expected = cache
@@ -847,29 +876,46 @@ mod tests {
             answers.push(answered);
             next += answered + 1;
         }
-        assert_eq!(answers, [3, 1]);
+        assert_eq!(answers, [5, 1]);
     }
 
     /// A one-home table sends every word to slot 0. The run must not answer a word that has only
     /// part of the stored word's signature: ten `a`s against nine (another length), against a
-    /// last byte changed (another tail), and against a first byte changed (another head).
+    /// last byte changed (another tail), and against a first byte changed (another head). Once
+    /// with the ids in the slot, once with the ids in the buffer.
     #[test]
     fn a_run_does_not_answer_a_word_with_part_of_the_signature() {
-        let mut cache = WordCache::new(1);
-        store(&mut cache, b"aaaaaaaaaa", &[1]);
-        let answered = |word: &[u8]| {
-            let mut out = [0u32; MAX_INLINE_IDS];
-            // SAFETY: `out` holds `MAX_INLINE_IDS` ids for the one signature.
-            unsafe {
-                cache
-                    .emit_inline_hits(&[Signature::new(word)], out.as_mut_ptr())
-                    .0
+        for ids in [&[1][..], &[1, 2, 3, 4]] {
+            let mut cache = WordCache::new(1);
+            store(&mut cache, b"aaaaaaaaaa", ids);
+            assert_eq!(answered(&cache, &[b"aaaaaaaaaa"]), 1);
+            for near in [&b"aaaaaaaaa"[..], b"aaaaaaaaab", b"baaaaaaaaa"] {
+                assert_eq!(answered(&cache, &[near]), 0, "{near:?} with {ids:?}");
             }
-        };
-        assert_eq!(answered(b"aaaaaaaaaa"), 1);
-        for near in [&b"aaaaaaaaa"[..], b"aaaaaaaaab", b"baaaaaaaaa"] {
-            assert_eq!(answered(near), 0, "{near:?}");
         }
+    }
+
+    /// Two words past [`Signature::BYTES`] with one signature have one home slot. The run
+    /// answers the one stored there, and must not answer the other with its ids.
+    #[test]
+    fn a_run_does_not_answer_a_long_word_with_another_words_ids() {
+        let mut cache = WordCache::new(1 << 8);
+        let (first, second) = (b"01234567-first--89abcdef", b"01234567-second-89abcdef");
+        assert_eq!(Signature::new(first), Signature::new(second));
+        store(&mut cache, first, &[1]);
+        assert_eq!(answered(&cache, &[first]), 1);
+        assert_eq!(answered(&cache, &[second]), 0);
+    }
+
+    /// An evict leaves the word's slot behind with offsets into a buffer that no longer holds
+    /// its ids. The run must leave such a word to the lookup, which reports a miss.
+    #[test]
+    fn a_run_does_not_answer_a_word_whose_ids_were_evicted() {
+        let mut cache = WordCache::new(1 << 6);
+        store(&mut cache, b"a-spilled-word", &[1, 2, 3, 4]);
+        assert_eq!(answered(&cache, &[b"a-spilled-word"]), 1);
+        store(&mut cache, b"the-filler-word", &vec![9; SPILLED_BUDGET]);
+        assert_eq!(answered(&cache, &[b"a-spilled-word"]), 0);
     }
 
     /// Two words past [`Signature::BYTES`] with the same length, start and end have the same
@@ -1034,14 +1080,15 @@ mod tests {
         }
     }
 
-    /// The evicted word's slot keeps its tag and signature, but its ids are gone
-    /// from the buffer: looking the word up again has to be a miss, not a hit on
-    /// what the filler word put there.
+    /// The filler word brings a whole budget of ids on its own, so caching it
+    /// evicts whatever the buffer holds. The evicted word's slot keeps its tag
+    /// and signature, but its ids are gone from the buffer: looking the word up
+    /// again has to be a miss, not a hit on the filler's ids.
     #[test]
     fn a_spilled_word_misses_after_an_evict() {
         let mut cache = WordCache::new(1 << 6);
         store(&mut cache, b"a-spilled-word", &[1, 2, 3, 4]);
-        store(&mut cache, &filler(), &[9]);
+        store(&mut cache, b"the-filler-word", &vec![9; SPILLED_BUDGET]);
         assert_eq!(cache.lookup(b"a-spilled-word").hit(), None);
     }
 
@@ -1053,7 +1100,7 @@ mod tests {
     fn an_evicted_word_round_trips_once_re_inserted() {
         let mut cache = WordCache::new(1 << 6);
         store(&mut cache, b"a-spilled-word", &[1, 2, 3, 4]);
-        store(&mut cache, &filler(), &[9]);
+        store(&mut cache, b"the-filler-word", &vec![9; SPILLED_BUDGET]);
         store(&mut cache, b"a-spilled-word", &[5, 6, 7, 8]);
         assert_eq!(
             cache.lookup(b"a-spilled-word").hit(),
@@ -1073,7 +1120,7 @@ mod tests {
             Lookup::Hit(_) => panic!("the cache is empty, this must be a miss"),
         };
         store(&mut cache, b"a-spilled-word", &[1, 2, 3, 4]);
-        store(&mut cache, &filler(), &[9]);
+        store(&mut cache, b"the-filler-word", &vec![9; SPILLED_BUDGET]);
         match cache.lookup(b"a-spilled-word") {
             Lookup::Miss(at) => assert_eq!(at.index, slot),
             Lookup::Hit(_) => panic!("the ids were evicted, this must be a miss"),
@@ -1088,7 +1135,7 @@ mod tests {
         let mut cache = WordCache::new(1 << 6);
         for round in 0..5u32 {
             store(&mut cache, b"a-spilled-word", &[round; 4]);
-            store(&mut cache, &filler(), &[9]);
+            store(&mut cache, b"the-filler-word", &vec![9; SPILLED_BUDGET]);
         }
         let signature = Signature::new(b"a-spilled-word");
         let copies = cache
@@ -1100,12 +1147,13 @@ mod tests {
     }
 
     /// A self-contained word keeps its ids in the slot, not in the buffer, so
-    /// an evict must not cost it its hit.
+    /// an evict must not cost it its hit. Two filler words, because the first
+    /// fills an empty buffer exactly to the budget; the second overflows it.
     #[test]
     fn a_self_contained_word_still_hits_after_an_evict() {
         let mut cache = WordCache::new(1 << 6);
         store(&mut cache, b"short", &[1, 2]);
-        store(&mut cache, &filler(), &[9]);
+        store(&mut cache, b"the-filler-word", &vec![9; SPILLED_BUDGET]);
         store(&mut cache, b"one-more-word", &[3, 4, 5, 6]);
         assert_eq!(cache.lookup(b"short").hit(), Some(&[1, 2][..]));
     }
@@ -1116,7 +1164,7 @@ mod tests {
     #[test]
     fn the_evicting_insert_caches_its_own_word() {
         let mut cache = WordCache::new(1 << 6);
-        store(&mut cache, &filler(), &[9]);
+        store(&mut cache, b"the-filler-word", &vec![9; SPILLED_BUDGET]);
         store(&mut cache, b"a-spilled-word", &[1, 2, 3, 4]);
         assert_eq!(
             cache.lookup(b"a-spilled-word").hit(),
@@ -1134,10 +1182,13 @@ mod tests {
         cache.spilled_generation = u32::MAX;
         store(&mut cache, b"short", &[1, 2]);
         store(&mut cache, b"a-spilled-word", &[1, 2, 3, 4]);
-        store(&mut cache, &filler(), &[9]);
+        store(&mut cache, b"the-filler-word", &vec![9; SPILLED_BUDGET]);
         assert_eq!(cache.lookup(b"short").hit(), None);
         assert_eq!(cache.lookup(b"a-spilled-word").hit(), None);
-        assert_eq!(cache.lookup(&filler()).hit(), Some(&[9][..]));
+        assert_eq!(
+            cache.lookup(b"the-filler-word").hit(),
+            Some(&vec![9; SPILLED_BUDGET][..])
+        );
     }
 
     /// Placements are built by hand so nothing but `insert` is on trial.
