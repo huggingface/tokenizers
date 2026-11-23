@@ -711,13 +711,22 @@ impl Tokenizer {
     pub fn decode_tokens(&self, ids: &[u32], skip_special_tokens: bool) -> Vec<String> {
         ids.iter()
             .filter_map(|&id| {
-                if id >= self.inner.added_id_min
+                let token = if id >= self.inner.added_id_min
                     && let Some((bytes, flags)) = self.inner.added_vocabulary.id_to_token_bytes(id)
                 {
-                    return (!skip_special_tokens || !flags.special)
-                        .then(|| String::from_utf8_lossy(bytes).into_owned());
+                    if skip_special_tokens && flags.special {
+                        return None;
+                    }
+                    String::from_utf8_lossy(bytes).into_owned()
+                } else {
+                    self.inner.model.id_to_token(id)?
+                };
+                // 0.23 skips a token when its text is a special token, not only when its id is.
+                // A model unk id and an added special can both spell `<unk>`.
+                if skip_special_tokens && self.inner.added_vocabulary.is_special_content(&token) {
+                    return None;
                 }
-                self.inner.model.id_to_token(id)
+                Some(token)
             })
             .collect()
     }
@@ -1851,6 +1860,47 @@ mod tests {
 
         assert_eq!(pipeline.decode_tokens(&[8, 7], false), ["<s>", "hello"]);
         assert_eq!(pipeline.decode_tokens(&[8, 7], true), ["hello"]);
+    }
+
+    #[test]
+    fn decode_skips_model_unk_that_shares_special_content() {
+        use crate::models::bpe::{BpeConfig, Vocab};
+        use crate::vocab::bucket_added_vocabulary::AddedToken;
+
+        let mut vocab: Vocab = Vocab::default();
+        vocab.insert("<unk>".into(), 0);
+        vocab.insert("a".into(), 1);
+        let bpe = BPE::from_config(BpeConfig {
+            vocab,
+            merges: Vec::new(),
+            ..BpeConfig::default()
+        })
+        .unwrap();
+        let mut added = BucketAddedVocabulary::new();
+        // Refuse the model id, the way a second `<unk>` entry is recorded as its own added token.
+        added
+            .add_tokens(
+                [AddedToken::from("<unk>", true)],
+                bpe.get_vocab_size(),
+                |_| None,
+                None::<&Normalizer>,
+            )
+            .unwrap();
+        let pipeline = Tokenizer::from_parts(
+            added,
+            Vec::new(),
+            PreTokenizer::None,
+            Model::BPE(bpe),
+            PostProcessor::default(),
+            None,
+            Default::default(),
+            None,
+            None,
+        );
+
+        assert_eq!(pipeline.decode_tokens(&[0, 1], false), ["<unk>", "a"]);
+        assert_eq!(pipeline.decode_tokens(&[0, 1], true), ["a"]);
+        assert_eq!(pipeline.decode(&[0, 1], true).unwrap(), "a");
     }
 
     // 0.23 looks a token up in the added vocabulary first.
