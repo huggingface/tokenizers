@@ -147,7 +147,7 @@ pub fn canonicalize_value(value: &mut Value) -> Result<(), ConvertError> {
         canonicalize_merges(model)?;
     }
 
-    // Both read the `pre_tokenizer` slot and write elsewhere -- the normalizer chain, the model --
+    // Both read the `pre_tokenizer` slot and write elsewhere -- `piece_normalizer`, the model --
     // so they run before the per-component fill below sees either.
     lower_metaspace_pre_tokenizer(root)?;
     lower_byte_level_pre_tokenizer(root)?;
