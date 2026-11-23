@@ -5,7 +5,17 @@ import weakref
 
 import pytest
 
-from tokenizers import Padding, Tokenizer, decoders, models, normalizers, pre_tokenizers, processors
+from conftest import ALBERT
+from tokenizers import (
+    Padding,
+    Tokenizer,
+    decoders,
+    models,
+    normalizers,
+    piece_normalizers,
+    pre_tokenizers,
+    processors,
+)
 
 TEXT = "Hello world, how are you?"
 
@@ -65,6 +75,12 @@ def test_getters_class(gpt2_spec, bert_spec):
     assert isinstance(gpt2_spec.decoder, decoders.Decoder)
     assert isinstance(bert_spec.normalizer, normalizers.Normalizer)
     assert gpt2_spec.normalizer is None
+
+
+def test_metaspace_survives_as_the_piece_normalizer():
+    albert = Tokenizer.from_file(ALBERT)
+    for spec in (albert, Tokenizer.from_str(albert.to_str())):
+        assert isinstance(spec.piece_normalizer, piece_normalizers.Metaspace)
 
 
 def test_bpe_repr(gpt2_spec):
