@@ -46,7 +46,7 @@ impl std::fmt::Debug for StripAccents {
 }
 
 impl pipeline::Normalize for StripAccents {
-    fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if input.chars().any(|c| self.is_combining_mark(c)) {
             Ok(Cow::Owned(
                 input
@@ -80,7 +80,7 @@ mod tests {
             ("a\u{1CF2}b", "ab"),
         ] {
             assert_eq!(
-                &*pipeline::Normalize::normalize(&n, input, 0).unwrap(),
+                &*pipeline::Normalize::normalize(&n, input).unwrap(),
                 expected,
                 "input={input:?}"
             );
@@ -91,7 +91,7 @@ mod tests {
     fn strip_accents_borrows_text_without_marks() {
         let n = StripAccents::new();
         assert!(matches!(
-            pipeline::Normalize::normalize(&n, "café", 0).unwrap(),
+            pipeline::Normalize::normalize(&n, "café").unwrap(),
             Cow::Borrowed(_)
         ));
     }

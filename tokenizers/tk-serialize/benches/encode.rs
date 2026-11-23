@@ -105,12 +105,12 @@ pub fn encode(c: &mut Criterion) {
         // Every byte-level BPE in `../data` is in that boat; `llama-2.json` is one that is not.
         if !tokenizer.get_normalizers().is_empty() {
             group.bench_function("stage/normalize", |b| {
-                b.iter(|| black_box(normalize_all(tokenizer.get_normalizers(), &data, 0).unwrap()))
+                b.iter(|| black_box(normalize_all(tokenizer.get_normalizers(), &data).unwrap()))
             });
         }
 
         // Every later stage reads normalized text, so normalize once here rather than inside each.
-        let normalized = normalize_all(tokenizer.get_normalizers(), &data, 0)
+        let normalized = normalize_all(tokenizer.get_normalizers(), &data)
             .unwrap()
             .into_owned();
 

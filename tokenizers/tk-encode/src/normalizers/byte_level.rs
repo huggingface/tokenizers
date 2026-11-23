@@ -20,7 +20,7 @@ impl ByteLevel {
 }
 
 impl pipeline::Normalize for ByteLevel {
-    fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         let table = &*BYTES_CHAR_LOOKUP;
         let mut out = String::with_capacity(2 * input.len());
         for &b in input.as_bytes() {
@@ -47,7 +47,7 @@ mod tests {
             ("", ""),
         ] {
             assert_eq!(
-                &*pipeline::Normalize::normalize(&n, input, 0).unwrap(),
+                &*pipeline::Normalize::normalize(&n, input).unwrap(),
                 expected,
                 "input={input:?}"
             );

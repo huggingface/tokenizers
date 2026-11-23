@@ -14,7 +14,7 @@ pub(crate) fn lowercases_to_self(c: char) -> bool {
 }
 
 impl pipeline::Normalize for Lowercase {
-    fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         if input.chars().all(lowercases_to_self) {
             Ok(input.into())
         } else {
@@ -44,7 +44,7 @@ mod tests {
             ("ΟΔΟΣ", "οδοσ"),
         ] {
             assert_eq!(
-                &*pipeline::Normalize::normalize(&n, input, 0).unwrap(),
+                &*pipeline::Normalize::normalize(&n, input).unwrap(),
                 expected,
                 "input={input:?}"
             );
