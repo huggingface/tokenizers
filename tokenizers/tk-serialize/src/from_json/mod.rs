@@ -25,7 +25,7 @@ use self::model::read_unigram;
 use self::model::read_wordlevel;
 #[cfg(feature = "wordpiece")]
 use self::model::read_wordpiece;
-use self::normalizers::read_normalizers;
+use self::normalizers::{read_normalizers, read_piece_normalizer};
 use self::padding::read_padding;
 use self::post_processors::read_post_processor;
 use self::pre_tokenizers::read_pre_tokenizer;
@@ -206,7 +206,7 @@ fn build<M>(
     Ok(Tokenizer::from_parts(
         added_vocabulary,
         normalizers,
-        None,
+        read_piece_normalizer(doc.field("piece_normalizer"))?,
         pre_tokenizer,
         model,
         read_post_processor(doc.field("post_processor"))?,

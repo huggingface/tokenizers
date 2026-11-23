@@ -21,11 +21,12 @@ fn config(slots: &[(&str, &str)]) -> String {
             .to_string()
     };
     format!(
-        r#"{{"version": "2.0", "added_tokens": {}, "normalizer": {}, "pre_tokenizer": {},
+        r#"{{"version": "2.0", "added_tokens": {}, "normalizer": {}, "piece_normalizer": {}, "pre_tokenizer": {},
             "post_processor": {}, "decoder": {}, "model": {}, "padding": {},
             "truncation": {}}}"#,
         slot("added_tokens", "[]"),
         slot("normalizer", "null"),
+        slot("piece_normalizer", "null"),
         slot("pre_tokenizer", "null"),
         slot("post_processor", "null"),
         slot("decoder", "null"),
@@ -203,8 +204,13 @@ const IDEMPOTENT: &[(&str, &str)] = &[
     ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "always", "drop_whitespace": false}"#),
     ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "first", "drop_whitespace": false}"#),
     ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "never", "drop_whitespace": false}"#),
-    // `drop_whitespace` is one flag, never the legacy `Sequence[WhitespaceSplit, Metaspace]`.
     ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "always", "drop_whitespace": true}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "drop_whitespace": false}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "first", "drop_whitespace": false}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "never", "drop_whitespace": false}"#),
+    // `drop_whitespace` is one flag, never the legacy `Sequence[WhitespaceSplit, Metaspace]`.
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "drop_whitespace": true}"#),
+    ("piece_normalizer", r#"{"type": "PrefixSpace"}"#),
     // A `Metaspace` with `split: false` leaves the slot empty, so `null` has to round-trip.
     ("pre_tokenizer",  r#"null"#),
     ("pre_tokenizer",  r#"{"type": "Digits", "individual_digits": true}"#),

@@ -22,7 +22,7 @@ mod tests;
 use self::added_tokens::write_added_tokens;
 use self::decoders::write_decoder;
 use self::model::write_model;
-use self::normalizers::write_normalizer;
+use self::normalizers::{write_normalizer, write_piece_normalizer};
 use self::padding::write_padding;
 use self::post_processors::write_post_processor;
 use self::pre_tokenizers::write_pre_tokenizer;
@@ -98,6 +98,8 @@ pub fn to_json(tokenizer: &Tokenizer) -> Result<String> {
     write_added_tokens(&mut out, tokenizer.get_added_vocabulary());
     out.key("normalizer");
     write_normalizer(&mut out, normalizers)?;
+    out.key("piece_normalizer");
+    write_piece_normalizer(&mut out, tokenizer.get_piece_normalizer())?;
     out.key("pre_tokenizer");
     write_pre_tokenizer(&mut out, tokenizer.get_pre_tokenizer())?;
     out.key("post_processor");
