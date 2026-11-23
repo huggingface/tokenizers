@@ -184,8 +184,11 @@ const COMPONENT_KEYS: [&str; 4] = ["normalizer", "pre_tokenizer", "post_processo
 const OTHER_TOP_LEVEL_KEYS: [&str; 5] =
     ["version", "truncation", "padding", "added_tokens", "model"];
 
+/// The top-level keys only a `"2.0"` file has. This pass writes them and never reads them.
+const KEYS_ADDED_IN_2_0: [&str; 2] = ["role_to_token", "piece_normalizer"];
+
 /// Refuses an unknown `version`, an unknown key, and a component that is neither an object nor
-/// null. A file without `"version"` is a `"1.0"` one, and only `"2.0"` has `role_to_token`.
+/// null. A file without `"version"` is a `"1.0"` one.
 fn check_top_level(root: &Map<String, Value>) -> Result<(), ConvertError> {
     let version = match root.get("version") {
         None => "1.0",
@@ -201,7 +204,7 @@ fn check_top_level(root: &Map<String, Value>) -> Result<(), ConvertError> {
         .filter(|key| {
             !COMPONENT_KEYS.contains(&key.as_str())
                 && !OTHER_TOP_LEVEL_KEYS.contains(&key.as_str())
-                && !(key.as_str() == "role_to_token" && version == "2.0")
+                && !(KEYS_ADDED_IN_2_0.contains(&key.as_str()) && version == "2.0")
         })
         .cloned()
         .collect();
