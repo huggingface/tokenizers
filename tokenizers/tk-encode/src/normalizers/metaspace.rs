@@ -69,16 +69,15 @@ impl MetaspaceNormalizer {
     }
 }
 
-impl pipeline::Normalize for MetaspaceNormalizer {
-    fn normalize<'a>(&self, input: &'a str, offset: usize) -> Result<Cow<'a, str>> {
-        // Return empty input as is
+impl MetaspaceNormalizer {
+    /// Appends the rewritten `input` to `rewritten`. `opens_sequence` says whether `input` starts
+    /// its sequence, which is what [`PrependScheme::First`] acts on.
+    pub fn normalize_into(&self, input: &str, opens_sequence: bool, rewritten: &mut String) {
         if input.is_empty() {
-            return Ok(Cow::Borrowed(input));
+            return;
         }
-        // The delimiter is 3 bytes where a space is 1, so the rewrite grows by 2 bytes per space, hence we allocate a bit more space
-        let mut rewritten = String::with_capacity(input.len() + input.len() / 2);
         if self.drop_whitespace {
-            let mut opens_the_sequence = offset == 0 && !input.starts_with(char::is_whitespace);
+            let mut opens_the_sequence = opens_sequence && !input.starts_with(char::is_whitespace);
             for word in input.split_whitespace() {
                 let prepend = match self.prepend {
                     PrependScheme::Always => true,
@@ -94,7 +93,7 @@ impl pipeline::Normalize for MetaspaceNormalizer {
         } else {
             let prepend = match self.prepend {
                 PrependScheme::Always => true,
-                PrependScheme::First => offset == 0,
+                PrependScheme::First => opens_sequence,
                 PrependScheme::Never => false,
             };
             if prepend && !input.starts_with(' ') && !input.starts_with(self.delimiter) {
@@ -109,6 +108,18 @@ impl pipeline::Normalize for MetaspaceNormalizer {
             }
             rewritten.push_str(rest);
         }
+    }
+}
+
+impl pipeline::Normalize for MetaspaceNormalizer {
+    fn normalize<'a>(&self, input: &'a str, offset: usize) -> Result<Cow<'a, str>> {
+        // Return empty input as is
+        if input.is_empty() {
+            return Ok(Cow::Borrowed(input));
+        }
+        // The delimiter is 3 bytes where a space is 1, so the rewrite grows by 2 bytes per space, hence we allocate a bit more space
+        let mut rewritten = String::with_capacity(input.len() + input.len() / 2);
+        self.normalize_into(input, offset == 0, &mut rewritten);
         Ok(Cow::Owned(rewritten))
     }
 }
@@ -116,40 +127,40 @@ impl pipeline::Normalize for MetaspaceNormalizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tokenizer::pipeline::Normalize as _;
 
-    /// `(prepend, drop_whitespace, offset, input, output)`, every expectation read off released
-    /// `tokenizers` 0.23.1. `offset` is where `input` starts in its sequence.
+    /// `(prepend, drop_whitespace, opens_sequence, input, output)`, every expectation read off
+    /// released `tokenizers` 0.23.1.
     #[rustfmt::skip]
-    const CASES: &[(PrependScheme, bool, usize, &str, &str)] = &[
-        (PrependScheme::Always, false, 0, "aa bb cc",   "▁aa▁bb▁cc"),
-        (PrependScheme::Always, false, 0, " aa bb",     "▁aa▁bb"),
-        (PrependScheme::Always, false, 0, "aa\tbb  cc", "▁aa\tbb▁▁cc"),
-        (PrependScheme::Always, false, 7, "aa bb cc",   "▁aa▁bb▁cc"),
-        (PrependScheme::Never,  false, 0, "aa bb cc",   "aa▁bb▁cc"),
-        (PrependScheme::Never,  false, 0, " aa bb",     "▁aa▁bb"),
-        (PrependScheme::First,  false, 0, "aa bb cc",   "▁aa▁bb▁cc"),
-        (PrependScheme::First,  false, 7, "aa bb cc",   "aa▁bb▁cc"),
-        (PrependScheme::First,  false, 0, " aa bb",     "▁aa▁bb"),
+    const CASES: &[(PrependScheme, bool, bool, &str, &str)] = &[
+        (PrependScheme::Always, false, true,  "aa bb cc",   "▁aa▁bb▁cc"),
+        (PrependScheme::Always, false, true,  " aa bb",     "▁aa▁bb"),
+        (PrependScheme::Always, false, true,  "aa\tbb  cc", "▁aa\tbb▁▁cc"),
+        (PrependScheme::Always, false, false, "aa bb cc",   "▁aa▁bb▁cc"),
+        (PrependScheme::Never,  false, true,  "aa bb cc",   "aa▁bb▁cc"),
+        (PrependScheme::Never,  false, true,  " aa bb",     "▁aa▁bb"),
+        (PrependScheme::First,  false, true,  "aa bb cc",   "▁aa▁bb▁cc"),
+        (PrependScheme::First,  false, false, "aa bb cc",   "aa▁bb▁cc"),
+        (PrependScheme::First,  false, true,  " aa bb",     "▁aa▁bb"),
 
-        (PrependScheme::Always, true,  0, "aa bb cc",   "▁aa▁bb▁cc"),
-        (PrependScheme::Always, true,  0, "aa\tbb  cc", "▁aa▁bb▁cc"),
-        (PrependScheme::Never,  true,  0, "aa bb cc",   "aabbcc"),
+        (PrependScheme::Always, true,  true,  "aa bb cc",   "▁aa▁bb▁cc"),
+        (PrependScheme::Always, true,  true,  "aa\tbb  cc", "▁aa▁bb▁cc"),
+        (PrependScheme::Never,  true,  true,  "aa bb cc",   "aabbcc"),
         // A sequence opening with whitespace gets none: `WhitespaceSplit` removes it, moving the
         // first word off byte zero.
-        (PrependScheme::First,  true,  0, "aa bb cc",   "▁aabbcc"),
-        (PrependScheme::First,  true,  7, "aa bb cc",   "aabbcc"),
-        (PrependScheme::First,  true,  0, " aa bb",     "aabb"),
+        (PrependScheme::First,  true,  true,  "aa bb cc",   "▁aabbcc"),
+        (PrependScheme::First,  true,  false, "aa bb cc",   "aabbcc"),
+        (PrependScheme::First,  true,  true,  " aa bb",     "aabb"),
     ];
 
     #[test]
     fn the_delimiter_lands_where_the_released_crate_puts_it() {
-        for (prepend, drop_whitespace, offset, input, expected) in CASES {
+        for (prepend, drop_whitespace, opens_sequence, input, expected) in CASES {
             let normalizer = MetaspaceNormalizer::new('▁', *prepend, *drop_whitespace);
+            let mut out = String::new();
+            normalizer.normalize_into(input, *opens_sequence, &mut out);
             assert_eq!(
-                normalizer.normalize(input, *offset).unwrap(),
-                *expected,
-                "{prepend:?} drop_whitespace={drop_whitespace} offset={offset} {input:?}"
+                out, *expected,
+                "{prepend:?} drop_whitespace={drop_whitespace} opens_sequence={opens_sequence} {input:?}"
             );
         }
     }
