@@ -91,6 +91,10 @@ pub struct BPE {
     pub(super) affixes: Option<Affixes>,
     pub(super) vocab: BucketVocabStore,
     pub(super) byte_to_gate: [u16; 256],
+    /// The [`Signature::hash`] of every token longer than a [`Signature`] holds whole that is not
+    /// what merging its own text gives, sorted. Only a word with one of these hashes needs the
+    /// vocabulary: every other long word skips the fold. Empty for most models.
+    pub(super) long_folds: Box<[u64]>,
     /// Slots for the per-scratch word cache, from the config. `None` disables it.
     pub(super) cache_capacity: Option<usize>,
 }
@@ -193,8 +197,35 @@ impl BPE {
         proven
     }
 
+    /// The sorted [`Signature::hash`] of every token longer than a [`Signature`] holds whole,
+    /// that a word can equal, and that is not what merging its own text gives. `merged` is
+    /// [`Self::prove_fold`]'s answer.
+    pub(super) fn long_folds(&self, merged: &[bool]) -> Box<[u64]> {
+        let mut hashes: Vec<u64> = Vec::new();
+        for id in 0..self.vocab.id_space() as u32 {
+            let Some(bytes) = self.vocab.id_to_token_bytes(id) else {
+                continue;
+            };
+            if bytes.len() > Signature::BYTES
+                && std::str::from_utf8(bytes).is_ok()
+                && !merged[id as usize]
+            {
+                hashes.push(Signature::new(bytes).hash);
+            }
+        }
+        hashes.sort_unstable();
+        hashes.into_boxed_slice()
+    }
+
     #[inline(always)]
     fn fold_id(&self, word: &[u8], signature: Signature) -> Option<u32> {
+        // 99% of tokens fit a signature, and a word that does not is rarely a token. Merging it
+        // gives the same ids, without hashing all of its bytes for a probe that misses.
+        if signature.len > Signature::BYTES
+            && self.long_folds.binary_search(&signature.hash).is_err()
+        {
+            return None;
+        }
         // One probe; the foldable bit is part of the id that probe already returned. Which entries
         // carry it was settled at load -- see `from_merge_map`.
         let (id, foldable) = self.vocab.get_foldable(word, signature)?;

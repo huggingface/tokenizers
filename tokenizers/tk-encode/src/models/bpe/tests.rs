@@ -290,6 +290,25 @@ fn ignore_merges_prefers_whole_word() {
     assert_eq!(pipeline_ids(&pipeline, "helo"), vec![5, 3]);
 }
 
+// A word longer than 16 bytes skips the vocabulary, because merging gives the same ids. With
+// `ignore_merges` that is not true of every token: here no merge builds the 20-byte one, so the
+// word has to fold to it. Twenty `l`s that are no token still go through the merges.
+#[test]
+fn ignore_merges_folds_a_long_token_that_merging_does_not_give() {
+    let long = "hellohellohellohello";
+    let mut vocab = v(HELLO_VOCAB);
+    vocab.insert(long.into(), 8);
+    let pipeline = BPE::from_config(BpeConfig {
+        vocab,
+        merges: m(HELLO_MERGES),
+        ignore_merges: true,
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(pipeline_ids(&pipeline, long), vec![8]);
+    assert_eq!(pipeline_ids(&pipeline, &"l".repeat(20)), vec![2; 20]);
+}
+
 #[test]
 fn fuse_unk_applies_to_models_with_affixes() {
     let build = |continuing_subword_prefix: Option<&str>, end_of_word_suffix: Option<&str>| {

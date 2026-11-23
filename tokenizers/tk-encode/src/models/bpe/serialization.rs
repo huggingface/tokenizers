@@ -324,6 +324,7 @@ impl BPE {
             cache_capacity,
             vocab,
             byte_to_gate: build_byte_to_gate(),
+            long_folds: Box::default(),
         };
         // Every entry carries a foldable bit, so the encode path is one probe and one bit test
         // with no policy left in it. The policy is decided here, once: a config that declares
@@ -332,10 +333,17 @@ impl BPE {
         //
         // Two phases because the proof runs the merge engine, which borrows `built`: work out the
         // answers first, then set the bit on each entry that earned it.
+        let merged = built.prove_fold();
+        // Without `ignore_merges`, only a token that merging reproduces folds, so skipping the
+        // fold never changes the ids. With it, every token folds, and the long ones that merging
+        // does not reproduce still have to.
+        if ignore_merges {
+            built.long_folds = built.long_folds(&merged);
+        }
         let proven = if ignore_merges {
             vec![true; built.vocab.id_space()]
         } else {
-            built.prove_fold()
+            merged
         };
         for (id, foldable) in proven.iter().enumerate() {
             if *foldable {
