@@ -6,7 +6,8 @@
 //! - the bottom bits pick its **home slot**. A word can be cached in the 16-slot window that starts there
 //! - the top byte is a **tag**, stored in a separate table ([`WordCache::quick_lookup`])
 //!
-//! A lookup walks a 16 byte window in [`WordCache::quick_lookup`] to find a matching tag.
+//! A lookup reads the home slot first: most cached words sit there, and a vacant one ends it.
+//! Otherwise it walks a 16 byte window in [`WordCache::quick_lookup`] to find a matching tag.
 //! When a tag matches, the slot's signature confirms whether it's a hit or not.
 //!
 //! On miss, we return where the cache should insert ([`WordCache::insert`]) the ids;
@@ -175,8 +176,7 @@ impl<'a> WordCache {
         let tag = tag_of(signature);
         // The home slot answers most lookups on its own, and a caller that prefetched it or
         // just read it has it at hand. The scan below costs a load from the tags and a walk.
-        let slot = &self.cached_words[home];
-        if slot.is_vacant() {
+        if self.cached_words[home].is_vacant() {
             // The scan stops at the first empty slot, so this is where it would end.
             return Lookup::Miss(InsertPlacement {
                 index: home,
@@ -184,36 +184,15 @@ impl<'a> WordCache {
                 tag,
             });
         }
-        if slot.has_signature(signature) {
-            if slot.is_stale(self.spilled_generation) {
-                return Lookup::Miss(InsertPlacement {
-                    index: home,
-                    signature,
-                    tag,
-                });
-            }
-            if self.holds_uncovered(slot, word) {
-                return Lookup::Hit(self.get_cached_ids(slot));
-            }
+        if let Some(found) = self.examine(home, word, signature, tag) {
+            return found;
         }
+
         let tag_window = self.tag_window(home);
         let (candidates, first_empty) = tag_window.find_matches_and_first_empty(tag);
-
         for candidate in candidates {
-            let slot = &self.cached_words[candidate];
-            if !slot.has_signature(signature) {
-                continue;
-            }
-            if slot.is_stale(self.spilled_generation) {
-                // The entry is stale: replace it with fresh ids
-                return Lookup::Miss(InsertPlacement {
-                    index: candidate,
-                    signature,
-                    tag,
-                });
-            }
-            if self.holds_uncovered(slot, word) {
-                return Lookup::Hit(self.get_cached_ids(slot));
+            if let Some(found) = self.examine(candidate, word, signature, tag) {
+                return found;
             }
         }
 
@@ -223,6 +202,31 @@ impl<'a> WordCache {
             signature,
             tag,
         })
+    }
+
+    /// What the slot at `index` says about the word: a hit, a stale copy of it to replace, or
+    /// nothing when the slot holds another word.
+    #[inline(always)]
+    fn examine(
+        &'a self,
+        index: usize,
+        word: &[u8],
+        signature: Signature,
+        tag: u8,
+    ) -> Option<Lookup<'a>> {
+        let slot = &self.cached_words[index];
+        if !slot.has_signature(signature) {
+            return None;
+        }
+        if slot.is_stale(self.spilled_generation) {
+            return Some(Lookup::Miss(InsertPlacement {
+                index,
+                signature,
+                tag,
+            }));
+        }
+        self.holds_uncovered(slot, word)
+            .then(|| Lookup::Hit(self.get_cached_ids(slot)))
     }
 
     /// Insert a new (word, ids) pair in the cache
