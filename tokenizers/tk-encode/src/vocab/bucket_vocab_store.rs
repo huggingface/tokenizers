@@ -257,7 +257,8 @@ impl BucketVocabStore {
     /// The perfect hash returns a slot for any word. The word is that slot's token when the
     /// signatures are equal and, for a word its signature does not hold whole, the remaining
     /// bytes are too.
-    #[inline]
+    // Forced: an x86-64 build left it out of line, a call per word the cache does not hold.
+    #[inline(always)]
     pub(crate) fn get_foldable(&self, word: &[u8], signature: Signature) -> Option<(u32, bool)> {
         if self.entries.is_empty() {
             return None;

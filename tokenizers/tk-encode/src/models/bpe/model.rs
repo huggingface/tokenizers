@@ -198,6 +198,8 @@ impl BPE {
     /// whole vocabulary. The two agree on ids: `prove_fold` only sets the bit for an entry that
     /// merging its own text reproduces. A folded word is inserted too, so its later occurrences
     /// come off the cache.
+    // Out of line: it holds the lookup, the fold and the merge call, inlined, and has two callers.
+    #[inline(never)]
     fn tokenize_with_signature(
         &self,
         sequence: &str,

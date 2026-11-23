@@ -167,9 +167,20 @@ impl<'a> WordCache {
     }
 
     /// [`Self::lookup`] for a caller that already holds the word's signature.
+    // Forced: out of line, each call returned its 56-byte `Lookup` through memory.
+    #[inline(always)]
     pub fn lookup_with_signature(&'a self, word: &[u8], signature: Signature) -> Lookup<'a> {
         let home = self.home(signature);
         let tag = tag_of(signature);
+        // The scan below stops at the first empty slot, so an empty home slot is a miss already.
+        // On text the cache has not seen, that is most lookups.
+        if self.quick_lookup[home] == Self::EMPTY {
+            return Lookup::Miss(InsertPlacement {
+                index: home,
+                signature,
+                tag,
+            });
+        }
         let tag_window = self.tag_window(home);
         let (candidates, first_empty) = tag_window.find_matches_and_first_empty(tag);
 
