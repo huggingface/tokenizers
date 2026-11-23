@@ -90,6 +90,13 @@ const TEXTS: &[&str] = &[
     "a </s>b",
     "<unk>x",
     "</s> ▁mixed </s>",
+    "a</s>'s b", // GPT-2's regex cuts a contraction differently after a space
+    // Added tokens that bge-reranker-base, robertuito and maira-2 match after normalization.
+    "a <mask>b",
+    "<mask> a",
+    "@usuariohola",
+    "hola@usuariohola",
+    "<obj>a",
     // Codepoints that normalization moves.
     "café",
     "cafe\u{301}",
@@ -403,4 +410,41 @@ fn pplx_embed_v1_0_6b() {
         "pplx-embed-v1-0.6b",
         "fixtures/models/pplx-embed-v1-0.6b.json",
     );
+}
+
+#[test]
+fn indonesian_roberta_base_posp_tagger() {
+    assert_matches_released(
+        "w11wo/indonesian-roberta-base-posp-tagger",
+        "fixtures/models/indonesian-roberta-base-posp-tagger.json",
+    );
+}
+
+#[test]
+fn bge_reranker_base() {
+    assert_matches_released(
+        "BAAI/bge-reranker-base",
+        "fixtures/models/bge-reranker-base.json",
+    );
+}
+
+#[test]
+fn blenderbot_400m_distill() {
+    assert_matches_released(
+        "facebook/blenderbot-400M-distill",
+        "fixtures/models/blenderbot-400m-distill.json",
+    );
+}
+
+#[test]
+fn robertuito_sentiment_analysis() {
+    assert_matches_released(
+        "pysentimiento/robertuito-sentiment-analysis",
+        "fixtures/models/robertuito-sentiment-analysis.json",
+    );
+}
+
+#[test]
+fn maira_2() {
+    assert_matches_released("microsoft/maira-2", "fixtures/models/maira-2.json");
 }

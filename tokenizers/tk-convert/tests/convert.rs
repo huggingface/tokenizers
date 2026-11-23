@@ -70,8 +70,8 @@ fn assert_no_legacy_residue(v: &Value, what: &str) {
             "{what}: a {tag:?} survives in the pre_tokenizer slot"
         );
     });
-    // What is left of a `Metaspace` is a decoder, which the writer spells without the legacy keys.
-    walk(v, &mut |o| {
+    // The writer spells a `Metaspace` decoder without the legacy keys.
+    walk(&v["decoder"], &mut |o| {
         if o.get("type").and_then(Value::as_str) == Some("Metaspace") {
             assert!(
                 o.contains_key("prepend_scheme"),
@@ -184,15 +184,15 @@ fn metaspace_fields_follow_the_legacy_rules() {
 }
 
 #[test]
-fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
-    // Lone: the delimiter half goes to the normalizer slot, the cut stays a `Split`.
+fn a_metaspace_pre_tokenizer_becomes_a_piece_normalizer_and_a_split() {
+    // Lone: the delimiter half goes to `piece_normalizer`, the cut stays a `Split`.
     let v = done(
         BPE,
         r#", "pre_tokenizer": {"type": "Metaspace", "replacement": "▁"}"#,
     );
     assert_eq!(
-        v["normalizer"],
-        serde_json::json!({"type": "MetaspaceNormalizer", "replacement": "▁",
+        v["piece_normalizer"],
+        serde_json::json!({"type": "Metaspace", "replacement": "▁",
                            "prepend": "always", "drop_whitespace": false})
     );
     assert_eq!(
@@ -210,7 +210,7 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
                      "prepend_scheme": "{scheme}"}}"#
             ),
         );
-        assert_eq!(v["normalizer"]["prepend"], scheme);
+        assert_eq!(v["piece_normalizer"]["prepend"], scheme);
     }
 
     // `split: false`: the normalizer stays, the pre-tokenizer slot is empty.
@@ -220,8 +220,8 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
              "prepend_scheme": "first", "split": false}"#,
     );
     assert_eq!(
-        v["normalizer"],
-        serde_json::json!({"type": "MetaspaceNormalizer", "replacement": "▁",
+        v["piece_normalizer"],
+        serde_json::json!({"type": "Metaspace", "replacement": "▁",
                            "prepend": "first", "drop_whitespace": false})
     );
     assert_eq!(v["pre_tokenizer"], serde_json::Value::Null);
@@ -232,7 +232,7 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
         r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
              {"type": "WhitespaceSplit"}, {"type": "Metaspace", "replacement": "▁"}]}"#,
     );
-    assert_eq!(v["normalizer"]["drop_whitespace"], true);
+    assert_eq!(v["piece_normalizer"]["drop_whitespace"], true);
     assert_eq!(v["pre_tokenizer"]["type"], "Split");
 
     // That pair only works under `always`. With the whitespace gone, the delimiter is the only
@@ -260,26 +260,15 @@ fn a_metaspace_pre_tokenizer_becomes_a_normalizer_and_a_split() {
     );
     assert!(e.contains("with `split: false` is not supported"), "{e}");
 
-    // The delimiter half lands *after* a declared normalizer -- the order the old reader applied,
-    // and the one the added-token matcher depends on.
+    // A declared normalizer keeps its key. Added tokens are matched after it and before the
+    // delimiter is written.
     let v = done(
         BPE,
         r#", "normalizer": {"type": "NFKC"}
            , "pre_tokenizer": {"type": "Metaspace", "replacement": "▁"}"#,
     );
-    let chain = &v["normalizer"]["normalizers"];
-    assert_eq!(chain[0]["type"], "NFKC");
-    assert_eq!(chain[1]["type"], "MetaspaceNormalizer");
-
-    // The delimiter half still lands after a declared normalizer under `split: false`.
-    let v = done(
-        BPE,
-        r#", "normalizer": {"type": "NFKC"}
-           , "pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "split": false}"#,
-    );
-    let chain = &v["normalizer"]["normalizers"];
-    assert_eq!(chain[1]["type"], "MetaspaceNormalizer");
-    assert_eq!(v["pre_tokenizer"], serde_json::Value::Null);
+    assert_eq!(v["normalizer"], serde_json::json!({"type": "NFKC"}));
+    assert_eq!(v["piece_normalizer"]["type"], "Metaspace");
 }
 
 #[test]
@@ -317,13 +306,23 @@ fn a_byte_level_pre_tokenizer_becomes_a_model_flag_and_a_split() {
     // A model that never had one still has to say so.
     assert_eq!(done(BPE, "")["model"]["byte_level"], false);
 
+    let v = done(
+        BPE,
+        r#", "pre_tokenizer": {"type": "ByteLevel", "add_prefix_space": true}"#,
+    );
+    assert_eq!(
+        v["piece_normalizer"],
+        serde_json::json!({"type": "PrefixSpace"})
+    );
+
     // Guards the canonical reader no longer carries: it reads `byte_level` only off a BPE, so
     // one anywhere else would be silently ignored rather than refused.
     let bl = r#", "pre_tokenizer": {"type": "ByteLevel"}"#;
     assert!(
         err(
             BPE,
-            r#", "pre_tokenizer": {"type": "ByteLevel", "add_prefix_space": true}"#
+            r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
+             {"type": "WhitespaceSplit"}, {"type": "ByteLevel", "add_prefix_space": true}]}"#
         )
         .contains("add_prefix_space")
     );
@@ -515,7 +514,7 @@ fn every_fixture_canonicalises_into_something_the_canonical_reader_accepts() {
     /// Fixtures with no canonical form, each with a substring its refusal must contain. Every
     /// entry is a limit of what the pipeline can *build*, not a gap in this pass; listing them
     /// makes adding one a diff a reviewer sees. Checked both ways, so a stale entry fails too.
-    const UNCONVERTIBLE: &[(&str, &str)] = &[("tokenizer.json", "add_prefix_space")];
+    const UNCONVERTIBLE: &[(&str, &str)] = &[];
 
     let Ok(entries) = std::fs::read_dir(std::path::Path::new(DATA)) else {
         eprintln!("skipping: no fixtures at {DATA} (populated by `make data models`)");
