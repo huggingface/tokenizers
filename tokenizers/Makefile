@@ -7,7 +7,7 @@ HF_TEST_REPO = hf-internal-testing/tokenizers-test-data
 # CI overrides with `uvx --from huggingface_hub hf`.
 HF ?= hf
 
-HF_REVISION ?= 8ab6a610963aa5b507de793e56a2a1ab0a5b4110
+HF_REVISION ?= 80c7e5d33dc79f23b8afbda6211a0b878280fc26
 
 $(DATA_DIR)/% :
 	$(dir_guard)
@@ -16,7 +16,7 @@ $(DATA_DIR)/% :
 SHARED_RESOURCES = $(DATA_DIR)/gpt2-vocab.json $(DATA_DIR)/gpt2.json $(DATA_DIR)/big.txt $(DATA_DIR)/albert-base-v1-tokenizer.json $(DATA_DIR)/llama-3-tokenizer.json
 BENCHMARK_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/deepseek-v4.json
 TESTS_RESOURCES = $(SHARED_RESOURCES) $(DATA_DIR)/llama-2.json $(DATA_DIR)/unigram.json $(DATA_DIR)/unigram_wagahaiwa_nekodearu.txt $(DATA_DIR)/roberta.json $(DATA_DIR)/tokenizer-wiki.json $(DATA_DIR)/bert-wiki.json
-ORACLE_RESOURCES = $(DATA_DIR)/gpt2.json $(DATA_DIR)/bert-base-uncased.json $(DATA_DIR)/t5-base.json $(DATA_DIR)/albert-base-v1-tokenizer.json $(DATA_DIR)/fixtures/models/llama-3.2-1b.json $(DATA_DIR)/fixtures/models/all-minilm-l6-v2.json $(DATA_DIR)/fixtures/models/all-mpnet-base-v2.json $(DATA_DIR)/fixtures/models/siglip-base-patch16-224.json $(DATA_DIR)/fixtures/models/mistral-7b-v0.1.json $(DATA_DIR)/fixtures/models/modernbert-base.json $(DATA_DIR)/fixtures/models/smollm2-135m.json $(DATA_DIR)/fixtures/models/bloomz-560m.json $(DATA_DIR)/fixtures/models/siglip2-base-patch16-224.json $(DATA_DIR)/fixtures/models/parakeet-tdt-0.6b-v3.json $(DATA_DIR)/fixtures/models/pplx-embed-v1-0.6b.json $(DATA_DIR)/deepseek-v4.json $(DATA_DIR)/glm-5.2.json
+ORACLE_RESOURCES = $(DATA_DIR)/gpt2.json $(DATA_DIR)/bert-base-uncased.json $(DATA_DIR)/t5-base.json $(DATA_DIR)/albert-base-v1-tokenizer.json $(DATA_DIR)/fixtures/models/llama-3.2-1b.json $(DATA_DIR)/fixtures/models/all-minilm-l6-v2.json $(DATA_DIR)/fixtures/models/all-mpnet-base-v2.json $(DATA_DIR)/fixtures/models/siglip-base-patch16-224.json $(DATA_DIR)/fixtures/models/mistral-7b-v0.1.json $(DATA_DIR)/fixtures/models/modernbert-base.json $(DATA_DIR)/fixtures/models/smollm2-135m.json $(DATA_DIR)/fixtures/models/bloomz-560m.json $(DATA_DIR)/fixtures/models/siglip2-base-patch16-224.json $(DATA_DIR)/fixtures/models/parakeet-tdt-0.6b-v3.json $(DATA_DIR)/fixtures/models/pplx-embed-v1-0.6b.json $(DATA_DIR)/deepseek-v4.json $(DATA_DIR)/glm-5.2.json $(DATA_DIR)/fixtures/models/indonesian-roberta-base-posp-tagger.json $(DATA_DIR)/fixtures/models/bge-reranker-base.json $(DATA_DIR)/fixtures/models/blenderbot-400m-distill.json $(DATA_DIR)/fixtures/models/robertuito-sentiment-analysis.json $(DATA_DIR)/fixtures/models/maira-2.json
 
 .PHONY : data
 data : $(TESTS_RESOURCES) $(BENCHMARK_RESOURCES)

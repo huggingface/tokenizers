@@ -82,21 +82,21 @@ There is no `Metaspace` pre-tokenizer. One is two components — it rewrites tex
 the pipeline keeps apart — so canonically it is spelled as the two it is:
 
 ```text
-  "normalizer":    {"type":"MetaspaceNormalizer", "replacement":"▁",
-                    "prepend":bool, "drop_whitespace":bool}
-  "pre_tokenizer": {"type":"Split", "pattern":{"String":"▁"},
-                    "behavior":"MergedWithNext", "invert":false}
+  "piece_normalizer": {"type":"Metaspace", "replacement":"▁",
+                       "prepend":bool, "drop_whitespace":bool}
+  "pre_tokenizer":    {"type":"Split", "pattern":{"String":"▁"},
+                       "behavior":"MergedWithNext", "invert":false}
 ```
 
 There is no `ByteLevel` pre-tokenizer either. Byte-level describes how the vocabulary is encoded,
 so it is `"byte_level"` on the model; the split it used to imply is a plain `Split` on the GPT-2
-regex, or nothing at all where it said `use_regex: false`.
+regex, or nothing at all where it said `use_regex: false`. Its `add_prefix_space: true` is
+`{"type":"PrefixSpace"}` in `piece_normalizer`.
 
 tk-convert rewrites a legacy `Metaspace` into that pair, and a legacy `ByteLevel` into the model
 flag plus that `Split`. Spelling it out beats folding it back: the
-legacy tag could not say `drop_whitespace` without a wrapping `WhitespaceSplit`, could not sit
-beside a byte-level model, and forced the normalizer to be last in the chain so a writer could find
-it.
+legacy tag could not say `drop_whitespace` without a wrapping `WhitespaceSplit`, and could not
+sit beside a byte-level model.
 
 ## Model
 
