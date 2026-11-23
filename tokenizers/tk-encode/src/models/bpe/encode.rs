@@ -6,7 +6,7 @@ use crate::models::bpe::model::BPE;
 use crate::pipeline::{self, PreTokens, Token};
 use crate::tokenizer::Result;
 use crate::utils::signature::Signature;
-use crate::utils::word_cache::{Lookup, WordCache};
+use crate::utils::word_cache::{HomeSlot, Lookup, WordCache};
 
 /// How many words `tokenize_spans` reads the signatures of before it looks any of them up.
 // Measured at 8, 16, 32 and 64 on an EPYC 7R13: each step up ran fewer instructions per word, and
@@ -68,6 +68,7 @@ impl BPE {
         &self,
         sequence: &str,
         signature: Signature,
+        home: HomeSlot,
         scratch: &mut BpeScratch,
         output: &mut Vec<Token>,
     ) {
@@ -83,7 +84,12 @@ impl BPE {
 
         let mut insert_at = None;
         if let Some(cache) = word_cache.as_ref() {
-            match cache.lookup_with_signature(bytes, signature) {
+            // A run that stopped on a vacant home slot has seen that the word is not cached.
+            let lookup = match home {
+                HomeSlot::Vacant => Lookup::Miss(cache.vacant_home(signature)),
+                HomeSlot::Unknown => cache.lookup_with_signature(bytes, signature),
+            };
+            match lookup {
                 Lookup::Hit(ids) => {
                     ids.append_to(output);
                     return;
@@ -126,14 +132,18 @@ impl BPE {
     ) {
         let mut next = 0;
         while next < signatures.len() {
+            let mut home = HomeSlot::Unknown;
             if let Some(cache) = scratch.word_cache.as_ref() {
                 let word = |i| batch.text(next + i).as_bytes();
-                next += cache.emit_run(&signatures[next..], word, output);
+                let (answered, stopped_on) = cache.emit_run(&signatures[next..], word, output);
+                next += answered;
                 if next == signatures.len() {
                     break;
                 }
+                home = stopped_on;
             }
-            self.tokenize_with_signature(batch.text(next), signatures[next], scratch, output);
+            let (word, signature) = (batch.text(next), signatures[next]);
+            self.tokenize_with_signature(word, signature, home, scratch, output);
             next += 1;
         }
     }
@@ -161,7 +171,7 @@ impl pipeline::Tokenize for BPE {
         output: &mut Vec<Token>,
     ) -> Result<()> {
         let signature = Signature::new(sequence.as_bytes());
-        self.tokenize_with_signature(sequence, signature, scratch, output);
+        self.tokenize_with_signature(sequence, signature, HomeSlot::Unknown, scratch, output);
         Ok(())
     }
 

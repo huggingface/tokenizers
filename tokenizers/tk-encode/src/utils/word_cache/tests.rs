@@ -1,4 +1,5 @@
 use super::ids::MAX_RUN_IDS;
+use super::run::HomeSlot;
 use super::table::{Lookup, WordCache};
 use super::tags::{WINDOW_SIZE, tag_of};
 use crate::pipeline::Token;
@@ -18,7 +19,7 @@ impl<'a> Lookup<'a> {
 /// How many words [`WordCache::emit_run`] answers at the start of `words`.
 fn answered(cache: &WordCache, words: &[&[u8]]) -> usize {
     let signatures: Vec<Signature> = words.iter().map(|word| Signature::new(word)).collect();
-    cache.emit_run(&signatures, |i| words[i], &mut Vec::new())
+    cache.emit_run(&signatures, |i| words[i], &mut Vec::new()).0
 }
 
 fn store(cache: &mut WordCache, word: &[u8], ids: &[u32]) {
@@ -192,7 +193,7 @@ fn a_run_writes_what_lookup_returns() {
     let mut answers = Vec::new();
     while next < words.len() {
         let mut output = Vec::new();
-        let answered = cache.emit_run(&signatures[next..], |i| words[next + i], &mut output);
+        let (answered, _) = cache.emit_run(&signatures[next..], |i| words[next + i], &mut output);
         let mut ids = Token::cast_slice(&output).iter();
         for word in &words[next..next + answered] {
             let expected = cache
@@ -227,11 +228,28 @@ fn a_run_answers_a_word_one_slot_past_its_home() {
         let signatures = [Signature::new(word), Signature::new(b"at-home")];
         let words: [&[u8]; 2] = [word, b"at-home"];
         let mut output = Vec::new();
-        let answered = cache.emit_run(&signatures, |i| words[i], &mut output);
+        let (answered, _) = cache.emit_run(&signatures, |i| words[i], &mut output);
         assert_eq!(answered, 2, "{word:?}");
         let expected: Vec<u32> = ids.iter().chain(&[9]).copied().collect();
         assert_eq!(Token::cast_slice(&output), expected, "{word:?}");
     }
+}
+
+/// A run that stops on a vacant home slot says so, and the caller then skips the lookup. It
+/// must not say so for a taken one: the third word of a one-home table sits two slots on,
+/// where the run does not look and a lookup does.
+#[test]
+fn a_run_reports_a_vacant_home_slot_and_no_other() {
+    let stopped_on = |cache: &WordCache, word: &[u8]| {
+        cache.emit_run(&[Signature::new(word)], |_| word, &mut Vec::new())
+    };
+    let mut cache = WordCache::new(1);
+    assert_eq!(stopped_on(&cache, b"third"), (0, HomeSlot::Vacant));
+    for (i, word) in [&b"first"[..], b"second", b"third"].into_iter().enumerate() {
+        store(&mut cache, word, &[i as u32]);
+    }
+    assert_eq!(stopped_on(&cache, b"third"), (0, HomeSlot::Unknown));
+    assert_eq!(cache.lookup(b"third").hit(), Some(&[2][..]));
 }
 
 /// A one-home table sends every word to slot 0. The run must not answer a word that has only
@@ -276,7 +294,7 @@ fn a_run_does_not_answer_a_long_word_with_another_words_ids() {
     let signatures = [Signature::new(second), Signature::new(first)];
     let words = [second, first];
     let mut output = Vec::new();
-    assert_eq!(cache.emit_run(&signatures, |i| words[i], &mut output), 2);
+    assert_eq!(cache.emit_run(&signatures, |i| words[i], &mut output).0, 2);
     assert_eq!(Token::cast_slice(&output), [2, 1]);
     assert_eq!(answered(&cache, &[third]), 0);
 }
@@ -483,7 +501,11 @@ fn a_hit_never_returns_another_words_ids() {
         }
         // The run is a shortcut for the lookup: what it answers, it answers the same.
         let mut output = Vec::new();
-        if cache.emit_run(&[Signature::new(word)], |_| word, &mut output) == 1 {
+        if cache
+            .emit_run(&[Signature::new(word)], |_| word, &mut output)
+            .0
+            == 1
+        {
             assert_eq!(Token::cast_slice(&output), &ids[..], "{word:?}");
             in_a_run += 1;
         }

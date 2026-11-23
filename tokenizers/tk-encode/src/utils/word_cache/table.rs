@@ -130,6 +130,16 @@ impl WordCache {
             .then(|| Lookup::Hit(self.spill.ids(record)))
     }
 
+    /// Where to insert a word whose home slot is vacant: in that slot.
+    #[inline(always)]
+    pub fn vacant_home(&self, signature: Signature) -> InsertPlacement {
+        InsertPlacement {
+            index: self.home(signature),
+            signature,
+            tag: tag_of(signature),
+        }
+    }
+
     /// Insert a new (word, ids) pair in the cache
     ///
     /// The [InsertPlacement] comes from a [`Lookup::Miss`] of the same `word`.

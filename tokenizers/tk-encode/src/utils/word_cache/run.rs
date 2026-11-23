@@ -7,9 +7,18 @@ use crate::pipeline::Token;
 use crate::utils::signature::Signature;
 use crate::utils::uncovered::Uncovered;
 
+/// What a run saw in the home slot of the word it stopped on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HomeSlot {
+    /// Vacant: the cache does not hold the word.
+    Vacant,
+    /// Taken, or not read. Only a lookup tells whether the cache holds the word.
+    Unknown,
+}
+
 impl WordCache {
     /// Answers the leading words of a batch straight from their slots, and appends their ids to
-    /// `output`. Returns how many words it answered.
+    /// `output`. Returns how many words it answered, and what it saw of the next one.
     ///
     /// A word is answered from its home slot, or from the slot after it, where most words that
     /// lost their home slot are. The run stops at the first word neither slot holds, or holds
@@ -27,7 +36,7 @@ impl WordCache {
         signatures: &[Signature],
         word: impl Fn(usize) -> &'w [u8],
         output: &mut Vec<Token>,
-    ) -> usize {
+    ) -> (usize, HomeSlot) {
         // A hit copies `MAX_RUN_IDS` ids or fewer at one size, whatever the word's own number.
         output.reserve(MAX_RUN_IDS * signatures.len());
         let slots = self.slots.as_ptr();
@@ -37,6 +46,7 @@ impl WordCache {
         let dst = unsafe { output.as_mut_ptr().add(output.len()).cast::<u32>() };
         let mut next = dst;
         let mut answered = 0;
+        let mut stopped_on = HomeSlot::Unknown;
         for (i, &signature) in signatures.iter().enumerate() {
             let word = || word(i);
             // SAFETY: a home is masked with `placement_mask` (`next_pow2 - 1`), and the table
@@ -54,6 +64,7 @@ impl WordCache {
             } else if home.is_vacant() {
                 // No word is stored past a vacant slot of its window: the cache does not hold
                 // this one.
+                stopped_on = HomeSlot::Vacant;
                 break;
             } else if let Some(after) =
                 unsafe { self.emit_after_home(home, &signature, word, next) }
@@ -66,7 +77,7 @@ impl WordCache {
         }
         // SAFETY: `next` started at `dst` and moved past the ids of each word the loop answered.
         unsafe { output.set_len(output.len() + next.offset_from_unsigned(dst)) };
-        answered
+        (answered, stopped_on)
     }
 
     /// Copies the ids of the word with this signature to `next` when `slot` holds them in the

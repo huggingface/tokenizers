@@ -61,6 +61,7 @@ mod tags;
 #[cfg(test)]
 mod tests;
 
+pub use run::HomeSlot;
 pub use table::{Lookup, WordCache};
 
 #[cfg(doc)]
