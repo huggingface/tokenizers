@@ -2,6 +2,7 @@ pub(crate) mod cache;
 #[cfg(feature = "http")]
 pub mod from_pretrained;
 pub(crate) mod signature;
+pub(crate) mod uncovered;
 pub(crate) mod word_cache;
 
 // Optional system-regex backend, needed only for a *regex* pattern that bitcannon does not cover.

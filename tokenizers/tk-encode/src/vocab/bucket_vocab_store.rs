@@ -7,6 +7,7 @@ use std::fmt;
 use crate::Result;
 use crate::utils::perfect_hash::Mphf;
 use crate::utils::signature::Signature;
+use crate::utils::uncovered::Uncovered;
 
 static LONG_WORD_HASHER: RandomState = RandomState::with_seeds(
     0x243F_6A88_85A3_08D3,
@@ -294,17 +295,16 @@ impl BucketVocabStore {
         .then_some((entry.id & VOCAB_ID_MASK, entry.id & FOLD_BIT != 0))
     }
 
-    /// Whether the token at `slot`, whose signature is `word`'s, also has its
-    /// [`Signature::uncovered`] bytes.
+    /// Whether the token at `slot`, whose signature is `word`'s, also has its [`Uncovered`]
+    /// bytes.
     #[inline]
     fn holds_uncovered(&self, slot: usize, word: &[u8]) -> bool {
-        let uncovered = Signature::uncovered(word);
-        if uncovered.is_empty() {
+        let Some(uncovered) = Uncovered::of(word) else {
             return true;
-        }
+        };
         let span = self.spans[slot];
         let token = &self.bytes[span.start as usize..][..span.len as usize];
-        Signature::same_uncovered(Signature::uncovered(token), uncovered)
+        Uncovered::of(token) == Some(uncovered)
     }
 
     /// Records that this token folds to itself. Called once per entry at load, after the proof.
@@ -455,7 +455,7 @@ mod tests {
 
     /// A word past [`Signature::BYTES`] with a token's length, start and end has that token's
     /// signature: only the bytes in between tell the two apart. The word differs from the token
-    /// in one of them, each in turn, at the lengths [`Signature::uncovered`] changes shape.
+    /// in one of them, each in turn, at the lengths [`Uncovered`] changes shape.
     #[test]
     fn a_word_with_a_tokens_signature_and_check_is_not_found() {
         for len in [17, 23, 24, 32, 33, 48, 49] {

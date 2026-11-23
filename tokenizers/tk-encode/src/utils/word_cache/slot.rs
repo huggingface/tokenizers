@@ -22,7 +22,7 @@ pub const MAX_INLINE_IDS: usize = 3;
 /// ## spilled: every other word
 ///
 /// The token ids are stored in [`WordCache::spilled_buffer`], followed by the word's
-/// [`Signature::uncovered`] bytes. The slot holds the offsets of the ids in that buffer.
+/// [`Uncovered`] bytes. The slot holds the offsets of the ids in that buffer.
 /// ```text
 /// ┌───────────┬───────────┬──────────┬──────────┬────────────┬──────────────────────────┐
 /// │   head    │   tail    │  start   │   end    │ generation │           meta           │

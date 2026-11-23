@@ -257,7 +257,7 @@ fn a_run_does_not_answer_a_word_whose_ids_were_evicted() {
 /// word the other's ids. One id each, so the words are spilled only for their bytes.
 ///
 /// The second word differs in one byte, each byte the signature leaves out in turn. The
-/// lengths are the ones where the stored bytes change shape: see [`Signature::uncovered`].
+/// lengths are the ones where the stored bytes change shape: see [`Uncovered`].
 #[test]
 fn words_with_one_signature_keep_their_own_ids() {
     for len in [17, 23, 24, 32, 33, 48, 49] {

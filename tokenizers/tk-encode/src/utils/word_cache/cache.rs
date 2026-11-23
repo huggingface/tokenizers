@@ -4,6 +4,7 @@ use super::ids::{CachedIds, MAX_RUN_IDS};
 use super::slot::{CacheSlotType, MAX_INLINE_IDS, Spilled, WordCacheSlot};
 use super::tags::{Window, tag_of};
 use crate::utils::signature::Signature;
+use crate::utils::uncovered::Uncovered;
 
 /// A table mapping words (`[u8]`) to the token ids they encode to (`[u32]`)
 pub struct WordCache {
@@ -19,7 +20,7 @@ pub struct WordCache {
     /// The maximum capacity, in number of elements, allowed for spilled_buffer
     pub(super) spilled_budget: usize,
     /// Holds what does not fit in a [`WordCacheSlot`]: more than three ids, and the
-    /// [`Signature::uncovered`] bytes of a long word, packed four to a `u32` right after its ids.
+    /// [`Uncovered`] bytes of a long word, packed four to a `u32` right after its ids.
     ///
     /// It ends with [`MAX_RUN_IDS`] zeros, so that many `u32` can be read from the start of
     /// any word's ids.
@@ -155,7 +156,7 @@ impl<'a> WordCache {
         if signature.len == 0 || signature.len > WordCacheSlot::MAX_WORD_BYTES {
             return;
         }
-        let uncovered = Signature::uncovered(word);
+        let uncovered = Uncovered::of(word).map_or(&[][..], Uncovered::as_bytes);
         let n_ids = ids.len();
 
         let slot = if n_ids <= MAX_INLINE_IDS && uncovered.is_empty() {
@@ -207,17 +208,15 @@ impl<'a> WordCache {
         (signature.hash & self.placement_mask) as usize
     }
 
-    /// Whether `slot`, whose signature is `word`'s, also holds its [`Signature::uncovered`] bytes.
+    /// Whether `slot`, whose signature is `word`'s, also holds its [`Uncovered`] bytes.
     #[inline(always)]
     pub(super) fn holds_uncovered(&self, slot: &WordCacheSlot, word: &[u8]) -> bool {
-        let uncovered = Signature::uncovered(word);
-        if uncovered.is_empty() {
+        let Some(uncovered) = Uncovered::of(word) else {
             return true;
-        }
+        };
         // `insert` spills every word longer than its signature, bytes right after the ids.
         let (_, ids_end) = Spilled(slot).ids_offsets();
-        let stored: &[u8] = bytemuck::cast_slice(&self.spilled_buffer[ids_end..]);
-        Signature::same_uncovered(&stored[..uncovered.len()], uncovered)
+        uncovered.is_prefix_of(bytemuck::cast_slice(&self.spilled_buffer[ids_end..]))
     }
 
     /// Helper to fetch the ids from the word

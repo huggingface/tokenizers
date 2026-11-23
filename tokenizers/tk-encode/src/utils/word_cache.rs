@@ -35,7 +35,7 @@
 //! # A hit is always the word that was stored
 //!
 //! A signature holds a word of [`Signature::BYTES`] bytes or less whole, so a matching slot is the same word.
-//! A longer word also stores its [`Signature::uncovered`] bytes, in [`WordCache::spilled_buffer`] after its ids.
+//! A longer word also stores its [`Uncovered`] bytes, in [`WordCache::spilled_buffer`] after its ids.
 //! A lookup compares them before it reports a hit.
 //!
 //! # Where the ideas come from
