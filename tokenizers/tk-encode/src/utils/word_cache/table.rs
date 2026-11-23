@@ -133,6 +133,7 @@ impl WordCache {
     /// Where to insert a word whose home slot is vacant: in that slot.
     #[inline(always)]
     pub fn vacant_home(&self, signature: Signature) -> InsertPlacement {
+        debug_assert!(self.slots[self.home(signature)].is_vacant());
         InsertPlacement {
             index: self.home(signature),
             signature,

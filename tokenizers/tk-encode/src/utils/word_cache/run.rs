@@ -22,9 +22,7 @@ impl WordCache {
     ///
     /// A word is answered from its home slot, or from the slot after it, where most words that
     /// lost their home slot are. The run stops at the first word neither slot holds, or holds
-    /// with more than [`MAX_RUN_IDS`] ids. That word goes through
-    /// [`Self::lookup_with_signature`]. On text the cache has seen, nearly every word is answered
-    /// here, so this loop is kept to a few loads, compares and stores per word.
+    /// with more than [`MAX_RUN_IDS`] ids: that word goes through [`Self::lookup_with_signature`].
     ///
     /// `word` gives the bytes of the word at an index of `signatures`. It is only called for a
     /// word longer than its signature.
@@ -51,23 +49,23 @@ impl WordCache {
             let word = || word(i);
             // SAFETY: a home is masked with `placement_mask` (`next_pow2 - 1`), and the table
             // holds `next_pow2 + WINDOW_SIZE` slots.
-            // A reference, not a copy: a copy whose address is taken lives on the stack, where
-            // each compare of this loop would reload it.
-            let home = unsafe { &*slots.add((signature.hash & placement_mask) as usize) };
-            // SAFETY, for the three calls: `next` is at most `MAX_RUN_IDS * answered` ids past
-            // `dst`, and the room reserved above holds `MAX_RUN_IDS` more. `home` holds its
-            // ids in the first, and is a home slot in the third.
+            let home_slot = unsafe { slots.add((signature.hash & placement_mask) as usize) };
+            // A reference into the table, not a copy: a copy whose address is taken lives on
+            // the stack, where each compare of this loop would reload it.
+            // SAFETY: `home_slot` is inside the table.
+            let home = unsafe { &*home_slot };
+            // SAFETY, all three calls: `next` has room for `MAX_RUN_IDS` ids, reserved above.
+            // `home` holds its ids in the first, and `home_slot` is a home slot in the third.
             if home.holds_inline(signature) {
                 next = unsafe { home.copy_inline_ids(next) };
             } else if let Some(after) = unsafe { self.emit_spilled(home, signature, word, next) } {
                 next = after;
             } else if home.is_vacant() {
-                // No word is stored past a vacant slot of its window: the cache does not hold
-                // this one.
+                // No word is stored past a vacant slot of its window.
                 stopped_on = HomeSlot::Vacant;
                 break;
             } else if let Some(after) =
-                unsafe { self.emit_after_home(home, &signature, word, next) }
+                unsafe { self.emit_after_home(home_slot, &signature, word, next) }
             {
                 next = after;
             } else {
@@ -108,30 +106,30 @@ impl WordCache {
         }
     }
 
-    /// Copies the ids of the word with this signature to `next` when the slot after `home`
-    /// holds them, inline or in the spill buffer. Returns `next` moved past them.
+    /// Copies the ids of the word with this signature to `next` when the slot after its home
+    /// slot holds them, inline or in the spill buffer. Returns `next` moved past them.
     ///
     /// # Safety
     ///
-    /// `home` must be a home slot of the table, and `next` must be valid for writes of
-    /// [`MAX_RUN_IDS`] `u32`s.
+    /// `home_slot` must point to a home slot inside the table, and `next` must be valid for
+    /// writes of [`MAX_RUN_IDS`] `u32`s.
     // Out of line: inline, these checks took registers from the run loop, which then ran four
     // more instructions for every word it answered.
     #[inline(never)]
     unsafe fn emit_after_home<'w>(
         &self,
-        home: &WordCacheSlot,
+        home_slot: *const WordCacheSlot,
         signature: &Signature,
         word: impl FnOnce() -> &'w [u8],
         next: *mut u32,
     ) -> Option<*mut u32> {
         // SAFETY: the table holds `WINDOW_SIZE` slots past its last home slot.
-        let slot = unsafe { &*std::ptr::from_ref(home).add(1) };
+        let slot = unsafe { &*home_slot.add(1) };
         if !slot.has_signature(*signature) {
             return None;
         }
         // SAFETY: the caller left room for `MAX_RUN_IDS` ids.
-        unsafe { self.emit_slot(slot, signature, word, next) }
+        unsafe { self.emit_matching_slot(slot, signature, word, next) }
     }
 
     /// Copies the ids of a word to `next` from a slot that has its signature: inline ids, or
@@ -143,13 +141,14 @@ impl WordCache {
     // Out of line: most calls of `emit_after_home` end on its first test, and with this code
     // inline each one saved and restored seven registers around it.
     #[inline(never)]
-    unsafe fn emit_slot<'w>(
+    unsafe fn emit_matching_slot<'w>(
         &self,
         slot: &WordCacheSlot,
         signature: &Signature,
         word: impl FnOnce() -> &'w [u8],
         next: *mut u32,
     ) -> Option<*mut u32> {
+        debug_assert!(slot.has_signature(*signature));
         if slot.record().is_none() {
             // SAFETY: the slot holds its ids, and the caller left room for them.
             return Some(unsafe { slot.copy_inline_ids(next) });

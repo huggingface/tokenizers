@@ -240,16 +240,36 @@ fn a_run_answers_a_word_one_slot_past_its_home() {
 /// where the run does not look and a lookup does.
 #[test]
 fn a_run_reports_a_vacant_home_slot_and_no_other() {
-    let stopped_on = |cache: &WordCache, word: &[u8]| {
-        cache.emit_run(&[Signature::new(word)], |_| word, &mut Vec::new())
+    let run = |cache: &WordCache, words: &[&[u8]]| {
+        let signatures: Vec<Signature> = words.iter().map(|word| Signature::new(word)).collect();
+        cache.emit_run(&signatures, |i| words[i], &mut Vec::new())
     };
     let mut cache = WordCache::new(1);
-    assert_eq!(stopped_on(&cache, b"third"), (0, HomeSlot::Vacant));
+    assert_eq!(run(&cache, &[b"third"]), (0, HomeSlot::Vacant));
     for (i, word) in [&b"first"[..], b"second", b"third"].into_iter().enumerate() {
         store(&mut cache, word, &[i as u32]);
     }
-    assert_eq!(stopped_on(&cache, b"third"), (0, HomeSlot::Unknown));
-    assert_eq!(cache.lookup(b"third").hit(), Some(&[2][..]));
+    assert_eq!(run(&cache, &[b"third"]), (0, HomeSlot::Unknown));
+
+    // The verdict is about the word the run stopped on, not about one it answered.
+    let mut cache = WordCache::new(1 << 8);
+    store(&mut cache, b"stored", &[1]);
+    assert_eq!(
+        run(&cache, &[b"stored", b"never-stored"]),
+        (1, HomeSlot::Vacant)
+    );
+}
+
+/// A word stored through [`WordCache::vacant_home`] is found again, and so is the next word
+/// with the same home slot: the first one's slot has to read as taken to the window scan.
+#[test]
+fn a_word_stored_at_its_vacant_home_leaves_its_window_whole() {
+    let mut cache = WordCache::new(1);
+    let at = cache.vacant_home(Signature::new(b"first"));
+    cache.insert(at, b"first", [1].into_iter());
+    store(&mut cache, b"second", &[2]);
+    assert_eq!(cache.lookup(b"first").hit(), Some(&[1][..]));
+    assert_eq!(cache.lookup(b"second").hit(), Some(&[2][..]));
 }
 
 /// A one-home table sends every word to slot 0. The run must not answer a word that has only
