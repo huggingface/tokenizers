@@ -8,27 +8,32 @@ A `1.0` file is a *legacy* file. tk-convert turns one into a `2.0` file; this cr
 
 ```text
 {                                        ← key order is exact, as written
-  "version"        : "2.0"
-  "truncation"     : null                  encode-time settings, never read
-  "padding"        : null
-  "added_tokens"   : [ AddedToken, … ]
-  "normalizer"     : Component | null
-  "pre_tokenizer"  : Component | null
-  "post_processor" : Component | null
-  "decoder"        : Component | null
-  "model"          : Model
+  "version"          : "2.0"
+  "truncation"       : null                  encode-time settings, never read
+  "padding"          : null
+  "added_tokens"     : [ AddedToken, … ]
+  "normalizer"       : Component | null
+  "piece_normalizer" : Component | null
+  "pre_tokenizer"    : Component | null
+  "post_processor"   : Component | null
+  "decoder"          : Component | null
+  "model"            : Model
 }
 ```
 
 ## Pipeline
 
 ```text
-             normalizer      pre_tokenizer        model       post_processor
-  text  ──▶  rewrite text ──▶ cut into words ──▶ words→ids ──▶ add specials  ──▶ ids
+             normalizer     piece_normalizer       pre_tokenizer        model       post_processor
+  text  ──▶  rewrite text ──▶ rewrite each piece ──▶ cut into words ──▶ words→ids ──▶ add specials  ──▶ ids
 
-                                             decoder
-  ids   ─────────────────────────────────────────────────────────────────────▶  text
+                                                    decoder
+  ids   ──────────────────────────────────────────────────────────────────────────────────────▶  text
 ```
+
+Added tokens are cut out of the text twice: before `normalizer`, then after it. A piece is the text
+left between two added tokens. `piece_normalizer` rewrites each piece on its own, so what it writes
+at the start of a piece never lands in front of an added token.
 
 ## Component
 
@@ -37,7 +42,7 @@ Every component, at every depth, is an object tagged with `"type"`.
 ```text
 { "type": "Split", … }                    a component
 
-{ "type": "Sequence", "<children>": [ … ] }    nests, one key per family:
+{ "type": "Sequence", "<children>": [ … ] }    nests, one key per family (no piece_normalizer Sequence):
 
      normalizer ─▶ "normalizers"      post_processor ─▶ "processors"
   pre_tokenizer ─▶ "pretokenizers"           decoder ─▶ "decoders"
@@ -46,6 +51,7 @@ Every component, at every depth, is an object tagged with `"type"`.
 | slot | `"type"` |
 |---|---|
 | **normalizer** | `Sequence` `BertNormalizer` `ByteLevel` `Lowercase` `MetaspaceNormalizer` `NFC` `NFD` `NFKC` `NFKD` `Nmt` `Precompiled` `Prepend` `Replace` `Strip` `StripAccents` |
+| **piece_normalizer** | `Metaspace` `PrefixSpace` |
 | **pre_tokenizer** | `Sequence` `BertPreTokenizer` `CharDelimiterSplit` `Digits` `FixedLength` `Punctuation` `Split` `UnicodeScripts` `Whitespace` `WhitespaceSplit` |
 | **post_processor** | `TemplateProcessing` |
 | **decoder** | `Sequence` `BPEDecoder` `ByteFallback` `ByteLevel` `CTC` `Fuse` `Metaspace` `Replace` `Strip` `WordPiece` |

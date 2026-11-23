@@ -91,7 +91,9 @@ pub use tk_encode::FromPretrainedParameters;
 // ---------------------------------------------------------------------------
 #[cfg(feature = "normalizers")]
 pub use tk_serialize::BASE64;
-pub use tk_serialize::{decoder_schemas, normalizer_schemas, pre_tokenizer_schemas, schemas};
+pub use tk_serialize::{
+    decoder_schemas, normalizer_schemas, piece_normalizer_schemas, pre_tokenizer_schemas, schemas,
+};
 pub use tk_serialize::{
     from_json, from_json_file, json, padding_from_json, post_processor_from_json,
     truncation_from_json,

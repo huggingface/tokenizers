@@ -1,4 +1,5 @@
-//! The `normalizer` object, flattened into the pipeline's `Vec<Normalizer>`.
+//! The `normalizer` object, flattened into the pipeline's `Vec<Normalizer>`, and the
+//! `piece_normalizer` object.
 
 #[cfg(not(feature = "normalizers"))]
 use super::needs_feature;
@@ -12,7 +13,7 @@ use tk_encode::normalizers::prepend::Prepend;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
 use tk_encode::normalizers::strip::Strip;
 use tk_encode::normalizers::utils::Lowercase;
-use tk_encode::pipeline::Normalizer;
+use tk_encode::pipeline::{Normalizer, PieceNormalizer};
 use tk_encode::tokenizer::Result;
 
 #[cfg(feature = "normalizers")]
@@ -29,6 +30,26 @@ pub(super) fn read_normalizers(cfg: Option<&Json<'_>>) -> Result<Vec<Normalizer>
         push_normalizer(cfg, &mut out)?;
     }
     Ok(out)
+}
+
+pub(super) fn read_piece_normalizer(cfg: Option<&Json<'_>>) -> Result<Option<PieceNormalizer>> {
+    let Some(cfg) = cfg else {
+        return Ok(None);
+    };
+    let kind = cfg
+        .type_tag()
+        .ok_or_else(|| unsupported("a piece normalizer with no `type`"))?;
+    let owner = format!("the `{kind}` piece normalizer");
+    let piece_normalizer = match kind {
+        "Metaspace" => PieceNormalizer::Metaspace(MetaspaceNormalizer::new(
+            super::pre_tokenizers::read_char(cfg, "replacement")?,
+            read_prepend_scheme(cfg, &owner, "prepend")?,
+            cfg.need(&owner, "drop_whitespace", Json::as_bool)?,
+        )),
+        "PrefixSpace" => PieceNormalizer::PrefixSpace,
+        other => return Err(unsupported(&format!("the `{other}` piece normalizer"))),
+    };
+    Ok(Some(piece_normalizer))
 }
 
 pub(super) fn read_prepend_scheme(cfg: &Json<'_>, owner: &str, key: &str) -> Result<PrependScheme> {

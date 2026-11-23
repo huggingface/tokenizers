@@ -1,10 +1,11 @@
-//! The `normalizer` object, rebuilt from the pipeline's flattened `Vec<Normalizer>`.
+//! The `normalizer` object, rebuilt from the pipeline's flattened `Vec<Normalizer>`, and the
+//! `piece_normalizer` object.
 use super::writer::Out;
 #[cfg(feature = "normalizers")]
 use base64::Engine as _;
 use tk_encode::normalizers::metaspace::PrependScheme;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
-use tk_encode::pipeline::Normalizer;
+use tk_encode::pipeline::{Normalizer, PieceNormalizer};
 use tk_encode::tokenizer::Result;
 
 pub(super) fn prepend_scheme_name(scheme: PrependScheme) -> Result<&'static str> {
@@ -35,6 +36,32 @@ pub(super) fn write_normalizer(out: &mut Out, chain: &[Normalizer]) -> Result<()
             out.obj_close();
         }
     }
+    Ok(())
+}
+
+pub(super) fn write_piece_normalizer(
+    out: &mut Out,
+    piece_normalizer: Option<&PieceNormalizer>,
+) -> Result<()> {
+    let Some(piece_normalizer) = piece_normalizer else {
+        out.null();
+        return Ok(());
+    };
+    out.obj_open();
+    match piece_normalizer {
+        PieceNormalizer::Metaspace(metaspace) => {
+            out.type_tag("Metaspace");
+            out.field_str(
+                "replacement",
+                metaspace.delimiter().encode_utf8(&mut [0; 4]),
+            );
+            out.field_str("prepend", prepend_scheme_name(metaspace.prepend())?);
+            out.field_bool("drop_whitespace", metaspace.drop_whitespace());
+        }
+        PieceNormalizer::PrefixSpace => out.type_tag("PrefixSpace"),
+        other => return Err(format!("to_json cannot write the piece normalizer {other:?}").into()),
+    }
+    out.obj_close();
     Ok(())
 }
 
