@@ -266,7 +266,7 @@ impl pipeline::Tokenize for WordPiece {
 
         let placement = match word_cache.lookup(sequence.as_bytes()) {
             Lookup::Hit(ids) => {
-                output.extend(ids.iter().copied().map(Token::from));
+                output.extend(ids.as_slice().iter().copied().map(Token::from));
                 return Ok(());
             }
             Lookup::Miss(at) => at,
