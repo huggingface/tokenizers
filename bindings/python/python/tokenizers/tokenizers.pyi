@@ -8,11 +8,13 @@ from typing import Any, Final, Literal, final
 from . import decoders as decoders
 from . import models as models
 from . import normalizers as normalizers
+from . import piece_normalizers as piece_normalizers
 from . import pre_tokenizers as pre_tokenizers
 from . import processors as processors
 from .decoders import Decoder
 from .models import Model
 from .normalizers import Normalizer
+from .piece_normalizers import PieceNormalizer
 from .pre_tokenizers import PreTokenizer
 from .processors import PostProcessor
 
@@ -682,6 +684,8 @@ class Tokenizer:
         """
         The normalizer, which cleans up the text before it is split, or `None`.
 
+        Added tokens with `normalized=True` are matched on its output.
+
         Returns an editable view of the tokenizer's normalizer.
         """
     @normalizer.setter
@@ -693,6 +697,18 @@ class Tokenizer:
         """
     @padding.setter
     def padding(self, /, padding: Padding | None) -> None: ...
+    @property
+    def piece_normalizer(self, /) -> PieceNormalizer | None:
+        """
+        The step that rewrites each piece of text between added tokens, or `None`.
+
+        It runs after the added tokens are cut, so a prefix it writes at the start of a piece
+        never lands in front of an added token.
+
+        Returns an editable view of the tokenizer's piece normalizer.
+        """
+    @piece_normalizer.setter
+    def piece_normalizer(self, /, piece_normalizer: PieceNormalizer | None) -> None: ...
     @property
     def post_processor(self, /) -> PostProcessor | None:
         """
