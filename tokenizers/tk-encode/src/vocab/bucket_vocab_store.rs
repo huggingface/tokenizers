@@ -294,8 +294,8 @@ impl BucketVocabStore {
         .then_some((entry.id & VOCAB_ID_MASK, entry.id & FOLD_BIT != 0))
     }
 
-    /// Whether the token at `slot`, whose signature is `word`'s, also has the bytes of `word`
-    /// that the signature leaves out.
+    /// Whether the token at `slot`, whose signature is `word`'s, also has its
+    /// [`Signature::uncovered`] bytes.
     #[inline]
     fn holds_uncovered(&self, slot: usize, word: &[u8]) -> bool {
         let uncovered = Signature::uncovered(word);
@@ -304,7 +304,7 @@ impl BucketVocabStore {
         }
         let span = self.spans[slot];
         let token = &self.bytes[span.start as usize..][..span.len as usize];
-        Signature::uncovered(token) == uncovered
+        Signature::same_uncovered(Signature::uncovered(token), uncovered)
     }
 
     /// Records that this token folds to itself. Called once per entry at load, after the proof.
@@ -436,14 +436,10 @@ mod tests {
         }
     }
 
-    /// A word past [`Signature::BYTES`] with a token's length, start and end has that token's
-    /// signature: only the bytes in between tell the two apart. One such word in 2^24 also has
-    /// the token's [`Entry::check`] on the slot it lands on. Too rare to find, so it is forged:
-    /// the token is copied to the word's slot under the word's own check.
-    #[test]
-    fn a_word_with_a_tokens_signature_and_check_is_not_found() {
-        let (token, word) = (b"01234567-token--89abcdef", b"01234567-other--89abcdef");
-        assert_eq!(Signature::new(token), Signature::new(word));
+    /// A vocabulary of the one `token`, where `word` lands on the token's entry under the word's
+    /// own [`Entry::check`]. One word in 2^24 does on a real vocabulary: too rare to find, so
+    /// the token is copied to the word's slot.
+    fn with_token_on_the_slot_of(token: &[u8], word: &[u8]) -> BucketVocabStore {
         let mut vocab = BucketVocabStore::build(vec![(token.to_vec(), 0)]).unwrap();
         let token_slot = vocab.id_to_slot[0] as usize;
         let key = mphf_key(word, Signature::new(word));
@@ -454,8 +450,35 @@ mod tests {
         };
         vocab.ends[word_slot] = vocab.ends[token_slot];
         vocab.spans[word_slot] = vocab.spans[token_slot];
+        vocab
+    }
 
-        assert_eq!(vocab.get_bytes(word), None);
+    /// A word past [`Signature::BYTES`] with a token's length, start and end has that token's
+    /// signature: only the bytes in between tell the two apart. The word differs from the token
+    /// in one of them, each in turn, at the lengths [`Signature::uncovered`] changes shape.
+    #[test]
+    fn a_word_with_a_tokens_signature_and_check_is_not_found() {
+        for len in [17, 23, 24, 32, 33, 48, 49] {
+            let token: Vec<u8> = (0..len as u8).collect();
+            for at in 8..len - 8 {
+                let mut word = token.clone();
+                word[at] ^= 0x80;
+                assert_eq!(Signature::new(&token), Signature::new(&word));
+                let vocab = with_token_on_the_slot_of(&token, &word);
+                assert_eq!(vocab.get_bytes(&word), None, "len {len} byte {at}");
+            }
+        }
+    }
+
+    /// [`Entry::check`] holds one length for every token of 254 bytes or more. A word one byte
+    /// longer than such a token, with its start and end, is told apart by its bytes alone.
+    #[test]
+    fn a_word_one_byte_longer_than_a_long_token_is_not_found() {
+        let token = [&b"01234567"[..], &[b'm'; 284], b"89abcdef"].concat();
+        let word = [&b"01234567"[..], &[b'm'; 285], b"89abcdef"].concat();
+        let vocab = with_token_on_the_slot_of(&token, &word);
+        assert_eq!(vocab.get_bytes(&word), None);
+        assert_eq!(vocab.get_bytes(&token), Some(0));
     }
 
     /// A slot the build never wrote holds no token, and its zeroed [`Ends`] are those of a

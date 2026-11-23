@@ -35,7 +35,7 @@
 //! # A hit is always the word that was stored
 //!
 //! A signature holds a word of [`Signature::BYTES`] bytes or less whole, so a matching slot is the same word.
-//! A longer word also stores the bytes its signature leaves out, in [`WordCache::spilled_buffer`] after its ids.
+//! A longer word also stores its [`Signature::uncovered`] bytes, in [`WordCache::spilled_buffer`] after its ids.
 //! A lookup compares them before it reports a hit.
 //!
 //! # Where the ideas come from
@@ -73,8 +73,8 @@ pub struct WordCache {
     spilled_generation: u32,
     /// The maximum capacity, in number of elements, allowed for spilled_buffer
     spilled_budget: usize,
-    /// Holds what does not fit in a [`WordCacheSlot`]: more than three ids, and the bytes of a
-    /// long word that its signature leaves out, packed four to a `u32` right after its ids.
+    /// Holds what does not fit in a [`WordCacheSlot`]: more than three ids, and the
+    /// [`Signature::uncovered`] bytes of a long word, packed four to a `u32` right after its ids.
     spilled_buffer: Vec<u32>,
 }
 
@@ -295,8 +295,7 @@ impl<'a> WordCache {
         (signature.hash & self.placement_mask) as usize
     }
 
-    /// Whether `slot`, whose signature is `word`'s, also holds the bytes of `word` that the
-    /// signature leaves out.
+    /// Whether `slot`, whose signature is `word`'s, also holds its [`Signature::uncovered`] bytes.
     fn holds_uncovered(&self, slot: &WordCacheSlot, word: &[u8]) -> bool {
         let uncovered = Signature::uncovered(word);
         if uncovered.is_empty() {
@@ -305,7 +304,7 @@ impl<'a> WordCache {
         // `insert` spills every word longer than its signature, bytes right after the ids.
         let (_, ids_end) = Spilled(slot).ids_offsets();
         let stored: &[u8] = bytemuck::cast_slice(&self.spilled_buffer[ids_end..]);
-        stored[..uncovered.len()] == *uncovered
+        Signature::same_uncovered(&stored[..uncovered.len()], uncovered)
     }
 
     /// Helper to fetch the ids from the word
@@ -359,8 +358,8 @@ fn tag_of(signature: Signature) -> u8 {
 ///
 /// ## spilled: every other word
 ///
-/// The token ids are stored in [`WordCache::spilled_buffer`], followed by the bytes of the word
-/// that its signature leaves out. The slot holds the offsets of the ids in that buffer.
+/// The token ids are stored in [`WordCache::spilled_buffer`], followed by the word's
+/// [`Signature::uncovered`] bytes. The slot holds the offsets of the ids in that buffer.
 /// ```text
 /// ┌───────────┬───────────┬──────────┬──────────┬────────────┬──────────────────────────┐
 /// │   head    │   tail    │  start   │   end    │ generation │           meta           │
@@ -771,17 +770,26 @@ mod tests {
     /// Two words past [`Signature::BYTES`] with the same length, start and end have the same
     /// signature, home slot and tag. A lookup that stopped at the signature would hand one
     /// word the other's ids. One id each, so the words are spilled only for their bytes.
+    ///
+    /// The second word differs in one byte, each byte the signature leaves out in turn. The
+    /// lengths are the ones where the stored bytes change shape: see [`Signature::uncovered`].
     #[test]
     fn words_with_one_signature_keep_their_own_ids() {
-        let mut cache = WordCache::new(1 << 8);
-        let (first, second) = (b"01234567-first--89abcdef", b"01234567-second-89abcdef");
-        assert_eq!(Signature::new(first), Signature::new(second));
+        for len in [17, 23, 24, 32, 33, 48, 49] {
+            let first: Vec<u8> = (0..len as u8).collect();
+            for at in 8..len - 8 {
+                let mut second = first.clone();
+                second[at] ^= 0x80;
+                assert_eq!(Signature::new(&first), Signature::new(&second));
 
-        store(&mut cache, first, &[1]);
-        assert_eq!(cache.lookup(second).hit(), None);
-        store(&mut cache, second, &[2]);
-        assert_eq!(cache.lookup(first).hit(), Some(&[1][..]));
-        assert_eq!(cache.lookup(second).hit(), Some(&[2][..]));
+                let mut cache = WordCache::new(1 << 8);
+                store(&mut cache, &first, &[1]);
+                assert_eq!(cache.lookup(&second).hit(), None, "len {len} byte {at}");
+                store(&mut cache, &second, &[2]);
+                assert_eq!(cache.lookup(&first).hit(), Some(&[1][..]));
+                assert_eq!(cache.lookup(&second).hit(), Some(&[2][..]));
+            }
+        }
     }
 
     /// One window shape per row: the needle in various lanes, an empty slot in

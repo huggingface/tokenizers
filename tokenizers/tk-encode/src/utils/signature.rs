@@ -5,8 +5,8 @@
 //! Two words of [`Signature::BYTES`] bytes or less are equal exactly when their signatures are.
 //!
 //! A longer word shares its signature with every word of the same length, start and end.
-//! A table compares [`Signature::uncovered`] as well before it accepts such a word.
-//! No lookup accepts a word on its hash alone.
+//! A table compares [`Signature::uncovered`] as well before it accepts such a word, with
+//! [`Signature::same_uncovered`]. No lookup accepts a word on its hash alone.
 //!
 //! Reading a signature costs two 8-byte loads whatever the word's length.
 //! There is no branch on the length, so the encode loop reads the signatures of many words ahead
@@ -63,6 +63,9 @@ const LOW_BYTES: [u64; 9] = [
     u64::MAX,
 ];
 
+/// How many bytes [`Signature::same_uncovered`] compares at a time.
+const BLOCK: usize = 16;
+
 impl Signature {
     /// The longest word a signature holds whole.
     pub(crate) const BYTES: usize = 16;
@@ -113,12 +116,43 @@ impl Signature {
         )
     }
 
-    /// The bytes of `word` its signature does not hold: empty unless the word is longer than
-    /// [`Self::BYTES`].
+    /// The bytes of `word` a table compares on top of its signature: empty unless the word is
+    /// longer than [`Self::BYTES`].
+    ///
+    /// They hold every byte the signature leaves out. Where those are fewer than [`BLOCK`], the
+    /// run takes in bytes the signature holds too, so that it is never shorter than one block.
     #[inline]
     pub(crate) fn uncovered(word: &[u8]) -> &[u8] {
-        word.get(8..word.len().saturating_sub(8))
-            .unwrap_or_default()
+        let len = word.len();
+        if len <= Self::BYTES {
+            return &[];
+        }
+        let start = (len - BLOCK).min(8);
+        let end = (start + BLOCK).max(len - 8);
+        &word[start..end]
+    }
+
+    /// Whether two runs of [`Self::uncovered`] bytes are equal.
+    ///
+    /// It compares one [`BLOCK`] at a time and tests the outcome once, so no branch depends on
+    /// the bytes. The last block is read from the end of the run, over the one before it.
+    #[inline(always)]
+    pub(crate) fn same_uncovered(a: &[u8], b: &[u8]) -> bool {
+        let (Some(last_a), Some(last_b)) = (a.last_chunk::<BLOCK>(), b.last_chunk::<BLOCK>())
+        else {
+            return false;
+        };
+        if a.len() != b.len() {
+            return false;
+        }
+        let mut diff = u128::from_ne_bytes(*last_a) ^ u128::from_ne_bytes(*last_b);
+        // One byte short of the end: when the run is whole blocks, the last one is read above.
+        let whole = a.len() - 1;
+        let (blocks_a, blocks_b) = (a[..whole].as_chunks().0, b[..whole].as_chunks().0);
+        for (a, b) in blocks_a.iter().zip(blocks_b) {
+            diff |= u128::from_ne_bytes(*a) ^ u128::from_ne_bytes(*b);
+        }
+        diff == 0
     }
 
     // `tail` is rotated because a word of 8 bytes or less has `tail == head`: unrotated, two such
@@ -229,18 +263,48 @@ mod tests {
         assert_ne!(seven.hash, ten.hash);
     }
 
+    /// Lengths on both sides of each edge: 17 and 23 take in bytes of the tail, 24 to 32 are one
+    /// block, 33 is the first to need two, 48 and 49 are whole blocks and one byte past.
+    const LONG_LENGTHS: [usize; 7] = [17, 23, 24, 32, 33, 48, 49];
+
+    /// Each byte is its own offset in the word, so a run names where it starts.
     #[test]
-    fn a_word_past_sixteen_bytes_leaves_its_middle_uncovered() {
+    fn the_uncovered_bytes_hold_what_the_signature_leaves_out_in_a_block_or_more() {
         assert_eq!(Signature::uncovered(b""), b"");
         assert_eq!(Signature::uncovered(b"0123456789abcdef"), b"");
-        assert_eq!(Signature::uncovered(b"0123456789abcdefg"), b"8");
-        assert_eq!(
-            Signature::uncovered(b"01234567-middle-89abcdef"),
-            b"-middle-"
-        );
-        assert_eq!(
-            Signature::new(b"01234567-middle-89abcdef"),
-            Signature::new(b"01234567+MIDDLE+89abcdef")
-        );
+        for len in LONG_LENGTHS {
+            let word: Vec<u8> = (0..len as u8).collect();
+            let run = Signature::uncovered(&word);
+            let (start, end) = (run[0] as usize, run[0] as usize + run.len());
+            assert_eq!(run, &word[start..end], "len {len}");
+            assert!(start <= 8 && end >= len - 8, "len {len}: {start}..{end}");
+            assert!(run.len() >= BLOCK, "len {len}: {start}..{end}");
+        }
+    }
+
+    /// A compare that skipped any one byte of a run would call two words equal.
+    #[test]
+    fn two_runs_that_differ_in_one_byte_are_not_the_same() {
+        for len in LONG_LENGTHS {
+            let word: Vec<u8> = (0..len as u8).collect();
+            let run = Signature::uncovered(&word);
+            assert!(Signature::same_uncovered(run, run), "len {len}");
+            for at in 0..run.len() {
+                let mut other = run.to_vec();
+                other[at] ^= 0x80;
+                assert!(
+                    !Signature::same_uncovered(run, &other),
+                    "len {len} byte {at}"
+                );
+            }
+        }
+    }
+
+    /// Past 254 bytes the vocabulary knows a token's length only through this compare.
+    #[test]
+    fn a_run_is_not_the_same_as_a_longer_run_that_starts_with_it() {
+        let (short, long) = ([b'm'; 284], [b'm'; 285]);
+        assert!(!Signature::same_uncovered(&short, &long));
+        assert!(!Signature::same_uncovered(&long, &short));
     }
 }
