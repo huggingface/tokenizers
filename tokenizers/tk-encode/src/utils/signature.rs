@@ -12,6 +12,8 @@
 //! There is no branch on the length, so the encode loop reads the signatures of many words ahead
 //! of looking any of them up.
 
+use std::ops::Range;
+
 #[cfg(doc)]
 use crate::utils::uncovered::Uncovered;
 
@@ -88,31 +90,35 @@ impl Signature {
         Self::from_parts(head, head, len)
     }
 
-    /// [`Self::new`] for a word inside a larger buffer. It reads 8 bytes at the word's start
-    /// even when the word is shorter, which is what spares the branch on the length.
+    /// [`Self::new`] for the word that `word` covers in `chunk`. It reads 8 bytes at the word's
+    /// start even when the word is shorter, which is what spares the branch on the length.
     ///
     /// # Safety
     ///
-    /// `readable` bytes must be readable from the word's start: the word, then what follows it
-    /// in the same allocation.
-    // A safe version over two slices was measured: 2 more instructions per word, 1% on English.
+    /// `word` must be a range of `chunk`.
+    // A safe version, which had to check that, was measured: 2 more instructions per word, 1%
+    // on English.
     #[inline(always)]
-    pub(crate) unsafe fn new_readable(word: &[u8], readable: usize) -> Self {
-        debug_assert!(readable >= word.len());
-        if readable < 8 {
+    pub(crate) unsafe fn new_in(chunk: &[u8], word: Range<usize>) -> Self {
+        debug_assert!(word.start <= word.end && word.end <= chunk.len());
+        let start = word.start;
+        // SAFETY: the caller vouches for the range.
+        let word = unsafe { chunk.get_unchecked(word) };
+        if chunk.len() - start < 8 {
             return Self::new(word);
         }
         let len = word.len();
         let short = len.min(8);
         let mask = LOW_BYTES[short];
-        // SAFETY: the caller vouches for `readable >= 8` bytes from the word's start. The second
-        // read starts `len - short` bytes in: at the start when `len < 8`, 8 bytes before the
-        // end of the word otherwise.
+        // SAFETY: the chunk holds 8 bytes or more from the word's start. The second read starts
+        // `len - short` bytes in: at the start when `len < 8`, 8 bytes before the end of the
+        // word otherwise.
         let (head, tail) = unsafe {
-            let start = word.as_ptr();
+            // From the chunk's pointer, not the word's: the first read may go past the word.
+            let first = chunk.as_ptr().add(start);
             (
-                start.cast::<[u8; 8]>().read_unaligned(),
-                start.add(len - short).cast::<[u8; 8]>().read_unaligned(),
+                first.cast::<[u8; 8]>().read_unaligned(),
+                first.add(len - short).cast::<[u8; 8]>().read_unaligned(),
             )
         };
         Self::from_parts(
@@ -171,26 +177,19 @@ mod tests {
         )
     }
 
-    /// Words are slices of a larger buffer, which is what makes 8 bytes readable past a short one.
-    /// Passing the word's own length as `readable` covers a word at the very end of a buffer.
+    /// A word with 8 bytes or more after its start takes the two fixed reads, and a word nearer
+    /// the end of its buffer does not: every start and length on both sides of that line.
     #[test]
     fn both_constructors_read_the_same_signature() {
         let buffer: &[u8] = b"\x00\xffhello \xc0\xc1world\x80\x7f\x01\xfe\x00 the quick brown\xff";
-        for start in 0..8 {
-            for len in 0..=20 {
-                let word = &buffer[start..start + len];
-                let want = expected(word);
-                assert_eq!(Signature::new(word), want, "start {start} len {len}");
-                // SAFETY: the buffer holds `buffer.len() - start` bytes from the word's start, and
-                // the word itself holds `len`.
-                let (in_buffer, alone) = unsafe {
-                    (
-                        Signature::new_readable(word, buffer.len() - start),
-                        Signature::new_readable(word, len),
-                    )
-                };
-                assert_eq!(in_buffer, want, "start {start} len {len}");
-                assert_eq!(alone, want, "start {start} len {len}");
+        for start in 0..buffer.len() {
+            for len in 0..=(buffer.len() - start).min(20) {
+                let word = start..start + len;
+                let want = expected(&buffer[word.clone()]);
+                assert_eq!(Signature::new(&buffer[word.clone()]), want, "{word:?}");
+                // SAFETY: `word` is a range of `buffer`.
+                let in_buffer = unsafe { Signature::new_in(buffer, word.clone()) };
+                assert_eq!(in_buffer, want, "{word:?}");
             }
         }
     }

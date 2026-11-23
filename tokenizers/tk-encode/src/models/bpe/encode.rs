@@ -21,23 +21,21 @@ const BATCH: usize = 64;
 // Out of line: inside the encode loop, the compiler reloaded the loop's addresses per word.
 #[inline(never)]
 fn read_signatures(batch: PreTokens<'_>, signatures: &mut [Signature], cache: Option<&WordCache>) {
-    let chunk_len = batch.chunk().len();
-    let words = signatures.iter_mut().zip(batch.iter());
+    let chunk = batch.chunk().as_bytes();
+    let words = signatures.iter_mut().zip(batch.spans());
     // One loop per case, so that neither tests for a cache on every word.
     match cache {
         Some(cache) => {
-            for (signature, (span, sequence)) in words {
-                let readable = chunk_len - span.start as usize;
-                // SAFETY: a span lies inside its chunk, which holds `readable` bytes from here.
-                *signature = unsafe { Signature::new_readable(sequence.as_bytes(), readable) };
+            for (signature, span) in words {
+                // SAFETY: every span of a `PreTokens` is a range of its chunk.
+                *signature = unsafe { Signature::new_in(chunk, span.range()) };
                 cache.prefetch(*signature);
             }
         }
         None => {
-            for (signature, (span, sequence)) in words {
-                let readable = chunk_len - span.start as usize;
-                // SAFETY: a span lies inside its chunk, which holds `readable` bytes from here.
-                *signature = unsafe { Signature::new_readable(sequence.as_bytes(), readable) };
+            for (signature, span) in words {
+                // SAFETY: every span of a `PreTokens` is a range of its chunk.
+                *signature = unsafe { Signature::new_in(chunk, span.range()) };
             }
         }
     }
