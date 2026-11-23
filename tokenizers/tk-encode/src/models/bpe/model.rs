@@ -17,7 +17,9 @@ use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, WordCache};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
 /// How many words [`BPE::tokenize_spans`] reads the signatures of before it looks any of them up.
-const BATCH: usize = 16;
+// Measured at 8, 16, 32 and 64 on an EPYC 7R13: each step up ran fewer instructions per word, and
+// 32 and 64 were the fastest, on text the cache had seen and on text it had not.
+const BATCH: usize = 64;
 
 /// Reads the signature of every word of `batch` into `signatures`, and starts loading each
 /// word's home slot in the cache.
