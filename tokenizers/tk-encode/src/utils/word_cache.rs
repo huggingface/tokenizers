@@ -61,7 +61,6 @@ mod tags;
 #[cfg(test)]
 mod tests;
 
-pub use ids::MAX_RUN_IDS;
 pub use table::{Lookup, WordCache};
 
 #[cfg(doc)]

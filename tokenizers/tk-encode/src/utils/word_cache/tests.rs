@@ -1,6 +1,7 @@
 use super::ids::MAX_RUN_IDS;
 use super::table::{Lookup, WordCache};
 use super::tags::{WINDOW_SIZE, tag_of};
+use crate::pipeline::Token;
 use crate::utils::signature::Signature;
 
 const SPILLED_BUDGET: usize = 1 << 16;
@@ -17,11 +18,7 @@ impl<'a> Lookup<'a> {
 /// How many words [`WordCache::emit_home_hits`] answers at the start of `words`.
 fn answered(cache: &WordCache, words: &[&[u8]]) -> usize {
     let signatures: Vec<Signature> = words.iter().map(|word| Signature::new(word)).collect();
-    let mut out = vec![0u32; MAX_RUN_IDS * words.len()];
-    // SAFETY: `out` holds `MAX_RUN_IDS` ids per signature.
-    let (answered, _) =
-        unsafe { cache.emit_home_hits(&signatures, |i| words[i], out.as_mut_ptr()) };
-    answered
+    cache.emit_home_hits(&signatures, |i| words[i], &mut Vec::new())
 }
 
 fn store(cache: &mut WordCache, word: &[u8], ids: &[u32]) {
@@ -124,11 +121,11 @@ fn a_word_too_long_for_a_slot_is_never_cached() {
     }
 }
 
-/// [`CachedIds::write`] copies a fixed number of ids and reports the real one. Each shape
-/// of hit: ids in the slot, ids in the buffer, the most ids one copy holds and one more. The
-/// last word stored is the last record of the buffer, where the copy reads past its ids.
+/// [`CachedIds::append_to`] copies a fixed number of ids and keeps the real one. Each shape of
+/// hit: ids in the slot, ids in the buffer, the most ids one copy holds and one more. The last
+/// word stored is the last record of the buffer, where the copy reads past its ids.
 #[test]
-fn a_hit_writes_the_ids_it_holds() {
+fn a_hit_appends_the_ids_it_holds() {
     let mut cache = WordCache::new(1 << 8);
     let most: Vec<u32> = (100..100 + MAX_RUN_IDS as u32).collect();
     let one_more: Vec<u32> = (200..=200 + MAX_RUN_IDS as u32).collect();
@@ -146,10 +143,10 @@ fn a_hit_writes_the_ids_it_holds() {
         let Lookup::Hit(hit) = cache.lookup(word) else {
             panic!("{word:?} was stored");
         };
-        let mut out = vec![u32::MAX; hit.room()];
-        // SAFETY: `out` holds `hit.room()` ids.
-        let written = unsafe { hit.write(out.as_mut_ptr()) };
-        assert_eq!(&out[..written], ids, "{word:?}");
+        let mut output = vec![Token::from(u32::MAX)];
+        hit.append_to(&mut output);
+        let expected: Vec<u32> = [u32::MAX].iter().chain(ids).copied().collect();
+        assert_eq!(Token::cast_slice(&output), expected, "{word:?}");
     }
 }
 
@@ -192,12 +189,9 @@ fn a_run_of_home_hits_writes_what_lookup_returns() {
     let mut next = 0;
     let mut answers = Vec::new();
     while next < words.len() {
-        let run = &signatures[next..];
-        let mut out = vec![0u32; MAX_RUN_IDS * run.len()];
-        // SAFETY: `out` holds `MAX_RUN_IDS` ids per signature of the run.
-        let (answered, written) =
-            unsafe { cache.emit_home_hits(run, |i| words[next + i], out.as_mut_ptr()) };
-        let mut ids = out[..written].iter();
+        let mut output = Vec::new();
+        let answered = cache.emit_home_hits(&signatures[next..], |i| words[next + i], &mut output);
+        let mut ids = Token::cast_slice(&output).iter();
         for word in &words[next..next + answered] {
             let expected = cache
                 .lookup(word)
@@ -206,6 +200,7 @@ fn a_run_of_home_hits_writes_what_lookup_returns() {
             let got: Vec<u32> = ids.by_ref().take(expected.len()).copied().collect();
             assert_eq!(got, expected, "{word:?}");
         }
+        assert_eq!(ids.next(), None, "the run wrote ids of no word");
         answers.push(answered);
         next += answered + 1;
     }

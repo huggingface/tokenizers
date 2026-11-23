@@ -2,12 +2,13 @@
 
 use super::ids::MAX_RUN_IDS;
 use super::table::WordCache;
+use crate::pipeline::Token;
 use crate::utils::signature::Signature;
 use crate::utils::uncovered::Uncovered;
 
 impl WordCache {
-    /// Answers the leading words of a batch straight from their home slots, into the caller's
-    /// buffer. Returns how many words it answered and how many ids it wrote.
+    /// Answers the leading words of a batch straight from their home slots, and appends their
+    /// ids to `output`. Returns how many words it answered.
     ///
     /// It stops at the first word its home slot does not hold, or holds with more than
     /// [`MAX_RUN_IDS`] ids. That word goes through [`Self::lookup_with_signature`]. On text the
@@ -16,21 +17,20 @@ impl WordCache {
     ///
     /// `word` gives the bytes of the word at an index of `signatures`. It is only called for a
     /// word longer than its signature.
-    ///
-    /// # Safety
-    ///
-    /// `dst` must be valid for writes of [`MAX_RUN_IDS`] `u32`s per signature. A hit writes a
-    /// fixed number of ids, whatever the word's own.
     // Forced into its one caller, a small function of its own: inside the whole encode loop, the
     // table's address and mask were reloaded per word.
     #[inline(always)]
-    pub unsafe fn emit_home_hits<'w>(
+    pub fn emit_home_hits<'w>(
         &self,
         signatures: &[Signature],
         word: impl Fn(usize) -> &'w [u8],
-        dst: *mut u32,
-    ) -> (usize, usize) {
+        output: &mut Vec<Token>,
+    ) -> usize {
+        // A hit copies `MAX_RUN_IDS` ids or fewer at one size, whatever the word's own number.
+        output.reserve(MAX_RUN_IDS * signatures.len());
         let slots = self.slots.as_ptr();
+        // SAFETY: the end of a `Vec`'s contents is inside its allocation.
+        let dst = unsafe { output.as_mut_ptr().add(output.len()).cast::<u32>() };
         let mut next = dst;
         let mut answered = 0;
         for (i, &signature) in signatures.iter().enumerate() {
@@ -40,8 +40,8 @@ impl WordCache {
             // would then live on the stack, where each compare of this loop would reload it.
             let slot = unsafe { &*slots.add(self.home(signature)) };
             if slot.holds_inline(signature) {
-                // SAFETY: `next` is at most `MAX_RUN_IDS * answered` past `dst`, and the caller
-                // left room for `MAX_RUN_IDS` more.
+                // SAFETY: `next` is at most `MAX_RUN_IDS * answered` ids past `dst`, and the
+                // room reserved above holds `MAX_RUN_IDS` more.
                 next = unsafe { slot.copy_inline_ids(next) };
             } else if let Some(record) = slot.run_record(signature, self.spill.generation())
                 && (signature.len <= Signature::BYTES
@@ -58,7 +58,8 @@ impl WordCache {
             }
             answered += 1;
         }
-        // SAFETY: `next` was derived from `dst` and only moved forward.
-        (answered, unsafe { next.offset_from_unsigned(dst) })
+        // SAFETY: `next` started at `dst` and moved past the ids of each word the loop answered.
+        unsafe { output.set_len(output.len() + next.offset_from_unsigned(dst)) };
+        answered
     }
 }

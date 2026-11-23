@@ -6,7 +6,7 @@ use crate::models::bpe::model::BPE;
 use crate::pipeline::{self, PreTokens, Token};
 use crate::tokenizer::Result;
 use crate::utils::signature::Signature;
-use crate::utils::word_cache::{Lookup, MAX_RUN_IDS, WordCache};
+use crate::utils::word_cache::{Lookup, WordCache};
 
 /// How many words `tokenize_spans` reads the signatures of before it looks any of them up.
 // Measured at 8, 16, 32 and 64 on an EPYC 7R13: each step up ran fewer instructions per word, and
@@ -42,11 +42,6 @@ fn read_signatures(batch: PreTokens<'_>, signatures: &mut [Signature], cache: Op
         }
     }
 }
-
-// The fused cache probe stores ids straight at a `*mut u32` pointing into the `Vec<Token>`
-// the caller is filling. That is only sound while a token is layout-identical to its id.
-const _: () = assert!(size_of::<Token>() == size_of::<u32>());
-const _: () = assert!(align_of::<Token>() == align_of::<u32>());
 
 impl BPE {
     #[inline(always)]
@@ -92,14 +87,7 @@ impl BPE {
         if let Some(cache) = word_cache.as_ref() {
             match cache.lookup_with_signature(bytes, signature) {
                 Lookup::Hit(ids) => {
-                    output.reserve(ids.room());
-                    // SAFETY: the spare capacity holds `ids.room()` ids, and a `Token` is laid
-                    // out as its `u32` id. The hit wrote `written` of them.
-                    unsafe {
-                        let dst = output.as_mut_ptr().add(output.len()).cast::<u32>();
-                        let written = ids.write(dst);
-                        output.set_len(output.len() + written);
-                    }
+                    ids.append_to(output);
                     return;
                 }
                 Lookup::Miss(at) => insert_at = Some(at),
@@ -141,17 +129,8 @@ impl BPE {
         let mut next = 0;
         while next < signatures.len() {
             if let Some(cache) = scratch.word_cache.as_ref() {
-                let run = &signatures[next..];
-                output.reserve(MAX_RUN_IDS * run.len());
-                // SAFETY: the spare capacity holds `MAX_RUN_IDS` ids per word of the run, and a
-                // `Token` is laid out as its `u32` id. The run wrote `written` of them.
-                unsafe {
-                    let dst = output.as_mut_ptr().add(output.len()).cast::<u32>();
-                    let word = |i| batch.text(next + i).as_bytes();
-                    let (answered, written) = cache.emit_home_hits(run, word, dst);
-                    output.set_len(output.len() + written);
-                    next += answered;
-                }
+                let word = |i| batch.text(next + i).as_bytes();
+                next += cache.emit_home_hits(&signatures[next..], word, output);
                 if next == signatures.len() {
                     break;
                 }
