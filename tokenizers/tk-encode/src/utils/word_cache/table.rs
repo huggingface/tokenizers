@@ -10,12 +10,16 @@ use crate::utils::signature::Signature;
 use crate::utils::uncovered::Uncovered;
 
 /// A table mapping words (`[u8]`) to the token ids they encode to (`[u32]`)
+///
+/// A word is stored in the first free slot of its window, and a slot never becomes free again
+/// short of a reset. So every slot from a word's home slot to the one that holds it is taken:
+/// a lookup that meets a vacant slot has seen every slot the word can be in.
 pub struct WordCache {
     /// One slot per cached word. See [`WordCacheSlot`] for more details.
     pub(super) slots: Box<[WordCacheSlot]>,
     /// One byte of hash per slot, scanned to find the slots of a window that may hold a word.
     tags: Box<[u8]>,
-    placement_mask: u64,
+    pub(super) placement_mask: u64,
     /// What does not fit in a slot.
     pub(super) spill: SpillBuffer,
 }

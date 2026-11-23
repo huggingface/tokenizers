@@ -90,20 +90,20 @@ impl Signature {
         Self::from_parts(head, head, len)
     }
 
-    /// [`Self::new`] for the word that `word` covers in `chunk`. It reads 8 bytes at the word's
-    /// start even when the word is shorter, which is what spares the branch on the length.
+    /// [`Self::new`] for the word at `range` in `chunk`. It reads 8 bytes at the word's start
+    /// even when the word is shorter, which is what spares the branch on the length.
     ///
     /// # Safety
     ///
-    /// `word` must be a range of `chunk`.
+    /// `range` must be a range of `chunk`.
     // A safe version, which had to check that, was measured: 2 more instructions per word, 1%
     // on English.
     #[inline(always)]
-    pub(crate) unsafe fn new_in(chunk: &[u8], word: Range<usize>) -> Self {
-        debug_assert!(word.start <= word.end && word.end <= chunk.len());
-        let start = word.start;
+    pub(crate) unsafe fn new_in(chunk: &[u8], range: Range<usize>) -> Self {
+        debug_assert!(range.start <= range.end && range.end <= chunk.len());
+        let start = range.start;
         // SAFETY: the caller vouches for the range.
-        let word = unsafe { chunk.get_unchecked(word) };
+        let word = unsafe { chunk.get_unchecked(range) };
         if chunk.len() - start < 8 {
             return Self::new(word);
         }

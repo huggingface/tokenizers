@@ -117,7 +117,7 @@ impl WordCacheSlot {
             && u64::from(self.meta) & !Self::INLINE_IDS == (signature.len as u64) << 8
     }
 
-    /// [`Self::has_signature`] with a record [`WordCache::emit_home_hits`] may answer with: of
+    /// [`Self::has_signature`] with a record [`WordCache::emit_run`] may answer with: of
     /// `generation`, and of no more than [`MAX_RUN_IDS`] ids.
     #[inline(always)]
     pub(super) fn run_record(&self, signature: Signature, generation: u32) -> Option<Record> {
@@ -163,8 +163,8 @@ impl WordCacheSlot {
     /// `u32`s.
     #[inline(always)]
     pub(super) unsafe fn copy_inline_ids(&self, dst: *mut u32) -> *mut u32 {
-        // Read before the copy. For all the compiler knows `dst` is this slot, and it loaded
-        // `meta` again after the copy: one more load per word of a run.
+        // Read before the copy. Read after it, the count was loaded from the slot again: one
+        // more instruction per word of a run.
         let ids_len = (self.meta & 0xFF) as usize;
         // SAFETY: the caller left room for the three lanes, and an inline slot counts three ids
         // at most.

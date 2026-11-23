@@ -112,7 +112,7 @@ impl BPE {
 
     /// Tokenizes a batch of words whose signatures are already read.
     ///
-    /// [`WordCache::emit_home_hits`] answers runs of words straight from the cache, and
+    /// [`WordCache::emit_run`] answers runs of words straight from the cache, and
     /// [`Self::tokenize_with_signature`] takes each word that a run stops on.
     // Out of line, with the run loop inlined into it: on text the cache has not seen a run is
     // 2 to 5 words long, and a call per run cost more than the run.
@@ -128,7 +128,7 @@ impl BPE {
         while next < signatures.len() {
             if let Some(cache) = scratch.word_cache.as_ref() {
                 let word = |i| batch.text(next + i).as_bytes();
-                next += cache.emit_home_hits(&signatures[next..], word, output);
+                next += cache.emit_run(&signatures[next..], word, output);
                 if next == signatures.len() {
                     break;
                 }

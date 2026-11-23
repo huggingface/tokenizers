@@ -11,16 +11,16 @@ use crate::pipeline::Token;
 const _: () = assert!(size_of::<Token>() == size_of::<u32>());
 const _: () = assert!(align_of::<Token>() == align_of::<u32>());
 
-/// The most ids of a word that [`WordCache::emit_home_hits`] answers.
+/// The most ids of a word that [`WordCache::emit_run`] answers.
 ///
 /// Up to this number, a hit copies ids at one size whatever the word's own: see
 /// [`CachedIds::append_to`]. A word with more ids is cached too, and takes the slower lookup.
-pub const MAX_RUN_IDS: usize = 32;
+pub(super) const MAX_RUN_IDS: usize = 32;
 
 /// The ids a cached word encodes to.
 #[derive(Clone, Copy)]
 pub struct CachedIds<'a> {
-    /// The ids, then whatever is stored after them.
+    /// The ids, then whatever is stored after them: `len` `u32`s or more.
     pub(super) padded: &'a [u32],
     pub(super) len: usize,
 }

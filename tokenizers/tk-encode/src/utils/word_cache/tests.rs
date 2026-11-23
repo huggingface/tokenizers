@@ -15,10 +15,10 @@ impl<'a> Lookup<'a> {
     }
 }
 
-/// How many words [`WordCache::emit_home_hits`] answers at the start of `words`.
+/// How many words [`WordCache::emit_run`] answers at the start of `words`.
 fn answered(cache: &WordCache, words: &[&[u8]]) -> usize {
     let signatures: Vec<Signature> = words.iter().map(|word| Signature::new(word)).collect();
-    cache.emit_home_hits(&signatures, |i| words[i], &mut Vec::new())
+    cache.emit_run(&signatures, |i| words[i], &mut Vec::new())
 }
 
 fn store(cache: &mut WordCache, word: &[u8], ids: &[u32]) {
@@ -78,6 +78,8 @@ fn words_homed_on_the_last_slot_round_trip() {
             "{word:?}"
         );
     }
+    // The run reads the slot after the last home slot for the second word.
+    assert_eq!(answered(&cache, &[&words[1], &words[0]]), 2);
 }
 
 /// Both sides of the [`Signature::BYTES`] boundary, crossed with both sides of the
@@ -150,12 +152,12 @@ fn a_hit_appends_the_ids_it_holds() {
     }
 }
 
-/// [`WordCache::emit_home_hits`] is a shortcut for [`WordCache::lookup`]. It must write the
+/// [`WordCache::emit_run`] is a shortcut for [`WordCache::lookup`]. It must write the
 /// ids a lookup returns for each word it answers, whether they sit in the slot or in the
 /// buffer, and stop at the first word it cannot answer: a word with more ids than
 /// [`MAX_RUN_IDS`] ends the first run, a word that was never stored ends the second.
 #[test]
-fn a_run_of_home_hits_writes_what_lookup_returns() {
+fn a_run_writes_what_lookup_returns() {
     let mut cache = WordCache::new(1 << 8);
     let too_many: Vec<u32> = (100..=100 + MAX_RUN_IDS as u32).collect();
     let stored: [(&[u8], &[u32]); 7] = [
@@ -190,7 +192,7 @@ fn a_run_of_home_hits_writes_what_lookup_returns() {
     let mut answers = Vec::new();
     while next < words.len() {
         let mut output = Vec::new();
-        let answered = cache.emit_home_hits(&signatures[next..], |i| words[next + i], &mut output);
+        let answered = cache.emit_run(&signatures[next..], |i| words[next + i], &mut output);
         let mut ids = Token::cast_slice(&output).iter();
         for word in &words[next..next + answered] {
             let expected = cache
@@ -207,32 +209,76 @@ fn a_run_of_home_hits_writes_what_lookup_returns() {
     assert_eq!(answers, [5, 1]);
 }
 
+/// A word whose home slot is taken is stored in the next slot, and most such words stay there.
+/// The run answers it from that slot too: ids in the slot, ids in the buffer, and a word longer
+/// than its signature. A one-home table sends every word to slot 0, so the second one stored
+/// sits in slot 1.
+#[test]
+fn a_run_answers_a_word_one_slot_past_its_home() {
+    let cases: [(&[u8], &[u32]); 3] = [
+        (b"inline", &[7]),
+        (b"spilled", &[1, 2, 3, 4]),
+        (b"a-word-past-sixteen-bytes", &[5]),
+    ];
+    for (word, ids) in cases {
+        let mut cache = WordCache::new(1);
+        store(&mut cache, b"at-home", &[9]);
+        store(&mut cache, word, ids);
+        let signatures = [Signature::new(word), Signature::new(b"at-home")];
+        let words: [&[u8]; 2] = [word, b"at-home"];
+        let mut output = Vec::new();
+        let answered = cache.emit_run(&signatures, |i| words[i], &mut output);
+        assert_eq!(answered, 2, "{word:?}");
+        let expected: Vec<u32> = ids.iter().chain(&[9]).copied().collect();
+        assert_eq!(Token::cast_slice(&output), expected, "{word:?}");
+    }
+}
+
 /// A one-home table sends every word to slot 0. The run must not answer a word that has only
 /// part of the stored word's signature: ten `a`s against nine (another length), against a
-/// last byte changed (another tail), and against a first byte changed (another head). Once
-/// with the ids in the slot, once with the ids in the buffer.
+/// last byte changed (another tail), and against a first byte changed (another head). With the
+/// ids in the slot and in the buffer, and with the word in its home slot and one slot past it.
 #[test]
 fn a_run_does_not_answer_a_word_with_part_of_the_signature() {
     for ids in [&[1][..], &[1, 2, 3, 4]] {
-        let mut cache = WordCache::new(1);
-        store(&mut cache, b"aaaaaaaaaa", ids);
-        assert_eq!(answered(&cache, &[b"aaaaaaaaaa"]), 1);
-        for near in [&b"aaaaaaaaa"[..], b"aaaaaaaaab", b"baaaaaaaaa"] {
-            assert_eq!(answered(&cache, &[near]), 0, "{near:?} with {ids:?}");
+        for past_home in [false, true] {
+            let mut cache = WordCache::new(1);
+            if past_home {
+                store(&mut cache, b"at-home", &[9]);
+            }
+            store(&mut cache, b"aaaaaaaaaa", ids);
+            assert_eq!(answered(&cache, &[b"aaaaaaaaaa"]), 1);
+            for near in [&b"aaaaaaaaa"[..], b"aaaaaaaaab", b"baaaaaaaaa"] {
+                assert_eq!(answered(&cache, &[near]), 0, "{near:?} with {ids:?}");
+            }
         }
     }
 }
 
-/// Two words past [`Signature::BYTES`] with one signature have one home slot. The run
-/// answers the one stored there, and must not answer the other with its ids.
+/// Words past [`Signature::BYTES`] with one signature have one home slot. The run answers the
+/// one stored there, and the one stored in the slot after it, each with its own ids. It must
+/// not answer a third, which neither slot holds, with the ids of one of them.
 #[test]
 fn a_run_does_not_answer_a_long_word_with_another_words_ids() {
     let mut cache = WordCache::new(1 << 8);
-    let (first, second) = (b"01234567-first--89abcdef", b"01234567-second-89abcdef");
+    let [first, second, third]: [&[u8]; 3] = [
+        b"01234567-first--89abcdef",
+        b"01234567-second-89abcdef",
+        b"01234567-third--89abcdef",
+    ];
     assert_eq!(Signature::new(first), Signature::new(second));
+    assert_eq!(Signature::new(first), Signature::new(third));
     store(&mut cache, first, &[1]);
     assert_eq!(answered(&cache, &[first]), 1);
     assert_eq!(answered(&cache, &[second]), 0);
+
+    store(&mut cache, second, &[2]);
+    let signatures = [Signature::new(second), Signature::new(first)];
+    let words = [second, first];
+    let mut output = Vec::new();
+    assert_eq!(cache.emit_run(&signatures, |i| words[i], &mut output), 2);
+    assert_eq!(Token::cast_slice(&output), [2, 1]);
+    assert_eq!(answered(&cache, &[third]), 0);
 }
 
 /// An evict leaves the word's slot behind with offsets into a buffer that no longer holds
@@ -429,12 +475,22 @@ fn a_hit_never_returns_another_words_ids() {
         expected.push((word, ids));
     }
 
-    let mut live = 0;
+    let (mut live, mut in_a_run) = (0, 0);
     for (word, ids) in &expected {
         if let Some(hit) = cache.lookup(word).hit() {
             assert_eq!(hit, &ids[..], "{word:?}");
             live += 1;
         }
+        // The run is a shortcut for the lookup: what it answers, it answers the same.
+        let mut output = Vec::new();
+        if cache.emit_run(&[Signature::new(word)], |_| word, &mut output) == 1 {
+            assert_eq!(Token::cast_slice(&output), &ids[..], "{word:?}");
+            in_a_run += 1;
+        }
     }
     assert!(live > 0, "everything was evicted, the test proves nothing");
+    assert!(
+        in_a_run > 0,
+        "the run answered no word, the test proves nothing"
+    );
 }
