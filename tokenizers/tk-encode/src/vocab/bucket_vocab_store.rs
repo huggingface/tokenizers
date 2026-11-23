@@ -45,38 +45,48 @@ fn hash_long(word: &[u8]) -> u64 {
     LONG_WORD_HASHER.hash_one(word)
 }
 
-/// One MPHF slot: the [`Signature`] of the token placed there, and its id.
+/// One MPHF slot, first half: what turns away a word that is not the slot's token.
 ///
-/// The perfect hash sends a word that is not a token to some token's slot. A lookup therefore
-/// compares the word's signature with the entry's, see [`BucketVocabStore::get_foldable`].
+/// The perfect hash sends any word to some token's slot. Whether the word is that token is a
+/// branch the CPU cannot predict, and it waits for this entry to load. So the entry is 8 bytes,
+/// in a table a third the size of one that held the token's whole [`Signature`]. A word that
+/// passes is confirmed against [`Ends`]: see [`BucketVocabStore::get_foldable`].
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 struct Entry {
-    head: u64,
-    tail: u64,
+    /// 24 bits of the token's [`Mphf`] key, then its length in the low 8: see [`Entry::check`].
+    check: u32,
     /// The token id in the low 31 bits, [`FOLD_BIT`] in the top.
     id: u32,
-    len: u32,
 }
 
-const _: () = assert!(size_of::<Entry>() == 24);
+const _: () = assert!(size_of::<Entry>() == 8);
 
 impl Entry {
-    /// A slot the build never wrote. A token is at most `u16::MAX` bytes long, so this length
-    /// matches no word that could be one.
+    /// The length byte of a slot the build never wrote. No word has it, so no word passes.
+    const VACANT_LEN: u32 = 0xFF;
+    /// The length byte of every token too long for it. Such a token is longer than its
+    /// signature, so the lookup compares its bytes and with them its exact length.
+    const LONGEST_LEN: usize = 0xFE;
+
     const VACANT: Self = Self {
-        head: 0,
-        tail: 0,
+        check: Self::VACANT_LEN,
         id: 0,
-        len: u32::MAX,
     };
 
     #[inline(always)]
-    fn has_signature(self, signature: Signature) -> bool {
-        self.head == signature.head
-            && self.tail == signature.tail
-            && self.len as usize == signature.len
+    fn check(key: u64, len: usize) -> u32 {
+        ((key >> 40) as u32) << 8 | len.min(Self::LONGEST_LEN) as u32
     }
+}
+
+/// One MPHF slot, second half: the first and last eight bytes of its token. With the length in
+/// [`Entry`], that is the token's [`Signature`].
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
+struct Ends {
+    head: u64,
+    tail: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -97,6 +107,7 @@ pub(crate) struct BucketVocabStore {
     /// All token bytes, concatenated. Ordered by MPHF slot.
     bytes: Box<[u8]>,
     entries: Box<[Entry]>,
+    ends: Box<[Ends]>,
     spans: Box<[Span]>,
     /// `id_to_slot[token_id] -> entry_idx` -> index into entries as the entries are not really sorted.
     id_to_slot: Box<[u32]>,
@@ -195,6 +206,7 @@ impl BucketVocabStore {
             .unwrap_or(0);
         let mut bytes = Vec::with_capacity(total);
         let mut entries = vec![Entry::VACANT; n_slots];
+        let mut ends = vec![Ends::default(); n_slots];
         let mut spans = vec![Span::default(); n_slots];
         let mut id_to_slot = vec![u32::MAX; id_space];
         for (((s, id), &signature), key) in tokens.iter().zip(&signatures).zip(&keys) {
@@ -208,10 +220,12 @@ impl BucketVocabStore {
             );
             let slot = mphf.index(key);
             entries[slot] = Entry {
+                check: Entry::check(*key, s.len()),
+                id: *id,
+            };
+            ends[slot] = Ends {
                 head: signature.head,
                 tail: signature.tail,
-                id: *id,
-                len: s.len() as u32,
             };
             spans[slot] = Span {
                 start: bytes.len() as u32,
@@ -225,6 +239,7 @@ impl BucketVocabStore {
             mphf,
             bytes: bytes.into_boxed_slice(),
             entries: entries.into_boxed_slice(),
+            ends: ends.into_boxed_slice(),
             spans: spans.into_boxed_slice(),
             id_to_slot: id_to_slot.into_boxed_slice(),
             n,
@@ -238,6 +253,7 @@ impl BucketVocabStore {
             mphf: Mphf::new(&empty, PtrHashParams::default_fast()),
             bytes: Box::new([]),
             entries: Box::new([]),
+            ends: Box::new([]),
             spans: Box::new([]),
             id_to_slot: Box::new([]),
             n: 0,
@@ -254,19 +270,28 @@ impl BucketVocabStore {
     /// The id of the token equal to `word` and whether it folds, for a caller that already holds
     /// the word's signature.
     ///
-    /// The perfect hash returns a slot for any word. The word is that slot's token when the
-    /// signatures are equal and, for a word its signature does not hold whole, the remaining
-    /// bytes are too.
+    /// The perfect hash returns a slot for any word. The word is that slot's token when it passes
+    /// the slot's [`Entry::check`], the two have the same first and last eight bytes and, for a
+    /// word its signature does not hold whole, the same bytes in between.
     // Forced: an x86-64 build left it out of line, a call per word the cache does not hold.
     #[inline(always)]
     pub(crate) fn get_foldable(&self, word: &[u8], signature: Signature) -> Option<(u32, bool)> {
         if self.entries.is_empty() {
             return None;
         }
-        let slot = self.mphf.index(&mphf_key(word, signature));
+        let key = mphf_key(word, signature);
+        let slot = self.mphf.index(&key);
         let entry = self.entries[slot];
-        (entry.has_signature(signature) && self.holds_uncovered(slot, word))
-            .then_some((entry.id & VOCAB_ID_MASK, entry.id & FOLD_BIT != 0))
+        if entry.check != Entry::check(key, signature.len) {
+            return None;
+        }
+        // A word that got here is the token, but for one in 2^24 that is not. The CPU predicts
+        // this branch, so the second load does not hold the encode loop back.
+        let ends = self.ends[slot];
+        (ends.head == signature.head
+            && ends.tail == signature.tail
+            && self.holds_uncovered(slot, word))
+        .then_some((entry.id & VOCAB_ID_MASK, entry.id & FOLD_BIT != 0))
     }
 
     /// Whether the token at `slot`, whose signature is `word`'s, also has the bytes of `word`
@@ -412,20 +437,48 @@ mod tests {
     }
 
     /// A word past [`Signature::BYTES`] with a token's length, start and end has that token's
-    /// signature. The first such word the perfect hash sends to the token's slot must still not
-    /// be found: only the bytes in between tell the two apart.
+    /// signature: only the bytes in between tell the two apart. One such word in 2^24 also has
+    /// the token's [`Entry::check`] on the slot it lands on. Too rare to find, so it is forged:
+    /// the token is copied to the word's slot under the word's own check.
     #[test]
-    fn a_word_with_a_tokens_signature_is_not_found() {
-        let token = b"01234567-token--89abcdef";
-        let vocab = BucketVocabStore::build(vec![(token.to_vec(), 0)]).unwrap();
-        let slot = vocab.id_to_slot[0] as usize;
-        let word = (0u32..)
-            .map(|i| format!("01234567{i:08}89abcdef").into_bytes())
-            .find(|word| vocab.mphf.index(&hash_long(word)) == slot)
-            .unwrap();
-        assert_eq!(Signature::new(&word), Signature::new(token));
-        assert_eq!(vocab.get_bytes(&word), None);
-        assert_eq!(vocab.get_bytes(token), Some(0));
+    fn a_word_with_a_tokens_signature_and_check_is_not_found() {
+        let (token, word) = (b"01234567-token--89abcdef", b"01234567-other--89abcdef");
+        assert_eq!(Signature::new(token), Signature::new(word));
+        let mut vocab = BucketVocabStore::build(vec![(token.to_vec(), 0)]).unwrap();
+        let token_slot = vocab.id_to_slot[0] as usize;
+        let key = mphf_key(word, Signature::new(word));
+        let word_slot = vocab.mphf.index(&key);
+        vocab.entries[word_slot] = Entry {
+            check: Entry::check(key, word.len()),
+            id: 0,
+        };
+        vocab.ends[word_slot] = vocab.ends[token_slot];
+        vocab.spans[word_slot] = vocab.spans[token_slot];
+
+        assert_eq!(vocab.get_bytes(word), None);
+    }
+
+    /// A slot the build never wrote holds no token, and its zeroed [`Ends`] are those of a
+    /// word of zero bytes. Its length byte is what keeps every word out, whatever the key.
+    #[test]
+    fn no_word_passes_the_check_of_a_vacant_slot() {
+        for key in [0, 1 << 40, u64::MAX] {
+            for len in [
+                0,
+                1,
+                Signature::BYTES,
+                Entry::LONGEST_LEN,
+                0xFF,
+                0x1FF,
+                1 << 20,
+            ] {
+                assert_ne!(
+                    Entry::check(key, len),
+                    Entry::VACANT.check,
+                    "key {key:#x} len {len}"
+                );
+            }
+        }
     }
 
     #[test]
