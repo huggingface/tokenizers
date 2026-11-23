@@ -272,6 +272,40 @@ fn a_metaspace_pre_tokenizer_becomes_a_piece_normalizer_and_a_split() {
 }
 
 #[test]
+fn a_metaspace_sequence_keeps_the_members_after_the_metaspace() {
+    // it5's shape. Upstream runs the later members on the text the `Metaspace` rewrote, which is
+    // the text the piece normalizer now hands them, so they carry over unchanged.
+    let v = done(
+        UNIGRAM,
+        r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
+             {"type": "Metaspace", "replacement": "▁"},
+             {"type": "Digits", "individual_digits": true},
+             {"type": "Punctuation", "behavior": "Isolated"}]}"#,
+    );
+    assert_eq!(v["piece_normalizer"]["type"], "Metaspace");
+    assert_eq!(
+        v["pre_tokenizer"],
+        serde_json::json!({"type": "Sequence", "pretokenizers": [
+            {"type": "Split", "pattern": {"String": "▁"},
+             "behavior": "MergedWithNext", "invert": false},
+            {"type": "Digits", "individual_digits": true},
+            {"type": "Punctuation", "behavior": "Isolated"}]})
+    );
+
+    // `split: false` leaves only the later members.
+    let v = done(
+        UNIGRAM,
+        r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
+             {"type": "Metaspace", "replacement": "▁", "split": false},
+             {"type": "Punctuation", "behavior": "Isolated"}]}"#,
+    );
+    assert_eq!(
+        v["pre_tokenizer"]["pretokenizers"],
+        serde_json::json!([{"type": "Punctuation", "behavior": "Isolated"}])
+    );
+}
+
+#[test]
 fn a_singleton_metaspace_sequence_lowers_like_a_bare_metaspace() {
     let bare = r#"{"type": "Metaspace", "replacement": "▁"}"#;
     let wrapped = format!(r#"{{"type": "Sequence", "pretokenizers": [{bare}]}}"#);

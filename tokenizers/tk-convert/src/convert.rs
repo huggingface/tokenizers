@@ -402,6 +402,9 @@ fn kind_of(value: &Value) -> &'static str {
 ///
 /// `Sequence[WhitespaceSplit, Metaspace]` (eg, t5 or albert) is the same thing with `drop_whitespace`.
 ///
+/// Members after the `Metaspace` (it5 puts `Digits` and `Punctuation` there) stay behind the
+/// `Split`. They cut the rewritten text, and that is the text the piece normalizer hands them.
+///
 /// `split: false` leaves this slot empty. The reader reads a null `pre_tokenizer` as one span
 /// covering the whole text, which is what not cutting means.
 fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), ConvertError> {
@@ -416,16 +419,19 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
     } else {
         std::slice::from_ref(pretokenizer)
     };
-    let (metaspace, drop_whitespace) = match members {
-        [metaspace] if component_type(metaspace) == Some("Metaspace") => (metaspace, false),
-        [split, metaspace]
+    let (metaspace, drop_whitespace, after) = match members {
+        [metaspace, after @ ..] if component_type(metaspace) == Some("Metaspace") => {
+            (metaspace, false, after)
+        }
+        [split, metaspace, after @ ..]
             if component_type(split) == Some("WhitespaceSplit")
                 && component_type(metaspace) == Some("Metaspace") =>
         {
-            (metaspace, true)
+            (metaspace, true, after)
         }
         _ => return Ok(()),
     };
+    let after: Vec<Value> = after.to_vec();
 
     let mut metaspace = metaspace
         .as_object()
@@ -465,8 +471,7 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
         ],
     );
     root.insert("piece_normalizer".to_string(), metaspace);
-    // No cut means an empty pre-tokenizer slot.
-    let cut = if split {
+    let metaspace_split = split.then(|| {
         tagged(
             "Split",
             &[
@@ -475,10 +480,15 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
                 ("invert", Value::Bool(false)),
             ],
         )
+    });
+    // No `metaspace_split` means an empty pre-tokenizer slot.
+    let pre_tokenizer = if after.is_empty() {
+        metaspace_split.unwrap_or(Value::Null)
     } else {
-        Value::Null
+        let members: Vec<Value> = metaspace_split.into_iter().chain(after).collect();
+        tagged("Sequence", &[("pretokenizers", Value::Array(members))])
     };
-    root.insert("pre_tokenizer".to_string(), cut);
+    root.insert("pre_tokenizer".to_string(), pre_tokenizer);
     Ok(())
 }
 
