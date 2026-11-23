@@ -206,6 +206,7 @@ fn build<M>(
     Ok(Tokenizer::from_parts(
         added_vocabulary,
         normalizers,
+        None,
         pre_tokenizer,
         model,
         read_post_processor(doc.field("post_processor"))?,
