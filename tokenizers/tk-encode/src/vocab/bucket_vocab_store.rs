@@ -476,9 +476,12 @@ mod tests {
     fn a_word_one_byte_longer_than_a_long_token_is_not_found() {
         let token = [&b"01234567"[..], &[b'm'; 284], b"89abcdef"].concat();
         let word = [&b"01234567"[..], &[b'm'; 285], b"89abcdef"].concat();
+        let vocab = BucketVocabStore::build(vec![(token.clone(), 0)]).unwrap();
+        assert_eq!(vocab.get_bytes(&token), Some(0));
+        // Looked up before the copy: where the word lands on the token's own slot, the copy
+        // takes the token's check away.
         let vocab = with_token_on_the_slot_of(&token, &word);
         assert_eq!(vocab.get_bytes(&word), None);
-        assert_eq!(vocab.get_bytes(&token), Some(0));
     }
 
     /// A slot the build never wrote holds no token, and its zeroed [`Ends`] are those of a
