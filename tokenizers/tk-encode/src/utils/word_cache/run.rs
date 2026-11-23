@@ -1,8 +1,10 @@
-use super::cache::WordCache;
+//! The loop that answers a run of words straight from their home slots.
+
 #[cfg(doc)]
 use super::ids::MAX_RUN_IDS;
-use super::slot::MAX_INLINE_IDS;
+use super::table::WordCache;
 use crate::utils::signature::Signature;
+use crate::utils::uncovered::Uncovered;
 
 impl WordCache {
     /// Answers the leading words of a batch straight from their home slots, into the caller's
@@ -29,7 +31,7 @@ impl WordCache {
         word: impl Fn(usize) -> &'w [u8],
         dst: *mut u32,
     ) -> (usize, usize) {
-        let slots = self.cached_words.as_ptr();
+        let slots = self.slots.as_ptr();
         let mut next = dst;
         let mut answered = 0;
         for (i, &signature) in signatures.iter().enumerate() {
@@ -41,15 +43,13 @@ impl WordCache {
             if slot.holds_inline(signature) {
                 // SAFETY: `next` is at most `MAX_RUN_IDS * answered` past `dst`, and the caller
                 // left room for `MAX_RUN_IDS` more.
-                unsafe {
-                    next.copy_from_nonoverlapping(slot.payload.as_ptr(), MAX_INLINE_IDS);
-                    next = next.add(slot.ids_len());
-                }
-            } else if slot.holds_spilled(signature, self.spilled_generation)
-                && (signature.len <= Signature::BYTES || self.holds_uncovered(slot, word(i)))
+                next = unsafe { slot.copy_inline_ids(next) };
+            } else if let Some(record) = slot.run_record(signature, self.spill.generation())
+                && (signature.len <= Signature::BYTES
+                    || Uncovered::of(word(i)).is_some_and(|bytes| self.spill.holds(record, bytes)))
             {
-                // SAFETY: as above, and `holds_spilled` saw no more than `MAX_RUN_IDS` ids.
-                unsafe { next = next.add(self.get_cached_ids(slot).write(next)) };
+                // SAFETY: as above, and the record is of no more than `MAX_RUN_IDS` ids.
+                next = unsafe { next.add(self.spill.ids(record).write(next)) };
             } else {
                 break;
             }

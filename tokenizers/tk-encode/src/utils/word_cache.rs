@@ -4,15 +4,15 @@
 //! A word is looked up by its [`Signature`]: its length, first eight bytes and last eight bytes.
 //! A hash of the signature places the word in the table:
 //! - the bottom bits pick its **home slot**. A word can be cached in the 16-slot window that starts there
-//! - the top byte is a **tag**, stored in a separate table ([`WordCache::quick_lookup`])
+//! - the top byte is a **tag**, stored in a separate table of one byte per slot
 //!
 //! A lookup reads the home slot first: most cached words sit there, and a vacant one ends it.
-//! Otherwise it walks a 16 byte window in [`WordCache::quick_lookup`] to find a matching tag.
+//! Otherwise it scans the 16 tags of the window for the word's tag.
 //! When a tag matches, the slot's signature confirms whether it's a hit or not.
 //!
-//! On miss, we return where the cache should insert ([`WordCache::insert`]) the ids;
-//! Either the slot already holding a stale copy of the word ([`WordCacheSlot::is_stale`]),
-//! the first empty (0x00) slot in the window, or the home slot if the window is full.
+//! On a miss, the lookup returns where [`WordCache::insert`] should put the ids.
+//! That is the slot holding a stale copy of the word, else the first empty slot of the window,
+//! else the home slot.
 //!
 //! ```text
 //!    lookup "hat":  tag A7, home slot 5
@@ -30,12 +30,13 @@
 //! ```
 //!
 //! A slot ([`WordCacheSlot`]) keeps up to three ids inline.
-//! Longer encodings go to one shared buffer ([`WordCache::spilled_buffer`]) and the slot holds offsets in that buffer.
+//! Longer encodings go to one shared [`SpillBuffer`], and the slot holds where they are in it.
+//! The buffer drops all it holds when it is full. A slot that points into it is then stale.
 //!
 //! # A hit is always the word that was stored
 //!
 //! A signature holds a word of [`Signature::BYTES`] bytes or less whole, so a matching slot is the same word.
-//! A longer word also stores its [`Uncovered`] bytes, in [`WordCache::spilled_buffer`] after its ids.
+//! A longer word also stores its [`Uncovered`] bytes, in the [`SpillBuffer`] after its ids.
 //! A lookup compares them before it reports a hit.
 //!
 //! # Where the ideas come from
@@ -51,18 +52,23 @@
 //! [gigatoken]: https://github.com/marcelroed/gigatoken
 //! [huggingface/tokenizers#2234]: https://github.com/huggingface/tokenizers/pull/2234
 
-mod cache;
 mod ids;
 mod run;
 mod slot;
+mod spill;
+mod table;
 mod tags;
 #[cfg(test)]
 mod tests;
 
-pub use cache::{Lookup, WordCache};
 pub use ids::MAX_RUN_IDS;
+pub use table::{Lookup, WordCache};
 
 #[cfg(doc)]
 use crate::utils::signature::Signature;
 #[cfg(doc)]
+use crate::utils::uncovered::Uncovered;
+#[cfg(doc)]
 use slot::WordCacheSlot;
+#[cfg(doc)]
+use spill::SpillBuffer;

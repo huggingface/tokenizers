@@ -1,5 +1,7 @@
 #[cfg(doc)]
-use super::cache::WordCache;
+use super::spill::SpillBuffer;
+#[cfg(doc)]
+use super::table::WordCache;
 
 /// The most ids of a word that [`WordCache::emit_home_hits`] answers.
 ///
@@ -29,7 +31,7 @@ impl<'a> CachedIds<'a> {
 
     /// Copies the ids to `dst` and returns how many they are.
     ///
-    /// Up to [`MAX_RUN_IDS`] ids from [`WordCache::spilled_buffer`] are copied as `MAX_RUN_IDS`:
+    /// Up to [`MAX_RUN_IDS`] ids from a [`SpillBuffer`] are copied as `MAX_RUN_IDS`:
     /// the word's own, then what follows them. A copy of one size is a few moves, with no
     /// branch on the number of ids.
     ///

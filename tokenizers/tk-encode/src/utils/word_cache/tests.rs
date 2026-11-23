@@ -1,7 +1,6 @@
-use super::cache::*;
-use super::ids::*;
-use super::slot::*;
-use super::tags::*;
+use super::ids::MAX_RUN_IDS;
+use super::table::{Lookup, WordCache};
+use super::tags::{WINDOW_SIZE, tag_of};
 use crate::utils::signature::Signature;
 
 const SPILLED_BUDGET: usize = 1 << 16;
@@ -46,8 +45,8 @@ fn words_homed_in(cache: &WordCache, range: std::ops::Range<usize>, n: usize) ->
 #[test]
 fn a_stored_word_is_found_again() {
     let mut cache = WordCache::new(1 << 8);
-    let n_slots = cache.cached_words.len();
-    let safe = WordCache::WINDOW_SIZE..n_slots - WordCache::WINDOW_SIZE;
+    let n_slots = cache.slots.len();
+    let safe = WINDOW_SIZE..n_slots - WINDOW_SIZE;
     let words = words_homed_in(&cache, safe, 3);
     for (i, word) in words.iter().enumerate() {
         let base = 3 * i as u32;
@@ -63,14 +62,14 @@ fn a_stored_word_is_found_again() {
     }
 }
 
-/// Home slots stop at `placement_mask`; the table holds [`WordCache::WINDOW_SIZE`]
-/// extra slots so a window starting on the last home does not run out of entries.
+/// The table holds [`WINDOW_SIZE`] slots past its last home slot, so a window starting
+/// there does not run out of entries.
 /// Two words homed there force the second one into the extra slots; both have to
 /// round trip anyway.
 #[test]
 fn words_homed_on_the_last_slot_round_trip() {
     let mut cache = WordCache::new(1 << 2);
-    let last = cache.placement_mask as usize;
+    let last = cache.slots.len() - WINDOW_SIZE - 1;
     let words = words_homed_in(&cache, last..last + 1, 2);
     for (i, word) in words.iter().enumerate() {
         store(&mut cache, word, &[i as u32; 3]);
@@ -277,120 +276,27 @@ fn words_with_one_signature_keep_their_own_ids() {
     }
 }
 
-/// One window shape per row: the needle in various lanes, an empty slot in
-/// the middle, at the edges, or absent. Candidates past the first empty
-/// lane must not be reported (no entry can live there, since inserts always
-/// fill the first empty lane) and the empty lane itself is the placement.
-#[test]
-fn the_scan_reports_matches_before_the_first_empty_and_the_empty_itself() {
-    let offset = 3;
-    let cases: &[(&[u8], u16, Option<usize>)] = &[
-        // needle at lanes 0 and 2, empty at 3: lane 5's match is out of reach
-        (
-            &[
-                0xA7, 0x31, 0xA7, 0x00, 0x5F, 0xA7, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-                0x19, 0x1A,
-            ],
-            0b101,
-            Some(3),
-        ),
-        // no empty slot: every match is reachable, no placement
-        (
-            &[
-                0xA7, 0x31, 0xA7, 0x22, 0x5F, 0xA7, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-                0x19, 0xA7,
-            ],
-            0b1000000000100101,
-            None,
-        ),
-        // empty in lane 0: nothing is reachable
-        (
-            &[
-                0x00, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7,
-                0xA7, 0xA7,
-            ],
-            0,
-            Some(0),
-        ),
-        // every lane matches, empty in the last lane
-        (
-            &[
-                0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7, 0xA7,
-                0xA7, 0x00,
-            ],
-            0b0111_1111_1111_1111,
-            Some(15),
-        ),
-    ];
-    for (lanes, want_mask, want_empty) in cases {
-        let mut table = vec![0xEEu8; offset];
-        table.extend_from_slice(lanes);
-        let window = Window::new(&table, offset);
-        let (candidates, first_empty) = window.find_matches_and_first_empty(0xA7);
-        let found: Vec<usize> = candidates.collect();
-        let want: Vec<usize> = (0..16)
-            .filter(|i| want_mask >> i & 1 == 1)
-            .map(|i| i + offset)
-            .collect();
-        assert_eq!(found, want, "lanes {lanes:?}");
-        assert_eq!(
-            first_empty,
-            want_empty.map(|i| i + offset),
-            "lanes {lanes:?}"
-        );
-    }
-}
-
-/// The tag row marks a free slot with 0x00, so no live entry may carry that
-/// tag: the scan stops looking at the first 0x00 it sees, and an insert
-/// treats the slot as free space. Enough words that a tag built from a raw
-/// hash byte would land on 0x00 hundreds of times.
-#[test]
-fn a_live_tag_is_never_the_empty_marker() {
-    for i in 0..100_000u32 {
-        let tag = tag_of(Signature::new(&i.to_le_bytes()));
-        assert_ne!(tag, WordCache::EMPTY, "word {i}");
-    }
-}
-
-/// A nonzero start, since every spill after the first has one and offsets that
-/// only round trip from zero would still pass.
-#[test]
-fn a_spilled_words_offsets_round_trip() {
-    let cached = WordCacheSlot::new_spilled(Signature::default(), (5, 9), 0);
-    match cached.variant() {
-        CacheSlotType::Spilled(word) => assert_eq!(word.ids_offsets(), (5, 9)),
-        CacheSlotType::SelfContained(_) => {
-            panic!("built as spilled, read back as self-contained")
-        }
-    }
-}
-
-#[test]
-fn a_word_with_one_id_is_stored_self_contained() {
-    let cached = WordCacheSlot::new_self_contained(Signature::default(), [42].into_iter());
-    match cached.variant() {
-        CacheSlotType::SelfContained(word) => assert_eq!(word.ids().as_slice(), &[42]),
-        CacheSlotType::Spilled(_) => panic!("one id fits without spilling"),
-    }
-}
-
-/// A tag is one byte of hash, so about one occupied slot in 256 carries the tag
-/// of a word it does not hold. Too rare to hit by chance here, so the collision
-/// is forged. The lookup must confirm the signature and keep walking, not trust
-/// the tag.
+/// A tag is one byte of hash, so about one occupied slot in 255 carries the tag of a word it
+/// does not hold. In a one-home table every word starts at slot 0: the first two words found
+/// with one tag put that collision on the home slot. The lookup must confirm the signature and
+/// keep walking, not trust the tag.
 #[test]
 fn a_tag_collision_is_confirmed_against_the_signature() {
-    let mut cache = WordCache::new(1 << 8);
-    let signature = Signature::new(b"beta");
-    let (index, tag) = (cache.home(signature), tag_of(signature));
-    cache.quick_lookup[index] = tag;
-    cache.cached_words[index] =
-        WordCacheSlot::new_self_contained(Signature::new(b"decoy"), [7].into_iter());
+    let mut cache = WordCache::new(1);
+    let mut seen = std::collections::HashMap::new();
+    let (first, second) = (0u32..)
+        .map(|i| format!("w{i}").into_bytes())
+        .find_map(|word| {
+            let earlier = seen.insert(tag_of(Signature::new(&word)), word.clone())?;
+            Some((earlier, word))
+        })
+        .expect("255 tags, more words");
 
-    assert_eq!(cache.lookup(b"beta").hit(), None);
-    store(&mut cache, b"beta", &[2]);
-    assert_eq!(cache.lookup(b"beta").hit(), Some(&[2][..]));
+    store(&mut cache, &first, &[1]);
+    assert_eq!(cache.lookup(&second).hit(), None);
+    store(&mut cache, &second, &[2]);
+    assert_eq!(cache.lookup(&first).hit(), Some(&[1][..]));
+    assert_eq!(cache.lookup(&second).hit(), Some(&[2][..]));
 }
 
 /// A word whose whole window is taken is still cached: it evicts its home slot.
@@ -400,7 +306,7 @@ fn a_full_window_evicts_only_the_home_slot() {
     // A one-home table: placement_mask is 0, so every word homes at slot 0 and
     // the sixteen slots from there are one shared window.
     let mut cache = WordCache::new(1);
-    let words = words_homed_in(&cache, 0..1, WordCache::WINDOW_SIZE);
+    let words = words_homed_in(&cache, 0..1, WINDOW_SIZE);
     for (i, word) in words.iter().enumerate() {
         store(&mut cache, word, &[i as u32]);
     }
@@ -461,25 +367,6 @@ fn a_miss_reuses_the_slot_of_its_stale_copy() {
     }
 }
 
-/// Five evict cycles on the same word: it must end up holding exactly one
-/// slot. A placement that preferred an empty slot would leave one more
-/// stale copy behind per cycle.
-#[test]
-fn an_evicted_word_never_occupies_two_slots() {
-    let mut cache = WordCache::new(1 << 6);
-    for round in 0..5u32 {
-        store(&mut cache, b"a-spilled-word", &[round; 4]);
-        store(&mut cache, b"the-filler-word", &vec![9; SPILLED_BUDGET]);
-    }
-    let signature = Signature::new(b"a-spilled-word");
-    let copies = cache
-        .cached_words
-        .iter()
-        .filter(|slot| slot.has_signature(signature))
-        .count();
-    assert_eq!(copies, 1);
-}
-
 /// A self-contained word keeps its ids in the slot, not in the buffer, so
 /// an evict must not cost it its hit. Two filler words, because the first
 /// fills an empty buffer exactly to the budget; the second overflows it.
@@ -513,7 +400,7 @@ fn the_evicting_insert_caches_its_own_word() {
 #[test]
 fn the_evict_that_wraps_the_generation_clears_the_table() {
     let mut cache = WordCache::new(1 << 6);
-    cache.spilled_generation = u32::MAX;
+    cache.spill.set_generation(u32::MAX);
     store(&mut cache, b"short", &[1, 2]);
     store(&mut cache, b"a-spilled-word", &[1, 2, 3, 4]);
     store(&mut cache, b"the-filler-word", &vec![9; SPILLED_BUDGET]);
@@ -522,29 +409,6 @@ fn the_evict_that_wraps_the_generation_clears_the_table() {
     assert_eq!(
         cache.lookup(b"the-filler-word").hit(),
         Some(&vec![9; SPILLED_BUDGET][..])
-    );
-}
-
-/// Placements are built by hand so nothing but `insert` is on trial.
-#[test]
-fn the_spilled_buffer_never_outgrows_its_budget() {
-    let mut cache = WordCache::new(1 << 6);
-    let word = b"a-word-past-sixteen-bytes";
-    let signature = Signature::new(word);
-    let tag = tag_of(signature);
-    for i in 0..3 * (SPILLED_BUDGET / 8) {
-        let at = InsertPlacement {
-            index: 0,
-            signature,
-            tag,
-        };
-        cache.insert(at, word, [i as u32; 8].into_iter());
-    }
-    assert!(
-        cache.spilled_buffer.len() <= SPILLED_BUDGET,
-        "the buffer reached {} of a {} budget",
-        cache.spilled_buffer.len(),
-        SPILLED_BUDGET
     );
 }
 

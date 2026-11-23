@@ -1,9 +1,16 @@
-#[cfg(doc)]
-use super::cache::WordCache;
-use super::ids::{CachedIds, MAX_RUN_IDS};
-use crate::utils::signature::Signature;
+//! One slot of the word cache.
 
-pub const MAX_INLINE_IDS: usize = 3;
+use super::ids::{CachedIds, MAX_RUN_IDS};
+use super::spill::Record;
+#[cfg(doc)]
+use super::spill::SpillBuffer;
+#[cfg(doc)]
+use super::table::WordCache;
+use crate::utils::signature::Signature;
+#[cfg(doc)]
+use crate::utils::uncovered::Uncovered;
+
+pub(super) const MAX_INLINE_IDS: usize = 3;
 
 /// A cache slot, packed in 32 bytes.
 /// There are two variants:
@@ -21,8 +28,8 @@ pub const MAX_INLINE_IDS: usize = 3;
 ///
 /// ## spilled: every other word
 ///
-/// The token ids are stored in [`WordCache::spilled_buffer`], followed by the word's
-/// [`Uncovered`] bytes. The slot holds the offsets of the ids in that buffer.
+/// The token ids are stored in a [`SpillBuffer`], followed by the word's [`Uncovered`] bytes.
+/// The slot holds the [`Record`] that says where.
 /// ```text
 /// ┌───────────┬───────────┬──────────┬──────────┬────────────┬──────────────────────────┐
 /// │   head    │   tail    │  start   │   end    │ generation │           meta           │
@@ -31,14 +38,14 @@ pub const MAX_INLINE_IDS: usize = 3;
 /// 0           8           16         20         24           28                       32 bytes
 /// ```
 #[repr(C, align(32))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct WordCacheSlot {
-    pub(super) head: u64,
-    pub(super) tail: u64,
-    pub(super) payload: [u32; 3],
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct WordCacheSlot {
+    head: u64,
+    tail: u64,
+    payload: [u32; 3],
     /// The word's length in the top 24 bits. The number of inline ids in the low 8, or
     /// [`Self::SPILLED`].
-    pub(super) meta: u32,
+    meta: u32,
 }
 
 const _: () = assert!(
@@ -50,8 +57,7 @@ const _: () = assert!(size_of::<WordCacheSlot>() == 32);
 const _: () = assert!(align_of::<WordCacheSlot>() == 32);
 
 impl WordCacheSlot {
-    /// A sentinel value that discriminates an inline slot (ids are stored in the slot) from a spilled slot
-    /// (values are stored in a buffer)
+    /// What the low byte of `meta` holds when the ids are in the spill buffer.
     const SPILLED: u32 = 0xFF;
 
     /// The longest word whose length fits in `meta`.
@@ -69,38 +75,32 @@ impl WordCacheSlot {
         }
     }
 
-    pub fn new_spilled(signature: Signature, ids_offsets: (usize, usize), generation: u32) -> Self {
-        let (start, end) = ids_offsets;
-        Self::new(
-            signature,
-            [start as u32, end as u32, generation],
-            Self::SPILLED,
-        )
-    }
-
-    pub fn new_self_contained(
-        signature: Signature,
-        ids: impl ExactSizeIterator<Item = u32>,
-    ) -> Self {
-        assert!(ids.len() <= MAX_INLINE_IDS);
+    /// A slot that holds the ids itself: [`MAX_INLINE_IDS`] at most.
+    pub(super) fn inline(signature: Signature, ids: impl ExactSizeIterator<Item = u32>) -> Self {
+        debug_assert!(ids.len() <= MAX_INLINE_IDS);
         let ids_len = ids.len() as u32;
         let mut payload = [0u32; 3];
-        for (slot, id) in payload.iter_mut().zip(ids) {
-            *slot = id;
+        for (lane, id) in payload.iter_mut().zip(ids) {
+            *lane = id;
         }
         Self::new(signature, payload, ids_len)
     }
 
-    pub fn is_stale(&self, current_generation: u32) -> bool {
-        match self.variant() {
-            CacheSlotType::SelfContained(_) => false,
-            CacheSlotType::Spilled(spilled) => spilled.generation() != current_generation,
-        }
+    /// A slot whose ids are in the spill buffer, at `record`.
+    pub(super) fn spilled(signature: Signature, record: Record) -> Self {
+        let payload = [record.start, record.end, record.generation];
+        Self::new(signature, payload, Self::SPILLED)
     }
-}
 
-impl WordCacheSlot {
-    // Both compare lengths as `u64`: a word too long for `meta` then matches no slot.
+    /// Whether no insert wrote this slot since the table was created or cleared: it is all zeros,
+    /// which [`WordCache::insert`] never writes.
+    #[inline(always)]
+    pub(super) fn is_vacant(&self) -> bool {
+        self.head == 0 && self.tail == 0 && self.meta == 0
+    }
+
+    // This and the two below compare lengths as `u64`: a word too long for `meta` then matches
+    // no slot.
     #[inline(always)]
     pub(super) fn has_signature(&self, signature: Signature) -> bool {
         self.head == signature.head
@@ -117,72 +117,55 @@ impl WordCacheSlot {
             && u64::from(self.meta) & !Self::INLINE_IDS == (signature.len as u64) << 8
     }
 
-    /// [`Self::has_signature`] with ids in the buffer that [`WordCache::emit_home_hits`] may
-    /// answer with: stored at `generation`, and no more than [`MAX_RUN_IDS`] of them.
+    /// [`Self::has_signature`] with a record [`WordCache::emit_home_hits`] may answer with: of
+    /// `generation`, and of no more than [`MAX_RUN_IDS`] ids.
     #[inline(always)]
-    pub(super) fn holds_spilled(&self, signature: Signature, generation: u32) -> bool {
-        let [start, end, stored_at] = self.payload;
-        self.head == signature.head
+    pub(super) fn run_record(&self, signature: Signature, generation: u32) -> Option<Record> {
+        let [start, end, stored_in] = self.payload;
+        (self.head == signature.head
             && self.tail == signature.tail
             && u64::from(self.meta) == (signature.len as u64) << 8 | u64::from(Self::SPILLED)
-            && stored_at == generation
-            && (end - start) as usize <= MAX_RUN_IDS
+            && stored_in == generation
+            && (end - start) as usize <= MAX_RUN_IDS)
+            .then_some(Record {
+                start,
+                end,
+                generation,
+            })
     }
 
-    /// Whether no insert wrote this slot since the table was created or cleared: it is all zeros,
-    /// which [`WordCache::insert`] never writes.
+    /// Where the ids are in the spill buffer. `None` when the slot holds them itself.
     #[inline(always)]
-    pub(super) fn is_vacant(&self) -> bool {
-        self.head == 0 && self.tail == 0 && self.meta == 0
+    pub(super) fn record(&self) -> Option<Record> {
+        let [start, end, generation] = self.payload;
+        (self.meta & 0xFF == Self::SPILLED).then_some(Record {
+            start,
+            end,
+            generation,
+        })
     }
 
+    /// The ids of a slot that holds them itself.
     #[inline(always)]
-    pub(super) fn ids_len(&self) -> usize {
-        (self.meta & 0xFF) as usize
-    }
-
-    fn is_spilled(self) -> bool {
-        self.meta & 0xFF == Self::SPILLED
-    }
-
-    pub(super) fn variant<'a>(&'a self) -> CacheSlotType<'a> {
-        if self.is_spilled() {
-            CacheSlotType::Spilled(Spilled(self))
-        } else {
-            CacheSlotType::SelfContained(SelfContained(self))
+    pub(super) fn inline_ids(&self) -> CachedIds<'_> {
+        CachedIds {
+            padded: &self.payload,
+            len: (self.meta & 0xFF) as usize,
         }
     }
-}
 
-/// Convenience wrapper around [`WordCacheSlot`] to discriminate
-/// whether it's a spilled or self-contained slot
-pub enum CacheSlotType<'a> {
-    SelfContained(SelfContained<'a>),
-    Spilled(Spilled<'a>),
-}
-
-#[repr(transparent)]
-pub struct Spilled<'a>(pub(super) &'a WordCacheSlot);
-
-impl<'a> Spilled<'a> {
-    pub(super) fn ids_offsets(self) -> (usize, usize) {
-        let [start, end, _] = self.0.payload;
-        (start as usize, end as usize)
-    }
-
-    pub(super) fn generation(self) -> u32 {
-        self.0.payload[2]
-    }
-}
-
-#[repr(C, align(32))]
-pub struct SelfContained<'a>(&'a WordCacheSlot);
-
-impl<'a> SelfContained<'a> {
-    pub(super) fn ids(self) -> CachedIds<'a> {
-        CachedIds {
-            padded: &self.0.payload,
-            len: self.0.ids_len(),
+    /// Copies the three id lanes of a slot that holds its ids to `dst`, whatever their number.
+    /// Returns `dst` moved past the ids the slot holds.
+    ///
+    /// # Safety
+    ///
+    /// `dst` must be valid for writes of [`MAX_INLINE_IDS`] `u32`s.
+    #[inline(always)]
+    pub(super) unsafe fn copy_inline_ids(&self, dst: *mut u32) -> *mut u32 {
+        // SAFETY: the caller left room for the three lanes, and the count is three at most.
+        unsafe {
+            dst.copy_from_nonoverlapping(self.payload.as_ptr(), MAX_INLINE_IDS);
+            dst.add((self.meta & 0xFF) as usize)
         }
     }
 }
