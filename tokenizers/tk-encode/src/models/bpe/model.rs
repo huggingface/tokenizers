@@ -24,17 +24,25 @@ const BATCH: usize = 16;
 ///
 /// A signature costs the same whatever the word's length, with no branch. So every slot is on its
 /// way to the CPU cache before the first lookup needs one.
-// Out of line for the same reason as `WordCache::emit_inline_hits`.
+// Out of line: inside the encode loop, the compiler reloaded the loop's addresses per word.
 #[inline(never)]
 fn read_signatures(batch: PreTokens<'_>, signatures: &mut [Signature], cache: Option<&WordCache>) {
     let chunk_len = batch.chunk().len();
-    for (signature, (span, sequence)) in signatures.iter_mut().zip(batch.iter()) {
-        let readable = chunk_len - span.start as usize;
-        *signature = Signature::new_readable(sequence.as_bytes(), readable);
-    }
-    if let Some(cache) = cache {
-        for &signature in signatures.iter() {
-            cache.prefetch(signature);
+    let words = signatures.iter_mut().zip(batch.iter());
+    // One loop per case, so that neither tests for a cache on every word.
+    match cache {
+        Some(cache) => {
+            for (signature, (span, sequence)) in words {
+                let readable = chunk_len - span.start as usize;
+                *signature = Signature::new_readable(sequence.as_bytes(), readable);
+                cache.prefetch(*signature);
+            }
+        }
+        None => {
+            for (signature, (span, sequence)) in words {
+                let readable = chunk_len - span.start as usize;
+                *signature = Signature::new_readable(sequence.as_bytes(), readable);
+            }
         }
     }
 }
@@ -246,6 +254,42 @@ impl BPE {
         }
     }
 
+    /// Tokenizes a batch of words whose signatures are already read.
+    ///
+    /// [`WordCache::emit_inline_hits`] answers runs of words straight from the cache, and
+    /// [`Self::tokenize_with_signature`] takes each word that a run stops on.
+    // Out of line, with the run loop inlined into it: on text the cache has not seen a run is
+    // 2 to 5 words long, and a call per run cost more than the run.
+    #[inline(never)]
+    fn tokenize_batch(
+        &self,
+        batch: PreTokens<'_>,
+        signatures: &[Signature],
+        scratch: &mut BpeScratch,
+        output: &mut Vec<Token>,
+    ) {
+        let mut next = 0;
+        while next < signatures.len() {
+            if let Some(cache) = scratch.word_cache.as_ref() {
+                let run = &signatures[next..];
+                output.reserve(MAX_INLINE_IDS * run.len());
+                // SAFETY: the spare capacity holds `MAX_INLINE_IDS` ids per word of the run, and a
+                // `Token` is laid out as its `u32` id. The run wrote `written` of them.
+                unsafe {
+                    let dst = output.as_mut_ptr().add(output.len()).cast::<u32>();
+                    let (answered, written) = cache.emit_inline_hits(run, dst);
+                    output.set_len(output.len() + written);
+                    next += answered;
+                }
+                if next == signatures.len() {
+                    break;
+                }
+            }
+            self.tokenize_with_signature(batch.text(next), signatures[next], scratch, output);
+            next += 1;
+        }
+    }
+
     /// Converts a word to symbols and merges it. The gate, indexed by the word's first *content*
     /// byte (past any delimiter the pre-tokenizer prepended -- see [`content_start`]), says
     /// which engine gets it: short words go to multipass, longer ones to the hot/cold queue.
@@ -301,9 +345,8 @@ impl pipeline::Tokenize for BPE {
 
     /// Every pre-token of a chunk in one call, [`BATCH`] words at a time.
     ///
-    /// For each batch, [`read_signatures`] reads every word's signature first. Then
-    /// [`WordCache::emit_inline_hits`] answers runs of words straight from the cache, and
-    /// [`Self::tokenize_with_signature`] takes each word that a run stops on.
+    /// For each batch, [`read_signatures`] reads every word's signature first, then
+    /// [`BPE::tokenize_batch`] looks the words up.
     // Inlining measure faster on x86
     #[inline(always)]
     fn tokenize_spans(
@@ -314,30 +357,9 @@ impl pipeline::Tokenize for BPE {
     ) -> Result<()> {
         let mut signatures = [Signature::default(); BATCH];
         for batch in pre_tokens.batches(BATCH) {
-            let words = batch.spans();
-            let signatures = &mut signatures[..words.len()];
+            let signatures = &mut signatures[..batch.spans().len()];
             read_signatures(batch, signatures, scratch.word_cache.as_ref());
-
-            let mut next = 0;
-            while next < words.len() {
-                if let Some(cache) = scratch.word_cache.as_ref() {
-                    let run = &signatures[next..];
-                    output.reserve(MAX_INLINE_IDS * run.len());
-                    // SAFETY: the spare capacity holds `MAX_INLINE_IDS` ids per word of the run,
-                    // and a `Token` is laid out as its `u32` id. The run wrote `written` of them.
-                    unsafe {
-                        let dst = output.as_mut_ptr().add(output.len()).cast::<u32>();
-                        let (answered, written) = cache.emit_inline_hits(run, dst);
-                        output.set_len(output.len() + written);
-                        next += answered;
-                    }
-                    if next == words.len() {
-                        break;
-                    }
-                }
-                self.tokenize_with_signature(batch.text(next), signatures[next], scratch, output);
-                next += 1;
-            }
+            self.tokenize_batch(batch, signatures, scratch, output);
         }
         Ok(())
     }

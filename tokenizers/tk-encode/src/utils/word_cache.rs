@@ -137,8 +137,9 @@ impl<'a> WordCache {
     ///
     /// `dst` must be valid for writes of [`MAX_INLINE_IDS`] `u32`s per signature. A hit writes
     /// every inline lane, whatever its number of ids.
-    // Out of line: inside the encode loop, the table's address and mask were reloaded per word.
-    #[inline(never)]
+    // Forced into its one caller, a small function of its own: inside the whole encode loop, the
+    // table's address and mask were reloaded per word.
+    #[inline(always)]
     pub unsafe fn emit_inline_hits(
         &self,
         signatures: &[Signature],
