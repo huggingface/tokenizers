@@ -269,7 +269,14 @@ impl<'a> WordCache {
             }
             let start = self.spilled_buffer.len();
             self.spilled_buffer.extend(ids);
-            self.spilled_buffer.extend(pack_bytes(uncovered));
+            // The bytes go in as bytes, zero padded to whole `u32`s: one copy, where packing
+            // them four at a time was a loop per word.
+            let bytes_start = self.spilled_buffer.len();
+            self.spilled_buffer
+                .resize(bytes_start + uncovered.len().div_ceil(4), 0);
+            let stored: &mut [u8] =
+                bytemuck::cast_slice_mut(&mut self.spilled_buffer[bytes_start..]);
+            stored[..uncovered.len()].copy_from_slice(uncovered);
             WordCacheSlot::new_spilled(signature, (start, start + n_ids), self.spilled_generation)
         };
 
@@ -330,21 +337,6 @@ impl<'a> WordCache {
 fn tag_of(signature: Signature) -> u8 {
     // At least 0x01, otherwise it can be mistaken for an EMPTY slot
     ((signature.hash >> (64 - 8)) as u8).max(WordCache::EMPTY + 1)
-}
-
-/// Packs bytes four to a `u32`, zero padding the last one. The `u32`s read back as the same
-/// bytes in memory order.
-fn pack_bytes(bytes: &[u8]) -> impl Iterator<Item = u32> + '_ {
-    let (quads, rest) = bytes.as_chunks::<4>();
-    let last = (!rest.is_empty()).then(|| {
-        let mut padded = [0u8; 4];
-        padded[..rest.len()].copy_from_slice(rest);
-        u32::from_ne_bytes(padded)
-    });
-    quads
-        .iter()
-        .map(|&quad| u32::from_ne_bytes(quad))
-        .chain(last)
 }
 
 /// A cache slot, packed in 32 bytes.
