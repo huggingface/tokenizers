@@ -92,6 +92,7 @@ pub struct WordPiece {
     unk_token: Option<u32>,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
+    max_key_len: usize,
 }
 
 impl WordPiece {
@@ -122,6 +123,7 @@ impl WordPiece {
             trie_keys.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
             DoubleArray::new(DoubleArrayBuilder::build(&trie_keys)?)?
         };
+        let max_key_len = keyset.iter().map(|(token, _)| token.len()).max().unwrap();
         let vocab_size = keyset.len();
         let max_id = keyset.iter().map(|&(_, id)| id).max().unwrap_or(0) as usize;
         let mut vocab_r = vec![None; max_id + 1];
@@ -132,6 +134,7 @@ impl WordPiece {
         Ok(Self {
             continuing_subword_prefix,
             max_input_chars_per_word,
+            max_key_len,
             unk_token,
             vocab_trie,
             vocab_r: vocab_r.into_boxed_slice(),
@@ -169,7 +172,12 @@ impl WordPiece {
             } else {
                 0
             };
-            candidate.extend(sequence[start..].bytes().map(trie_byte));
+            candidate.extend(
+                sequence[start..]
+                    .bytes()
+                    .take(self.max_key_len.saturating_sub(prefix_len))
+                    .map(trie_byte),
+            );
 
             // Matches must extend past the continuing-subword prefix: the
             // prefix alone (or a fragment of it) is not a valid subword here,
@@ -249,7 +257,7 @@ impl pipeline::Tokenize for WordPiece {
     }
 
     /// A hit skips `tokenize_word`: one trie search per piece of the word,
-    /// each over a fresh copy of what is left to match.
+    /// each over at most one vocabulary key's worth of input bytes.
     fn tokenize(
         &self,
         sequence: &str,
@@ -357,6 +365,27 @@ mod tests {
         });
 
         assert_eq!(warm, cold);
+    }
+
+    #[test]
+    fn long_word_does_not_grow_candidate_scratch() {
+        let vocab = [("é", 1), ("##éé", 2)]
+            .into_iter()
+            .map(|(token, id)| (token.to_string(), id))
+            .collect();
+        let model = WordPiece::from_config(WordPieceConfig {
+            vocab,
+            max_input_chars_per_word: 257,
+            ..Default::default()
+        })
+        .unwrap();
+        let mut scratch = pipeline::Tokenize::init_scratch(&model);
+        let capacity = scratch.candidate.capacity();
+        // The UTF-8 word fits the character limit but exceeds the scratch reservation in bytes.
+        let ids = pipeline_ids(&model, &"é".repeat(257), &mut scratch);
+
+        assert_eq!(ids, [&[1][..], &[2; 128]].concat());
+        assert_eq!(scratch.candidate.capacity(), capacity);
     }
 
     #[test]
