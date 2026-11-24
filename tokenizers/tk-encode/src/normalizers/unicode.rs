@@ -2,9 +2,10 @@ use std::borrow::Cow;
 
 use crate::pipeline;
 use crate::tokenizer::Result;
+use crate::utils::unicode::{Form, normalize_as_unicode_9};
 
 use unicode_normalization::{
-    IsNormalized, UnicodeNormalization, is_nfc_quick, is_nfd_quick, is_nfkc_quick, is_nfkd_quick,
+    IsNormalized, is_nfc_quick, is_nfd_quick, is_nfkc_quick, is_nfkd_quick,
 };
 
 #[derive(Default, Copy, Clone, Debug)]
@@ -14,7 +15,7 @@ impl pipeline::Normalize for NFD {
         if let IsNormalized::Yes = is_nfd_quick(input.chars()) {
             Ok(input.into())
         } else {
-            Ok(Cow::Owned(input.nfd().collect()))
+            Ok(Cow::Owned(normalize_as_unicode_9(input, Form::Nfd)))
         }
     }
 }
@@ -26,7 +27,7 @@ impl pipeline::Normalize for NFKD {
         if let IsNormalized::Yes = is_nfkd_quick(input.chars()) {
             Ok(input.into())
         } else {
-            Ok(Cow::Owned(input.nfkd().collect()))
+            Ok(Cow::Owned(normalize_as_unicode_9(input, Form::Nfkd)))
         }
     }
 }
@@ -38,7 +39,7 @@ impl pipeline::Normalize for NFC {
         if let IsNormalized::Yes = is_nfc_quick(input.chars()) {
             Ok(input.into())
         } else {
-            Ok(Cow::Owned(input.nfc().collect()))
+            Ok(Cow::Owned(normalize_as_unicode_9(input, Form::Nfc)))
         }
     }
 }
@@ -50,7 +51,7 @@ impl pipeline::Normalize for NFKC {
         if let IsNormalized::Yes = is_nfkc_quick(input.chars()) {
             Ok(input.into())
         } else {
-            Ok(Cow::Owned(input.nfkc().collect()))
+            Ok(Cow::Owned(normalize_as_unicode_9(input, Form::Nfkc)))
         }
     }
 }

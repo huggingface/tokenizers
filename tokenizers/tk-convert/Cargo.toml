@@ -54,6 +54,9 @@ tk-encode = { path = "../tk-encode", default-features = false, features = [
   "fancy-regex",
   # The oracle's long case must reach the parallel encoder, not the serial path.
   "parallelism",
+  "normalizers",
 ] }
 # Latest released tokenizers, the independent id/decode oracle `tests/oracle.rs` compares against.
 tokenizers-release = { package = "tokenizers", version = "=0.23.2" }
+# Same version as tk-encode's. `tests/normalization_oracle.rs` decomposes its inputs with it.
+unicode-normalization = "=0.1.25"

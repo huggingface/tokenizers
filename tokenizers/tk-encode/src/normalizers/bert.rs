@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use crate::{pipeline, tokenizer::Result};
 
 use super::utils::lowercases_to_self;
+use crate::utils::unicode::{Form, normalization_newer_than_unicode_9, normalize_as_unicode_9};
 
 use unicode_categories::UnicodeCategories;
 use unicode_normalization::{IsNormalized, UnicodeNormalization, is_nfd_quick};
@@ -157,6 +158,16 @@ impl pipeline::Normalize for BertNormalizer {
         // statically-typed chain, all funneled into one pre-sized String.
         let mut normalized = String::with_capacity(input.len());
         match (strip_accents, self.lowercase) {
+            // Only text with code points Unicode 9 left unassigned pays for the extra copies.
+            (true, _) if input.chars().any(normalization_newer_than_unicode_9) => {
+                let decomposed = normalize_as_unicode_9(&cleaned.collect::<String>(), Form::Nfd);
+                let stripped = decomposed.chars().filter(|c| !c.is_mark_nonspacing());
+                if self.lowercase {
+                    normalized.extend(stripped.flat_map(char::to_lowercase));
+                } else {
+                    normalized.extend(stripped);
+                }
+            }
             (true, true) => normalized.extend(
                 cleaned
                     .nfd()

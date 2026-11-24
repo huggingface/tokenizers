@@ -44,10 +44,11 @@ lint :
 test : $(TESTS_RESOURCES)
 	cargo test --workspace --no-fail-fast
 
-# Parity against the latest released `tokenizers` crate, on HF_REVISION-pinned fixtures.
+# Parity against the latest released `tokenizers` crate, on HF_REVISION-pinned fixtures and over the
+# Unicode code space.
 .PHONY : oracle
 oracle : $(ORACLE_RESOURCES)
-	cargo test -p tk-convert --features bench-baseline --test oracle
+	cargo test -p tk-convert --features bench-baseline --test oracle --test normalization_oracle
 
 .PHONY : doc
 doc :

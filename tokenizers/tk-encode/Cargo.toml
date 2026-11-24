@@ -75,3 +75,5 @@ parallelism = ["dep:rayon", "dep:rayon-cond", "dep:libc"]
 daachorse = "5.0.0"
 assert_approx_eq = "1.1"
 serde_json = "1.0"
+# The normalization tables of 0.23, which `utils/unicode.rs` derives its Unicode 9 exceptions from.
+unicode-normalization-alignments = "=0.1.12"
