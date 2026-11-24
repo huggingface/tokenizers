@@ -66,4 +66,21 @@ impl DecodeStream {
         };
         self.0.step(tokenizer.pipeline(), ids).map_err(err)
     }
+
+    /// Returns the text that `step` holds back, without consuming it.
+    ///
+    /// `step` returns `None` while the text ends with an incomplete character. When the stream
+    /// ends there, `flush` returns that text, trailing U+FFFD included. The stream does not
+    /// change, so a later `step` still completes the character and returns it whole.
+    ///
+    /// Args:
+    ///     tokenizer: CompiledTokenizer
+    ///         The tokenizer that decodes the ids.
+    ///
+    /// Returns:
+    ///     str | None
+    ///         The held-back text, or `None` when nothing is held back.
+    fn flush(&self, tokenizer: &CompiledTokenizer) -> PyResult<Option<String>> {
+        self.0.flush(tokenizer.pipeline()).map_err(err)
+    }
 }
