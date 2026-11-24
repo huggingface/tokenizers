@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::{pipeline, tokenizer::Result};
 
-use super::utils::lowercases_to_self;
+use crate::utils::lowercase::{lowercases_to_self, to_lowercase};
 
 use unicode_categories::UnicodeCategories;
 use unicode_normalization::{IsNormalized, UnicodeNormalization, is_nfd_quick};
@@ -161,10 +161,10 @@ impl pipeline::Normalize for BertNormalizer {
                 cleaned
                     .nfd()
                     .filter(|c| !c.is_mark_nonspacing())
-                    .flat_map(char::to_lowercase),
+                    .flat_map(to_lowercase),
             ),
             (true, false) => normalized.extend(cleaned.nfd().filter(|c| !c.is_mark_nonspacing())),
-            (false, true) => normalized.extend(cleaned.flat_map(char::to_lowercase)),
+            (false, true) => normalized.extend(cleaned.flat_map(to_lowercase)),
             (false, false) => normalized.extend(cleaned),
         }
 

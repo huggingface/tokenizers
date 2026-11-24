@@ -2,25 +2,18 @@ use std::borrow::Cow;
 
 use crate::pipeline;
 use crate::tokenizer::Result;
+use crate::utils::lowercase::{lowercases_to_self, to_lowercase};
 
 /// Lowercases the input
 #[derive(Copy, Clone, Debug)]
 pub struct Lowercase;
-
-/// Whether lowercasing `c` leaves it unchanged (a single, identical char)
-pub(crate) fn lowercases_to_self(c: char) -> bool {
-    let mut it = c.to_lowercase();
-    matches!((it.next(), it.next()), (Some(first), None) if first == c)
-}
 
 impl pipeline::Normalize for Lowercase {
     fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
         if input.chars().all(lowercases_to_self) {
             Ok(input.into())
         } else {
-            Ok(Cow::Owned(
-                input.chars().flat_map(|c| c.to_lowercase()).collect(),
-            ))
+            Ok(Cow::Owned(input.chars().flat_map(to_lowercase).collect()))
         }
     }
 }
