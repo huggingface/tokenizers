@@ -68,7 +68,7 @@ pub(crate) fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) 
 /// would cost more than the call.
 #[inline(never)]
 fn key_and_hash_long(word: &[u8], len: usize) -> (u64, u64) {
-    let hash = KEY_HASHER.hash_one(word | len);
+    let hash = KEY_HASHER.hash_one(word) | len as u64;
     (hash, hash)
 }
 
