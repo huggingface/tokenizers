@@ -119,6 +119,7 @@ impl<'a> ByteLevelFold<'a> {
         }
         // Now we loop over the bytes of the char and apply bpe: loop on global merge, merge then
         // loop on global merge, merge, etc
+        let mut highest_rank = 0;
         while running.len() > 1 {
             let mut best: Option<(usize, u32, u32)> = None;
             // we loop on the ranks of the different global merges and comput the best
@@ -143,6 +144,15 @@ impl<'a> ByteLevelFold<'a> {
             }
             running[i] = product;
             running.remove(i + 1);
+            highest_rank = highest_rank.max(rank);
+        }
+        // A multi-byte character only exists after its highest-ranked step.
+        // No neighbour may merge with it at a lower rank.
+        if bytes.len() > 1
+            && (highest_rank >= self.merge_rank_right[running[0] as usize]
+                || highest_rank >= self.merge_rank_left[running[0] as usize])
+        {
+            return Fold::Unsafe;
         }
 
         debug_assert_eq!(running[0], self.iid(external));
@@ -251,6 +261,26 @@ mod test {
         let ids = [0, 1, 2, 3, 4];
         let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
         assert!(matches!(f.fold("Ã©", 2), Fold::Unsafe));
+    }
+
+    #[test]
+    fn rejects_a_merge_that_takes_the_finished_character_too_early() {
+        let vocab = AHashMap::from_iter(vec![
+            ("a".to_string(), 0),
+            ("Ã".to_string(), 1),
+            ("©".to_string(), 2),
+            ("Ã©".to_string(), 3),
+            ("aÃ©".to_string(), 4),
+            ("aa".to_string(), 5),
+        ]);
+        let mut merges = MergeMap::new();
+        merges.insert((0, 3), (0, 4)); // a + é
+        merges.insert((0, 0), (1, 5)); // a + a
+        merges.insert((1, 2), (2, 3)); // Ã + © -> é
+        let ids = [0, 1, 2, 3, 4, 5];
+        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        // In "aaé", "aa" forms before é exists, so "aé" never does.
+        assert!(matches!(f.fold("Ã©", 3), Fold::Unsafe));
     }
 
     #[test]
