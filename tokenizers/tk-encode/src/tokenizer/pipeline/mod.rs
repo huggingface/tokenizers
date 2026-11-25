@@ -32,7 +32,8 @@ pub mod encode_options;
 mod parallel;
 mod scratch_pool;
 pub(crate) mod tokenize;
-pub use tokenize::{Scratch, Tokenize, Word};
+pub use tokenize::Scratch;
+pub(crate) use tokenize::{Tokenize, Word};
 
 pub use bitcannon::Span;
 

@@ -18,7 +18,7 @@ const _: () = assert!(align_of::<Token>() == align_of::<u32>());
 
 /// One word, with the key and hash the word cache and the vocabulary look it up by.
 #[derive(Clone, Copy)]
-pub struct Word<'a> {
+pub(crate) struct Word<'a> {
     pub(crate) text: &'a str,
     pub(crate) lookup_key: u64,
     pub(crate) lookup_hash: u64,
@@ -27,7 +27,7 @@ pub struct Word<'a> {
 /// The algorithm a model uses to turn one word into token ids.
 ///
 /// Called by [`tokenize_spans`] when the word is not already cached.
-pub trait Tokenize {
+pub(crate) trait Tokenize {
     /// The buffers the model reuses from one word to the next.
     type Scratch;
 
@@ -219,8 +219,8 @@ pub(crate) fn tokenize_one<M: Tokenize>(
     scratch: &mut Scratch<M::Scratch>,
     output: &mut Vec<Token>,
 ) -> Result<()> {
-    let span = crate::pipeline::Span::new(0, text.len() as u32);
-    tokenize_spans(model, PreTokens::whole(text, &span), scratch, output)
+    let spans = [crate::pipeline::Span::new(0, text.len() as u32)];
+    tokenize_spans(model, PreTokens::checked(text, &spans), scratch, output)
 }
 
 #[cfg(test)]
@@ -302,8 +302,7 @@ mod tests {
     fn an_empty_word_never_reaches_the_model() {
         let model = BytesModel::new(None);
         let spans = [Span::new(0, 0), Span::new(0, 2), Span::new(2, 2)];
-        // SAFETY: every span is a char-boundary range of "ab".
-        let pre_tokens = unsafe { PreTokens::new_unchecked("ab", &spans) };
+        let pre_tokens = PreTokens::checked("ab", &spans);
         let mut output = Vec::new();
 
         tokenize_spans(&model, pre_tokens, &mut Scratch::new(&model), &mut output).unwrap();
