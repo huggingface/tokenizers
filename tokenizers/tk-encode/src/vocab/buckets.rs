@@ -421,7 +421,7 @@ impl Buckets {
             let input_bits = unsafe { _mm_loadu_si128(bytes.as_ptr().add(base).cast()) };
             let input_low_nibbles = _mm_and_si128(input_bits, low_nibble_mask);
             let low_match = _mm_shuffle_epi8(lov, input_low_nibbles);
-            // SSE2 has no 8-bit shift. Shift the u16 lanes, then drop the bits from the next byte.
+            // x86 has no 8-bit shift. Shift the u16 lanes, then drop the bits from the next byte.
             let input_high_nibbles = _mm_and_si128(_mm_srli_epi16(input_bits, 4), low_nibble_mask);
             let high_match = _mm_shuffle_epi8(hiv, input_high_nibbles);
 
