@@ -163,11 +163,7 @@ impl<'a> WordCache {
 
     #[inline]
     fn lookup_placed(&'a self, placement: InsertPlacement) -> Lookup<'a> {
-        let InsertPlacement {
-            key,
-            index: home,
-            tag,
-        } = placement;
+        let InsertPlacement { key, home, tag, .. } = placement;
 
         let tag_window = self.tag_window(home);
         let (candidates, first_empty) = tag_window.find_matches_and_first_empty(tag);
@@ -180,6 +176,7 @@ impl<'a> WordCache {
                     // The entry is stale: replace it with fresh ids
                     return Lookup::Miss(InsertPlacement {
                         index: candidate,
+                        home,
                         key,
                         tag,
                     });
@@ -192,6 +189,7 @@ impl<'a> WordCache {
         // No match: it's a miss. The ids go in the window's first empty slot or to the home slot
         Lookup::Miss(InsertPlacement {
             index: first_empty.unwrap_or(home),
+            home,
             key,
             tag,
         })
@@ -202,7 +200,12 @@ impl<'a> WordCache {
     /// The [InsertPlacement] comes from [`Lookup::Miss`]
     pub fn insert(&mut self, placement: InsertPlacement, ids: impl ExactSizeIterator<Item = u32>) {
         let len = ids.len();
-        let InsertPlacement { index, key, tag } = placement;
+        let InsertPlacement {
+            mut index,
+            home,
+            key,
+            tag,
+        } = placement;
 
         let word = if len <= MAX_INLINE_IDS {
             WordCacheSlot::new_self_contained(key, ids)
@@ -218,6 +221,9 @@ impl<'a> WordCache {
                 self.spilled_generation = self.spilled_generation.wrapping_add(1);
                 if self.spilled_generation == 0 {
                     self.reset();
+                    // The clear emptied every slot, so `index` -- the first empty the pre-clear
+                    // lookup found -- is no longer the window's first empty. The home slot is.
+                    index = home;
                 }
             }
             let start = self.spilled_buffer.len();
@@ -427,6 +433,7 @@ fn make_lookup_key(word: &[u8], placement_mask: u64) -> InsertPlacement {
 fn placement_from(key: LookupKey, hash: u64, placement_mask: u64) -> InsertPlacement {
     InsertPlacement {
         key,
+        home: (hash & placement_mask) as usize,
         index: (hash & placement_mask) as usize,
         tag: ((hash >> (64 - 8)) as u8).max(WordCache::EMPTY + 1),
         // ^ must be at least 0x01, otherwise can be mistaken for an EMPTY slot
@@ -448,7 +455,13 @@ impl std::fmt::Debug for LookupKey {
 }
 
 pub struct InsertPlacement {
+    /// Where to write the slot: the window's first empty slot, or the home slot when it is full.
     index: usize,
+    /// The home slot of the probe window. `insert` needs it because a generation-wrap clear wipes
+    /// the table the `lookup` that produced this placement saw: every slot is empty again, and a
+    /// slot written anywhere but at the window's start is hidden from the next lookup by the empty
+    /// slots in front of it (`find_matches_and_first_empty` stops at the first empty).
+    home: usize,
     key: LookupKey,
     tag: u8,
 }
@@ -920,7 +933,7 @@ mod tests {
         let InsertPlacement { key, tag, .. } =
             make_lookup_key(b"a-word-past-fifteen-bytes", cache.placement_mask);
         for i in 0..3 * (SPILLED_BUDGET / 8) {
-            let at = InsertPlacement { index: 0, key, tag };
+            let at = InsertPlacement { index: 0, home: 0, key, tag };
             cache.insert(at, [i as u32; 8].into_iter());
         }
         assert!(

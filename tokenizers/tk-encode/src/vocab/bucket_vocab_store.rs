@@ -15,7 +15,16 @@ use crate::utils::perfect_hash::{Mphf, mix};
 static KEY_HASHER: OnceLock<RandomState> = OnceLock::new();
 
 fn key_hasher() -> &'static RandomState {
-    KEY_HASHER.get_or_init(RandomState::new)
+    KEY_HASHER.get_or_init(|| {
+        // Test-only: `TK_HASH_SEED=k` pins the seed, so a test that depends on where a word lands
+        // in the table reproduces instead of flaking at 1 run in 60.
+        #[cfg(test)]
+        if let Ok(seed) = std::env::var("TK_HASH_SEED") {
+            let s: u64 = seed.parse().unwrap_or(0);
+            return RandomState::with_seeds(s | 1, s ^ 0x9e37, s ^ 0x7f4a, s ^ 0x1234_5678);
+        }
+        RandomState::new()
+    })
 }
 
 /// Bit 31 of a stored id: the token provably encodes to itself, so a pretoken equal to it can be
@@ -31,9 +40,6 @@ const VOCAB_ID_MASK: u32 = FOLD_BIT - 1;
 
 pub(crate) const INLINE_KEY_BYTES: usize = 7;
 
-/// The 16 bits `len-digest` reserves in the long arm's digest for the token length.
-#[cfg(all(feature = "len-digest", not(feature = "len-byte")))]
-const LEN_MASK: u64 = 0xFFFF << 32;
 
 ///
 ///
@@ -59,9 +65,9 @@ pub(crate) fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) 
     // big-endian host would keep `word[8-len..8]` instead of `word[0..len]` once masked, and
     // put `LEN_TAG` over `word[0]`.
     let raw = u64::from_le_bytes(unsafe { word.as_ptr().cast::<[u8; 8]>().read_unaligned() });
-    // SAFETY: `len <= INLINE_KEY_BYTES == 7`, and both tables have 8 entries.
-    let (mask, tag) = unsafe { (*KEY_MASK.get_unchecked(len), *LEN_TAG.get_unchecked(len)) };
-    let key = (raw & mask) | tag;
+    // Arithmetic instead of the two 8-entry tables: one `bzhi`/shift pair on the low bytes and the
+    // length in the top byte. `len <= 7`, so `8 * len <= 56` and the shift is defined.
+    let key = (raw & ((1u64 << (8 * len)) - 1)) | (len as u64) << 56;
     debug_assert_eq!(
         key,
         key_and_hash(word).0,
@@ -77,33 +83,14 @@ pub(crate) fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) 
 #[inline(never)]
 fn key_and_hash_long(word: &[u8]) -> (u64, u64) {
     let hash = key_hasher().hash_one(word);
-    // Default: bit 63 is the arm tag, applied to the *key* (what `Entry.digest` stores) and not to
-    // the hash the MPHF sees -- pinning bit 63 on every MPHF key makes `PtrHash` fail to build (1000
-    // keys, 20s, "try a better hash"). The packed arm's key is `len << 56 | bytes`, so its top byte
-    // is at most 7 and can never reach bit 63: the two arms produce disjoint keys, and `Entry.digest`
-    // cannot be shared across them however the hash is inverted (#2722). 63 bits of verifier left.
-    #[cfg(not(any(feature = "len-byte", feature = "len-digest")))]
-    {
-        (hash | (1 << 63), hash)
-    }
-
-    // The length in the top byte instead of a tag: the digest comparison is then also an exact
-    // length comparison, at 56 bits. Packed keys top out at 7, so 8..254 separates the arms too.
-    #[cfg(feature = "len-byte")]
-    {
-        let len = word.len();
-        // Branchless: the tag is the length, or 0xFF for a token too long to fit in a byte.
-        let tag = if len < 255 { len as u64 } else { 0xFF };
-        (tag << 56 | (hash & 0x00FF_FFFF_FFFF_FFFF), hash)
-    }
-
-    // The length reserved in bits 32..47, plus the arm tag (without it 1 long digest in 256 is
-    // itself a valid packed key, and a short word could spell it out directly). 47 bits.
-    #[cfg(all(feature = "len-digest", not(feature = "len-byte")))]
-    {
-        let key = (hash & !LEN_MASK) | (word.len() as u64) << 32 | (1 << 63);
-        (key, hash)
-    }
+    // The length goes in the top byte, so comparing digests *is* comparing lengths: no span load,
+    // no extra compare. `Entry.digest` also cannot be shared across the two arms however the hash is
+    // inverted (#2722), because a packed key's top byte is at most 7 and these are 8..254. `0xFF` is
+    // the escape for a token too long to fit in a byte, which keeps the same 56 bits of verifier
+    // without a length.
+    let len = word.len();
+    let tag = if len < 255 { len as u64 } else { 0xFF };
+    (tag << 56 | (hash & 0x00FF_FFFF_FFFF_FFFF), hash)
 }
 
 #[inline(always)]
@@ -124,9 +111,8 @@ pub(crate) fn key_and_hash(word: &[u8]) -> (u64, u64) {
     } else {
         0
     };
-    // The length goes in the top byte, which `KEY_MASK` leaves free for every length <= 7.
-    let key = raw | (len as u64) << 56;
-    (key, mix(key))
+    // The length goes in the top byte, which the packing leaves free for every length <= 7.
+    (raw | (len as u64) << 56, mix(raw | (len as u64) << 56))
 }
 
 /// One MPHF slot: sixteen bytes, so a probe is a single load.
@@ -157,6 +143,9 @@ struct Entry {
 // 16 bytes is still one cache line fetch, so the wider digest is free at probe time.
 const _: () = assert!(size_of::<Entry>() == 16);
 
+/// The layout `key_and_hash` builds, spelled out for the tests to check against: the low `len` bytes
+/// of the word (`KEY_MASK[len]` of them), with `len` itself in the top byte.
+#[cfg(test)]
 static KEY_MASK: [u64; 8] = [
     0x0000_0000_0000_0000,
     0x0000_0000_0000_00FF,
@@ -167,6 +156,7 @@ static KEY_MASK: [u64; 8] = [
     0x0000_FFFF_FFFF_FFFF,
     0x00FF_FFFF_FFFF_FFFF,
 ];
+#[cfg(test)]
 static LEN_TAG: [u64; 8] = [
     0 << 56,
     1 << 56,
@@ -351,10 +341,6 @@ impl BucketVocabStore {
         let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
         if e.digest != key {
-            return None;
-        }
-        #[cfg(feature = "len-check")]
-        if self.spans[slot].len as usize != q.len() {
             return None;
         }
         Some(e.id & VOCAB_ID_MASK)
@@ -785,10 +771,12 @@ mod lookup_bench {
         (store, words)
     }
 
-    /// `BENCH_N=50000 BENCH_REPS=200 cargo test --release -- --ignored --nocapture lookup_throughput`
+    /// `cargo test --release -- --ignored --nocapture lookup_throughput`
     ///
-    /// Ignored by default: it is a timing harness, not a check. It exists because the entry layout
-    /// is a cache-traffic question that only a measurement settles -- see the results in the PR.
+    /// Ignored by default: it is a timing harness, not a check. It exists because the entry layout is
+    /// a cache-traffic question that only a measurement settles -- see the results in the PR. The
+    /// `keys/` and `probe/` rows split the lookup into its arithmetic and its memory access, which is
+    /// what says whether an instruction-level shave can matter at all.
     #[test]
     #[ignore = "benchmark, run with --release -- --ignored --nocapture"]
     fn lookup_throughput() {
@@ -813,16 +801,7 @@ mod lookup_bench {
         shuffle(&mut misses);
 
         println!(
-            "variant={} entry={}B span={}B slots={} (x{:.3} of n) entries={}KB spans={}KB total={}KB",
-            if cfg!(feature = "len-byte") {
-                "len-byte"
-            } else if cfg!(feature = "len-digest") {
-                "len-digest"
-            } else if cfg!(feature = "len-check") {
-                "tag+len-check"
-            } else {
-                "tag (default)"
-            },
+            "entry={}B span={}B slots={} (x{:.3} of n) entries={}KB spans={}KB total={}KB",
             size_of::<Entry>(),
             size_of::<Span>(),
             store.entries.len(),
@@ -850,6 +829,49 @@ mod lookup_bench {
                 );
             }
         }
+    }
+
+    /// The two halves of `get_bytes`, timed separately: the key/hash arithmetic, and the MPHF probe
+    /// plus the entry load. If the arithmetic is small next to the probe, no instruction shave in
+    /// `key_and_hash` can move the number.
+    #[test]
+    #[ignore = "benchmark, run with --release -- --ignored --nocapture"]
+    fn lookup_breakdown() {
+        let n: usize = std::env::var("BENCH_N").ok().and_then(|s| s.parse().ok()).unwrap_or(50_000);
+        let reps: usize = std::env::var("BENCH_REPS").ok().and_then(|s| s.parse().ok()).unwrap_or(200);
+        let (store, words) = fixtures(n);
+        let mut queries: Vec<Vec<u8>> = words.clone();
+        shuffle(&mut queries);
+        let total = reps * queries.len();
+
+        for (arm, queries) in [
+            ("<=7", queries.iter().filter(|w| w.len() <= 7).cloned().collect::<Vec<_>>()),
+            (">=8", queries.iter().filter(|w| w.len() >= 8).cloned().collect::<Vec<_>>()),
+        ] {
+            let mut acc = 0u64;
+            let start = Instant::now();
+            for _ in 0..reps {
+                for q in queries.iter() {
+                    acc ^= black_box(key_and_hash(black_box(q.as_slice()))).1;
+                }
+            }
+            let per = start.elapsed().as_secs_f64() / (reps * queries.len()) as f64;
+            println!("keys/{arm}   {:6.2} ns/word    (acc {acc})", per * 1e9);
+        }
+
+        // The probe without the arithmetic: hashes are computed once, up front.
+        let hashes: Vec<(u64, u64)> = queries.iter().map(|q| key_and_hash(q)).collect();
+        let start = Instant::now();
+        let mut acc = 0u64;
+        for _ in 0..reps {
+            for &(key, hash) in hashes.iter() {
+                let slot = store.mphf.index(black_box(&hash));
+                let e = black_box(&store.entries[black_box(slot)]);
+                acc += (e.digest == key) as u64;
+            }
+        }
+        let per = start.elapsed().as_secs_f64() / total as f64;
+        println!("probe     {:6.2} ns/lookup  (acc {acc})", per * 1e9);
     }
 
     fn shuffle(v: &mut [Vec<u8>]) {
