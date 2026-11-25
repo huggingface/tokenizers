@@ -67,8 +67,8 @@ pub(crate) fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) 
 /// `#[cold]` on purpose -- for CJK this is the *common* arm, and telling the predictor otherwise
 /// would cost more than the call.
 #[inline(never)]
-fn key_and_hash_long(word: &[u8]) -> (u64, u64) {
-    let hash = KEY_HASHER.hash_one(word);
+fn key_and_hash_long(word: &[u8], len: usize) -> (u64, u64) {
+    let hash = KEY_HASHER.hash_one(word | len);
     (hash, hash)
 }
 
@@ -76,7 +76,7 @@ fn key_and_hash_long(word: &[u8]) -> (u64, u64) {
 pub(crate) fn key_and_hash(word: &[u8]) -> (u64, u64) {
     let len = word.len();
     if len > INLINE_KEY_BYTES {
-        return key_and_hash_long(word);
+        return key_and_hash_long(word, len);
     }
     let raw = if len >= 4 {
         let head = u32::from_le_bytes(word[..4].try_into().unwrap()) as u64;
@@ -90,7 +90,7 @@ pub(crate) fn key_and_hash(word: &[u8]) -> (u64, u64) {
     } else {
         0
     };
-    let key = raw | (len as u64) << 56;
+    let key = raw | (len as u64);
     (key, mix(key))
 }
 
@@ -121,16 +121,7 @@ static KEY_MASK: [u64; 8] = [
     0x0000_FFFF_FFFF_FFFF,
     0x00FF_FFFF_FFFF_FFFF,
 ];
-static LEN_TAG: [u64; 8] = [
-    0 << 56,
-    1 << 56,
-    2 << 56,
-    3 << 56,
-    4 << 56,
-    5 << 56,
-    6 << 56,
-    7 << 56,
-];
+static LEN_TAG: [u64; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
 
 #[inline(always)]
 fn digest_of(hash: u64) -> u32 {
@@ -265,7 +256,7 @@ impl BucketVocabStore {
             let (_, hash) = key_and_hash(s.as_slice());
             let slot = mphf.index(&hash);
             entries[slot] = Entry {
-                digest: digest_of(hash),
+                digest: digest_of(hash | s.len() as u64),
                 id: *id,
             };
             spans[slot] = Span {
@@ -310,8 +301,11 @@ impl BucketVocabStore {
         }
         let (_, hash) = key_and_hash(q);
         let slot = self.mphf.index(&hash);
+        let len = self.spans[slot].len as usize;
         let e = self.entries[slot];
-        (e.digest == digest_of(hash)).then_some(e.id & VOCAB_ID_MASK)
+
+        // TODO: we used to check en == q.len() && self.bytes[start..start + len] == *q
+        (e.digest == digest_of(hash) && q.len() == len).then_some(e.id & VOCAB_ID_MASK)
     }
 
     #[inline]
@@ -322,6 +316,8 @@ impl BucketVocabStore {
         }
         let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
+        // TODO: we used to check en == q.len() && self.bytes[start..start + len] == *q
+        // At this point the key already contains the length normally
         (e.digest == digest_of(hash)).then_some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
     }
 
