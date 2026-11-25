@@ -189,12 +189,7 @@ fn build<M>(
     let added = read_added_tokens(doc.field("added_tokens"))?;
 
     let mut added_vocabulary = BucketAddedVocabulary::new();
-    // TODO: this has nothing to do here.
-    let declared = match normalizers.last() {
-        Some(Normalizer::Metaspace(_)) => &normalizers[..normalizers.len() - 1],
-        _ => &normalizers[..],
-    };
-    let chain = NormalizerChain(declared);
+    let chain = NormalizerChain(&normalizers);
     added_vocabulary.add_tokens(
         added,
         vocab_size(&concrete),

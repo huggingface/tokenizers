@@ -3,8 +3,8 @@
 use super::writer::Out;
 #[cfg(feature = "normalizers")]
 use base64::Engine as _;
-use tk_encode::normalizers::metaspace::PrependScheme;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
+use tk_encode::piece_normalizers::metaspace::PrependScheme;
 use tk_encode::pipeline::{Normalizer, PieceNormalizer};
 use tk_encode::tokenizer::Result;
 
@@ -58,7 +58,7 @@ pub(super) fn write_piece_normalizer(
             out.field_str("prepend", prepend_scheme_name(metaspace.prepend())?);
             out.field_bool("drop_whitespace", metaspace.drop_whitespace());
         }
-        PieceNormalizer::PrefixSpace => out.type_tag("PrefixSpace"),
+        PieceNormalizer::PrefixSpace(_) => out.type_tag("PrefixSpace"),
         other => return Err(format!("to_json cannot write the piece normalizer {other:?}").into()),
     }
     out.obj_close();
@@ -74,17 +74,6 @@ fn write_one(out: &mut Out, normalizer: &Normalizer) -> Result<()> {
     }
 
     match normalizer {
-        Normalizer::Metaspace(metaspace) => {
-            out.obj_open();
-            out.type_tag("MetaspaceNormalizer");
-            out.field_str(
-                "replacement",
-                metaspace.delimiter().encode_utf8(&mut [0; 4]),
-            );
-            out.field_str("prepend", prepend_scheme_name(metaspace.prepend())?);
-            out.field_bool("drop_whitespace", metaspace.drop_whitespace());
-            out.obj_close();
-        }
         Normalizer::Replace(replace) => write_replace(out, replace)?,
         Normalizer::Prepend(prepend) => {
             out.obj_open();

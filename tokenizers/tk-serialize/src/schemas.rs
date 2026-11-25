@@ -185,15 +185,6 @@ macro_rules! normalizer_schemas {
             Strip { strip_left: Bool = true, strip_right: Bool = true },
             /// Adds `prepend` at the start of the text, unless the text is empty.
             Prepend { prepend: String },
-            /// SentencePiece's whitespace handling: replaces spaces with `replacement`. `prepend` says
-            /// when `replacement` also goes in front of the text: `"always"`, `"first"` (only at the
-            /// start of the input) or `"never"`. `drop_whitespace` drops runs of whitespace instead
-            /// of replacing them.
-            MetaspaceNormalizer {
-                replacement: Char = '▁',
-                prepend: Choice($crate::schemas::PREPEND_SCHEMES) = "always",
-                drop_whitespace: Bool = false,
-            },
         }
     };
 }

@@ -8,11 +8,12 @@ use crate::json::Json;
 #[cfg(feature = "normalizers")]
 use base64::Engine as _;
 use tk_encode::normalizers::byte_level::ByteLevel as ByteLevelNormalizer;
-use tk_encode::normalizers::metaspace::{MetaspaceNormalizer, PrependScheme};
 use tk_encode::normalizers::prepend::Prepend;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
 use tk_encode::normalizers::strip::Strip;
 use tk_encode::normalizers::utils::Lowercase;
+use tk_encode::piece_normalizers::metaspace::{Metaspace, PrependScheme};
+use tk_encode::piece_normalizers::prefix_space::PrefixSpace;
 use tk_encode::pipeline::{Normalizer, PieceNormalizer};
 use tk_encode::tokenizer::Result;
 
@@ -41,12 +42,12 @@ pub(super) fn read_piece_normalizer(cfg: Option<&Json<'_>>) -> Result<Option<Pie
         .ok_or_else(|| unsupported("a piece normalizer with no `type`"))?;
     let owner = format!("the `{kind}` piece normalizer");
     let piece_normalizer = match kind {
-        "Metaspace" => PieceNormalizer::Metaspace(MetaspaceNormalizer::new(
+        "Metaspace" => PieceNormalizer::Metaspace(Metaspace::new(
             super::pre_tokenizers::read_char(cfg, "replacement")?,
             read_prepend_scheme(cfg, &owner, "prepend")?,
             cfg.need(&owner, "drop_whitespace", Json::as_bool)?,
         )),
-        "PrefixSpace" => PieceNormalizer::PrefixSpace,
+        "PrefixSpace" => PieceNormalizer::PrefixSpace(PrefixSpace::default()),
         other => return Err(unsupported(&format!("the `{other}` piece normalizer"))),
     };
     Ok(Some(piece_normalizer))
@@ -76,11 +77,6 @@ fn push_normalizer(cfg: &Json<'_>, out: &mut Vec<Normalizer>) -> Result<()> {
                 push_normalizer(member, out)?;
             }
         }
-        "MetaspaceNormalizer" => out.push(Normalizer::Metaspace(MetaspaceNormalizer::new(
-            super::pre_tokenizers::read_char(cfg, "replacement")?,
-            read_prepend_scheme(cfg, &owner, "prepend")?,
-            cfg.need(&owner, "drop_whitespace", Json::as_bool)?,
-        ))),
         "Replace" => out.push(Normalizer::Replace(read_replace(cfg)?)),
         "Prepend" => {
             let prepend = cfg
