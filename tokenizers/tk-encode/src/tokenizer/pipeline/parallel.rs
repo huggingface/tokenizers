@@ -1,4 +1,5 @@
 use std::cell::UnsafeCell;
+use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -440,7 +441,8 @@ impl Tokenizer {
 }
 
 pub(crate) fn encode(tok: &Tokenizer, inputs: Inputs, options: &EncodeOptions) -> EncodeHandle {
-    if inputs.size_bytes() < PARALLEL_MIN_BYTES {
+    let serial_call = options.max_threads.is_some_and(|max| max.get() == 1);
+    if serial_call || inputs.size_bytes() < PARALLEL_MIN_BYTES {
         return EncodeHandle::blocking(
             tok.encode_serial(inputs, options),
             tok.resolve_padding(&options.padding).cloned(),
@@ -475,7 +477,7 @@ pub(crate) fn encode(tok: &Tokenizer, inputs: Inputs, options: &EncodeOptions) -
         );
     }
     let n_seq = outputs.len();
-    let threads = tasks.len().min(pool.current_num_threads());
+    let threads = pool_jobs(tasks.len(), pool.current_num_threads(), options.max_threads);
     let batch = Arc::new(EncodeBatch {
         inputs: Box::new(inputs),
         cancelled: AtomicBool::new(false),
@@ -504,4 +506,31 @@ pub(crate) fn encode(tok: &Tokenizer, inputs: Inputs, options: &EncodeOptions) -
         StreamingIter::new(batch),
         tok.resolve_padding(&options.padding).cloned(),
     )
+}
+
+/// How many jobs one call puts on the pool: one per task, at most one per pool thread, and one
+/// fewer than the call's `max_threads`, since the calling thread encodes too.
+fn pool_jobs(tasks: usize, pool_threads: usize, call_max_threads: Option<NonZeroUsize>) -> usize {
+    let besides_caller = match call_max_threads {
+        Some(max) => max.get() - 1,
+        None => usize::MAX,
+    };
+    tasks.min(pool_threads).min(besides_caller)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_calls_max_threads_counts_the_calling_thread() {
+        let max = NonZeroUsize::new;
+        assert_eq!(pool_jobs(10, 8, None), 8, "one job per pool thread");
+        assert_eq!(pool_jobs(3, 8, None), 3, "one job per task");
+        assert_eq!(
+            pool_jobs(10, 8, max(3)),
+            2,
+            "the caller is one of the 3 threads"
+        );
+    }
 }

@@ -19,9 +19,9 @@ pub use rayon::current_num_threads;
 /// TODO: deprecate
 pub(crate) const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
 
-/// 0 means deafult value
-static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
-/// Bumped by [`set_num_threads`], so the next [`pool`] call builds a pool with the new count.
+/// The value set with [`set_max_threads`]; 0 means the default.
+static MAX_THREADS: AtomicUsize = AtomicUsize::new(0);
+/// Bumped by [`set_max_threads`], so the next [`pool`] call builds a pool with the new count.
 static POOL_GEN: AtomicUsize = AtomicUsize::new(0);
 
 struct CachedPool {
@@ -44,6 +44,11 @@ static POOL_OWNER: AtomicU32 = AtomicU32::new(0);
 /// first input long enough to ask for a pool.
 pub(crate) fn claim_pool() {
     let _ = POOL_OWNER.compare_exchange(0, process_id(), Ordering::Relaxed, Ordering::Relaxed);
+}
+
+fn is_forked_child() -> bool {
+    claim_pool();
+    POOL_OWNER.load(Ordering::Relaxed) != process_id()
 }
 
 /// Only unix can fork, and [`std::process::id`] panics on targets without processes (wasm).
@@ -77,8 +82,7 @@ fn try_lock_briefly() -> Option<MutexGuard<'static, Option<CachedPool>>> {
 /// The shared worker pool, or `None` to encode serially: on one core, under contention, or in a
 /// forked child.
 pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
-    claim_pool();
-    if POOL_OWNER.load(Ordering::Relaxed) != process_id() {
+    if is_forked_child() {
         return None;
     }
 
@@ -90,14 +94,14 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     {
         return Some(cached.pool.clone());
     }
-    let num_threads = num_threads();
-    // no pool for a single thread
-    if num_threads == 1 {
+    // the calling thread encodes too, so the pool holds one thread fewer
+    let workers = max_threads() - 1;
+    if workers == 0 {
         *cache = None;
         return None;
     }
     let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(num_threads)
+        .num_threads(workers)
         .thread_name(|i| format!("tk-encode-{i}"))
         .build()
         .ok()?;
@@ -109,12 +113,16 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     Some(pool)
 }
 
-pub(crate) fn num_threads() -> usize {
-    match NUM_THREADS.load(Ordering::Acquire) {
-        // 0 == default value
-        0 => std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1),
+/// The most threads one encode uses, the calling thread included. `1` means serial.
+///
+/// The value set with [`set_max_threads`], else every available core. Always `1` in a forked
+/// child, whatever was set.
+pub fn max_threads() -> usize {
+    if is_forked_child() {
+        return 1;
+    }
+    match MAX_THREADS.load(Ordering::Acquire) {
+        0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
         n => n,
     }
 }
@@ -123,9 +131,9 @@ fn invalidate() {
     POOL_GEN.fetch_add(1, Ordering::SeqCst);
 }
 
-/// Passing in 0 will reset to the default value
-pub fn set_num_threads(n: usize) {
-    NUM_THREADS.store(n, Ordering::Release);
+/// Sets [`max_threads`] for the whole process. `0` restores the default.
+pub fn set_max_threads(max_threads: usize) {
+    MAX_THREADS.store(max_threads, Ordering::Release);
     invalidate();
 }
 
@@ -268,7 +276,7 @@ mod tests {
     #[test]
     fn concurrent_callers_share_one_pool() {
         let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
-        if num_threads() == 1 {
+        if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
         // start stale, so the callers race the rebuild too
@@ -290,13 +298,38 @@ mod tests {
         assert_eq!(seen.len(), 1, "contended callers built pools of their own");
     }
 
+    /// The calling thread encodes too, so the pool must hold one thread fewer than the maximum.
+    #[test]
+    fn max_threads_counts_the_calling_thread() {
+        let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        set_max_threads(3);
+        let workers = pool().map(|pool| pool.current_num_threads());
+        set_max_threads(1);
+        let serial = pool().is_none();
+        set_max_threads(0);
+        assert_eq!(workers, Some(2), "the pool leaves no thread for the caller");
+        assert!(serial, "max_threads 1 still built a pool");
+    }
+
+    /// Training checks [`max_threads`] too, so it must say serial in a child whatever was set.
+    #[cfg(unix)]
+    #[test]
+    fn forked_child_ignores_max_threads() {
+        let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        let child_ok = in_forked_child(|| {
+            set_max_threads(4);
+            i32::from(max_threads() != 1)
+        });
+        assert!(child_ok, "a forked child honoured set_max_threads");
+    }
+
     /// A thread started in a forked child can wait forever on a lock held by a thread the fork
     /// didn't copy, so the child must encode serially.
     #[cfg(unix)]
     #[test]
     fn forked_child_gets_no_pool() {
         let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
-        if num_threads() == 1 {
+        if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
         assert!(pool().is_some(), "the parent gets a pool");
@@ -312,7 +345,7 @@ mod tests {
         use crate::pipeline::{Model, PostProcessor, PreTokenizer, Tokenizer};
 
         let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
-        if num_threads() == 1 {
+        if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
         POOL_OWNER.store(0, Ordering::Relaxed);
