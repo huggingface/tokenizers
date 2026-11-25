@@ -46,11 +46,9 @@ pub struct BpeConfig {
     /// Slots in the per-scratch word cache; `0` turns caching off. Defaults to
     /// [`DEFAULT_CACHE_CAPACITY`](crate::models::bpe::DEFAULT_CACHE_CAPACITY).
     pub cache_capacity: usize,
-    /// Merges whose product may be absent from the vocabulary, in derivation order. A product
-    /// that is absent is a *ghost* intermediate; one that is present becomes a *root*, emitted
-    /// whole when a pretoken starts with it. Empty by default, so a malformed vocab still fails
-    /// loudly.
-    pub ghost_merges: Merges,
+    /// Emit tokens the merge list cannot build whole when a pretoken starts with them. Off by
+    /// default: a malformed vocab keeps tokenizing the way it always did.
+    pub prefix_atoms: bool,
 }
 
 impl Default for BpeConfig {
@@ -67,7 +65,7 @@ impl Default for BpeConfig {
             ignore_merges: false,
             dropout: None,
             cache_capacity: DEFAULT_CACHE_CAPACITY,
-            ghost_merges: Merges::default(),
+            prefix_atoms: false,
         }
     }
 }
@@ -144,7 +142,7 @@ impl BPE {
             ignore_merges: self.vocab.all_foldable(),
             dropout: None,
             cache_capacity: self.cache_capacity.unwrap_or(0),
-            ghost_merges: self.ghost_merges.clone(),
+            prefix_atoms: !self.roots.is_empty(),
         })
     }
 
@@ -195,48 +193,13 @@ impl BPE {
             })
             .collect::<Result<MergeMap>>()?;
 
-        // Ghost merges are declarations, not part of the merge map. They are walked in order so a
-        // product that is a real token becomes a root, and one that is absent stays a ghost.
-        let ghost_merges = std::mem::take(&mut config.ghost_merges);
-        let mut ghost_tokens: HashSet<String> = HashSet::new();
-        let mut roots: Vec<(Box<[u8]>, u32)> = Vec::new();
-        let root_bytes = |s: &str| -> Box<[u8]> {
-            if config.byte_level {
-                s.chars().flat_map(byte_level::reverse_lookup).collect()
-            } else {
-                s.as_bytes().to_vec().into_boxed_slice()
-            }
+        let roots = if config.prefix_atoms {
+            unreachable_roots(&vocab, &merges, config.byte_level)
+        } else {
+            Vec::new()
         };
-        for (a, b) in ghost_merges.iter() {
-            let Some(b_suffix) = b.strip_prefix(prefix) else {
-                return Err(Error::MergeTokenWithoutPrefix {
-                    token: b.clone(),
-                    prefix: prefix.to_owned(),
-                }
-                .into());
-            };
-            buffer.clear();
-            buffer.push_str(a);
-            buffer.push_str(b_suffix);
-            let a_ok = vocab.contains_key(a) || ghost_tokens.contains(a);
-            let b_ok = vocab.contains_key(b) || ghost_tokens.contains(b);
-            if !a_ok {
-                return Err(Error::MergeTokenOutOfVocabulary(a.clone()).into());
-            }
-            if !b_ok {
-                return Err(Error::MergeTokenOutOfVocabulary(b.clone()).into());
-            }
-            match vocab.get(&buffer).copied() {
-                Some(new_id) => roots.push((root_bytes(&buffer), new_id)),
-                None => {
-                    ghost_tokens.insert(buffer.clone());
-                }
-            }
-        }
-        roots.sort_by_key(|(token, _)| std::cmp::Reverse(token.len()));
-        roots.dedup_by_key(|(_, id)| *id);
 
-        Self::from_merge_map(vocab, merges, roots, ghost_merges, config)
+        Self::from_merge_map(vocab, merges, roots, config)
     }
 
     /// The same construction, entered from a vocabulary and a merge map that have *already*
@@ -245,7 +208,6 @@ impl BPE {
         vocab: Vocab,
         merges: MergeMap,
         roots: Vec<(Box<[u8]>, u32)>,
-        ghost_merges: Merges,
         config: BpeConfig,
     ) -> Result<Self> {
         let BpeConfig {
@@ -379,7 +341,6 @@ impl BPE {
             cache_capacity,
             vocab,
             roots,
-            ghost_merges,
             byte_to_gate: build_byte_to_gate(),
         };
         // Every entry carries a foldable bit, so the encode path is one probe and one bit test
@@ -401,4 +362,33 @@ impl BPE {
         }
         Ok(built)
     }
+}
+
+/// Every vocabulary token no merge list can build, longest first.
+fn unreachable_roots(vocab: &Vocab, merges: &MergeMap, byte_level: bool) -> Vec<(Box<[u8]>, u32)> {
+    let pairs: HashSet<Pair> = merges.keys().copied().collect();
+    let mut tokens: Vec<(&str, u32)> = vocab.iter().map(|(s, &id)| (s.as_str(), id)).collect();
+    tokens.sort_by_key(|(token, _)| token.len());
+    let mut seen: HashSet<u32> = HashSet::new();
+    let mut roots = Vec::new();
+    for (token, id) in tokens {
+        let ok = token.chars().count() == 1
+            || token.char_indices().skip(1).any(|(i, _)| {
+                let (a, b) = token.split_at(i);
+                matches!((vocab.get(a), vocab.get(b)), (Some(&x), Some(&y))
+                    if seen.contains(&x) && seen.contains(&y) && pairs.contains(&(x, y)))
+            });
+        if ok {
+            seen.insert(id);
+        } else if token.chars().count() > 1 {
+            let bytes: Box<[u8]> = if byte_level {
+                token.chars().flat_map(byte_level::reverse_lookup).collect()
+            } else {
+                token.as_bytes().into()
+            };
+            roots.push((bytes, id));
+        }
+    }
+    roots.sort_by_key(|(token, _)| std::cmp::Reverse(token.len()));
+    roots
 }

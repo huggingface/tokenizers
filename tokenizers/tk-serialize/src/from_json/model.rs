@@ -57,21 +57,10 @@ pub(super) fn read_bpe(cfg: &Json<'_>) -> Result<(Vocab, Merges, BpeConfig)> {
         .field("ignore_merges")
         .and_then(Json::as_bool)
         .unwrap_or_default();
-    if let Some(ghosts) = cfg.field("ghost_merges").and_then(Json::as_array) {
-        for entry in ghosts {
-            let pair = entry.as_array().ok_or_else(|| {
-                unsupported("a `ghost_merges` entry that is not a [left, right] pair")
-            })?;
-            match (
-                pair.len(),
-                pair.first().and_then(Json::as_str),
-                pair.get(1).and_then(Json::as_str),
-            ) {
-                (2, Some(a), Some(b)) => options.ghost_merges.push((a.to_string(), b.to_string())),
-                _ => return Err("a ghost merge pair is not a pair of strings".into()),
-            }
-        }
-    }
+    options.prefix_atoms = cfg
+        .field("prefix_atoms")
+        .and_then(Json::as_bool)
+        .unwrap_or_default();
     options.byte_level = byte_level;
     Ok((vocab, merges, options))
 }

@@ -655,9 +655,8 @@ fn byte_level_drops_bytes_real_text_can_contain() {
 }
 
 #[test]
-fn ghost_merges_emit_a_root_at_the_start_of_a_pretoken() {
-    // "abcd" has no valid split: "abc" is not a vocabulary token. The ghost chain
-    // ("ab","c") -> "abc" (ghost), ("abc","d") -> "abcd" (real) makes "abcd" a root.
+fn prefix_atoms_emit_unreachable_tokens_at_a_pretoken_start() {
+    // "abcd" is a vocabulary token with no split into two tokens whose pair is a merge.
     let vocab = || {
         v(&[
             ("a", 0),
@@ -670,27 +669,26 @@ fn ghost_merges_emit_a_root_at_the_start_of_a_pretoken() {
             ("abcd", 7),
         ])
     };
-    let model = BPE::from_config(BpeConfig {
+    let merges = || m(&[("a", "b")]);
+    let atoms = BPE::from_config(BpeConfig {
         vocab: vocab(),
-        merges: m(&[("a", "b")]),
-        ghost_merges: m(&[("ab", "c"), ("abc", "d")]),
+        merges: merges(),
+        prefix_atoms: true,
         ..BpeConfig::default()
     })
     .unwrap();
-    // The root is emitted whole; the rest is tokenized normally.
-    assert_eq!(pipeline_ids(&model, "abcd"), vec![7]);
-    assert_eq!(pipeline_ids(&model, "abcde"), vec![7, 4]);
-    // A pretoken that does not start with the root is untouched (and the ghost never fires).
-    assert_eq!(pipeline_ids(&model, "xabcd"), vec![5, 6, 2, 3]);
-    assert_eq!(pipeline_ids(&model, "abce"), vec![6, 2, 4]);
+    assert_eq!(pipeline_ids(&atoms, "abcd"), vec![7]);
+    assert_eq!(pipeline_ids(&atoms, "abcde"), vec![7, 4]);
+    // A pretoken that does not start with the atom is untouched.
+    assert_eq!(pipeline_ids(&atoms, "xabcd"), vec![5, 6, 2, 3]);
+    assert_eq!(pipeline_ids(&atoms, "abce"), vec![6, 2, 4]);
 
-    // Without the declaration, a merge whose product is absent is still a malformed-vocab error.
-    assert!(
-        BPE::from_config(BpeConfig {
-            vocab: vocab(),
-            merges: m(&[("a", "b"), ("ab", "c")]),
-            ..BpeConfig::default()
-        })
-        .is_err()
-    );
+    // Off by default.
+    let plain = BPE::from_config(BpeConfig {
+        vocab: vocab(),
+        merges: merges(),
+        ..BpeConfig::default()
+    })
+    .unwrap();
+    assert_eq!(pipeline_ids(&plain, "abcd"), vec![6, 2, 3]);
 }

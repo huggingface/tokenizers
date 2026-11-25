@@ -1,14 +1,14 @@
-//! The ghost-merge path on the Inkling-2 vocab: roots encode whole at a pretoken start and
-//! nothing else moves. Skipped when the fixture is absent (it is not committed).
+//! `prefix_atoms` on the Inkling-2 vocab: tokens the merge list cannot build are emitted whole
+//! at a pretoken start, and nothing else moves. Skipped when the fixture is absent.
 //!
-//! Regenerate with `python /tmp/inkling/make_ghosts.py tokenizer.json tokenizer_ghost.json`.
+//! The fixture is `tokenizer.json` with `"prefix_atoms": true` added to the model.
 
 use std::path::Path;
 
 use tk_encode::pipeline::{EncodeOptions, Tokenizer};
 
 const BASE: &str = "/tmp/inkling/tokenizer.json";
-const GHOST: &str = "/tmp/inkling/tokenizer_ghost.json";
+const ATOMS: &str = "/tmp/inkling/tokenizer_prefix.json";
 
 fn load(path: &str) -> Tokenizer {
     let canonical = tk_convert::canonicalize_file(path).unwrap();
@@ -27,35 +27,29 @@ fn ids(pipe: &Tokenizer, text: &str) -> Vec<u32> {
 }
 
 #[test]
-fn roots_encode_whole_and_nothing_else_moves() {
-    if !Path::new(BASE).exists() || !Path::new(GHOST).exists() {
+fn unreachable_tokens_are_atoms_at_a_pretoken_start() {
+    if !Path::new(BASE).exists() || !Path::new(ATOMS).exists() {
         return;
     }
     let base = load(BASE);
-    let ghost = load(GHOST);
+    let atoms = load(ATOMS);
 
-    // Roots: the tokens the vocab could not build. The reference emits them whole.
-    assert_eq!(ids(&ghost, "Klebsiella"), vec![53960]);
-    assert_eq!(ids(&ghost, "Klebsiellae"), vec![53960, 68]);
-    assert_eq!(ids(&ghost, "についてください"), vec![91149, 103413]);
-    // Another root mid-word: "Rijks" is one of the unreachable tokens.
-    assert_eq!(ids(&ghost, "Rijksmuseum"), vec![55562, 32876]);
+    assert_eq!(ids(&atoms, "Klebsiella"), vec![53960]);
+    assert_eq!(ids(&atoms, "Klebsiellae"), vec![53960, 68]);
+    assert_eq!(ids(&atoms, "についてください"), vec![91149, 103413]);
+    assert_eq!(ids(&atoms, "Rijksmuseum"), vec![55562, 32876]);
 
-    // Every unreachable token is now a root: as a prefix of a larger word it is emitted whole.
+    // Every unreachable token is emitted when it is a prefix of a pretoken.
     if let Ok(raw) = std::fs::read_to_string("/tmp/inkling/targets.json") {
         let targets: Vec<(u32, String)> = serde_json::from_str(&raw).unwrap();
         for (id, token) in targets {
             let text = format!("{token}x");
-            let got = ids(&ghost, &text);
-            assert_eq!(
-                got.first(),
-                Some(&id),
-                "root not emitted for {token:?}: {got:?}"
-            );
+            let got = ids(&atoms, &text);
+            assert_eq!(got.first(), Some(&id), "not an atom: {token:?} -> {got:?}");
         }
     }
 
-    // Not at a pretoken start, so the ghost never fires: byte-identical to the base model.
+    // Not at a pretoken start, so nothing fires: byte-identical to the base model.
     for text in [
         "hello world",
         "my Klebsiella",
@@ -67,6 +61,6 @@ fn roots_encode_whole_and_nothing_else_moves() {
         "品詞や読みに割り当てられている領域の方がずっと大きいようで，",
         "def main():\n    return 0\n",
     ] {
-        assert_eq!(ids(&ghost, text), ids(&base, text), "moved: {text:?}");
+        assert_eq!(ids(&atoms, text), ids(&base, text), "moved: {text:?}");
     }
 }
