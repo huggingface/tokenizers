@@ -460,6 +460,7 @@ pub enum Lookup<'a> {
 
 pub enum ProbeEmit<'a> {
     Wrote(usize),
+    /// full hit for the whole word
     Hit(&'a [u32]),
     Miss(InsertPlacement),
 }
