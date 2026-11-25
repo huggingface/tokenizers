@@ -180,10 +180,9 @@ pub struct AddedVocabulary {
     ///    to the inner vocab store.
     ///  - the metadata of each token.
     token_metadata: Box<[AddedTokenFlags]>, // indexed by internal id
-    /// The content of the tokens whose matcher holds another text, because the normalizer
-    /// changed it. By internal id.
+    ///The declared content of each `normalized` token when its bytes is modified by the normalizer,
+    /// mapped to its internal id. The normalized bytes for the token is held by normalized_vocab.
     declared_contents: BucketVocabStore,
-
     normalized_vocab: Buckets,
     vocab: Buckets,
 }
