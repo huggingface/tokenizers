@@ -1,5 +1,5 @@
-use crate::pipeline::{self, ModelScratch, PipelineToken};
-use crate::tokenizer::{Result, Token};
+use crate::pipeline::{self, Token};
+use crate::tokenizer::Result;
 use ahash::AHashMap;
 use std::collections::HashMap;
 
@@ -8,6 +8,7 @@ use std::collections::HashMap;
 type Vocab = AHashMap<String, u32>;
 
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum Error {
     #[error("WordLevel error: Missing [UNK] token from the vocabulary")]
     MissingUnkToken,
@@ -39,7 +40,7 @@ impl Default for WordLevelBuilder {
 
 impl WordLevelBuilder {
     /// Construct a new `WordLevelBuilder`.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
@@ -76,9 +77,10 @@ impl WordLevelBuilder {
 
 #[derive(PartialEq, Clone, Eq)]
 pub struct WordLevel {
-    pub vocab: AHashMap<String, u32>,
-    pub vocab_r: AHashMap<u32, String>,
-    pub unk_token: String,
+    vocab: AHashMap<String, u32>,
+    /// The inverse of `vocab`, which [`WordLevelBuilder::build`] derives from it.
+    vocab_r: AHashMap<u32, String>,
+    unk_token: String,
 }
 
 impl std::fmt::Debug for WordLevel {
@@ -93,6 +95,16 @@ impl std::fmt::Debug for WordLevel {
 impl WordLevel {
     pub fn builder() -> WordLevelBuilder {
         WordLevelBuilder::new()
+    }
+
+    /// The token to id mapping.
+    pub fn vocab(&self) -> &AHashMap<String, u32> {
+        &self.vocab
+    }
+
+    /// The token a word outside the vocabulary encodes to.
+    pub fn unk_token(&self) -> &str {
+        &self.unk_token
     }
 }
 
@@ -110,57 +122,36 @@ impl Default for WordLevel {
 /// `Model` trait; that trait had no implementor left that needed polymorphism, so they are
 /// plain inherent methods now and every call site is unchanged.
 impl WordLevel {
-    pub fn tokenize(&self, token: &str) -> Result<Vec<Token>> {
-        if let Some(&id) = self.vocab.get(token) {
-            Ok(vec![Token {
-                id,
-                value: token.to_owned(),
-                offsets: (0, token.len()),
-            }])
-        } else if let Some(&unk_id) = self.vocab.get(&self.unk_token) {
-            Ok(vec![Token {
-                id: unk_id,
-                value: self.unk_token.to_owned(),
-                offsets: (0, token.len()),
-            }])
-        } else {
-            Err(Box::new(Error::MissingUnkToken))
-        }
-    }
-
     pub fn token_to_id(&self, token: &str) -> Option<u32> {
         self.vocab.get(token).copied()
     }
 
-    pub fn id_to_token(&self, id: u32) -> Option<String> {
+    pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(&id).cloned()
     }
 
-    pub fn get_vocab(&self) -> HashMap<String, u32> {
+    pub(crate) fn get_vocab(&self) -> HashMap<String, u32> {
         self.vocab.clone().into_iter().collect()
     }
 
     pub fn get_vocab_size(&self) -> usize {
-        self.vocab.keys().len()
+        self.vocab.len()
     }
 }
 
-type WordLevelScratch = ();
-impl ModelScratch for WordLevelScratch {}
-
-impl pipeline::Model for WordLevel {
-    type Scratch = WordLevelScratch;
+impl pipeline::Tokenize for WordLevel {
+    type Scratch = ();
     fn init_scratch(&self) -> Self::Scratch {}
-    fn tokenize_pipeline(
+    fn tokenize(
         &self,
         sequence: &str,
         _scratch: &mut Self::Scratch,
-        output: &mut Vec<pipeline::PipelineToken>,
+        output: &mut Vec<pipeline::Token>,
     ) -> Result<()> {
         if let Some(&id) = self.vocab.get(sequence) {
-            output.push(PipelineToken::from(id))
+            output.push(Token::from(id))
         } else if let Some(&unk_id) = self.vocab.get(&self.unk_token) {
-            output.push(PipelineToken::from(unk_id));
+            output.push(Token::from(unk_id));
         } else {
             return Err(Box::new(Error::MissingUnkToken));
         }
@@ -171,6 +162,32 @@ impl pipeline::Model for WordLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tokenize(wordlevel: &WordLevel, sequence: &str) -> Result<Vec<u32>> {
+        let mut output = Vec::new();
+        pipeline::Tokenize::tokenize(wordlevel, sequence, &mut (), &mut output)?;
+        Ok(output.iter().map(|token| token.id()).collect())
+    }
+
+    #[test]
+    fn encodes_a_vocab_holding_every_utf8_byte() {
+        let chars = crate::models::chars_covering_every_utf8_byte();
+        let vocab: Vocab = chars
+            .iter()
+            .zip(0u32..)
+            .map(|(c, id)| (c.to_string(), id))
+            .collect();
+        let wordlevel = WordLevelBuilder::default().vocab(vocab).build().unwrap();
+
+        for (c, id) in chars.iter().zip(0u32..) {
+            let token = c.to_string();
+            let mut output = Vec::new();
+            pipeline::Tokenize::tokenize(&wordlevel, &token, &mut (), &mut output).unwrap();
+            let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
+            assert_eq!(ids, [id], "{c:?}");
+            assert_eq!(wordlevel.token_to_id(&token), Some(id), "{c:?}");
+        }
+    }
 
     #[test]
     fn test_tokenize_unk() {
@@ -183,21 +200,17 @@ mod tests {
             .unk_token("<unk>".to_string())
             .build()
             .unwrap();
-        let tokens = wordlevel.tokenize("c").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "<unk>".into(), (0, 1)),]);
-
-        let tokens = wordlevel.tokenize("a").unwrap();
-        assert_eq!(tokens, vec![Token::new(1u32, "a".into(), (0, 1)),]);
+        assert_eq!(tokenize(&wordlevel, "c").unwrap(), [0]);
+        assert_eq!(tokenize(&wordlevel, "a").unwrap(), [1]);
     }
 
     #[test]
     fn test_tokenize_missing_unk_token() {
         let vocab: Vocab = [("a".into(), 0), ("b".into(), 1)].iter().cloned().collect();
         let wordlevel = WordLevelBuilder::default().vocab(vocab).build().unwrap();
-        let tokens = wordlevel.tokenize("a").unwrap();
-        assert_eq!(tokens, vec![Token::new(0u32, "a".into(), (0, 1)),]);
+        assert_eq!(tokenize(&wordlevel, "a").unwrap(), [0]);
 
-        let error = wordlevel.tokenize("c").err().unwrap();
+        let error = tokenize(&wordlevel, "c").err().unwrap();
         assert!(error.is::<Error>());
     }
 }

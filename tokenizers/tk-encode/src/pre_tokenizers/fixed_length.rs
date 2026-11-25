@@ -2,6 +2,7 @@ use crate::pipeline;
 use crate::tokenizer::Result;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct FixedLength {
     /// Absent from a config means 5, which is also `FixedLength::default()`.
     pub length: usize,
@@ -15,7 +16,7 @@ impl FixedLength {
 
 // SAFETY: every offset is one `str::char_indices` yielded, or `text.len()`, and they are pushed in
 // increasing order.
-unsafe impl pipeline::PreTokenizer for FixedLength {
+unsafe impl pipeline::PreTokenize for FixedLength {
     fn pre_tokenize(
         &self,
         text: &str,
@@ -62,7 +63,7 @@ mod tests {
         let pretok = FixedLength { length };
         let mut scratch = pipeline::PreTokenizerScratch::default();
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+        crate::pipeline::PreTokenize::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
             .unwrap();
         splits
             .iter()

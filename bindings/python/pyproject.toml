@@ -1,17 +1,21 @@
 [project]
 name = "tokenizers"
 dynamic = ["version"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 readme = "README.md"
 description = "Reworked tokenizers Python bindings, over the pipeline encode path (not for release yet)"
-dependencies = ["huggingface_hub>=0.16.4,<3.0", "numpy"]
+dependencies = ["huggingface_hub>=0.16.4,<3.0"]
 
 [dependency-groups]
 dev = [
     "maturin>=1.0,<2.0",
+    # The tests read the `*_dlpack` getters with `numpy.from_dlpack`.
+    "numpy",
     "pytest",
     "ruff",
-    "ty",
+    # The tests read the `*_dlpack` getters with `torch.tensor`.
+    "torch>=2.6",
+    "ty==0.0.102",
 ]
 
 [build-system]
@@ -33,3 +37,12 @@ src = ["python", "tests"]
 lint.select = ["E4", "E7", "E9", "F", "I"]
 # Also covers submodules the bindings do not ship yet, like `tokenizers.trainers`.
 lint.isort.known-first-party = ["tokenizers"]
+
+# PyPI's Linux wheels of torch bundle CUDA, several GB that the CPU-only tests never load.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

@@ -9,7 +9,7 @@ pub struct BertPreTokenizer;
 
 // SAFETY: the spans come from an `bitcannon` fsm, which splits only at character boundaries of `text`.
 // See `bitcannon` docs.
-unsafe impl pipeline::PreTokenizer for BertPreTokenizer {
+unsafe impl pipeline::PreTokenize for BertPreTokenizer {
     #[inline(never)]
     fn pre_tokenize(
         &self,
@@ -40,7 +40,7 @@ mod tests {
         let pretok = BertPreTokenizer;
         let mut scratch = PreTokenizerScratch::default();
         let mut splits = Vec::new();
-        crate::pipeline::PreTokenizer::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
+        crate::pipeline::PreTokenize::pre_tokenize(&pretok, text, &mut scratch, &mut splits)
             .unwrap();
         splits
             .iter()

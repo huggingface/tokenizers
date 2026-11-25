@@ -48,15 +48,21 @@ build a smaller binary.
 ```python
 >>> from tokenizers import Tokenizer
 >>> tokenizer = Tokenizer.from_pretrained("meta-llama/Llama-3.1-8B")   # or .from_file(path)
->>> tokenizer.encode("Hello, y'all! How are you 😁 ?")
+>>> compiled = tokenizer.compile()
+>>> compiled.encode("Hello, y'all! How are you 😁 ?")
 Encoding(ids=[128000, 9906, 11, 379, 65948, 0, 2650, 527, 499, 27623, 223, 949], type_ids=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], attention_mask=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
->>> tokenizer.tokenize("Hello")
+>>> compiled.encode(("What is this?", "A pair.")).type_ids
+[0, 0, 0, 0, 0, 1, 1, 1, 1]
+>>> compiled.tokenize("Hello")
 ['<|begin_of_text|>', 'Hello']
->>> tokenizer.decode([15339, 1917])
+>>> compiled.decode([15339, 1917])
 'hello world'
->>> tokenizer.decode_tokens(tokenizer.encode("Hello"))
+>>> compiled.decode_tokens(compiled.encode("Hello"))
 ['<|begin_of_text|>', 'Hello']
 ```
+
+`Tokenizer` holds the `tokenizer.json` config and can be edited (e.g. `tokenizer.truncation = ...`);
+`compile()` builds the `CompiledTokenizer` that encodes and decodes.
 
 # Performances
 
@@ -71,6 +77,7 @@ For more details, checkout https://huggingface-tokenizers-v1.static.hf.space/ind
 | [Rust](tokenizers) | ✅ reference implementation |
 | [Python](bindings/python) | ✅ |
 | [Node.js](bindings/node) | ✅ |
+| [WebAssembly](bindings/wasm) | ✅ `tokenizers-wasm` on npm |
 | C / C++ / Java / Go/ etc | 🚧 planned |
 | [Ruby](https://github.com/ankane/tokenizers-ruby) | community, external repo |
 
@@ -88,13 +95,12 @@ As we work toward v1, we are gonna bring back the entire python API that allows 
 - Bring training back: this should be easy, but we want the perfs gains to come as well.
 - Batch encoding API with zero-copy views on encoded ids
 - dlpack API for torch / JAX / numpy interop.
-- Composition: edit components of the pipeline (`tokenizer.normalizer = [...]`).
+- Composition: edit components of the pipeline (`tokenizer.normalizer = [...]`). The editable
+  `Tokenizer` spec and `compile()` have landed; per-component handles are next.
 - `tokenizer.save` to persist a modified or trained tokenizer on disk.
 - `role_to_token` override.
-- Accept pair input for `encode` / `encode_batch`.
 - Bring back offset output: this should be useful for people training.
 - Windowing / stride in encode.
-- `decode_stream`.
 
 ### Rust core
 
@@ -157,7 +163,7 @@ The classes or tags each have a high and low nibble (encoded on a u8), and carry
 <details>
 <summary><b><code>tk-serialize</code></b> — the reader</summary>
 
-`from_json_file` turns a canonical `tokenizer.json` into a `PipelineTokenizer`.
+`from_json_file` turns a canonical `tokenizer.json` into a `Tokenizer`.
 
 **Why separate:** this just makes it optional for some usecases!
 </details>
@@ -178,9 +184,9 @@ of compatibility branches. But, the legacy code amounted to quite a lot of the f
 
 The `Trainer` trait, every concrete `*Trainer`, `TrainerWrapper` and the `Trainable` extension.
 
-The `tokenizers` crate re-exports it behind the `train` feature, which is off by default. It
-trains only the models whose feature is on (`bpe`, `unigram`, `wordpiece`, `wordlevel`). Add
-`esaxx_fast` for the C++ suffix array behind Unigram training.
+The `tokenizers` crate does not re-export it. Its API will still change, so the crate stays 0.x
+until it settles. It trains only the models whose feature is on (`bpe`, `unigram`, `wordpiece`,
+`wordlevel`). Add `esaxx_fast` for the C++ suffix array behind Unigram training.
 
 **Why separate:** training is a batch job on a workstation; inference is a hot loop in a server.
 They have opposite constraints, so they get opposite dependency budgets.

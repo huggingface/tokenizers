@@ -4,6 +4,34 @@ Python bindings for Hugging Face's Tokenizers rust library
 Encode text to token ids and decode token ids back to text
 """
 
-from .tokenizers import Encoding, Padding, Tokenizer, Truncation, __version__
+from . import decoders, models, normalizers, pre_tokenizers, processors
+from .tokenizers import (
+    AddedToken,
+    CompiledTokenizer,
+    Component,
+    DLPackExporter,
+    Encoding,
+    Padding,
+    Regex,
+    Tokenizer,
+    Truncation,
+    __version__,
+)
 
-__all__ = ["Encoding", "Padding", "Tokenizer", "Truncation", "__version__"]
+__all__ = [
+    "AddedToken",
+    "CompiledTokenizer",
+    "Component",
+    "DLPackExporter",
+    "Encoding",
+    "Padding",
+    "Regex",
+    "Tokenizer",
+    "Truncation",
+    "__version__",
+    "decoders",
+    "models",
+    "normalizers",
+    "pre_tokenizers",
+    "processors",
+]

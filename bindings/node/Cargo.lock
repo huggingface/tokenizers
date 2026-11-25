@@ -11,7 +11,6 @@ dependencies = [
  "cfg-if",
  "getrandom 0.3.4",
  "once_cell",
- "serde",
  "version_check",
  "zerocopy",
 ]
@@ -84,7 +83,7 @@ checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
 name = "bitcannon"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.6.dev.0"
 
 [[package]]
 name = "bitflags"
@@ -137,15 +136,6 @@ name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
-
-[[package]]
-name = "castaway"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dec551ab6e7578819132c713a93c022a05d60159dc86e7a7050223577484c55a"
-dependencies = [
- "rustversion",
-]
 
 [[package]]
 name = "cc"
@@ -245,21 +235,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "compact_str"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9dfdd1c2274d9aa354115b09dc9a901d6c5576818cdf70d14cae2bdb47df00ab"
-dependencies = [
- "castaway",
- "cfg-if",
- "itoa",
- "rustversion",
- "ryu",
- "serde",
- "static_assertions",
-]
-
-[[package]]
 name = "convert_case"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -325,9 +300,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-epoch"
-version = "0.9.18"
+version = "0.9.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b82ac4a3c2ca9c3460964f020e1402edd5753411d7737aa39c3714ad1b5420e"
+checksum = "dc74980687109a3b14c72fd458107bf0baa1da1a1a805e178d15501ba9b86d9d"
 dependencies = [
  "crossbeam-utils",
 ]
@@ -355,9 +330,6 @@ name = "dary_heap"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b1e3a325bc115f096c8b77bbf027a7c2592230e70be2d985be950d3d5e60ebe"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "either"
@@ -380,12 +352,6 @@ dependencies = [
  "libc",
  "windows-sys",
 ]
-
-[[package]]
-name = "esaxx-rs"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d817e038c30374a4bcb22f94d0a8a0e216958d4c3dcde369b1439fec4bdda6e6"
 
 [[package]]
 name = "fancy-regex"
@@ -759,7 +725,7 @@ dependencies = [
 
 [[package]]
 name = "node"
-version = "1.0.0-dev.2"
+version = "1.0.0-rc.6.dev.0"
 dependencies = [
  "napi",
  "napi-build",
@@ -870,9 +836,9 @@ dependencies = [
 
 [[package]]
 name = "ptr_hash"
-version = "2.1.2"
+version = "2.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b22cf1be774892680e056d3387db0dcaa4fd46964b270671ef661e127186b969"
+checksum = "0d2381547e2e36c72a455c1cc418d5c60ecd6e94f4819d7560456108e99a4efa"
 dependencies = [
  "bitvec",
  "colored",
@@ -884,7 +850,6 @@ dependencies = [
  "prefetch-index",
  "rand",
  "rand_chacha",
- "rayon",
  "rdst",
  "tempfile",
  "xxhash-rust",
@@ -985,7 +950,6 @@ dependencies = [
  "block-pseudorand",
  "criterion",
  "partition",
- "rayon",
  "tikv-jemallocator",
  "voracious_radix_sort",
 ]
@@ -1027,9 +991,9 @@ checksum = "94300abf3f1ae2e2b8ffb7b58043de3d399c73fa6f4b73826402a5c457614dbe"
 
 [[package]]
 name = "rustix"
-version = "1.1.4"
+version = "1.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190"
+checksum = "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa"
 dependencies = [
  "bitflags",
  "errno",
@@ -1043,12 +1007,6 @@ name = "rustversion"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
-
-[[package]]
-name = "ryu"
-version = "1.0.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "safe_arch"
@@ -1142,12 +1100,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "static_assertions"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
-
-[[package]]
 name = "syn"
 version = "2.0.118"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1171,7 +1123,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys",
@@ -1244,7 +1196,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tk-convert"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.6.dev.0"
 dependencies = [
  "bitcannon",
  "serde_json",
@@ -1253,7 +1205,7 @@ dependencies = [
 
 [[package]]
 name = "tk-encode"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.6.dev.0"
 dependencies = [
  "ahash",
  "bitcannon",
@@ -1277,7 +1229,7 @@ dependencies = [
 
 [[package]]
 name = "tk-serialize"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.6.dev.0"
 dependencies = [
  "base64 0.22.1",
  "bitcannon",
@@ -1286,29 +1238,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "tk-train"
-version = "0.1.0-dev.2"
-dependencies = [
- "ahash",
- "compact_str",
- "dary_heap",
- "esaxx-rs",
- "itertools 0.14.0",
- "log",
- "serde",
- "serde_json",
- "thiserror",
- "tk-encode",
-]
-
-[[package]]
 name = "tokenizers"
-version = "1.0.0-dev.2"
+version = "1.0.0-rc.6.dev.0"
 dependencies = [
  "tk-convert",
  "tk-encode",
  "tk-serialize",
- "tk-train",
 ]
 
 [[package]]

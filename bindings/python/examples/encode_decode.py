@@ -12,7 +12,7 @@ from pathlib import Path
 from tokenizers import Tokenizer
 
 path = sys.argv[1] if len(sys.argv) > 1 else str(Path(__file__).parent.parent / "data" / "llama-3-tokenizer.json")
-tokenizer = Tokenizer.from_file(path)
+tokenizer = Tokenizer.from_file(path).compile()
 
 text = "Hello there, how are you?"
 encoding = tokenizer.encode(text)
@@ -20,7 +20,6 @@ print(f"{len(encoding)} tokens")
 print("ids:            ", encoding.ids)
 print("type_ids:       ", encoding.type_ids)
 print("attention_mask: ", encoding.attention_mask)
-print("ids, as a numpy array:", encoding.ids_array)
 
 without_specials = tokenizer.encode(text, add_special_tokens=False)
 print("without special tokens:", without_specials.ids)

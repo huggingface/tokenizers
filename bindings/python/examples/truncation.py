@@ -18,7 +18,7 @@ prompt = "The weather today is quite a bit warmer than expected"
 def show(title, tokenizer):
     print(f"== {title}")
     print("truncation:", tokenizer.truncation)
-    encoding = tokenizer.encode(prompt)
+    encoding = tokenizer.compile().encode(prompt)
     print(f"  {len(encoding):>2} ids  {encoding.ids}")
 
 
@@ -33,5 +33,5 @@ tokenizer.truncation = None
 show("switched off", tokenizer)
 
 print("== right, to 3 tokens, for this call only")
-print(f"   3 ids  {tokenizer.encode(prompt, truncation=Truncation(3)).ids}")
+print(f"   3 ids  {tokenizer.compile().encode(prompt, truncation=Truncation(3)).ids}")
 print("truncation, still:", tokenizer.truncation)

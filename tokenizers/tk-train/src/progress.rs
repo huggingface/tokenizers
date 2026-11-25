@@ -3,6 +3,7 @@
 /// Controls how progress information is reported during tokenizer training.
 /// Default is `Indicatif` which shows interactive terminal progress bars.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum ProgressFormat {
     /// Interactive terminal progress bars using indicatif (default behavior)
     #[default]

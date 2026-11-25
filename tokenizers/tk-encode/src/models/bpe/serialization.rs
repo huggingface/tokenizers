@@ -1,20 +1,19 @@
 //! The different functions used to go from the serialized json vocab / merges to building the BPE.
 
-use super::model::{Atoms, PipelineBPE, build_byte_to_gate};
+use super::model::{Atoms, BPE, build_byte_to_gate};
 use crate::models::bpe::convert::{AFFIX_BUF, Affixes};
-use crate::models::bpe::tables::BpeTables;
+use crate::models::bpe::tables::{BpeTables, NO_SYMBOL};
 use crate::models::bpe::{Error, MergeMap, Merges, Pair, Vocab};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{self};
 use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 use std::ops::RangeInclusive;
-use std::str::from_utf8_unchecked;
 
-/// Bytes that can occur in a `&str`: everything except the overlong lead bytes
-/// OxC0 | 0xC1 and  the lead bytes past U+10FFFF (F5..=FF)
-const VALID_UTF8_BYTES: [RangeInclusive<u8>; 2] = [0x00..=0xBF, 0xC2..=0xF4];
+/// Every byte a `&str` can hold except 0xF1 | 0xF2, which are UTF-8 lead bytes that prefix unassigned codepoints
+const VALID_UTF8_BYTES: [RangeInclusive<u8>; 3] = [0x00..=0xBF, 0xC2..=0xF0, 0xF3..=0xF4];
 
+#[non_exhaustive]
 pub struct BpeConfig {
     /// `{"token": id}`, in no particular order.
     pub vocab: Vocab,
@@ -66,7 +65,7 @@ impl Default for BpeConfig {
     }
 }
 
-impl PipelineBPE {
+impl BPE {
     pub fn to_config(&self) -> Result<BpeConfig> {
         let byte_level = self.is_byte_level();
         // TODO: For now we keep serializing the old "printable" chars, but this costs nothing to
@@ -121,14 +120,18 @@ impl PipelineBPE {
                 (unk, *fuse_unk, byte_fallback.is_some())
             }
         };
-        let affix = |s: &str| (!s.is_empty()).then(|| s.to_string());
+        let (prefix, suffix): (&[u8], &[u8]) = match &self.affixes {
+            Some(affixes) => (&affixes.prefix, &affixes.suffix),
+            None => (&[], &[]),
+        };
+        let affix = |bytes: &[u8]| (!bytes.is_empty()).then(|| spell(bytes)).transpose();
         Ok(BpeConfig {
             vocab: vocab.into_iter().collect(),
             merges,
             byte_level,
             unk_token,
-            continuing_subword_prefix: self.affixes.as_ref().and_then(|a| affix(&a.prefix)),
-            end_of_word_suffix: self.affixes.as_ref().and_then(|a| affix(&a.suffix)),
+            continuing_subword_prefix: affix(prefix)?,
+            end_of_word_suffix: affix(suffix)?,
             fuse_unk,
             byte_fallback,
             ignore_merges: self.vocab.all_foldable(),
@@ -137,7 +140,7 @@ impl PipelineBPE {
         })
     }
 
-    /// Build a `PipelineBPE` from a vocabulary and a merge list, exactly as they are written in a
+    /// Build a `BPE` from a vocabulary and a merge list, exactly as they are written in a
     /// `tokenizer.json`.
     ///
     /// Each merge's two tokens are looked up in `vocab`, their concatenation (minus the
@@ -152,17 +155,11 @@ impl PipelineBPE {
             return Err(Error::InvalidDropout.into());
         }
 
-        let mut max_len = 0;
-        for key in vocab.keys() {
-            if max_len < key.len() {
-                max_len = key.len();
-            }
-        }
-        let prefix_len = config
+        let prefix = config
             .continuing_subword_prefix
-            .as_ref()
-            .map_or(0, |prefix| prefix.len());
-        let mut buffer: Vec<u8> = vec![0; max_len];
+            .as_deref()
+            .unwrap_or_default();
+        let mut buffer = String::new();
         let merges: MergeMap = merges
             .into_iter()
             .enumerate()
@@ -173,40 +170,29 @@ impl PipelineBPE {
                 let b_id = vocab
                     .get(&b)
                     .ok_or_else(|| Error::MergeTokenOutOfVocabulary(b.to_owned()))?;
-                buffer[0..a.len()].copy_from_slice(a.as_bytes());
-                let b_len = b.len() - prefix_len;
-                let merge_len = a.len() + b_len;
-                buffer[a.len()..merge_len].copy_from_slice(&b.as_bytes()[prefix_len..]);
-                // SAFETY: buffer contains a concatenation of two valid UTF-8 strings, so it is itself valid UTF-8, even considering prefix_len
-                let new_token = unsafe { from_utf8_unchecked(&buffer[..merge_len]) };
+                let Some(b_suffix) = b.strip_prefix(prefix) else {
+                    return Err(Error::MergeTokenWithoutPrefix {
+                        token: b,
+                        prefix: prefix.to_owned(),
+                    }
+                    .into());
+                };
+                buffer.clear();
+                buffer.push_str(&a);
+                buffer.push_str(b_suffix);
                 let new_id = vocab
-                    .get(new_token)
-                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(new_token.to_owned()))?;
+                    .get(&buffer)
+                    .ok_or_else(|| Error::MergeTokenOutOfVocabulary(buffer.clone()))?;
                 Ok(((*a_id, *b_id), (i as u32, *new_id)))
             })
             .collect::<Result<MergeMap>>()?;
 
-        let vocab = if vocab.is_empty() {
-            BucketVocabStore::new()
-        } else {
-            BucketVocabStore::build(
-                vocab
-                    .into_iter()
-                    .map(|(k, v)| (k.into_bytes(), v))
-                    .collect(),
-            )?
-        };
-
         Self::from_merge_map(vocab, merges, config)
     }
 
-    /// The same construction, entered from a vocabulary store and a merge map that have *already*
+    /// The same construction, entered from a vocabulary and a merge map that have *already*
     /// been resolved against each other.
-    fn from_merge_map(
-        vocab: BucketVocabStore,
-        merges: MergeMap,
-        config: BpeConfig,
-    ) -> Result<Self> {
+    fn from_merge_map(vocab: Vocab, merges: MergeMap, config: BpeConfig) -> Result<Self> {
         let BpeConfig {
             unk_token,
             continuing_subword_prefix,
@@ -230,36 +216,34 @@ impl PipelineBPE {
             return Err("BPE affixes too long: raise AFFIX_BUF".into());
         }
 
-        let (tables, external_to_internal) =
-            BpeTables::build(vocab.get_vocab().into_iter().collect(), merges, byte_level);
+        let (tables, external_to_internal) = BpeTables::build(&vocab, merges, byte_level);
         // the symbol stream is internal ids, mapped back through `unmap` at the very end
         let to_internal = |external: u32| -> Option<u32> {
             external_to_internal
                 .get(external as usize)
                 .copied()
-                .filter(|&internal| internal != u32::MAX)
+                .filter(|&internal| internal != NO_SYMBOL)
         };
         let (vocab, atoms) = if byte_level {
-            // Byte-Level: atoms are raw bytes, we check that the vocabulary has all
-            // UTF-8 reachable atoms.
             let missing: Vec<u8> = VALID_UTF8_BYTES
                 .into_iter()
                 .flatten()
-                .filter(|&byte| {
-                    // u32::MAX means the byte is missing from the table
-                    tables.byte_internal[byte as usize] == u32::MAX
-                })
+                .filter(|&byte| tables.byte_internal[byte as usize] == NO_SYMBOL)
                 .collect();
             if !missing.is_empty() {
-                return Err(Error::ByteAtomOutOfVocabulary(missing).into());
+                warn!(
+                    "this byte-level vocabulary has no token for bytes {missing:02X?}: they will be \
+                     ignored at encoding."
+                );
             }
-            // Build the vocab and return it
-            let mut vocab = BucketVocabStore::build(vocab.byte_content())?;
-            vocab = byte_level::transform_vocab(vocab)?;
-
-            (vocab, Atoms::Bytes)
+            (byte_level::transform_vocab(vocab)?, Atoms::Bytes)
         } else {
-            let vocab = BucketVocabStore::build(vocab.byte_content())?;
+            let vocab = BucketVocabStore::build(
+                vocab
+                    .into_iter()
+                    .map(|(k, v)| (k.into_bytes(), v))
+                    .collect(),
+            )?;
             let unk_token = if let Some(unk_str) = unk_token {
                 let token_id = vocab
                     .token_to_id(&unk_str)
@@ -268,18 +252,46 @@ impl PipelineBPE {
             } else {
                 None
             };
-            let unk_token = unk_token.map(|external| to_internal(external).unwrap_or(u32::MAX));
+            let unk_token = unk_token.map(|external| to_internal(external).unwrap_or(NO_SYMBOL));
             let fallback_lookup = if byte_fallback {
-                let mut fallback_lookup = [0u32; 256];
+                let mut fallback_lookup = [NO_SYMBOL; 256];
                 for b in 0u8..=255 {
                     let code = format!("<{b:#04X}>");
-                    let external = vocab
-                        .token_to_id(&code)
-                        .ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
-                    fallback_lookup[b as usize] =
-                        to_internal(external).ok_or(Error::ByteFallbackOutOfVocabulary(b))?;
+                    if let Some(internal) = vocab.token_to_id(&code).and_then(to_internal) {
+                        fallback_lookup[b as usize] = internal;
+                    }
                 }
-                Some(fallback_lookup)
+
+                // NVIDIA NeMo models such as Parakeet set `byte_fallback` with no `<0xNN>` token at all.
+                // In this case, we turn off the byte fallback at load time.
+                if fallback_lookup.iter().all(|&id| id == NO_SYMBOL) {
+                    None
+                } else {
+                    // Some model don't store fallback tokens for single-bytes characters that
+                    // are already in the vocab. For example, Gemma doesn't store a <0x09> fallback token (`\t`).
+                    // It's a valid configuration because the byte fallback only triggers when
+                    // a character is missing from the vocabulary.
+
+                    let has_affixes = !prefix.is_empty() || !suffix.is_empty();
+                    let mut missing = Vec::new();
+                    for b in 0u8..=255 {
+                        if fallback_lookup[b as usize] != NO_SYMBOL {
+                            continue;
+                        }
+                        let literal = (b.is_ascii() && !has_affixes)
+                            .then(|| vocab.token_to_id(&(b as char).to_string()))
+                            .flatten()
+                            .and_then(to_internal);
+                        match literal {
+                            Some(internal) => fallback_lookup[b as usize] = internal,
+                            None => missing.push(b),
+                        }
+                    }
+                    if !missing.is_empty() {
+                        return Err(Error::ByteFallbackOutOfVocabulary(missing).into());
+                    }
+                    Some(fallback_lookup)
+                }
             } else {
                 None
             };
@@ -292,9 +304,17 @@ impl PipelineBPE {
                 },
             )
         };
+        // A byte-level vocab is keyed by raw bytes, so its affixes are mapped the same way.
+        let convert_byte_level = |affix: &str| -> Box<[u8]> {
+            if byte_level {
+                affix.chars().flat_map(byte_level::reverse_lookup).collect()
+            } else {
+                affix.as_bytes().into()
+            }
+        };
         let affixes = (!prefix.is_empty() || !suffix.is_empty()).then(|| Affixes {
-            prefix,
-            suffix,
+            prefix: convert_byte_level(&prefix),
+            suffix: convert_byte_level(&suffix),
             to_internal: external_to_internal.into_boxed_slice(),
         });
         let mut built = Self {

@@ -16,7 +16,30 @@ on:
 permissions: {}
 
 jobs:
+  version-match:
+    name: Assert the ref and version match
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      # Checked on release branches too, so the dry run catches a missed bump before the tag.
+      - run: |
+          case "$GITHUB_REF" in
+            refs/tags/v*) expected=${GITHUB_REF_NAME#v} ;;
+            refs/heads/release/v*) expected=${GITHUB_REF_NAME#release/v} ;;
+            *) echo "No version in $GITHUB_REF, skipping"; exit 0 ;;
+          esac
+          actual=$(jq -r .version bindings/node/package.json)
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::bindings/node/package.json is $actual, $GITHUB_REF expects $expected"
+            exit 1
+          fi
+
   build:
+    needs: version-match
     permissions:
       contents: read
     strategy:
@@ -36,9 +59,6 @@ jobs:
           - host: windows-latest
             target: x86_64-pc-windows-msvc
             build: yarn build --target x86_64-pc-windows-msvc
-          - host: windows-latest
-            target: i686-pc-windows-msvc
-            build: yarn build --target i686-pc-windows-msvc
           - host: windows-latest
             target: aarch64-pc-windows-msvc
             build: yarn build --target aarch64-pc-windows-msvc
@@ -71,9 +91,11 @@ jobs:
     runs-on: ${{ matrix.settings.host }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
         if: ${{ !matrix.settings.docker }}
         with:
           toolchain: stable
@@ -83,9 +105,8 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v6
         if: ${{ !matrix.settings.docker }}
         with:
+          package-manager-cache: false
           node-version: lts/*
-          cache: yarn
-          cache-dependency-path: ./bindings/node/yarn.lock
 
       - name: Install dependencies
         if: ${{ !matrix.settings.docker }}
@@ -96,10 +117,10 @@ jobs:
         if: ${{ !matrix.settings.docker && contains(matrix.settings.build, '--cross-compile') }}
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29  # v2.2.1
         with:
-          # Pin — without a version the action installs zig master (nightly)
+          use-cache: false
+          # Pin: without a version the action installs zig master (nightly),
           # whose `zig env` output has drifted and broken the parsers in both
-          # napi-rs/cli v2 and cargo-zigbuild. 0.13.0 is what napi-rs's own
-          # release templates pin to.
+          # napi-rs/cli and cargo-zigbuild.
           version: 0.16.0
 
       - name: Verify zig
@@ -113,18 +134,18 @@ jobs:
 
       - name: Build native (docker)
         if: ${{ matrix.settings.docker }}
-        uses: addnab/docker-run-action@4f65fabd2431ebc8d299f8e5a018d79a769ae185  # v3
-        with:
-          image: ${{ matrix.settings.docker }}
-          options: >-
-            --user 0:0
-            -v ${{ github.workspace }}:/build
-            -w /build/bindings/node
-          run: |
-            rustup update stable && rustup default stable
-            corepack enable
-            yarn install --immutable
-            ${{ matrix.settings.build }}
+        env:
+          IMAGE: ${{ matrix.settings.docker }}
+          BUILD: ${{ matrix.settings.build }}
+        run: |
+          docker run --rm --user 0:0 \
+            -v "$GITHUB_WORKSPACE:/build" -w /build/bindings/node \
+            -e BUILD --entrypoint sh "$IMAGE" -c '
+              set -e
+              rustup update stable && rustup default stable
+              corepack enable
+              yarn install --immutable
+              eval "$BUILD"'
 
       - name: Upload artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
@@ -140,47 +161,191 @@ jobs:
     needs: build
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Setup node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v6
-        with:
-          node-version: lts/*
-          cache: yarn
-          cache-dependency-path: ./bindings/node/yarn.lock
-      - name: Install dependencies
-        working-directory: ./bindings/node
-        run: yarn install --immutable
       - name: Download macOS x86_64 artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: bindings-x86_64-apple-darwin
-          path: ./bindings/node/artifacts
+          path: ./artifacts
       - name: Download macOS aarch64 artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: bindings-aarch64-apple-darwin
-          path: ./bindings/node/artifacts
+          path: ./artifacts
       - name: Combine into universal binary
-        working-directory: ./bindings/node
         # napi-rs/cli v3 renamed `napi universal` -> `napi universalize`
         # and dropped `--dir`; it now expects the npm/<triple>/ layout
         # populated by `napi artifacts`. Cheaper to lipo directly — that's
         # exactly what the wrapper does internally.
         run: |
-          lipo -create -output ${APP_NAME}.darwin-universal.node \
-            artifacts/${APP_NAME}.darwin-x64.node \
-            artifacts/${APP_NAME}.darwin-arm64.node
+          lipo -create -output "${APP_NAME}.darwin-universal.node" \
+            "artifacts/${APP_NAME}.darwin-x64.node" \
+            "artifacts/${APP_NAME}.darwin-arm64.node"
       - name: Upload universal artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: bindings-universal-apple-darwin
-          path: bindings/node/${{ env.APP_NAME }}.*.node
+          path: ${{ env.APP_NAME }}.darwin-universal.node
+          if-no-files-found: error
+
+  fixtures:
+    # Fetched once here so the test matrix needs neither make nor uv, and the Makefile stays the only fixture list.
+    name: Fetch test fixtures
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Fetch test fixtures
+        working-directory: ./bindings/node
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: make data HF="uvx --from huggingface_hub hf"
+      - name: Upload test fixtures
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: node-test-fixtures
+          path: bindings/node/data
+          if-no-files-found: error
+  test:
+    # Loads each shipped binary on a machine that can run it and runs the test suite.
+    # armv7 and Android would need emulation and stay untested.
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          # On macOS the loader picks darwin-universal first, so that is the binary users run.
+          - host: macos-latest
+            target: universal-apple-darwin
+            arch: arm64
+          - host: macos-latest
+            target: universal-apple-darwin
+            arch: x64
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: x64
+          - host: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            arch: arm64
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            arch: x64
+          - host: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            docker: node:lts-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5
+          - host: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            docker: node:lts-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5
+    name: test - ${{ matrix.settings.target }} (${{ matrix.settings.arch || 'docker' }})
+    runs-on: ${{ matrix.settings.host }}
+    needs:
+      - build
+      - universal-macOS
+      - fixtures
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup node
+        if: ${{ !matrix.settings.docker }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v6
+        with:
+          package-manager-cache: false
+          node-version: lts/*
+          architecture: ${{ matrix.settings.arch }}
+      - name: Download binary
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: ./bindings/node
+      - name: Download test fixtures
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: node-test-fixtures
+          path: ./bindings/node/data
+      - name: Test (host)
+        if: ${{ !matrix.settings.docker }}
+        working-directory: ./bindings/node
+        run: npm test
+      - name: Test (docker)
+        if: ${{ matrix.settings.docker }}
+        env:
+          IMAGE: ${{ matrix.settings.docker }}
+        run: docker run --rm -v "$PWD/bindings/node:/build" -w /build "$IMAGE" npm test
+
+  package:
+    # Runs on every trigger, so release-branch pushes exercise the whole assembly; only the
+    # `publish` job below is tag-gated, and it publishes this exact tarball.
+    permissions:
+      contents: read
+    name: Package
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - universal-macOS
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v6
+        with:
+          package-manager-cache: false
+          node-version: lts/*
+      - name: Install dependencies
+        working-directory: ./bindings/node
+        run: yarn install --immutable
+      - name: Download all binaries
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: bindings-*
+          path: ./bindings/node/artifacts
+      - name: Create npm/<triple> dirs
+        # `yarn artifacts` (napi artifacts) writes each `.node` file into
+        # `npm/<triple>/` and fails with ENOENT if the dir is missing.
+        # The dirs are not checked in: `create-npm-dirs` generates them
+        # from `napi.targets` in package.json.
+        working-directory: ./bindings/node
+        run: npx napi create-npm-dirs
+
+      - name: Move artifacts
+        # `napi artifacts` copies every discovered `.node` binary into the
+        # root workspace (in addition to the per-platform npm/<triple>/
+        # directories). Because package.json `files` includes `*.node`,
+        # those root-level binaries are what `npm pack` will include.
+        working-directory: ./bindings/node
+        run: yarn artifacts
+      - name: Pack
+        working-directory: ./bindings/node
+        run: npm pack --ignore-scripts
+      - name: Verify package contents
+        working-directory: ./bindings/node
+        run: |
+          tar tzf tokenizers-*.tgz
+          expected=$(jq '.napi.targets | length' package.json)
+          actual=$(tar tzf tokenizers-*.tgz | grep -c '\.node$')
+          if [ "$actual" -ne "$expected" ]; then
+            echo "::error::package has $actual .node files, napi.targets lists $expected"
+            exit 1
+          fi
+      - name: Upload package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: npm-package
+          path: bindings/node/tokenizers-*.tgz
           if-no-files-found: error
 
   publish:
-    # Tag pushes only: this workflow also runs on workflow_dispatch, and a dispatch would
-    # otherwise push whatever version package.json happens to hold. prerelease tags DO publish now —
-    # they just don't take the `latest` dist-tag (see --tag in the Publish step below).
+    # Tag pushes only: release branches and workflow_dispatch stop after `package`.
+    # Prerelease tags publish too, but take the `next` dist-tag instead of `latest`.
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     permissions:
       # Trusted Publishing: the job mints an OIDC token that npm exchanges for a
@@ -192,50 +357,25 @@ jobs:
     environment: release
     runs-on: ubuntu-latest
     needs:
-      - build
-      - universal-macOS
+      - package
+      - test
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Setup node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v6
         with:
+          package-manager-cache: false
           node-version: lts/*
-          cache: yarn
-          cache-dependency-path: ./bindings/node/yarn.lock
           # No registry-url: it writes an .npmrc with a ${NODE_AUTH_TOKEN}
           # placeholder, which Trusted Publishing has nothing to fill in.
       - name: Ensure npm supports Trusted Publishing
         # OIDC publishing landed in npm 11.5.1; setup-node's bundled npm may be older.
         run: npm install -g npm@^11.5.1
-      - name: Install dependencies
-        working-directory: ./bindings/node
-        run: yarn install --immutable
-      - name: Download all artifacts
+      - name: Download package
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
-          path: ./bindings/node/artifacts
-      - name: Create missing npm/<triple> dirs
-        # `yarn artifacts` (napi artifacts) writes each `.node` file into
-        # `npm/<triple>/`. Some triples (e.g. darwin-universal) have no
-        # checked-in template dir, so without this step the artifacts
-        # command fails with ENOENT. `create-npm-dirs` populates anything
-        # missing from `napi.targets` in package.json.
-        working-directory: ./bindings/node
-        run: npx napi create-npm-dirs
-
-      - name: Move artifacts
-        # `napi artifacts` copies every discovered `.node` binary into the
-        # root workspace (in addition to the per-platform npm/<triple>/
-        # directories). Because package.json `files` includes `*.node`,
-        # those root-level binaries are what `npm pack` will include.
-        working-directory: ./bindings/node
-        run: yarn artifacts
-      - name: Verify package contents
-        working-directory: ./bindings/node
-        run: npm pack --dry-run --ignore-scripts
+          name: npm-package
       - name: Publish
-        working-directory: ./bindings/node
         run: |
           TAG=latest
           [[ "$GITHUB_REF_NAME" == *-* ]] && TAG=next
-          npm publish --access public --provenance --ignore-scripts --tag "$TAG"
+          npm publish ./tokenizers-*.tgz --access public --provenance --ignore-scripts --tag "$TAG"

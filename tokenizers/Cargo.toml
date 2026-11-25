@@ -12,8 +12,7 @@ authors = [
 ]
 edition = "2024"
 name = "tokenizers"
-version = "1.0.0-dev.2"
-homepage = "https://github.com/huggingface/tokenizers"
+version = "1.0.0-rc.6.dev.0"
 repository = "https://github.com/huggingface/tokenizers"
 documentation = "https://docs.rs/tokenizers/"
 license = "Apache-2.0"
@@ -40,19 +39,17 @@ path = "src/lib.rs"
 bench = false
 
 [dependencies]
-tk-encode = { path = "tk-encode", version = "0.1.0-dev.2", default-features = false }
-tk-convert = { path = "tk-convert", version = "0.1.0-dev.2", default-features = false }
-tk-serialize = { path = "tk-serialize", version = "0.1.0-dev.2", default-features = false, features = [
+tk-encode = { path = "tk-encode", version = "0.1.0-rc.6.dev.0", default-features = false }
+tk-convert = { path = "tk-convert", version = "0.1.0-rc.6.dev.0", default-features = false }
+tk-serialize = { path = "tk-serialize", version = "0.1.0-rc.6.dev.0", default-features = false, features = [
   "deserialize",
 ] }
-tk-train = { path = "tk-train", version = "0.1.0-dev.2", default-features = false, optional = true }
 
 # Everything is on by default; a binding that wants a smaller build turns defaults off and picks.
 # The component features go through `tk-serialize`, which forwards each one to `tk-encode`: the
 # reader has one match arm per component, so the two crates must never disagree on the set.
 [features]
 default = [
-  "progressbar",
   "parallelism",
   "serialize",
   "normalizers",
@@ -62,30 +59,16 @@ default = [
   "wordlevel",
   "unicode-scripts",
 ]
-bpe = ["tk-serialize/bpe", "tk-train?/bpe"]
-unigram = ["tk-serialize/unigram", "tk-train?/unigram"]
-wordpiece = ["tk-serialize/wordpiece", "tk-train?/wordpiece"]
-wordlevel = ["tk-serialize/wordlevel", "tk-train?/wordlevel"]
+bpe = ["tk-serialize/bpe"]
+unigram = ["tk-serialize/unigram"]
+wordpiece = ["tk-serialize/wordpiece"]
+wordlevel = ["tk-serialize/wordlevel"]
 normalizers = ["tk-serialize/normalizers"]
 unicode-scripts = ["tk-serialize/unicode-scripts"]
 parallelism = ["tk-serialize/parallelism"]
 serialize = ["tk-serialize/serialize"]
-progressbar = ["tk-train?/progressbar"]
-train = ["dep:tk-train"]
-# The C++ suffix array for Unigram training. Without it, `UnigramTrainer` uses esaxx-rs's pure-Rust one.
-esaxx_fast = ["train", "unigram", "tk-train/esaxx_fast"]
-parity-aware-bpe = ["train", "bpe", "tk-train/parity-aware-bpe"]
 regex = ["tk-serialize/fancy-regex"]
 http = ["tk-encode/http"]
-
-[dev-dependencies]
-criterion = "0.8"
-serde_json = "1.0"
-ahash = "0.8.12"
-tempfile = "3.27"
-assert_approx_eq = "1.1"
-tracing = "0.1"
-tracing-subscriber = "0.3.23"
 
 [profile.release]
 lto = "fat"

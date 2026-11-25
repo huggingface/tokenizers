@@ -1,21 +1,20 @@
 use std::sync::OnceLock;
 
-use numpy::PyArray1;
 use pyo3::prelude::*;
-use tk::pipeline::{Encoding as PipelineEncoding, PipelineToken};
+use tk::pipeline::{self, Token};
 
-use crate::type_hints::{NDArray, U32Array};
+use crate::dlpack::{DLPackExporter, Field};
 
 /// Text encoded to token ids by a tokenizer.
 #[pyclass(frozen, eq, module = "tokenizers")]
 pub struct Encoding {
-    inner: PipelineEncoding,
+    inner: pipeline::Encoding,
     type_ids: OnceLock<Vec<u32>>,
     attention_mask: OnceLock<Vec<u32>>,
 }
 
-impl From<PipelineEncoding> for Encoding {
-    fn from(encoding: PipelineEncoding) -> Self {
+impl From<pipeline::Encoding> for Encoding {
+    fn from(encoding: pipeline::Encoding) -> Self {
         Self {
             inner: encoding,
             type_ids: OnceLock::new(),
@@ -26,7 +25,7 @@ impl From<PipelineEncoding> for Encoding {
 
 impl Encoding {
     pub(crate) fn get_ids(&self) -> &[u32] {
-        PipelineToken::cast_slice(self.inner.ids())
+        Token::cast_slice(self.inner.ids())
     }
 }
 
@@ -53,7 +52,7 @@ impl Encoding {
 
     /// The type id of each token, as a list of ints.
     #[getter]
-    fn type_ids(&self) -> &[u32] {
+    pub(crate) fn type_ids(&self) -> &[u32] {
         self.type_ids.get_or_init(|| {
             if let Some(inner) = self.inner.type_ids() {
                 bytes_slice_to_u32(inner)
@@ -66,7 +65,7 @@ impl Encoding {
     /// Attention mask when the encoding is padded: 1 for token ids, 0 for padding tokens.
     /// A list of ints.
     #[getter]
-    fn attention_mask(&self) -> &[u32] {
+    pub(crate) fn attention_mask(&self) -> &[u32] {
         self.attention_mask.get_or_init(|| {
             if let Some(inner) = self.inner.attention_mask() {
                 bytes_slice_to_u32(inner)
@@ -76,23 +75,23 @@ impl Encoding {
         })
     }
 
-    /// Returns a copy of the id of each token, as a `uint32` numpy array.
+    /// The id of each token, for `torch.tensor` and `numpy.from_dlpack` to read as `int64`.
     #[getter]
-    fn ids_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
-        NDArray(PyArray1::from_slice(py, self.ids()))
+    fn ids_dlpack(slf: Bound<'_, Self>) -> DLPackExporter {
+        DLPackExporter::new(slf, Field::Ids)
     }
 
-    /// Returns a copy of the type id of each token, as a `uint32` numpy array.
+    /// The type id of each token, for `torch.tensor` and `numpy.from_dlpack` to read as `int64`.
     #[getter]
-    fn type_ids_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
-        NDArray(PyArray1::from_slice(py, self.type_ids()))
+    fn type_ids_dlpack(slf: Bound<'_, Self>) -> DLPackExporter {
+        DLPackExporter::new(slf, Field::TypeIds)
     }
 
-    /// Returns a copy of the attention mask, as a `uint32` numpy array.
+    /// The attention mask, for `torch.tensor` and `numpy.from_dlpack` to read as `int64`.
     /// When the encoding is padded: 1 for token ids, 0 for padding tokens.
     #[getter]
-    fn attention_mask_array<'py>(&self, py: Python<'py>) -> U32Array<'py> {
-        NDArray(PyArray1::from_slice(py, self.attention_mask()))
+    fn attention_mask_dlpack(slf: Bound<'_, Self>) -> DLPackExporter {
+        DLPackExporter::new(slf, Field::AttentionMask)
     }
 
     /// The number of tokens in the encoding
@@ -114,8 +113,8 @@ impl Encoding {
     #[staticmethod]
     fn _unpickle(ids: Vec<u32>, type_ids: Vec<u8>, attention_mask: Vec<u8>) -> Self {
         Self {
-            inner: PipelineEncoding::new(
-                ids.into_iter().map(PipelineToken::from).collect(),
+            inner: pipeline::Encoding::new(
+                ids.into_iter().map(Token::from).collect(),
                 Some(type_ids),
                 Some(attention_mask),
             ),

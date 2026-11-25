@@ -241,25 +241,6 @@ impl PartialEq<(u32, u32)> for Span {
     }
 }
 
-/// Whether this target builds its bitstreams with SIMD. Without it the builder is the portable
-/// byte-at-a-time reference, which is slower than the FSM this replaces -- so a caller should keep
-/// its FSM path rather than route here. On x86 the kernel needs SSSE3, so this is a runtime check.
-#[must_use]
-pub fn fast_builder() -> bool {
-    #[cfg(target_arch = "aarch64")]
-    {
-        true
-    }
-    #[cfg(target_arch = "x86_64")]
-    {
-        has_ssse3()
-    }
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
-    {
-        false
-    }
-}
-
 #[cfg(target_arch = "x86_64")]
 pub(crate) fn has_ssse3() -> bool {
     use std::sync::atomic::{AtomicU8, Ordering};
@@ -272,6 +253,42 @@ pub(crate) fn has_ssse3() -> bool {
         }
         n => n == 2,
     }
+}
+
+#[cfg(all(target_arch = "riscv64", target_os = "linux"))]
+pub(crate) fn has_rvv() -> bool {
+    use std::sync::atomic::{AtomicU8, Ordering};
+    unsafe extern "C" {
+        fn getauxval(kind: usize) -> usize;
+        fn prctl(option: i32, ...) -> i32;
+    }
+    const AT_HWCAP: usize = 16;
+    const PR_RISCV_V_GET_CONTROL: i32 = 70;
+    const PR_RISCV_V_VSTATE_CTRL_ON: i32 = 2;
+    const PR_RISCV_V_VSTATE_CTRL_CUR_MASK: i32 = 3;
+    static CACHED: AtomicU8 = AtomicU8::new(0);
+    let supported = match CACHED.load(Ordering::Relaxed) {
+        0 => {
+            // Linux HWCAP exposes the standard V extension as bit ('V' - 'A').
+            let yes = unsafe { getauxval(AT_HWCAP) & (1 << (b'V' - b'A')) != 0 };
+            CACHED.store(1 + u8::from(yes), Ordering::Relaxed);
+            yes
+        }
+        n => n == 2,
+    };
+    if !supported {
+        return false;
+    }
+    // V control is per-thread, so each thread asks the kernel once. A thread that enables V
+    // later stays on the scalar path, which is slower but correct.
+    thread_local! {
+        static ENABLED: bool = {
+            let status = unsafe { prctl(PR_RISCV_V_GET_CONTROL, 0usize, 0usize, 0usize, 0usize) };
+            // Fall back to HWCAP on kernels or emulators without this interface.
+            status < 0 || status & PR_RISCV_V_VSTATE_CTRL_CUR_MASK == PR_RISCV_V_VSTATE_CTRL_ON
+        };
+    }
+    ENABLED.with(|enabled| *enabled)
 }
 
 pub(crate) const CONT: u8 = 15; // Atom::Cont
@@ -694,6 +711,10 @@ pub(crate) fn emit(starts: &[u64], fake: &[u64], nblk: usize, n: usize, out: &mu
 /// over GPT-2's case-sensitive one.
 #[inline]
 pub(crate) fn contr_len(text: &[u8], i: usize, ci: bool) -> usize {
+    // Unicode case folding also maps long s (U+017F) to s.
+    if ci && text.get(i..i + 3) == Some(b"'\xC5\xBF".as_slice()) {
+        return 3;
+    }
     let n = text.len();
     if i + 1 >= n || text[i] != b'\'' || text[i + 1] >= 0x80 {
         return 0;
@@ -707,38 +728,6 @@ pub(crate) fn contr_len(text: &[u8], i: usize, ci: bool) -> usize {
         }
         _ => 0,
     }
-}
-
-/// Builder-only cost probe: runs just the byte→bitstream transpose over every block and folds the
-/// streams so nothing is optimised away. The difference against a full grammar is what the
-/// bitstream program itself costs.
-#[doc(hidden)]
-#[must_use]
-pub fn build_only(text: &[u8], tags: &[u8]) -> u64 {
-    let (mut acc, mut code, mut cjk) = (0u64, CODE_CONT, false);
-    for base in (0..text.len()).step_by(64) {
-        let len = (text.len() - base).min(64);
-        let (b, c) = build_block::<{ AUX_CJK }, false>(
-            text,
-            tags,
-            base,
-            len,
-            &models::deepseek::LUT,
-            code,
-            cjk,
-        );
-        code = c;
-        cjk = b.aux >> (len - 1) & 1 != 0;
-        acc ^= b.cont ^ b.p0 ^ b.p1 ^ b.p2 ^ b.aux;
-    }
-    acc
-}
-
-/// Convenience wrapper: classify + deepseek bitcannon over caller-owned scratch.
-#[must_use]
-pub fn pre_tokenize(text: &[u8], tags: &mut [u8], starts: &mut [u64], out: &mut [Span]) -> usize {
-    classify::classify(text, tags);
-    bitcannon_deepseek(text, tags, starts, out)
 }
 
 #[cfg(test)]

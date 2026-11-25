@@ -2,17 +2,19 @@
 //! it (`merge_multipass` or `merge_hot_cold_queue`) wants to start from.
 use crate::models::bpe::At;
 use crate::models::bpe::merge_hot_cold_queue::{Entry, MergeQueue, QueueScratch};
-use crate::models::bpe::model::{Atoms, PipelineBPE};
-use crate::models::bpe::tables::{BpeTables, ID_MASK, RANK_MASK};
+use crate::models::bpe::model::{Atoms, BPE};
+use crate::models::bpe::tables::{BpeTables, ID_MASK, NO_SYMBOL, RANK_MASK};
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
 /// Set only for the few models that decorate their atoms: `end_of_word_suffix` (CLIP, openai-gpt,
-/// XLM) and `continuing_subword_prefix`. A character's atom then depends on its position in the
-/// word, so those models take a slow path that looks each decorated character up in the vocab.
+/// XLM) and `continuing_subword_prefix`. An atom's symbol then depends on its position in the
+/// word, so those models take a slow path that looks each decorated atom up in the vocab.
 pub(super) struct Affixes {
-    pub(super) prefix: String,
-    pub(super) suffix: String,
-    /// Dense `external vocab id -> internal symbol id`, `u32::MAX` where there is none. Dense
+    /// `continuing_subword_prefix` mapped to raw bytes
+    pub(super) prefix: Box<[u8]>,
+    /// `end_of_word_suffix` mapped to raw bytes
+    pub(super) suffix: Box<[u8]>,
+    /// Dense `external vocab id -> internal symbol id`, [`NO_SYMBOL`] where there is none. Dense
     /// beats a hash here because external ids are `0..vocab_size`: 4 bytes a slot and one load,
     /// against 8-16 for any map. It is the array `BpeTables::build` makes anyway.
     pub(super) to_internal: Box<[u32]>,
@@ -108,7 +110,11 @@ impl<M: SinkMode> SymbolSink<M> {
     // inlining here is very important
     #[inline(always)]
     fn push(&mut self, tables: &BpeTables, symbol: u32) {
-        if self.previous_symbol != u32::MAX {
+        // This byte is not in the vocabulary: skip it
+        if symbol == NO_SYMBOL {
+            return;
+        }
+        if self.previous_symbol != NO_SYMBOL {
             let merge = tables.get_value(&self.previous_symbol, &symbol);
             self.mode.record_pair(merge, self.previous_symbol, symbol);
         }
@@ -116,17 +122,16 @@ impl<M: SinkMode> SymbolSink<M> {
         self.mode.push_symbol(symbol);
     }
 
-    /// Pushes `character` as its bytes, each mapped to a symbol through `byte_symbols`.
+    /// Pushes each of `bytes` as the symbol `byte_symbols` maps it to.
     #[inline(always)]
-    fn push_char_bytes(&mut self, tables: &BpeTables, byte_symbols: &[u32; 256], character: char) {
-        let mut buf = [0u8; 4];
-        for &byte in character.encode_utf8(&mut buf).as_bytes() {
+    fn push_bytes(&mut self, tables: &BpeTables, byte_symbols: &[u32; 256], bytes: &[u8]) {
+        for &byte in bytes {
             self.push(tables, byte_symbols.at(byte as usize));
         }
     }
 }
 
-impl PipelineBPE {
+impl BPE {
     /// Converts one pretoken to internal IDs, returning the lowest-ranked adjacent pair,
     /// `u64::MAX` when no pair merges.
     pub(super) fn convert_multipass(&self, sequence: &str, symbols: &mut Vec<u32>) -> u64 {
@@ -138,7 +143,7 @@ impl PipelineBPE {
                 symbols,
                 lowest_merge: u64::MAX,
             },
-            previous_symbol: u32::MAX,
+            previous_symbol: NO_SYMBOL,
         };
         self.convert(sequence, &mut sink);
         sink.mode.lowest_merge
@@ -162,13 +167,13 @@ impl PipelineBPE {
         queue.clear(sequence.len());
         let mut sink = SymbolSink {
             mode: QueueSink { entries, queue },
-            previous_symbol: u32::MAX,
+            previous_symbol: NO_SYMBOL,
         };
         self.convert(sequence, &mut sink);
         let last = sink.previous_symbol;
         match entries.last_mut() {
             Some(entry) => entry.right_pair_index = u32::MAX, // NONE: nothing right of the final pair
-            None if last != u32::MAX => symbols.push(last),
+            None if last != NO_SYMBOL => symbols.push(last),
             None => {}
         }
     }
@@ -186,18 +191,7 @@ impl PipelineBPE {
         } else {
             match &self.atoms {
                 Atoms::Bytes => convert_bytes(&self.tables, sequence.as_bytes(), sink),
-                Atoms::Chars {
-                    byte_fallback,
-                    unk_token,
-                    fuse_unk,
-                } => convert_chars(
-                    &self.tables,
-                    byte_fallback.as_ref(),
-                    *unk_token,
-                    *fuse_unk,
-                    sequence,
-                    sink,
-                ),
+                Atoms::Chars { .. } => convert_chars(&self.tables, &self.atoms, sequence, sink),
             }
         }
     }
@@ -222,7 +216,7 @@ fn convert_bytes<M: SinkMode>(tables: &BpeTables, bytes: &[u8], sink: &mut Symbo
         let lead = bytes.at(pos);
         let char_len = UTF8_LEN[lead as usize] as usize;
         let folded = tables.fold.get_bytes(bytes, pos, lead, char_len);
-        if folded != u32::MAX {
+        if folded != NO_SYMBOL {
             sink.push(tables, folded);
         } else {
             for offset in 0..char_len {
@@ -238,39 +232,29 @@ fn convert_bytes<M: SinkMode>(tables: &BpeTables, bytes: &[u8], sink: &mut Symbo
 /// of one character has a fold entry, so there is no byte decomposition to do here.
 fn convert_chars<M: SinkMode>(
     tables: &BpeTables,
-    byte_fallback: Option<&[u32; 256]>,
-    unk_token: Option<u32>,
-    fuse_unk: bool,
+    atoms: &Atoms,
     sequence: &str,
     sink: &mut SymbolSink<M>,
 ) {
     let mut in_unk_run = false;
-    for character in sequence.chars() {
+    let sequence_bytes = sequence.as_bytes();
+    for (start, character) in sequence.char_indices() {
         let symbol = tables.fold.get_char(character);
-        if symbol != u32::MAX {
+        if symbol != NO_SYMBOL {
             in_unk_run = false;
             sink.push(tables, symbol);
-            continue;
-        }
-        if let Some(fallback) = byte_fallback {
-            sink.push_char_bytes(tables, fallback, character);
-            in_unk_run = false;
-            continue;
-        }
-        if let Some(unk) = unk_token {
-            // with fuse_unk the run already emitted its unk, so this character adds nothing
-            if !(fuse_unk && in_unk_run) {
-                sink.push(tables, unk);
-            }
-            in_unk_run = true;
+        } else {
+            let atom_bytes = &sequence_bytes[start..start + character.len_utf8()];
+            push_unknown(tables, atoms, &mut in_unk_run, atom_bytes, sink);
         }
     }
 }
 
-/// Slow path for models that decorate their atoms: `continuing_subword_prefix` on every
-/// character but the first, `end_of_word_suffix` on the last. The decorated form is assembled
-/// in a stack buffer and looked up in the vocab, which costs a hash per character -- these
-/// models are rare enough that it is not worth a second fold table to avoid it.
+/// Slow path for models that decorate their atoms: `continuing_subword_prefix` on every atom but
+/// the first, `end_of_word_suffix` on the last. An atom is a byte in a byte-level model, since its
+/// words reach the model spelled one character per byte, and a character otherwise. The decorated
+/// form is assembled in a stack buffer and looked up in the vocab, which costs a hash per atom --
+/// these models are rare enough that it is not worth a second fold table to avoid it.
 fn convert_affixed<M: SinkMode>(
     tables: &BpeTables,
     vocab: &BucketVocabStore,
@@ -279,55 +263,73 @@ fn convert_affixed<M: SinkMode>(
     sequence: &str,
     sink: &mut SymbolSink<M>,
 ) {
-    let mut buf = [0u8; AFFIX_BUF];
-    let mut chars = sequence.chars().peekable();
-    let mut is_first = true;
-    while let Some(character) = chars.next() {
-        let is_last = chars.peek().is_none();
+    let sequence_bytes = sequence.as_bytes();
+    let mut buffer = [0u8; AFFIX_BUF];
+    let mut in_unk_run = false;
+    let mut pos = 0;
+    while pos < sequence_bytes.len() {
+        let atom_len = match atoms {
+            Atoms::Bytes => 1,
+            Atoms::Chars { .. } => UTF8_LEN[sequence_bytes[pos] as usize] as usize,
+        };
+        let atom = &sequence_bytes[pos..pos + atom_len];
         let mut len = 0;
-        if !is_first {
-            let bytes = affixes.prefix.as_bytes();
-            buf[len..len + bytes.len()].copy_from_slice(bytes);
-            len += bytes.len();
+        if pos > 0 {
+            // Inside the sequence: insert the continuing subword prefix
+            len = affixes.prefix.len();
+            buffer[..len].copy_from_slice(&affixes.prefix);
         }
-        len += character.encode_utf8(&mut buf[len..]).len();
-        if is_last {
-            let bytes = affixes.suffix.as_bytes();
-            buf[len..len + bytes.len()].copy_from_slice(bytes);
-            len += bytes.len();
-        }
-        is_first = false;
+        buffer[len..len + atom_len].copy_from_slice(atom);
+        len += atom_len;
+        pos += atom_len;
 
-        let symbol = std::str::from_utf8(&buf[..len])
-            .ok()
-            .and_then(|token| vocab.token_to_id(token))
+        if pos == sequence_bytes.len() {
+            // We've reached the end of the sequence: insert the end of word suffix
+            let suffix = &affixes.suffix;
+            buffer[len..len + suffix.len()].copy_from_slice(suffix);
+            len += suffix.len();
+        }
+
+        let symbol = vocab
+            .get_bytes(&buffer[..len])
             .and_then(|external| affixes.to_internal.get(external as usize).copied())
-            .filter(|&symbol| symbol != u32::MAX);
+            .filter(|&symbol| symbol != NO_SYMBOL);
         match symbol {
-            Some(symbol) => sink.push(tables, symbol),
-            None => push_unknown(tables, atoms, character, sink),
+            Some(symbol) => {
+                in_unk_run = false;
+                sink.push(tables, symbol);
+            }
+            None => push_unknown(tables, atoms, &mut in_unk_run, atom, sink),
         }
     }
 }
 
-/// A character with no atom of its own: bytes if the model has `byte_fallback`, else `unk`.
+/// An atom missing from the vocab: its bytes if the model is byte-level or has `byte_fallback`,
+/// else `unk`. `in_unk_run` is true while the atoms just before were all turned into `unk`.
+#[inline(always)]
 fn push_unknown<M: SinkMode>(
     tables: &BpeTables,
     atoms: &Atoms,
-    character: char,
+    in_unk_run: &mut bool,
+    atom: &[u8],
     sink: &mut SymbolSink<M>,
 ) {
     match atoms {
-        Atoms::Bytes => sink.push_char_bytes(tables, &tables.byte_internal, character),
+        Atoms::Bytes => sink.push_bytes(tables, &tables.byte_internal, atom),
         Atoms::Chars {
             byte_fallback,
             unk_token,
-            ..
+            fuse_unk,
         } => {
             if let Some(fallback) = byte_fallback {
-                sink.push_char_bytes(tables, fallback, character);
+                sink.push_bytes(tables, fallback, atom);
+                *in_unk_run = false;
             } else if let Some(unk) = unk_token {
-                sink.push(tables, *unk);
+                // with fuse_unk the run already emitted its unk, so this atom adds nothing
+                if !(*fuse_unk && *in_unk_run) {
+                    sink.push(tables, *unk);
+                }
+                *in_unk_run = true;
             }
         }
     }

@@ -1,16 +1,8 @@
-//! The pipeline encode path, over napi.
-//!
-//! This is the whole Node surface. The classes that used to live beside it -- `Tokenizer`,
-//! `Model`, `Normalizer`, `PreTokenizer`, `Processor`, `Decoder`, the trainers and their async
-//! tasks -- wrapped the pre-v1 engine, which no longer exists: `DecoderWrapper`,
-//! `PostProcessorWrapper`, `BpeBuilder`, `TrainerWrapper`, `Trainable` and `NormalizedString`
-//! were all removed with it, and this crate had stopped compiling. Rather than port wrappers for
-//! an engine that is gone, the binding now exposes the path that replaced it.
+//! The Node surface: a [`Tokenizer`] loaded from a `tokenizer.json`, and its [`Encoding`].
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use tokenizers::pipeline::{EncodeOptions as PipelineEncodeOptions, Override};
-use tokenizers::tokenizer::pipeline::PipelineTokenizer as Pipeline;
+use tokenizers::pipeline::{self, Input, Inputs, Override, Token};
 use tokenizers::{
   PaddingDirection, PaddingParams, PaddingStrategy, TruncationDirection, TruncationParams,
   TruncationStrategy,
@@ -32,12 +24,12 @@ pub struct EncodeOptions {
   pub encode_special_tokens: Option<bool>,
   /// Padding for this call, replacing the tokenizer's configured padding. `false` disables
   /// padding. Left out, the configured padding applies.
-  #[napi(ts_type = "false | PaddingOptions")]
-  pub padding: Option<Either<bool, PaddingOptions>>,
+  #[napi(ts_type = "false | Padding")]
+  pub padding: Option<Either<bool, Padding>>,
   /// Truncation for this call, replacing the tokenizer's configured truncation. `false` disables
   /// truncation. Left out, the configured truncation applies.
-  #[napi(ts_type = "false | TruncationOptions")]
-  pub truncation: Option<Either<bool, TruncationOptions>>,
+  #[napi(ts_type = "false | Truncation")]
+  pub truncation: Option<Either<bool, Truncation>>,
 }
 
 fn override_with<O, T>(
@@ -65,7 +57,7 @@ fn padding_direction(name: &str) -> Result<PaddingDirection> {
 /// Padding for one call. It replaces the tokenizer's configured padding as a whole, so a field
 /// left out takes the value noted on the field, not the configured one.
 #[napi(object)]
-pub struct PaddingOptions {
+pub struct Padding {
   /// `right` when left out, or `left`: whether padding tokens are appended to the right or
   /// prepended to the left of encoded tokens.
   #[napi(ts_type = "'left' | 'right'")]
@@ -83,21 +75,21 @@ pub struct PaddingOptions {
   pub pad_to_multiple_of: Option<u32>,
 }
 
-impl PaddingOptions {
+impl Padding {
   fn params(self) -> Result<PaddingParams> {
-    Ok(PaddingParams {
-      strategy: self.length.map_or(PaddingStrategy::BatchLongest, |n| {
-        PaddingStrategy::Fixed(n as usize)
-      }),
-      direction: match self.direction {
-        Some(name) => padding_direction(&name)?,
-        None => PaddingDirection::Right,
-      },
-      pad_to_multiple_of: self.pad_to_multiple_of.map(|n| n as usize),
-      pad_id: self.pad_id.unwrap_or(0),
-      pad_type_id: self.pad_type_id.unwrap_or(0),
-      pad_token: self.pad_token.unwrap_or_else(|| "[PAD]".to_owned()),
-    })
+    let mut params = PaddingParams::default();
+    params.strategy = self.length.map_or(PaddingStrategy::BatchLongest, |n| {
+      PaddingStrategy::Fixed(n as usize)
+    });
+    params.direction = match self.direction {
+      Some(name) => padding_direction(&name)?,
+      None => PaddingDirection::Right,
+    };
+    params.pad_to_multiple_of = self.pad_to_multiple_of.map(|n| n as usize);
+    params.pad_id = self.pad_id.unwrap_or(0);
+    params.pad_type_id = self.pad_type_id.unwrap_or(0);
+    params.pad_token = self.pad_token.unwrap_or_else(|| "[PAD]".to_owned());
+    Ok(params)
   }
 }
 
@@ -125,7 +117,7 @@ fn truncation_strategy(name: &str) -> Result<TruncationStrategy> {
 /// Truncation for one call. It replaces the tokenizer's configured truncation as a whole, so a
 /// field left out takes the value noted on the field, not the configured one.
 #[napi(object)]
-pub struct TruncationOptions {
+pub struct Truncation {
   /// The maximum number of tokens, including special tokens, to keep. Encodings with more tokens
   /// get truncated.
   pub max_length: u32,
@@ -139,41 +131,98 @@ pub struct TruncationOptions {
   pub direction: Option<String>,
 }
 
-impl TruncationOptions {
+impl Truncation {
   fn params(self) -> Result<TruncationParams> {
-    Ok(TruncationParams {
-      max_length: self.max_length as usize,
-      strategy: match self.strategy {
-        Some(name) => truncation_strategy(&name)?,
-        None => TruncationStrategy::LongestFirst,
-      },
-      direction: match self.direction {
-        Some(name) => truncation_direction(&name)?,
-        None => TruncationDirection::Right,
-      },
-      // The pipeline keeps only the first window, so a stride changes nothing and is not exposed.
-      stride: 0,
-    })
+    let mut params = TruncationParams::default();
+    params.max_length = self.max_length as usize;
+    params.strategy = match self.strategy {
+      Some(name) => truncation_strategy(&name)?,
+      None => TruncationStrategy::LongestFirst,
+    };
+    params.direction = match self.direction {
+      Some(name) => truncation_direction(&name)?,
+      None => TruncationDirection::Right,
+    };
+    // The pipeline keeps only the first window, so a stride changes nothing and is not exposed.
+    params.stride = 0;
+    Ok(params)
   }
 }
 
-impl PipelineTokenizer {
-  fn encode_options(options: Option<EncodeOptions>) -> Result<PipelineEncodeOptions> {
+impl Tokenizer {
+  fn encode_options(options: Option<EncodeOptions>) -> Result<pipeline::EncodeOptions> {
     let options = options.unwrap_or_default();
-    Ok(PipelineEncodeOptions {
-      add_special_tokens: options.add_special_tokens.unwrap_or(true),
-      encode_special_tokens: options.encode_special_tokens.unwrap_or(false),
-      padding: override_with(options.padding, PaddingOptions::params)?,
-      truncation: override_with(options.truncation, TruncationOptions::params)?,
-    })
+    let mut encode_options = pipeline::EncodeOptions::default();
+    encode_options.add_special_tokens = options.add_special_tokens.unwrap_or(true);
+    encode_options.encode_special_tokens = options.encode_special_tokens.unwrap_or(false);
+    encode_options.padding = override_with(options.padding, Padding::params)?;
+    encode_options.truncation = override_with(options.truncation, Truncation::params)?;
+    Ok(encode_options)
   }
 }
 
+/// Text encoded to token ids by a tokenizer.
+///
+/// Each getter returns a `Uint32Array`, not a JS `Array`: an `Array` costs one napi value per
+/// token, which on token-dense input is 13x the encode itself (gpt2 chinese 31 vs 616 MB/s).
 #[napi]
-pub struct PipelineTokenizer(Pipeline);
+pub struct Encoding(pipeline::Encoding);
 
 #[napi]
-impl PipelineTokenizer {
+impl Encoding {
+  /// The id of each token.
+  #[napi(getter)]
+  pub fn ids(&self) -> Uint32Array {
+    Uint32Array::new(self.0.ids().iter().map(|token| token.id()).collect())
+  }
+
+  /// The type id of each token: 0 for the first sequence of a pair, 1 for the second.
+  #[napi(getter)]
+  pub fn type_ids(&self) -> Uint32Array {
+    widen(self.0.type_ids(), 0, self.0.len())
+  }
+
+  /// 1 for each token, 0 for each padding token.
+  #[napi(getter)]
+  pub fn attention_mask(&self) -> Uint32Array {
+    widen(self.0.attention_mask(), 1, self.0.len())
+  }
+
+  /// The number of tokens.
+  #[napi(getter)]
+  pub fn length(&self) -> u32 {
+    self.0.len() as u32
+  }
+}
+
+// The core leaves out the all-zeros type ids and the all-ones mask.
+fn widen(values: Option<&[u8]>, absent: u32, len: usize) -> Uint32Array {
+  Uint32Array::new(match values {
+    Some(values) => values.iter().map(|&value| value as u32).collect(),
+    None => vec![absent; len],
+  })
+}
+
+/// A text, or a pair of texts.
+type TextInput = Either<String, Vec<String>>;
+
+// napi's tuple conversion would drop a third text without a word.
+fn text_input(input: TextInput) -> Result<Input> {
+  match input {
+    Either::A(text) => Ok(Input::Single(text)),
+    Either::B(pair) => match <[String; 2]>::try_from(pair) {
+      Ok([first, second]) => Ok(Input::Pair(first, second)),
+      Err(texts) => Err(err(format!("a pair holds 2 texts, not {}", texts.len()))),
+    },
+  }
+}
+
+/// A tokenizer. Encodes text into token ids, and decodes token ids back into text.
+#[napi]
+pub struct Tokenizer(pipeline::Tokenizer);
+
+#[napi]
+impl Tokenizer {
   /// Read a `tokenizer.json`. The file is put through the legacy "1.0" -> canonical "2.0"
   /// upgrade first, so the tokenizers already on disk keep loading; `tk_serialize` itself only
   /// reads the canonical form.
@@ -183,20 +232,55 @@ impl PipelineTokenizer {
     Ok(Self(tokenizers::from_json(&canonical).map_err(err)?))
   }
 
-  /// `Uint32Array`, not `Vec<u32>`: a JS `Array` costs one napi value per token, which on
-  /// token-dense input is 13x the encode itself (gpt2 chinese 31 vs 616 MB/s).
+  /// Encodes the given text, or pair of texts, to token ids. The post-processor joins a pair,
+  /// for example as `[CLS] A [SEP] B [SEP]`.
   #[napi]
-  pub fn encode(&self, text: String, options: Option<EncodeOptions>) -> Result<Uint32Array> {
+  pub fn encode(
+    &self,
+    #[napi(ts_arg_type = "string | [string, string]")] input: TextInput,
+    options: Option<EncodeOptions>,
+  ) -> Result<Encoding> {
+    let encoding = self
+      .0
+      .encode(
+        Inputs::Single(text_input(input)?),
+        &Self::encode_options(options)?,
+      )
+      .wait()
+      .map_err(err)?
+      .pop()
+      .expect("encoding a single input gives exactly one encoding");
+    Ok(Encoding(encoding))
+  }
+
+  /// Encodes the given text, or pair of texts, and returns the token of each id.
+  ///
+  /// Shorthand for `decodeTokens(encode(input, options).ids)`.
+  #[napi]
+  pub fn tokenize(
+    &self,
+    #[napi(ts_arg_type = "string | [string, string]")] input: TextInput,
+    options: Option<EncodeOptions>,
+  ) -> Result<Vec<String>> {
+    let encoding = self.encode(input, options)?;
+    Ok(self.decode_tokens(Token::cast_slice(encoding.0.ids()), None))
+  }
+
+  /// Encodes a batch of texts, or pairs of texts. A batch can mix both. The encodings come back
+  /// in input order.
+  #[napi]
+  pub fn encode_batch(
+    &self,
+    #[napi(ts_arg_type = "Array<string | [string, string]>")] inputs: Vec<TextInput>,
+    options: Option<EncodeOptions>,
+  ) -> Result<Vec<Encoding>> {
+    let inputs = inputs.into_iter().map(text_input).collect::<Result<_>>()?;
     let encodings = self
       .0
-      .encode(text.as_str(), &Self::encode_options(options)?)
+      .encode(Inputs::Batch(inputs), &Self::encode_options(options)?)
       .wait()
       .map_err(err)?;
-    let ids = encodings
-      .first()
-      .map(|e| e.ids().iter().map(|t| t.id()).collect())
-      .unwrap_or_default();
-    Ok(Uint32Array::new(ids))
+    Ok(encodings.into_iter().map(Encoding).collect())
   }
 
   /// Drops the two remaining per-call costs of [`Self::encode`]: the JS string -> UTF-8 copy
@@ -229,5 +313,28 @@ impl PipelineTokenizer {
       *d = t.id();
     }
     Ok(ids.len() as u32)
+  }
+
+  /// Decodes token ids back into text.
+  ///
+  /// `skipSpecialTokens` drops special tokens from the text. `true` when left out.
+  #[napi]
+  pub fn decode(&self, ids: &[u32], skip_special_tokens: Option<bool>) -> Result<String> {
+    self
+      .0
+      .decode(ids, skip_special_tokens.unwrap_or(true))
+      .map_err(err)
+  }
+
+  /// Converts token ids to their tokens. This does not run the decoder, so each token keeps its
+  /// spelling in the vocabulary: a byte-level BPE token reads `Ġworld`, not ` world`.
+  ///
+  /// `skipSpecialTokens` drops special tokens. `false` when left out. Ids not in the vocabulary
+  /// are dropped.
+  #[napi]
+  pub fn decode_tokens(&self, ids: &[u32], skip_special_tokens: Option<bool>) -> Vec<String> {
+    self
+      .0
+      .decode_tokens(ids, skip_special_tokens.unwrap_or(false))
   }
 }

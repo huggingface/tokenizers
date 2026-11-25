@@ -25,12 +25,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
         with:
           toolchain: stable
 
       - name: Cache cargo registry / git / target
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           workspaces: bindings/node
           shared-key: node
@@ -38,10 +38,10 @@ jobs:
       - name: Install Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
-          node-version: latest
+          node-version: lts/*
 
       - name: Install dependencies
-        run: yarn install
+        run: yarn install --immutable
 
       - name: Build all
         run: yarn build
@@ -58,12 +58,21 @@ jobs:
       # Provides `uvx`, used to run the huggingface_hub CLI that downloads
       # test fixtures (see the Makefile) without a separate install step.
       - name: Install uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - name: Run JS tests
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: make test HF="uvx --from huggingface_hub hf"
+
+      # The oldest Node line `engines.node` in package.json promises; keep the two in sync.
+      - name: Install the minimum supported Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Run JS tests on the minimum supported Node
+        run: npm test
 
   quality:
     permissions:
@@ -78,13 +87,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
         with:
           toolchain: stable
           components: rustfmt, clippy
 
       - name: Cache cargo registry / git / target
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           workspaces: bindings/node
           shared-key: node
@@ -98,13 +107,23 @@ jobs:
       - name: Install Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
-          node-version: latest
+          node-version: lts/*
 
       - name: Install dependencies
-        run: yarn install
+        run: yarn install --immutable
 
       - name: Lint TS
         run: yarn lint
+
+      - name: Minimum Node is still supported upstream
+        run: |
+          floor=$(jq -r .engines.node package.json | grep -oE '[0-9]+' | head -1)
+          eol=$(curl -fsSL https://raw.githubusercontent.com/nodejs/Release/main/schedule.json \
+            | jq -er --arg v "v$floor" '.[$v].end')
+          if [[ "$(date -u +%F)" > "$eol" ]]; then
+            echo "::error::Node $floor reached end of life on $eol: raise engines.node in package.json and the minimum Node test in node.yml"
+            exit 1
+          fi
 
   audit:
     permissions:
@@ -119,12 +138,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067  # v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
         with:
           toolchain: stable
 
       - name: Cache cargo registry / git / target
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           workspaces: bindings/node
           shared-key: cargo-audit
@@ -133,4 +152,5 @@ jobs:
         run: cargo install cargo-audit
 
       - name: Run Audit
-        run: cargo audit -D warnings --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2025-0014 --ignore RUSTSEC-2025-0119 --ignore RUSTSEC-2026-0204 --ignore RUSTSEC-2025-0057
+        working-directory: .
+        run: cargo audit -D warnings -f bindings/node/Cargo.lock

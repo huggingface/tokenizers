@@ -28,6 +28,7 @@ use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 use crate::Trainer;
 
 #[derive(Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum TrainerWrapper {
     #[cfg(feature = "bpe")]
     BpeTrainer(BpeTrainer),

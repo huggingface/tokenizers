@@ -1,4 +1,4 @@
-use crate::pipeline::PipelineToken;
+use crate::pipeline::Token;
 use crate::tokenizer::Result;
 use std::cmp;
 use std::mem;
@@ -20,6 +20,7 @@ impl std::convert::AsRef<str> for TruncationDirection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct TruncationParams {
     pub direction: TruncationDirection,
     pub max_length: usize,
@@ -39,7 +40,7 @@ impl Default for TruncationParams {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum TruncationError {
+pub(crate) enum TruncationError {
     /// We are supposed to truncate the pair sequence, but it has not been provided.
     #[error("Truncation error: Second sequence not provided")]
     SecondSequenceNotProvided,
@@ -49,6 +50,7 @@ pub enum TruncationError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub enum TruncationStrategy {
     #[default]
     LongestFirst,
@@ -67,11 +69,11 @@ impl std::convert::AsRef<str> for TruncationStrategy {
 }
 
 pub fn truncate_pair(
-    mut s1: Vec<PipelineToken>,
-    maybe_s2: Option<Vec<PipelineToken>>,
+    mut s1: Vec<Token>,
+    maybe_s2: Option<Vec<Token>>,
     truncation: Option<&TruncationParams>,
     num_added_special_tokens: usize,
-) -> Result<(Vec<PipelineToken>, Option<Vec<PipelineToken>>)> {
+) -> Result<(Vec<Token>, Option<Vec<Token>>)> {
     let seq_len = s1.len() + maybe_s2.as_ref().map_or(0, Vec::len);
 
     if let Some(truncation) = truncation {
@@ -80,7 +82,7 @@ pub fn truncate_pair(
             .saturating_sub(num_added_special_tokens);
 
         if truncate_to_length == 0 {
-            // XXX: maybe we should error out when instantiating the PipelineTokenizer to avoid this
+            // XXX: maybe we should error out when instantiating the Tokenizer to avoid this
             warn!(
                 "Truncation max_length is too short to include the tokens: `max_length` is {}, the post-processor adds {num_added_special_tokens} special tokens. Returning an empty sequence",
                 truncation.max_length
@@ -168,7 +170,7 @@ pub fn truncate_pair(
 }
 
 /// Truncates tokens to `keep` tokens.
-fn truncate_tokens(tokens: &mut Vec<PipelineToken>, keep: usize, direction: TruncationDirection) {
+fn truncate_tokens(tokens: &mut Vec<Token>, keep: usize, direction: TruncationDirection) {
     if direction == TruncationDirection::Left {
         tokens.drain(..tokens.len().saturating_sub(keep));
     } else {
@@ -180,23 +182,23 @@ fn truncate_tokens(tokens: &mut Vec<PipelineToken>, keep: usize, direction: Trun
 mod tests {
     use super::*;
 
-    fn make_tokens(ids: impl IntoIterator<Item = u32>) -> Vec<PipelineToken> {
-        ids.into_iter().map(PipelineToken::from).collect()
+    fn make_tokens(ids: impl IntoIterator<Item = u32>) -> Vec<Token> {
+        ids.into_iter().map(Token::from).collect()
     }
 
-    fn empty() -> Vec<PipelineToken> {
+    fn empty() -> Vec<Token> {
         Vec::new()
     }
 
-    fn short() -> Vec<PipelineToken> {
+    fn short() -> Vec<Token> {
         make_tokens(1..3)
     }
 
-    fn medium() -> Vec<PipelineToken> {
+    fn medium() -> Vec<Token> {
         make_tokens(3..7)
     }
 
-    fn long() -> Vec<PipelineToken> {
+    fn long() -> Vec<Token> {
         make_tokens(7..15)
     }
 
@@ -209,8 +211,8 @@ mod tests {
     }
 
     fn truncate_and_assert(
-        s1: Vec<PipelineToken>,
-        s2: Vec<PipelineToken>,
+        s1: Vec<Token>,
+        s2: Vec<Token>,
         truncation: &Option<TruncationParams>,
         n1: usize,
         n2: usize,
@@ -359,10 +361,10 @@ mod tests {
         [TruncationDirection::Left, TruncationDirection::Right];
 
     fn truncated(
-        mut tokens: Vec<PipelineToken>,
+        mut tokens: Vec<Token>,
         keep: usize,
         direction: TruncationDirection,
-    ) -> Vec<PipelineToken> {
+    ) -> Vec<Token> {
         truncate_tokens(&mut tokens, keep, direction);
         tokens
     }
@@ -424,8 +426,8 @@ mod tests {
     }
 
     fn assert_truncated(
-        s1: Vec<PipelineToken>,
-        s2: Option<Vec<PipelineToken>>,
+        s1: Vec<Token>,
+        s2: Option<Vec<Token>>,
         truncation: TruncationParams,
         num_special_tokens: usize,
         expected1: &[u32],

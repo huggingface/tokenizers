@@ -25,6 +25,7 @@ use atom_tables::ATOM_TABLES;
 /// per class; a >16-coarse scheme would swap the 16-entry LUT for a 256-entry `tbl256` remap.
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub enum Atom {
     Letter = 0,          // \p{L}
     NumWord = 1,         // Nd ∪ Nl   (numeric AND \w)
@@ -53,11 +54,13 @@ pub enum Atom {
     UpperLetter = 0x10,
     LowerLetter = 0x20,
     /// Script=Han, refinement 3 of whichever coarse class it lands in. Han is orthogonal to the
-    /// general category (98682 `Lo`, 329 `So`, 13 `Nl`, 2 `Lm`), so it needs one refinement per
-    /// coarse class it touches. Nothing else uses high nibble 3, which is what lets kimi's
+    /// general category, including letters, numbers, symbols, marks and punctuation,
+    /// so it needs one refinement per coarse class it touches. Nothing else uses high nibble 3, which is what lets kimi's
     /// `[\p{Han}]+` arm be `tag & 0xF0 == 0x30` instead of a per-byte range search.
     HanLetter = 0x30,
     HanNum = 0x31,
+    HanMark = 0x36,
+    HanPunct = 0x38,
     HanSym = 0x3A,
 }
 
@@ -66,13 +69,13 @@ impl Atom {
     /// class.
     /// This atom's bit in a `u16` class mask.
     #[inline]
-    pub const fn bit(self) -> u16 {
+    pub(crate) const fn bit(self) -> u16 {
         1u16 << (self as u16)
     }
 }
 
 /// `true` iff the tag's **coarse** class (low nibble) is in `mask`. Masking `tag & 0x0F` makes every
-/// coarse consumer refinement-agnostic (a refined `Letter` like `0x20` still tests as `LETTER`) — and is
+/// coarse consumer refinement-agnostic (a refined `Letter` like `0x20` still tests as a `Letter`) — and is
 /// mandatory, not just a view: a refined tag's raw value can exceed 15, and `1u16 << 0x20` would overflow.
 #[inline]
 pub const fn in_mask(tag: u8, mask: u16) -> bool {
@@ -101,30 +104,20 @@ pub mod mask {
     pub const WORD: u16 = Letter.bit() | NumWord.bit() | Mark.bit() | Connector.bit();
     /// `\s`: newline + 0x20 + other whitespace.
     pub const WS: u16 = Newline.bit() | Space.bit() | WsOther.bit();
-    /// `\p{L}`.
-    pub const LETTER: u16 = Letter.bit();
-    /// `\p{N}`.
-    pub const NUMBER: u16 = NumWord.bit() | NumOther.bit();
     /// `is_numeric` (Digits pretokenizer).
     pub const NUMERIC: u16 = NumWord.bit() | NumOther.bit() | NumericOther.bit();
     /// `is_ascii_punctuation | is_punctuation` (Punctuation / Bert).
     pub const PUNCT: u16 = Connector.bit() | Punct.bit() | Apostrophe.bit();
-    /// cl100k `[^\s\p{L}\p{N}]` — the rule-4 punct-run class.
-    pub const NOT_WS_L_N: u16 = Mark.bit()
-        | Connector.bit()
-        | Punct.bit()
-        | Apostrophe.bit()
-        | SymOther.bit()
-        | Control.bit()
-        | NumericOther.bit();
-    /// `\p{P} ∪ \p{S}` (deepseek) — punctuation + symbol, EXCLUDING control/unassigned.
-    pub const PUNCT_SYM: u16 = Connector.bit() | Punct.bit() | Apostrophe.bit() | SymOther.bit();
-    /// `\p{L} ∪ \p{M}` (deepseek letter/mark run).
-    pub const LETTER_MARK: u16 = Letter.bit() | Mark.bit();
 }
 
 pub const CONT: u8 = Atom::Cont as u8;
-pub const MB: u8 = Atom::MultiByte as u8;
+// Only the SIMD kernels read it.
+#[cfg(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    all(target_arch = "wasm32", target_feature = "simd128")
+))]
+pub(crate) const MB: u8 = Atom::MultiByte as u8;
 
 /// Classify `text` under scheme `S` into `tags` (`tags.len() == text.len()`) — the single arch
 /// dispatcher. aarch64: NEON at compile time (baseline). x86_64: AVX-512 VBMI → SSE4.1 → scalar,

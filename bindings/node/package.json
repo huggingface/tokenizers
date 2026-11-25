@@ -1,6 +1,6 @@
 {
   "name": "tokenizers",
-  "version": "1.0.0-dev.2",
+  "version": "1.0.0-rc.6.dev.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/huggingface/tokenizers.git"
@@ -30,13 +30,12 @@
       "aarch64-pc-windows-msvc",
       "aarch64-linux-android",
       "armv7-unknown-linux-gnueabihf",
-      "i686-pc-windows-msvc",
       "armv7-linux-androideabi",
       "universal-apple-darwin"
     ]
   },
   "engines": {
-    "node": ">= 10"
+    "node": ">= 22"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
@@ -44,8 +43,8 @@
   },
   "scripts": {
     "artifacts": "napi artifacts",
-    "build": "napi build --platform --release",
-    "build:debug": "napi build --platform",
+    "build": "napi build --platform --release \"$@\" && prettier -w index.js index.d.ts",
+    "build:debug": "napi build --platform \"$@\" && prettier -w index.js index.d.ts",
     "format": "prettier . -w && cargo fmt && taplo format",
     "format:prettier": "prettier . -w",
     "format:toml": "taplo format",

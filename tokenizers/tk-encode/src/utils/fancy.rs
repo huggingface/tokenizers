@@ -1,5 +1,3 @@
-use crate::Offsets;
-use crate::tokenizer::pattern::Pattern;
 use fancy_regex::Regex;
 use std::error::Error;
 
@@ -9,8 +7,11 @@ pub struct SysRegex {
 }
 
 impl SysRegex {
-    pub fn find_iter<'r, 't>(&'r self, inside: &'t str) -> Matches<'r, 't> {
-        Matches(self.regex.find_iter(inside))
+    pub(crate) fn find_iter<'r, 't>(&'r self, inside: &'t str) -> Matches<'r, 't> {
+        Matches {
+            matches: self.regex.find_iter(inside),
+            previous_end: 0,
+        }
     }
 
     pub fn new(regex_str: &str) -> Result<Self, Box<dyn Error + Send + Sync + 'static>> {
@@ -20,44 +21,30 @@ impl SysRegex {
     }
 }
 
-pub struct Matches<'r, 't>(fancy_regex::Matches<'r, 't, str>);
-
-impl Iterator for Matches<'_, '_> {
-    type Item = (usize, usize);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.0.next() {
-            Some(Ok(mat)) => Some((mat.start(), mat.end())),
-            // stop if an error is encountered
-            None | Some(Err(_)) => None,
-        }
-    }
+/// The matches of a [`SysRegex`], checked to come in order without overlaps.
+///
+/// `Split` builds spans from these matches and its `unsafe impl PreTokenize` relies on this check.
+pub struct Matches<'r, 't> {
+    matches: fancy_regex::Matches<'r, 't, str>,
+    previous_end: usize,
 }
 
-impl Pattern for &Regex {
-    fn find_matches(
-        &self,
-        inside: &str,
-    ) -> Result<Vec<(Offsets, bool)>, Box<dyn Error + Send + Sync + 'static>> {
-        if inside.is_empty() {
-            return Ok(vec![((0, 0), false)]);
-        }
+impl Iterator for Matches<'_, '_> {
+    type Item = crate::Result<(usize, usize)>;
 
-        let mut prev = 0;
-        let mut splits = Vec::with_capacity(inside.len());
-        for match_ in self.find_iter(inside) {
-            let match_ = match_?;
-            let start = match_.start();
-            let end = match_.end();
-            if prev != start {
-                splits.push(((prev, start), false));
-            }
-            splits.push(((start, end), true));
-            prev = end;
+    fn next(&mut self) -> Option<Self::Item> {
+        // stop if an error is encountered
+        let found = self.matches.next()?.ok()?;
+        let (start, end) = (found.start(), found.end());
+        if start < self.previous_end || end < start {
+            return Some(Err(format!(
+                "the regex matched bytes {start}..{end}, a range that is reversed or overlaps the \
+                 previous match, which ended at byte {}.",
+                self.previous_end,
+            )
+            .into()));
         }
-        if prev != inside.len() {
-            splits.push(((prev, inside.len()), false))
-        }
-        Ok(splits)
+        self.previous_end = end;
+        Some(Ok((start, end)))
     }
 }

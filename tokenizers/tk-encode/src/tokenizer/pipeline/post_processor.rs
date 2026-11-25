@@ -1,25 +1,60 @@
 //! The post-processor half of the pipeline: the two [`Template`]s an encode adds its tokens from.
 
-use super::{Encoding, PipelineToken};
+use super::{Encoding, Token};
+use crate::tokenizer::Result;
 
 #[inline]
-fn push_ids(run: &[(PipelineToken, u8)], out: &mut Vec<PipelineToken>) {
+fn push_ids(run: &[(Token, u8)], out: &mut Vec<Token>) {
     out.extend(run.iter().map(|&(id, _)| id));
 }
 
 #[inline]
-fn push_type_ids(run: &[(PipelineToken, u8)], out: &mut Vec<u8>) {
+fn push_type_ids(run: &[(Token, u8)], out: &mut Vec<u8>) {
     out.extend(run.iter().map(|&(_, id)| id));
 }
 
 /// The templates to wrap around one sequence and around a pair.
 #[derive(Debug)]
-pub struct PipelinePostProcessor {
-    pub single: Template,
-    pub pair: Template,
+pub struct PostProcessor {
+    single: Template,
+    pair: Template,
 }
 
-impl Default for PipelinePostProcessor {
+impl PostProcessor {
+    /// Pairs the two templates.
+    ///
+    /// Returns an error when the `single` template references sequence B or has an infix, or
+    /// when the `pair` template does not reference sequence B.
+    pub fn new(single: Template, pair: Template) -> Result<Self> {
+        let mut problems = Vec::new();
+        if single.b_type_id.is_some() {
+            problems.push("the `single` template references sequence B");
+        }
+        if !single.infix.is_empty() {
+            problems.push("the `single` template has special tokens between sequences A and B");
+        }
+        if pair.b_type_id.is_none() {
+            problems.push("the `pair` template does not reference sequence B");
+        }
+        if problems.is_empty() {
+            Ok(Self { single, pair })
+        } else {
+            Err(problems.join("; ").into())
+        }
+    }
+
+    /// The template wrapped around a single sequence.
+    pub fn single(&self) -> &Template {
+        &self.single
+    }
+
+    /// The template wrapped around a pair of sequences.
+    pub fn pair(&self) -> &Template {
+        &self.pair
+    }
+}
+
+impl Default for PostProcessor {
     fn default() -> Self {
         Self {
             single: Template::default(),
@@ -34,11 +69,11 @@ impl Default for PipelinePostProcessor {
 /// A template, in the only shape there is: `prefix? $A infix? ($B suffix?)?`.
 #[derive(Clone, Debug, Default)]
 pub struct Template {
-    pub prefix: Box<[(PipelineToken, u8)]>,
+    pub prefix: Box<[(Token, u8)]>,
     /// Between A and B, so always empty in a single template.
-    pub infix: Box<[(PipelineToken, u8)]>,
+    pub infix: Box<[(Token, u8)]>,
     /// After the last sequence.
-    pub suffix: Box<[(PipelineToken, u8)]>,
+    pub suffix: Box<[(Token, u8)]>,
     pub a_type_id: u8,
     /// `None` in a single template, which has no second sequence.
     pub b_type_id: Option<u8>,
@@ -51,7 +86,7 @@ impl Template {
     }
 
     /// whether the encoding needs a `type_ids` buffer at all
-    pub fn has_type_ids(&self) -> bool {
+    pub(crate) fn has_type_ids(&self) -> bool {
         self.a_type_id != 0
             || self.b_type_id.is_some_and(|id| id != 0)
             || [&self.prefix, &self.infix, &self.suffix]
@@ -59,10 +94,10 @@ impl Template {
                 .any(|run| run.iter().any(|&(_, id)| id != 0))
     }
 
-    pub fn post_process<const SPECIALS: bool>(
+    pub(crate) fn post_process<const SPECIALS: bool>(
         &self,
-        s1: Vec<PipelineToken>,
-        s2: Option<Vec<PipelineToken>>,
+        s1: Vec<Token>,
+        s2: Option<Vec<Token>>,
     ) -> Encoding {
         let (a_len, b_len) = (s1.len(), s2.as_ref().map_or(0, Vec::len));
 
@@ -104,11 +139,7 @@ impl Template {
     }
 
     #[inline(never)]
-    fn wrap_pair<const SPECIALS: bool>(
-        &self,
-        a: Vec<PipelineToken>,
-        b: Vec<PipelineToken>,
-    ) -> Vec<PipelineToken> {
+    fn wrap_pair<const SPECIALS: bool>(&self, a: Vec<Token>, b: Vec<Token>) -> Vec<Token> {
         let mut ids = Vec::with_capacity(self.n_special() + a.len() + b.len());
         if SPECIALS {
             push_ids(&self.prefix, &mut ids);
@@ -129,7 +160,7 @@ impl Template {
 mod tests {
     use super::*;
 
-    fn run(type_ids: &[u8]) -> Box<[(PipelineToken, u8)]> {
+    fn run(type_ids: &[u8]) -> Box<[(Token, u8)]> {
         type_ids.iter().map(|&id| (1.into(), id)).collect()
     }
 
@@ -156,5 +187,22 @@ mod tests {
         ] {
             assert!(tagged.has_type_ids());
         }
+    }
+
+    #[test]
+    fn refuses_a_single_template_with_an_infix() {
+        // A single encode never emits the infix, but its type ids would, so the two lengths differ.
+        let single = Template {
+            infix: run(&[0]),
+            ..Template::default()
+        };
+        assert!(PostProcessor::new(single, PostProcessor::default().pair).is_err());
+    }
+
+    #[test]
+    fn refuses_a_pair_template_without_sequence_b() {
+        // Sequence B's tokens would get no type ids, so `type_ids` comes out shorter than the ids.
+        let pair = Template::default();
+        assert!(PostProcessor::new(Template::default(), pair).is_err());
     }
 }

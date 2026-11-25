@@ -58,39 +58,40 @@ impl Replace {
 fn replace_matches<'a>(
     input: &'a str,
     content: &str,
-    matches: impl Iterator<Item = (usize, usize)>,
-) -> Cow<'a, str> {
+    matches: impl Iterator<Item = Result<(usize, usize)>>,
+) -> Result<Cow<'a, str>> {
     let mut replaced: Option<String> = None;
     let mut last_end = 0;
-    for (start, end) in matches {
+    for found in matches {
+        let (start, end) = found?;
         let replaced: &mut String =
             replaced.get_or_insert_with(|| String::with_capacity(input.len()));
         replaced.push_str(&input[last_end..start]);
         replaced.push_str(content);
         last_end = end;
     }
-    match replaced {
+    Ok(match replaced {
         Some(mut replaced) => {
             replaced.push_str(&input[last_end..]);
             Cow::Owned(replaced)
         }
         None => Cow::Borrowed(input),
-    }
+    })
 }
 
-impl pipeline::Normalizer for Replace {
+impl pipeline::Normalize for Replace {
     fn normalize<'a>(&self, input: &'a str, _offset: usize) -> Result<Cow<'a, str>> {
-        Ok(match &self.search {
+        match &self.search {
             Search::Literal(literal) => {
                 let width = literal.pattern().len();
                 let matches = literal
                     .matches(input.as_bytes())
-                    .map(|start| (start, start + width));
+                    .map(|start| Ok((start, start + width)));
                 replace_matches(input, &self.content, matches)
             }
             Search::Regex(regex) => replace_matches(input, &self.content, regex.find_iter(input)),
-            Search::Nothing => Cow::Borrowed(input),
-        })
+            Search::Nothing => Ok(Cow::Borrowed(input)),
+        }
     }
 }
 
@@ -106,7 +107,7 @@ mod tests {
     fn assert_pipeline(n: &Replace, cases: &[(&str, &str)]) {
         for &(input, expected) in cases {
             assert_eq!(
-                &*pipeline::Normalizer::normalize(n, input, 0).unwrap(),
+                &*pipeline::Normalize::normalize(n, input, 0).unwrap(),
                 expected,
                 "input={input:?}"
             );

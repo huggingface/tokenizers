@@ -99,7 +99,7 @@ impl WordLevelTrainer {
         // A word that is also a special token must keep the special token's id instead of
         // taking a second one, otherwise the vocab ends up with unused ids.
         let mut seen = AHashSet::new();
-        let word_level = WordLevel::builder()
+        *model = WordLevel::builder()
             .vocab(
                 self.special_tokens
                     .iter()
@@ -116,11 +116,8 @@ impl WordLevelTrainer {
                     .map(|(i, w)| (w, i as u32))
                     .collect(),
             )
+            .unk_token(model.unk_token().to_owned())
             .build()?;
-
-        // Transfer the vocab
-        model.vocab = word_level.vocab;
-        model.vocab_r = word_level.vocab_r;
 
         Ok(self.special_tokens.clone())
     }
@@ -207,7 +204,7 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        assert_eq!(model.vocab, expected_vocab);
+        assert_eq!(model.vocab(), &expected_vocab);
 
         // If we specify a min_frequency
         trainer.min_frequency = 15;
@@ -223,7 +220,20 @@ mod tests {
         .cloned()
         .collect();
 
-        assert_eq!(model.vocab, expected_vocab);
+        assert_eq!(model.vocab(), &expected_vocab);
+    }
+
+    #[test]
+    fn training_keeps_the_models_unk_token() {
+        let word_counts: AHashMap<String, u64> = [("roses".into(), 1)].into_iter().collect();
+        let mut model = WordLevel::builder()
+            .unk_token("[UNK]".to_string())
+            .build()
+            .unwrap();
+        WordLevelTrainer::default()
+            .do_train(&word_counts, &mut model)
+            .unwrap();
+        assert_eq!(model.unk_token(), "[UNK]");
     }
 
     #[test]
@@ -257,6 +267,6 @@ mod tests {
         .iter()
         .cloned()
         .collect();
-        assert_eq!(model.vocab, expected_vocab);
+        assert_eq!(model.vocab(), &expected_vocab);
     }
 }

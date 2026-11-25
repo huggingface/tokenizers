@@ -1,4 +1,4 @@
-use crate::{Result, vocab::bucket_vocab_store::BucketVocabStore};
+use crate::{Result, models::bpe::Vocab, vocab::bucket_vocab_store::BucketVocabStore};
 use std::sync::LazyLock;
 
 // The GPT-2 pre-tokenize regex is the canonical spec in bitcannon (single source of truth); re-export
@@ -17,14 +17,14 @@ pub use bitcannon::regexes::GPT2 as GPT2_REGEX_STR;
 /// shifted into the `256..` range so they never collide with the first group.
 ///
 /// The mapping is a bijection — see [`CHAR_BYTES_LOOKUP`] for the inverse.
-pub static BYTES_CHAR_LOOKUP: LazyLock<[char; 256]> = LazyLock::new(make_byte_char_lookup);
+pub(crate) static BYTES_CHAR_LOOKUP: LazyLock<[char; 256]> = LazyLock::new(make_byte_char_lookup);
 /// Inverse of [`BYTES_CHAR_LOOKUP`], indexed by codepoint: `CHAR_BYTES_LOOKUP[c as usize]` is
 /// the byte that `c` stands for, or `None` if `c` is not a byte-level character.
 ///
 /// [`make_byte_char_lookup`] only ever emits codepoints below 324, so a 512-entry table holds
 /// the whole alphabet and the inverse needs no hashing. Read it through [`char_to_byte`], which
 /// handles the out-of-range case.
-pub static CHAR_BYTES_LOOKUP: LazyLock<[Option<u8>; 512]> = LazyLock::new(|| {
+pub(crate) static CHAR_BYTES_LOOKUP: LazyLock<[Option<u8>; 512]> = LazyLock::new(|| {
     let mut table = [None; 512];
     for byte in 0..=255u8 {
         table[BYTES_CHAR_LOOKUP[byte as usize] as usize] = Some(byte);
@@ -35,7 +35,7 @@ pub static CHAR_BYTES_LOOKUP: LazyLock<[Option<u8>; 512]> = LazyLock::new(|| {
 /// The byte `c` stands for in the byte-level alphabet, or `None` if it is not one of its
 /// characters. One array index; the reverse mapping used to be a hash probe.
 #[inline]
-pub fn char_to_byte(c: char) -> Option<u8> {
+pub(crate) fn char_to_byte(c: char) -> Option<u8> {
     *CHAR_BYTES_LOOKUP.get(c as usize)?
 }
 
@@ -66,14 +66,13 @@ fn make_byte_char_lookup() -> [char; 256] {
     lookup
 }
 
-fn reverse_lookup(c: char) -> Vec<u8> {
+pub(crate) fn reverse_lookup(c: char) -> Vec<u8> {
     char_to_byte(c).map_or_else(|| c.to_string().into_bytes(), |b| vec![b])
 }
 
-pub(crate) fn transform_vocab(vocab: BucketVocabStore) -> Result<BucketVocabStore> {
+pub(crate) fn transform_vocab(vocab: Vocab) -> Result<BucketVocabStore> {
     BucketVocabStore::build(
         vocab
-            .content()
             .into_iter()
             .map(|(string, token_id)| (string.chars().flat_map(reverse_lookup).collect(), token_id))
             .collect(),

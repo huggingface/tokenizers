@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    uses: huggingface/doc-builder/.github/workflows/upload_pr_documentation.yml@90ddd199e07144a13408c523680c76987343c95f  # main
+    uses: huggingface/doc-builder/.github/workflows/upload_pr_documentation.yml@07d98817a2624c1fe067d4268e1f80d1988cfe71  # main
     with:
       package_name: tokenizers
     secrets:

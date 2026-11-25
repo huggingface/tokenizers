@@ -10,7 +10,7 @@ const HUB_URL: &str = "https://huggingface.co";
 
 /// Fetches the content of tokenizers.json from the Hub for the given repository
 pub(crate) async fn fetch_tokenizer_json(
-    repo_name: &str,
+    identifier: &str,
     options: Option<Ts<PretrainedOptions>>,
 ) -> Result<String, JsValue> {
     let options = options
@@ -19,7 +19,7 @@ pub(crate) async fn fetch_tokenizer_json(
         .map_err(JsError::from)?
         .unwrap_or_default();
 
-    let url = options.make_url(repo_name);
+    let url = options.make_url(identifier);
     let headers = options.make_headers()?;
 
     let response = fetch_url(&url, &headers, options.fetch.as_ref())?.await?;

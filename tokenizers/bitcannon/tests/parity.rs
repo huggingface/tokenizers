@@ -28,6 +28,13 @@ const EDGE: &str = "IT'S O'Brien can't 'quoted' l'été rock'n'roll\r\n\
      日本語1234テスト ½3¼ \u{2168}42\u{2169} #tag @user $9.99 100% \
      end\n\n\nlines\r\n\r\n  \t  trailing   ";
 
+/// Code points new in Unicode 17, which onig (Unicode 16) still classifies as `\p{Cn}` (unassigned category):
+/// one per general category they were assigned, each against a space, a letter, a digit and punctuation
+/// (See issue #2557: ` \u{1FAEA}`).
+const UNICODE_17: &str = " \u{1FAEA} \u{1FAEA}\u{1FAEA}a \u{088F}a\u{088F}1 x\u{1ACF}! \u{20C1}9 \u{2B96}. \
+     \u{A7CE}\u{A7CF}b \u{A7F1} \u{10ED0}\u{10ED0} \u{11B61}c 4\u{11DE0}5 \u{16FF4}\u{1CEF0}?\r\n\
+     \u{1FAEA}\n \u{088F}  \u{1ACF}";
+
 /// A bitstream splitter, normalised to one shape (`starts` + `flag` + `later` scratch; only the
 /// o200k family reads `later`, and deepseek ignores `flag` too).
 type Split = fn(&[u8], &[u8], &mut [u64], &mut [u64], &mut [u64], &mut [Span]) -> usize;
@@ -182,6 +189,7 @@ fn long_corpus() -> String {
     while s.len() < 4096 {
         s.push_str(CORPUS);
         s.push_str(EDGE);
+        s.push_str(UNICODE_17);
     }
     s
 }
@@ -189,7 +197,7 @@ fn long_corpus() -> String {
 /// Both corpora whole, then the block-phase sweep: every char-boundary prefix and suffix of a
 /// >4 KB text, so each rule crosses a block edge in every alignment.
 fn check(name: &str, f: Split, oracle: &Oracle) {
-    for text in [CORPUS, EDGE] {
+    for text in [CORPUS, EDGE, UNICODE_17] {
         assert_eq!(spans(f, text), oracle.spans(text), "{name}: whole {text:?}");
     }
 
@@ -223,9 +231,48 @@ fn check(name: &str, f: Split, oracle: &Oracle) {
 /// disagree about.
 fn fuzz_texts(n: usize) -> Vec<String> {
     const ALPHA: &[&str] = &[
-        "a", "b", "z", "A", "Q", "é", "ß", "Ĳ", "0", "1", "9", " ", "  ", "\n", "\r\n", "\t", "'",
-        "'s", "'ll", ".", "!", "/", "#", "_", "中", "文", "ひ", "カ", "한", "م", "😀", "\u{0301}",
-        "\u{200D}", "½", "\u{2168}",
+        "a",
+        "b",
+        "z",
+        "A",
+        "Q",
+        "é",
+        "ß",
+        "Ĳ",
+        "0",
+        "1",
+        "9",
+        " ",
+        "  ",
+        "\n",
+        "\r\n",
+        "\t",
+        "'",
+        "'s",
+        "'ll",
+        ".",
+        "!",
+        "/",
+        "#",
+        "_",
+        "中",
+        "文",
+        "ひ",
+        "カ",
+        "한",
+        "م",
+        "😀",
+        "\u{0301}",
+        "\u{200D}",
+        "½",
+        "\u{2168}",
+        "ſ",
+        "⺀",
+        "〇",
+        "\u{16FE2}",
+        "\u{16FE3}",
+        "\u{16FF0}",
+        "\u{16FF1}",
     ];
     let mut st = 0x243F_6A88_85A3_08D3u64;
     let mut next = move || {
@@ -296,6 +343,61 @@ fn tekken_parity() {
 }
 
 #[test]
+fn kimi_han_category_parity() {
+    let re = Regex::new(KIMI_K2).unwrap();
+    let cases = [" ⺀", " !⺀", "1〇", "2〇〇", "\u{16FE2}a", "a\u{16FF0}"];
+    let expected = [
+        vec![" ⺀"],
+        vec![" !⺀"],
+        vec!["1〇"],
+        vec!["2〇〇"],
+        vec!["\u{16FE2}", "a"],
+        vec!["a", "\u{16FF0}"],
+    ];
+    let mut actual = Vec::new();
+    for (text, expected) in cases.into_iter().zip(expected) {
+        let oracle: Vec<_> = onig_spans(&re, text)
+            .iter()
+            .map(|s| &text[s.start as usize..s.end as usize])
+            .collect();
+        assert_eq!(oracle, expected, "oracle: {text:?}");
+        let tokens: Vec<_> = spans(bs_kimi, text)
+            .iter()
+            .map(|s| &text[s.start as usize..s.end as usize])
+            .collect();
+        actual.push((tokens, expected));
+    }
+    assert!(actual.iter().all(|(got, want)| got == want), "{actual:?}");
+    for phase in 0..64 {
+        for tail in [
+            "⺀中a",
+            "1〇中",
+            "12〇〇中",
+            "123〇中",
+            "!⺀中",
+            "⺀!中",
+            "\u{16FE2}a",
+            "a\u{16FF0}",
+            "\u{16FE3}ABC",
+            "\u{16FF1}a",
+            "\u{0301}A⺀",
+            "a'ſ⺀",
+            "A'ſ1〇",
+            " \u{16FF0}A",
+            "\n  !〇's",
+            "a\r\n〇123",
+        ] {
+            let text = format!("{}{tail}", "x".repeat(phase));
+            assert_eq!(
+                spans(bs_kimi, &text),
+                onig_spans(&re, &text),
+                "{phase}: {tail:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn kimi_parity() {
     let o = Oracle::Whole(Regex::new(KIMI_K2).unwrap());
     check("kimi", bs_kimi, &o);
@@ -312,5 +414,90 @@ fn harness_discriminates() {
         "negative-control",
         bs_byte_level,
         &Oracle::Whole(Regex::new(CL100K).unwrap()),
+    );
+}
+
+/// Every tag agrees with onig on the Unicode property it stands for, over the whole code space.
+#[test]
+fn classifier_matches_onig_categories() {
+    use bitcannon::classify::Atom::*;
+
+    let chars: Vec<char> = (0..=0x10FFFFu32).filter_map(char::from_u32).collect();
+    let text: String = chars.iter().collect();
+    let mut tags = vec![0u8; text.len()];
+    classify(text.as_bytes(), &mut tags);
+
+    // (oracle property, "is this tag in it?")
+    type Tagged = fn(u8) -> bool;
+    let classes: [(&str, Tagged); 10] = [
+        // `NumericOther` too: a digit newer than onig's Unicode is still `char::is_numeric`.
+        (r"\p{Cn}", |t| t == Control as u8 || t == NumericOther as u8),
+        (r"\p{L}", |t| t & 0x0F == Letter as u8),
+        // o200k / tekken / kimi read the case refinement of `Letter`
+        (r"[\p{Lu}\p{Lt}]", |t| t == UpperLetter as u8),
+        (r"\p{Ll}", |t| t == LowerLetter as u8),
+        (r"[\p{Lm}\p{Lo}]", |t| {
+            t == Letter as u8 || t == HanLetter as u8
+        }),
+        // kimi's `[\p{Han}]+`
+        (r"\p{Han}", |t| t & 0xF0 == 0x30),
+        (r"\p{N}", |t| matches!(t & 0x0F, 1 | 2)), // NumWord | NumOther
+        (r"\p{M}", |t| t == Mark as u8 || t == HanMark as u8),
+        (r"[\p{P}\p{S}]", |t| {
+            t == AlphaSymMark as u8 || matches!(t & 0x0F, 7..=10) // Connector..=SymOther
+        }),
+        (r"\s", |t| matches!(t & 0x0F, 3..=5)), // Newline | Space | WsOther
+    ];
+    let mut bad = Vec::new();
+    for (prop, tagged) in classes {
+        let re = Regex::new(&format!(r"\A{prop}\z")).unwrap();
+        let cn = prop == r"\p{Cn}";
+        for (&c, (i, _)) in chars.iter().zip(text.char_indices()) {
+            let oracle = re.is_match(c.encode_utf8(&mut [0; 4]));
+            // `Control` is also Cc/Cf/Co/Cs, so for `\p{Cn}` only "oracle unassigned ⇒ Control" holds.
+            let ok = if cn {
+                !oracle || tagged(tags[i])
+            } else {
+                oracle == tagged(tags[i])
+            };
+            if !ok {
+                bad.push(format!(
+                    "U+{:04X} {prop} oracle={oracle} tag={:#04x}",
+                    c as u32, tags[i]
+                ));
+            }
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "{} mismatches, first: {:#?}",
+        bad.len(),
+        &bad[..bad.len().min(20)]
+    );
+}
+
+/// The Digits pre-tokenizer splits on `mask::NUMERIC`, which stands for `char::is_numeric`.
+/// `char::is_numeric` follows the Unicode version of the toolchain, so a new rustc can leave the tables stale.
+#[test]
+fn numeric_mask_matches_std_is_numeric() {
+    use bitcannon::classify::{in_mask, mask};
+
+    let chars: Vec<char> = (0..=0x10FFFFu32).filter_map(char::from_u32).collect();
+    let text: String = chars.iter().collect();
+    let mut tags = vec![0u8; text.len()];
+    classify(text.as_bytes(), &mut tags);
+
+    let mut bad = Vec::new();
+    for (&c, (i, _)) in chars.iter().zip(text.char_indices()) {
+        if in_mask(tags[i], mask::NUMERIC) != c.is_numeric() {
+            bad.push(format!("U+{:04X} tag={:#04x}", c as u32, tags[i]));
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "{} code points disagree with std (Unicode {:?}). Regenerate the tables with `cargo run -p bitmap_gen`. First: {:#?}",
+        bad.len(),
+        char::UNICODE_VERSION,
+        &bad[..bad.len().min(20)]
     );
 }

@@ -1,13 +1,12 @@
 [package]
 name = "tk-convert"
-version = "0.1.0-dev.2"
+version = "0.1.0-rc.6.dev.0"
 edition = "2024"
 authors = [
   "Arthur Zucker <arthur@huggingface.co>",
   "Luc Georges <luc@huggingface.co>",
   "Simon Brandeis <simon@huggingface.co>",
 ]
-homepage = "https://github.com/huggingface/tokenizers"
 repository = "https://github.com/huggingface/tokenizers"
 documentation = "https://docs.rs/tokenizers/"
 license = "Apache-2.0"
@@ -31,14 +30,11 @@ thiserror = "2"
 # The GPT-2 pattern a `ByteLevel` lowers to. `bitcannon::regexes` is the single source of truth for
 # it -- tk-encode's runtime recognizer reads the same const -- so a copy here could drift and cost
 # the FSM fast path without changing any test.
-bitcannon = { path = "../bitcannon", version = "0.1.0-dev.2" }
-
-# Latest released tokenizers, the independent id/decode oracle `tests/oracle.rs` compares against.
-tokenizers-release = { package = "tokenizers", version = "=0.23.2", optional = true }
+bitcannon = { path = "../bitcannon", version = "0.1.0-rc.6.dev.0" }
 
 [features]
 default = []
-bench-baseline = ["dep:tokenizers-release"]
+bench-baseline = []
 
 [dev-dependencies]
 # No version pins on these two: cargo strips path dev-deps when packaging, and tk-serialize
@@ -59,5 +55,5 @@ tk-encode = { path = "../tk-encode", default-features = false, features = [
   # The oracle's long case must reach the parallel encoder, not the serial path.
   "parallelism",
 ] }
-criterion = "0.8"
-rayon = "1.12"
+# Latest released tokenizers, the independent id/decode oracle `tests/oracle.rs` compares against.
+tokenizers-release = { package = "tokenizers", version = "=0.23.2" }
