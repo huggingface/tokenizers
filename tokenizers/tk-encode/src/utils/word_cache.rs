@@ -133,11 +133,16 @@ impl<'a> WordCache {
     ///
     /// # Safety
     ///
-    /// `dst` must be valid for writes of [`MAX_INLINE_IDS`] `u32`s. The inline path fills every
+    /// `destination` must be valid for writes of [`MAX_INLINE_IDS`] `u32`s. The inline path fills every
     /// lane unconditionally -- lanes past `ids_len` are written with whatever the slot holds -- so
     /// the room has to be there even when fewer ids end up counting.
     #[inline]
-    pub unsafe fn probe_emit_keyed(&'a self, key: u64, hash: u64, dst: *mut u32) -> ProbeEmit<'a> {
+    pub unsafe fn probe_emit_keyed(
+        &'a self,
+        key: u64,
+        hash: u64,
+        destination: *mut u32,
+    ) -> ProbeEmit<'a> {
         let placement = placement_from(LookupKey(key), hash, self.placement_mask);
         // SAFETY: `index` is masked with `placement_mask` (`next_pow2 - 1`), and the table is
         let slot = unsafe { *self.cached_words.as_ptr().add(placement.index) };
@@ -145,7 +150,7 @@ impl<'a> WordCache {
             // SAFETY: the caller guarantees room for `MAX_INLINE_IDS`. Lanes past `ids_len` are
             unsafe {
                 for (lane, &payload) in slot.payload.iter().enumerate().take(MAX_INLINE_IDS) {
-                    dst.add(lane).write(payload);
+                    destination.add(lane).write(payload);
                 }
             }
             return ProbeEmit::Wrote(slot.ids_len as usize);

@@ -99,6 +99,8 @@ pub(crate) fn key_and_hash(word: &[u8]) -> (u64, u64) {
 /// The hash picks the slot and `digest` confirms it -- the key itself is never stored, which is why
 /// a query cannot tell a collision from a hit on its own and does not need to (see [`BucketVocabStore::get_bytes`]).
 /// A slot the build never wrote stays [`Default`], and occupancy is read off the parallel `spans`.
+///
+/// TODO: let's detail the single load design, the key mask, the INLINE_KEY_BYTES etc
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 struct Entry {
