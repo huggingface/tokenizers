@@ -65,20 +65,6 @@ impl<'a> PreTokens<'a> {
         Self { chunk, spans }
     }
 
-    /// One pre-token covering all of `text`.
-    #[cfg(test)]
-    pub(crate) fn whole(text: &'a str, span: &'a Span) -> Self {
-        assert_eq!(
-            span.range(),
-            0..text.len(),
-            "the span must cover the whole text"
-        );
-        Self {
-            chunk: text,
-            spans: std::slice::from_ref(span),
-        }
-    }
-
     pub fn chunk(&self) -> &'a str {
         self.chunk
     }
@@ -94,6 +80,22 @@ impl<'a> PreTokens<'a> {
             // SAFETY: `new_unchecked` requires every span to be a char-boundary range of `chunk`.
             (span, unsafe { chunk.get_unchecked(span.range()) })
         })
+    }
+}
+
+#[cfg(test)]
+impl<'a> PreTokens<'a> {
+    /// One pre-token covering all of `text`.
+    pub(crate) fn whole(text: &'a str, span: &'a Span) -> Self {
+        assert_eq!(
+            span.range(),
+            0..text.len(),
+            "the span must cover the whole text"
+        );
+        Self {
+            chunk: text,
+            spans: std::slice::from_ref(span),
+        }
     }
 }
 

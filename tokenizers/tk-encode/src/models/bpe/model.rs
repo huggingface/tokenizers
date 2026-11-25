@@ -219,7 +219,7 @@ impl pipeline::Tokenize for BPE {
         scratch: &mut BpeScratch,
         output: &mut Vec<Token>,
     ) -> Result<()> {
-        if let Some(id) = self.fold_id_keyed(word.key, word.hash) {
+        if let Some(id) = self.fold_id_keyed(word.lookup_key, word.lookup_hash) {
             output.push(Token::from(id));
             return Ok(());
         }

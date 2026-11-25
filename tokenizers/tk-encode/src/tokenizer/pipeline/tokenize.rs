@@ -1,8 +1,9 @@
-//! How a model turns pre-tokens into token ids.
+//! How a model encodes words into token ids.
 //!
+//! A word is one pre-token: one span the pre-tokenizer cut, such as `" world"` or `"▁hello"`.
+//! It need not be a word of the language.
 //! Each model implements [`Tokenize`], which turns one word into ids.
-//! [`tokenize_spans`] runs it over every pre-token of a chunk.
-//! A word seen before comes from the [`WordCache`] instead, which is much cheaper than the model.
+//! [`tokenize_spans`] runs it over every word of a text sequence.
 
 use crate::pipeline::{PreTokens, Token};
 use crate::tokenizer::Result;
@@ -11,33 +12,33 @@ use crate::utils::word_cache::{MAX_INLINE_IDS, ProbeEmit, WordCache};
 use crate::vocab::bucket_vocab_store::key_and_hash_readable;
 
 // `probe_emit_keyed` writes ids through a `*mut u32` into the `Vec<Token>` output.
-// That is sound only while a token has the same layout as its id.
+// That is sound only while a token has the same layout as u32
 const _: () = assert!(size_of::<Token>() == size_of::<u32>());
 const _: () = assert!(align_of::<Token>() == align_of::<u32>());
 
-/// One pre-token, with the key and hash that the word cache and the vocabulary look it up by.
+/// One word, with the key and hash the word cache and the vocabulary look it up by.
 #[derive(Clone, Copy)]
 pub struct Word<'a> {
     pub(crate) text: &'a str,
-    pub(crate) key: u64,
-    pub(crate) hash: u64,
+    pub(crate) lookup_key: u64,
+    pub(crate) lookup_hash: u64,
 }
 
 /// The algorithm a model uses to turn one word into token ids.
 ///
-/// [`tokenize_spans`] calls it for each word the word cache does not hold.
+/// Called by [`tokenize_spans`] when the word is not already cached.
 pub trait Tokenize {
     /// The buffers the model reuses from one word to the next.
     type Scratch;
 
     fn new_scratch(&self) -> Self::Scratch;
 
-    /// How many slots the word cache has, or `None` to run without one.
+    /// How many slots in the word cache or `None` for no cache
     fn word_cache_capacity(&self) -> Option<usize> {
         Some(DEFAULT_CACHE_CAPACITY)
     }
 
-    /// Appends the ids of `word` to `output`. The word is never empty.
+    /// Appends the ids of `word` to `output`.
     fn tokenize_word(
         &self,
         word: Word<'_>,
@@ -46,7 +47,7 @@ pub trait Tokenize {
     ) -> Result<()>;
 }
 
-/// The word cache and the model's buffers, reused from one `Tokenizer::encode` call to the next.
+/// The word cache and the model's reused buffers
 pub struct Scratch<S> {
     /// Kept across encode calls, so a word seen in one call is a hit in the next.
     pub(crate) word_cache: Option<WordCache>,
@@ -63,11 +64,12 @@ impl<S> Scratch<S> {
     }
 }
 
-/// Appends the ids of every pre-token of a chunk to `output`.
+/// Appends the ids of every word of a chunk to `output`.
 ///
-/// A word the cache holds is copied from it. Any other word goes to [`Tokenize::tokenize_word`],
-/// and its ids are added to the cache.
-// Inlining measured faster on x86.
+/// For each word, in order:
+///  - look the word up in the word cache
+///  - on a miss, call the model's [`Tokenize::tokenize_word`] and add the ids to the cache
+// Inlining measured faster
 #[inline(always)]
 pub(crate) fn tokenize_spans<M: Tokenize>(
     model: &M,
@@ -79,12 +81,15 @@ pub(crate) fn tokenize_spans<M: Tokenize>(
         word_cache,
         model: model_scratch,
     } = scratch;
-    // Unwrapped once. Reading the `Option` from the scratch on every word cost a load per word.
+
+    // Turn the scratch's Option into a local pointer once, so checking if the Option is None
+    // is a register compare
     let mut word_cache = word_cache.as_mut();
     let chunk = pre_tokens.chunk();
     let words = pre_tokens.spans().len();
 
     let mut writer = TokenWriter::new(output);
+
     for (span, text) in pre_tokens.iter() {
         if text.is_empty() {
             continue;
@@ -115,7 +120,15 @@ pub(crate) fn tokenize_spans<M: Tokenize>(
 
         let output = writer.into_output();
         let start = output.len();
-        model.tokenize_word(Word { text, key, hash }, model_scratch, output)?;
+        model.tokenize_word(
+            Word {
+                text,
+                lookup_key: key,
+                lookup_hash: hash,
+            },
+            model_scratch,
+            output,
+        )?;
         if let Some(cache) = word_cache.as_deref_mut()
             && let Some(at) = placement
         {
@@ -198,7 +211,7 @@ impl<'a> TokenWriter<'a> {
     }
 }
 
-/// [`tokenize_spans`] over one pre-token: the whole of `text`.
+/// [`tokenize_spans`] over one word: the whole of `text`.
 #[cfg(test)]
 pub(crate) fn tokenize_one<M: Tokenize>(
     model: &M,
@@ -286,7 +299,7 @@ mod tests {
 
     // Without a cache, so no slot can answer the empty word first.
     #[test]
-    fn an_empty_pre_token_never_reaches_the_model() {
+    fn an_empty_word_never_reaches_the_model() {
         let model = BytesModel::new(None);
         let spans = [Span::new(0, 0), Span::new(0, 2), Span::new(2, 2)];
         // SAFETY: every span is a char-boundary range of "ab".
