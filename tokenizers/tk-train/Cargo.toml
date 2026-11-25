@@ -24,6 +24,9 @@ path = "src/lib.rs"
 tk-encode = { path = "../tk-encode", version = "0.1.0-rc.6.dev.0", default-features = false, features = [
   "parallelism",
 ] }
+# The trainers' parallel loops in `parallelism.rs`.
+rayon = "1.12"
+rayon-cond = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 ahash = { version = "0.8.11", features = ["serde"] }
 # The word type and merge queue of the BPE trainers, which are `bpe`-gated.
@@ -47,3 +50,7 @@ parity-aware-bpe = ["bpe"]
 
 [dev-dependencies]
 assert_approx_eq = "1.1"
+
+[target.'cfg(unix)'.dev-dependencies]
+# Test-only: `fork` in the fork test.
+libc = "0.2"
