@@ -1071,9 +1071,15 @@ impl Model {
 }
 
 impl Model {
+    /// Appends the ids of every pre-token of a chunk to `output`, reusing the word cache and
+    /// buffers in `scratch`.
+    ///
+    /// # Panics
+    ///
+    /// When `scratch` was not made by [`Model::new_scratch`] on this model.
     // inlining was measured faster (4% e2e) on x86
     #[inline(always)]
-    pub(crate) fn tokenize_spans(
+    pub fn tokenize_spans(
         &self,
         pre_tokens: PreTokens<'_>,
         scratch: &mut ModelScratch,
@@ -1095,11 +1101,12 @@ impl Model {
             (Self::WordPiece(model), ModelScratch::WordPiece(scratch)) => {
                 tokenize::tokenize_spans(model, pre_tokens, scratch, output)
             }
-            _ => unreachable!(),
+            _ => panic!("the scratch must come from this model's `Model::new_scratch`"),
         }
     }
 
-    pub(crate) fn new_scratch(&self) -> ModelScratch {
+    /// An empty word cache and new buffers for [`Model::tokenize_spans`].
+    pub fn new_scratch(&self) -> ModelScratch {
         match self {
             Self::BPE(model) => ModelScratch::BPE(Scratch::new(model)),
             #[cfg(feature = "wordlevel")]

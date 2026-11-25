@@ -12,7 +12,7 @@
 
 use std::hint::black_box;
 
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use tk_encode::pipeline::{
     EncodeOptions, PreTokenize, PreTokenizerScratch, Span, SpecialSegmentIterator, Tokenizer,
     normalize_all,
@@ -128,6 +128,31 @@ pub fn encode(c: &mut Criterion) {
                 })
             });
         }
+
+        // ---- stage 4: the model ----
+        // A new scratch per iteration, made outside the timing: every word starts unknown to the
+        // word cache, as in text the tokenizer has not seen. Reusing one scratch would time cache
+        // hits only, after the first iteration.
+        let mut pre_tokenizer_scratch = PreTokenizerScratch::default();
+        let pre_tokens = tokenizer
+            .get_pre_tokenizer()
+            .pre_tokens(&normalized, &mut pre_tokenizer_scratch, &mut spans)
+            .unwrap();
+        let model = tokenizer.get_model();
+        group.bench_function("stage/model", |b| {
+            let mut output = Vec::new();
+            b.iter_batched_ref(
+                || model.new_scratch(),
+                |scratch| {
+                    output.clear();
+                    model
+                        .tokenize_spans(pre_tokens, scratch, &mut output)
+                        .unwrap();
+                    black_box(output.len())
+                },
+                BatchSize::LargeInput,
+            )
+        });
 
         // No `stage/post-process` row: `Tokenizer::post_process` is private and
         // `PostProcessor` exposes only its templates, so that stage shows up today only
