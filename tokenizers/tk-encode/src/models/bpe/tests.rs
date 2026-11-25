@@ -38,7 +38,7 @@ fn hello(options: BpeConfig) -> Result<BPE> {
     })
 }
 
-fn pipeline_ids(model: &BPE, sequence: &str) -> Vec<u32> {
+fn pipeline_ids(model: &impl pipeline::Tokenize<Scratch = BpeScratch>, sequence: &str) -> Vec<u32> {
     let mut out = Vec::new();
     let mut scratch = model.init_scratch();
     pipeline::Tokenize::tokenize(model, sequence, &mut scratch, &mut out).unwrap();
@@ -670,7 +670,7 @@ fn prefix_atoms_emit_unreachable_tokens_at_a_pretoken_start() {
         ])
     };
     let merges = || m(&[("a", "b")]);
-    let atoms = BPE::from_config(BpeConfig {
+    let atoms = PrefixAtoms::from_config(BpeConfig {
         vocab: vocab(),
         merges: merges(),
         prefix_atoms: true,

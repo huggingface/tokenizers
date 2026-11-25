@@ -59,9 +59,6 @@ pub struct BPE {
     pub(super) byte_to_gate: [u16; 256],
     /// Slots for the per-scratch word cache, from the config. `None` disables it.
     pub(super) cache_capacity: Option<usize>,
-    /// Tokens the merge list cannot build, longest first. Emitted whole when a pretoken starts
-    /// with one. Empty unless `prefix_atoms` was set.
-    pub(super) roots: Vec<(Box<[u8]>, u32)>,
 }
 
 // A `BPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
@@ -176,21 +173,6 @@ impl BPE {
     /// `symbols` is the caller's reusable symbol buffer -- it lives in the scratch so that a word
     /// costs no allocation. On return it holds the merged word as internal ids, which the caller
     /// maps to external ids through `unmap`.
-    /// Emit every root the sequence starts with and return what is left.
-    fn emit_roots<'a>(&self, mut sequence: &'a str, output: &mut Vec<Token>) -> &'a str {
-        while let Some((rest, id)) = self.roots.iter().find_map(|(token, id)| {
-            let rest = sequence.as_bytes().strip_prefix(&**token)?;
-            std::str::from_utf8(rest).ok().map(|rest| (rest, *id))
-        }) {
-            output.push(Token::from(id));
-            sequence = rest;
-            if sequence.is_empty() {
-                break;
-            }
-        }
-        sequence
-    }
-
     pub(super) fn merge_word(
         &self,
         sequence: &str,
@@ -235,17 +217,6 @@ impl pipeline::Tokenize for BPE {
     ) -> Result<()> {
         if sequence.is_empty() {
             return Ok(());
-        }
-
-        if !self.roots.is_empty() {
-            let start = output.len();
-            let rest = self.emit_roots(sequence, output);
-            if output.len() > start {
-                if rest.is_empty() {
-                    return Ok(());
-                }
-                return self.tokenize(rest, scratch, output);
-            }
         }
 
         let bytes = sequence.as_bytes();
@@ -312,15 +283,6 @@ impl pipeline::Tokenize for BPE {
         scratch: &mut Self::Scratch,
         output: &mut Vec<Token>,
     ) -> Result<()> {
-        // With roots, per-span cursor bookkeeping buys nothing: the rare atom path needs `Vec`
-        // semantics, so take the single-sequence path for the chunk.
-        if !self.roots.is_empty() {
-            for (_, sequence) in pre_tokens.iter() {
-                self.tokenize(sequence, scratch, output)?;
-            }
-            return Ok(());
-        }
-
         let BpeScratch {
             symbols,
             queue,

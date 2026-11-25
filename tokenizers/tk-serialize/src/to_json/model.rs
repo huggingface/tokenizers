@@ -1,41 +1,13 @@
 //! The `model` object, with an explicit `"type"` on every one of them.
 use super::writer::Out;
+use tk_encode::models::bpe::BPE;
 use tk_encode::pipeline::Model;
 use tk_encode::tokenizer::Result;
 
 pub(super) fn write_model(out: &mut Out, model: &Model) -> Result<()> {
     match model {
-        Model::BPE(bpe) => {
-            let config = bpe.to_config()?;
-            out.obj_open();
-            out.type_tag("BPE");
-            out.field_opt_str("unk_token", config.unk_token.as_deref());
-            out.field_opt_str(
-                "continuing_subword_prefix",
-                config.continuing_subword_prefix.as_deref(),
-            );
-            out.field_opt_str("end_of_word_suffix", config.end_of_word_suffix.as_deref());
-            out.field_bool("fuse_unk", config.fuse_unk);
-            out.field_bool("byte_fallback", config.byte_fallback);
-            out.field_bool("ignore_merges", config.ignore_merges);
-            out.field_bool("prefix_atoms", config.prefix_atoms);
-            // Byte-level is a property of the vocabulary encoding, so it is stated on the model.
-            // A `ByteLevel` pre-tokenizer used to be the only place it lived, which is why the
-            // reader had to work out where that tag sat in a `Sequence`.
-            out.field_bool("byte_level", bpe.is_byte_level());
-            write_vocab_object(out, config.vocab.into_iter().collect());
-            out.key("merges");
-            out.arr_open();
-            // Rank order, which is what decides which merge wins: the array's index *is* the rank.
-            for (left, right) in &config.merges {
-                out.arr_open();
-                out.str(left);
-                out.str(right);
-                out.arr_close();
-            }
-            out.arr_close();
-            out.obj_close();
-        }
+        Model::BPE(bpe) => write_bpe(out, bpe, false)?,
+        Model::BpeWithAtoms(atoms) => write_bpe(out, atoms.inner(), true)?,
         #[cfg(feature = "unigram")]
         Model::Unigram(unigram) => {
             out.obj_open();
@@ -114,4 +86,34 @@ fn write_vocab_object(out: &mut Out, mut vocab: Vec<(String, u32)>) {
         out.field_u32(token, *id);
     }
     out.obj_close();
+}
+
+fn write_bpe(out: &mut Out, bpe: &BPE, prefix_atoms: bool) -> Result<()> {
+    let mut config = bpe.to_config()?;
+    config.prefix_atoms = prefix_atoms;
+    out.obj_open();
+    out.type_tag("BPE");
+    out.field_opt_str("unk_token", config.unk_token.as_deref());
+    out.field_opt_str(
+        "continuing_subword_prefix",
+        config.continuing_subword_prefix.as_deref(),
+    );
+    out.field_opt_str("end_of_word_suffix", config.end_of_word_suffix.as_deref());
+    out.field_bool("fuse_unk", config.fuse_unk);
+    out.field_bool("byte_fallback", config.byte_fallback);
+    out.field_bool("ignore_merges", config.ignore_merges);
+    out.field_bool("prefix_atoms", config.prefix_atoms);
+    out.field_bool("byte_level", bpe.is_byte_level());
+    write_vocab_object(out, config.vocab.into_iter().collect());
+    out.key("merges");
+    out.arr_open();
+    for (left, right) in &config.merges {
+        out.arr_open();
+        out.str(left);
+        out.str(right);
+        out.arr_close();
+    }
+    out.arr_close();
+    out.obj_close();
+    Ok(())
 }

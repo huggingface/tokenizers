@@ -7,6 +7,7 @@ mod merge_hot_cold_queue;
 mod merge_multipass;
 mod model;
 mod pair_map;
+mod roots;
 mod serialization;
 mod tables;
 
@@ -77,4 +78,5 @@ impl<T: Copy> At for [T] {
 
 // Re-export
 pub use model::*;
+pub use roots::PrefixAtoms;
 pub use serialization::BpeConfig;
