@@ -1,7 +1,8 @@
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use ahash::RandomState;
+use std::hash::{BuildHasher, Hasher};
 use ptr_hash::PtrHashParams;
 use std::fmt;
 
@@ -12,10 +13,7 @@ use crate::utils::perfect_hash::{Mphf, mix};
 /// collision (a token in a vocabulary they ship, and an input they ship) and finds a pair in 2^32
 /// by birthday. A fresh seed makes that 2^64 again. Nothing persists a [`BucketVocabStore`], so a
 /// seed that changes per process costs nothing.
-static KEY_HASHER: OnceLock<RandomState> = OnceLock::new();
-
-fn key_hasher() -> &'static RandomState {
-    KEY_HASHER.get_or_init(|| {
+static KEY_HASHER: LazyLock<RandomState> = LazyLock::new(|| {
         // Test-only: `TK_HASH_SEED=k` pins the seed, so a test that depends on where a word lands
         // in the table reproduces instead of flaking at 1 run in 60.
         #[cfg(test)]
@@ -23,8 +21,12 @@ fn key_hasher() -> &'static RandomState {
             let s: u64 = seed.parse().unwrap_or(0);
             return RandomState::with_seeds(s | 1, s ^ 0x9e37, s ^ 0x7f4a, s ^ 0x1234_5678);
         }
-        RandomState::new()
-    })
+    RandomState::new()
+});
+
+#[inline(always)]
+fn key_hasher() -> &'static RandomState {
+    &KEY_HASHER
 }
 
 /// Bit 31 of a stored id: the token provably encodes to itself, so a pretoken equal to it can be
@@ -76,13 +78,18 @@ pub(crate) fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) 
     (key, mix(key))
 }
 
-/// A word too long to pack into the key: hash it for real. Kept out of line so that the packing
-/// path above and in [`key_and_hash`] can be inlined without dragging ahash in with them. Not
-/// `#[cold]` on purpose -- for CJK this is the *common* arm, and telling the predictor otherwise
-/// would cost more than the call.
-#[inline(never)]
+/// A word too long to pack into the key: hash it for real.
+///
+/// `#[inline]`, not `#[inline(never)]`: outlining this cost 0.9 ns per word (measured, lookup bench),
+/// because the caller is a per-pre-token loop with nothing to overlap a call+ret with. Not `#[cold]`
+/// either -- for CJK this is the *common* arm.
+#[inline]
 fn key_and_hash_long(word: &[u8]) -> (u64, u64) {
-    let hash = key_hasher().hash_one(word);
+    // `hash_one(&[u8])` runs `Hash for [u8]`: a length prefix, then the bytes -- two ahash rounds.
+    // The length is already in the digest (top byte), so the prefix is redundant here.
+    let mut hasher = key_hasher().build_hasher();
+    hasher.write(word);
+    let hash = hasher.finish();
     // The length goes in the top byte, so comparing digests *is* comparing lengths: no span load,
     // no extra compare. `Entry.digest` also cannot be shared across the two arms however the hash is
     // inverted (#2722), because a packed key's top byte is at most 7 and these are 8..254. `0xFF` is
