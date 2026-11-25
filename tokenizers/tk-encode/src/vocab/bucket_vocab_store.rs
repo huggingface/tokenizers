@@ -715,9 +715,8 @@ mod tests {
             b"the-filler-word",
             b"a-word-past-fifteen-bytes",
         ] {
-            let mut padded = w.to_vec();
-            for _ in 1..=3 {
-                padded.push(0);
+            for zeros in 1..=3 {
+                let padded = [w, &[0; 3][..zeros]].concat();
                 assert_ne!(
                     key_and_hash(w).1,
                     key_and_hash(&padded).1,
