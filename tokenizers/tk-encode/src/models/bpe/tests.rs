@@ -653,3 +653,44 @@ fn byte_level_drops_bytes_real_text_can_contain() {
     let want: Vec<u32> = "ab".repeat(64).bytes().map(u32::from).collect();
     assert_eq!(pipeline_ids(&pipeline, &long), want);
 }
+
+#[test]
+fn ghost_merges_emit_a_root_at_the_start_of_a_pretoken() {
+    // "abcd" has no valid split: "abc" is not a vocabulary token. The ghost chain
+    // ("ab","c") -> "abc" (ghost), ("abc","d") -> "abcd" (real) makes "abcd" a root.
+    let vocab = || {
+        v(&[
+            ("a", 0),
+            ("b", 1),
+            ("c", 2),
+            ("d", 3),
+            ("e", 4),
+            ("x", 5),
+            ("ab", 6),
+            ("abcd", 7),
+        ])
+    };
+    let model = BPE::from_config(BpeConfig {
+        vocab: vocab(),
+        merges: m(&[("a", "b")]),
+        ghost_merges: m(&[("ab", "c"), ("abc", "d")]),
+        ..BpeConfig::default()
+    })
+    .unwrap();
+    // The root is emitted whole; the rest is tokenized normally.
+    assert_eq!(pipeline_ids(&model, "abcd"), vec![7]);
+    assert_eq!(pipeline_ids(&model, "abcde"), vec![7, 4]);
+    // A pretoken that does not start with the root is untouched (and the ghost never fires).
+    assert_eq!(pipeline_ids(&model, "xabcd"), vec![5, 6, 2, 3]);
+    assert_eq!(pipeline_ids(&model, "abce"), vec![6, 2, 4]);
+
+    // Without the declaration, a merge whose product is absent is still a malformed-vocab error.
+    assert!(
+        BPE::from_config(BpeConfig {
+            vocab: vocab(),
+            merges: m(&[("a", "b"), ("ab", "c")]),
+            ..BpeConfig::default()
+        })
+        .is_err()
+    );
+}

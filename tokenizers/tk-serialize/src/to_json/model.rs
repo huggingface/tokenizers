@@ -33,6 +33,17 @@ pub(super) fn write_model(out: &mut Out, model: &Model) -> Result<()> {
                 out.arr_close();
             }
             out.arr_close();
+            if !config.ghost_merges.is_empty() {
+                out.key("ghost_merges");
+                out.arr_open();
+                for (left, right) in &config.ghost_merges {
+                    out.arr_open();
+                    out.str(left);
+                    out.str(right);
+                    out.arr_close();
+                }
+                out.arr_close();
+            }
             out.obj_close();
         }
         #[cfg(feature = "unigram")]

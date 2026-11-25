@@ -59,6 +59,12 @@ pub struct BPE {
     pub(super) byte_to_gate: [u16; 256],
     /// Slots for the per-scratch word cache, from the config. `None` disables it.
     pub(super) cache_capacity: Option<usize>,
+    /// Real tokens declared reachable by a ghost merge (a merge whose product is not in the
+    /// vocab). Sorted longest first. At encode time a pretoken that starts with one emits it
+    /// whole; nothing else changes.
+    pub(super) roots: Vec<(Box<[u8]>, u32)>,
+    /// The declarations behind `roots`, kept for serialization.
+    pub(super) ghost_merges: Vec<(String, String)>,
 }
 
 // A `BPE` holds exactly one `Atoms`, so `Chars`' 1 KB byte-fallback table costs nothing.
@@ -167,6 +173,28 @@ impl BPE {
         foldable.then_some(id)
     }
 
+    /// The longest ghost root that starts `sequence`, with the rest of the sequence.
+    #[inline]
+    fn match_root<'a>(&self, sequence: &'a str) -> Option<(&'a str, u32)> {
+        let bytes = sequence.as_bytes();
+        self.roots.iter().find_map(|(token, id)| {
+            let rest = bytes.strip_prefix(&**token)?;
+            std::str::from_utf8(rest).ok().map(|rest| (rest, *id))
+        })
+    }
+
+    /// Emit every ghost root the sequence starts with and return what is left.
+    fn emit_roots<'a>(&self, mut sequence: &'a str, output: &mut Vec<Token>) -> &'a str {
+        while let Some((rest, id)) = self.match_root(sequence) {
+            output.push(Token::from(id));
+            sequence = rest;
+            if sequence.is_empty() {
+                break;
+            }
+        }
+        sequence
+    }
+
     /// Converts a word to symbols and merges it. The gate, indexed by the word's first *content*
     /// byte (past any delimiter the pre-tokenizer prepended -- see [`content_start`]), says
     /// which engine gets it: short words go to multipass, longer ones to the hot/cold queue.
@@ -217,6 +245,17 @@ impl pipeline::Tokenize for BPE {
     ) -> Result<()> {
         if sequence.is_empty() {
             return Ok(());
+        }
+
+        if !self.roots.is_empty() {
+            let start = output.len();
+            let rest = self.emit_roots(sequence, output);
+            if output.len() > start {
+                if rest.is_empty() {
+                    return Ok(());
+                }
+                return self.tokenize(rest, scratch, output);
+            }
         }
 
         let bytes = sequence.as_bytes();
@@ -315,6 +354,24 @@ impl pipeline::Tokenize for BPE {
         for (span, sequence) in pre_tokens.iter() {
             if sequence.is_empty() {
                 continue;
+            }
+
+            let mut sequence = sequence;
+            if !self.roots.is_empty() {
+                // Commit any ids the fast paths wrote through `dst`: `Vec::push` below uses len.
+                // SAFETY: `cursor` counts what has been written so far.
+                unsafe { output.set_len(cursor) };
+                let emitted = output.len();
+                sequence = self.emit_roots(sequence, output);
+                if output.len() > emitted {
+                    cursor = output.len();
+                    capacity = output.capacity();
+                    // SAFETY: `cursor == output.len()`, inside the allocation.
+                    dst = unsafe { output.as_mut_ptr().add(cursor) };
+                    if sequence.is_empty() {
+                        continue;
+                    }
+                }
             }
 
             if cursor + MAX_INLINE_IDS > capacity {
