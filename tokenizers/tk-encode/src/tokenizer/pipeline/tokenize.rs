@@ -9,7 +9,7 @@ use crate::pipeline::{PreTokens, Token};
 use crate::tokenizer::Result;
 use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::utils::word_cache::{MAX_INLINE_IDS, ProbeEmit, WordCache};
-use crate::vocab::bucket_vocab_store::key_and_hash_readable;
+use crate::vocab::bucket_vocab_store;
 
 // `probe_emit_keyed` writes ids through a `*mut u32` into the `Vec<Token>` output.
 // That is sound only while a token has the same layout as u32
@@ -96,13 +96,13 @@ pub(crate) fn tokenize_spans<M: Tokenize>(
         }
         writer.make_room(words);
 
-        // A short word's key reads 8 bytes, past the word's end but inside the chunk.
-        let (key, hash) = key_and_hash_readable(text.as_bytes(), chunk.len() - span.start as usize);
+        let (lookup_key, lookup_hash) =
+            bucket_vocab_store::lookup_key_and_hash(chunk.as_bytes(), span);
 
         let mut placement = None;
         if let Some(cache) = word_cache.as_deref_mut() {
             // SAFETY: `make_room` left room for `MAX_INLINE_IDS` ids at the writer's end.
-            match unsafe { cache.probe_emit_keyed(key, hash, writer.end()) } {
+            match unsafe { cache.probe_emit_keyed(lookup_key, lookup_hash, writer.end()) } {
                 ProbeEmit::Wrote(written) => {
                     // SAFETY: the probe wrote `written` ids at the end.
                     unsafe { writer.advance(written) };
@@ -123,8 +123,8 @@ pub(crate) fn tokenize_spans<M: Tokenize>(
         model.tokenize_word(
             Word {
                 text,
-                lookup_key: key,
-                lookup_hash: hash,
+                lookup_key,
+                lookup_hash,
             },
             model_scratch,
             output,
