@@ -4,7 +4,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use crate::parallelism::pool;
+use crate::parallelism::{is_forked_child, pool};
 use crate::pipeline::scratch_pool::{EncodeScratch, ScratchGuard};
 use crate::pipeline::{
     EncodeHandle, EncodeOptions, Encoding, Input, Inputs, Segment, SpecialSegmentIterator, Token,
@@ -228,6 +228,9 @@ pub(crate) struct StreamingIter {
     batch: Arc<EncodeBatch>,
     next: usize,
     completed: usize,
+    /// The inputs this iterator will report as errors: those it hadn't returned yet when it found
+    /// itself in a forked child.
+    lost_to_fork: Vec<usize>,
 }
 
 impl StreamingIter {
@@ -236,7 +239,25 @@ impl StreamingIter {
             batch,
             next: 0,
             completed: 0,
+            lost_to_fork: Vec::new(),
         }
+    }
+
+    /// The inputs this iterator hasn't returned yet.
+    fn unreturned(&self) -> Vec<usize> {
+        let mut returned = vec![false; self.batch.len()];
+        for position in 0..self.next {
+            if let Some(seq) = self.batch.completed_seq(position) {
+                returned[seq] = true;
+            }
+        }
+        let mut unreturned = Vec::new();
+        for (seq, was_returned) in returned.into_iter().enumerate() {
+            if !was_returned {
+                unreturned.push(seq);
+            }
+        }
+        unreturned
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -248,6 +269,10 @@ impl Iterator for StreamingIter {
     type Item = (usize, Result<Encoding>);
 
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(seq) = self.lost_to_fork.pop() {
+            let lost = "the encode started before a fork, and its threads are gone: encode again";
+            return Some((seq, Err(lost.into())));
+        }
         if self.completed == self.batch.len() {
             return None;
         }
@@ -261,10 +286,19 @@ impl Iterator for StreamingIter {
             let scratch = scratch.get_or_insert_with(|| self.batch.tokenizer.get_scratch());
             // The caller has to wait for results regardless: instead of parking or empty
             // spinning, we do useful work
-            if !self.batch.encode_task(scratch) {
-                std::hint::spin_loop();
+            if self.batch.encode_task(scratch) {
+                continue;
             }
+            // In a forked child, the tasks the pool's threads had taken will never finish.
+            if is_forked_child() {
+                break;
+            }
+            std::hint::spin_loop();
         }
+        drop(scratch);
+        self.lost_to_fork = self.unreturned();
+        self.completed = self.batch.len();
+        self.next()
     }
 }
 

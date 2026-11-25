@@ -1998,4 +1998,45 @@ mod tests {
     fn hello_pipeline_with_truncation(truncation: TruncationParams) -> Tokenizer {
         hello_pipeline_with(PostProcessor::default(), None, Some(truncation))
     }
+
+    /// The pool's threads don't survive a fork, so the tasks they had taken never finish.
+    #[cfg(all(unix, feature = "parallelism"))]
+    #[test]
+    fn a_handle_carried_into_a_forked_child_errors_instead_of_hanging() {
+        use crate::test_utils::forked_child_exit_code;
+
+        if crate::parallelism::max_threads() == 1 {
+            return; // no pool on a one-core machine
+        }
+        let pipeline = hello_pipeline();
+        let inputs: Vec<String> = (0..2_000).map(|_| "hello".repeat(800)).collect();
+        // A fork only loses work if the pool's threads hold some at that moment: retry until one does.
+        for _ in 0..10 {
+            let mut handle = pipeline
+                .encode(inputs.clone(), &EncodeOptions::default())
+                .into_iter();
+            // a first result means the pool's threads have started taking tasks
+            assert!(handle.next().is_some(), "the batch is not empty");
+            let exit_code = forked_child_exit_code(|| {
+                let (mut encoded, mut lost) = (0, 0);
+                for (_, result) in handle {
+                    match result {
+                        Ok(_) => encoded += 1,
+                        Err(_) => lost += 1,
+                    }
+                }
+                match (encoded + lost, lost) {
+                    (1_999, 0) => 2, // the batch finished before the fork
+                    (1_999, _) => 0,
+                    _ => 1,
+                }
+            });
+            match exit_code {
+                Some(0) => return,
+                Some(2) => continue,
+                _ => panic!("the child hung, or returned the wrong number of results"),
+            }
+        }
+        panic!("never forked while the pool's threads held work");
+    }
 }

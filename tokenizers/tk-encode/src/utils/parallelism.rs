@@ -35,7 +35,8 @@ pub(crate) fn claim_pool() {
     let _ = POOL_OWNER.compare_exchange(0, process_id(), Ordering::Relaxed, Ordering::Relaxed);
 }
 
-fn is_forked_child() -> bool {
+/// Whether this process is a forked child of the one that owns the pool.
+pub(crate) fn is_forked_child() -> bool {
     claim_pool();
     POOL_OWNER.load(Ordering::Relaxed) != process_id()
 }
