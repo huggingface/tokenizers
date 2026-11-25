@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use ahash::RandomState;
-use std::hash::{BuildHasher, Hasher};
 use ptr_hash::PtrHashParams;
 use std::fmt;
+use std::hash::{BuildHasher, Hasher};
 
 use crate::Result;
 use crate::utils::perfect_hash::{Mphf, mix};
@@ -41,7 +41,6 @@ const FOLD_BIT: u32 = 1 << 31;
 const VOCAB_ID_MASK: u32 = FOLD_BIT - 1;
 
 pub(crate) const INLINE_KEY_BYTES: usize = 7;
-
 
 ///
 ///
@@ -302,7 +301,10 @@ impl BucketVocabStore {
             );
             let (key, hash) = key_and_hash(s.as_slice());
             let slot = mphf.index(&hash);
-            entries[slot] = Entry { digest: key, id: *id };
+            entries[slot] = Entry {
+                digest: key,
+                id: *id,
+            };
             spans[slot] = Span {
                 start: bytes.len() as u32,
                 len: s.len() as u16,
@@ -708,11 +710,19 @@ mod tests {
     /// `"foo"` and `"foo\0"` must not look like a hash collision.
     #[test]
     fn the_direct_write_still_separates_trailing_bytes() {
-        for w in [&b"foo"[..], b"the-filler-word", b"a-word-past-fifteen-bytes"] {
+        for w in [
+            &b"foo"[..],
+            b"the-filler-word",
+            b"a-word-past-fifteen-bytes",
+        ] {
             let mut padded = w.to_vec();
             for _ in 1..=3 {
                 padded.push(0);
-                assert_ne!(key_and_hash(w).1, key_and_hash(&padded).1, "{w:?} vs {padded:?}");
+                assert_ne!(
+                    key_and_hash(w).1,
+                    key_and_hash(&padded).1,
+                    "{w:?} vs {padded:?}"
+                );
             }
             let mut longer = w.to_vec();
             longer.push(b'x');
@@ -748,16 +758,29 @@ mod tests {
         for (id, t) in tokens.iter().enumerate() {
             let (key, hash) = key_and_hash(t);
             // Every design keeps the long arm's top byte >= 8, which packed keys cannot reach.
-            assert!(key >> 56 >= 8, "long key {key:#x} can be spelled by a <= 7-byte word");
+            assert!(
+                key >> 56 >= 8,
+                "long key {key:#x} can be spelled by a <= 7-byte word"
+            );
             let Some(short) = short_word_from_hash(hash) else {
                 continue;
             };
             forged += 1;
             assert_ne!(short, *t);
-            assert_eq!(vocab.mphf.index(&key_and_hash(&short).1), vocab.mphf.index(&hash));
-            assert_eq!(vocab.get_bytes(&short), None, "{short:?} aliased {t:?} (id {id})");
+            assert_eq!(
+                vocab.mphf.index(&key_and_hash(&short).1),
+                vocab.mphf.index(&hash)
+            );
+            assert_eq!(
+                vocab.get_bytes(&short),
+                None,
+                "{short:?} aliased {t:?} (id {id})"
+            );
         }
         // The aliases are rare but far too common to be a coincidence: 1/256 of long tokens.
-        assert!(forged > 5, "only {forged} aliases derived: the fixture stopped exercising the bug");
+        assert!(
+            forged > 5,
+            "only {forged} aliases derived: the fixture stopped exercising the bug"
+        );
     }
 }
