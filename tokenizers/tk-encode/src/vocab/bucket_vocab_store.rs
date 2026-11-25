@@ -95,8 +95,8 @@ fn key_and_hash_long(word: &[u8]) -> (u64, u64) {
     // inverted (#2722), because a packed key's top byte is at most 7 and these are 8..254. `0xFF` is
     // the escape for a token too long to fit in a byte, which keeps the same 56 bits of verifier
     // without a length.
-    let len = word.len();
-    let tag = if len < 255 { len as u64 } else { 0xFF };
+    // `min`: the escape byte is the same value the length caps at, and it lowers to one `csel`.
+    let tag = word.len().min(0xFF) as u64;
     (tag << 56 | (hash & 0x00FF_FFFF_FFFF_FFFF), hash)
 }
 
