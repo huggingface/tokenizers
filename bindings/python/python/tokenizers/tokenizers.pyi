@@ -105,8 +105,9 @@ class CompiledTokenizer:
     ids back into text.
 
     A compiled tokenizer is immutable and can be shared across threads.
-    Pickling serializes to the JSON config, and unpickling compiles the CompiledTokenizer
-    again from that JSON config.
+
+    Unpickling a CompiledTokenizer runs the compilation logic again.
+    It is recommended to unpickle once per process.
     """
     def __copy__(self, /) -> CompiledTokenizer:
         """
@@ -116,13 +117,7 @@ class CompiledTokenizer:
         """
         Returns `self`: a compiled tokenizer cannot be changed, so a copy would be identical.
         """
-    def __reduce__(self, /) -> tuple[Any, tuple[bytes]]:
-        """
-        Pickle rebuilds a `CompiledTokenizer` by calling `_unpickle` with these arguments.
-
-        The pickle holds the whole `tokenizer.json`, written from the built tokenizer, and unpickling
-        compiles it again.
-        """
+    def __reduce__(self, /) -> tuple[Any, tuple[bytes]]: ...
     def __repr__(self, /) -> str: ...
     @staticmethod
     def _unpickle(json: bytes) -> CompiledTokenizer: ...
