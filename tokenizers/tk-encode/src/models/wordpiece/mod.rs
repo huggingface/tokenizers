@@ -1,10 +1,8 @@
 //! [WordPiece](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/37842.pdf)
 //! model.
 
-use crate::pipeline::{self, Token};
+use crate::pipeline::{self, Token, Word};
 use crate::tokenizer::Result;
-use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
-use crate::utils::word_cache::{Lookup, WordCache};
 use ahash::AHashMap;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -61,12 +59,6 @@ impl Default for WordPieceConfig {
             max_input_chars_per_word: 100,
         }
     }
-}
-
-pub struct WordPieceScratch {
-    candidate: Vec<u8>,
-    /// Outlives the encode call that fills it, or it would never see a word twice.
-    word_cache: WordCache,
 }
 
 /// yada cannot store the NUL byte as a token, the trie holds NUL as 0xFF instead.
@@ -139,58 +131,6 @@ impl WordPiece {
         })
     }
 
-    /// One word, greedily: the longest vocabulary entry it starts with, then the
-    /// longest entry the rest of it starts with once the continuing-subword prefix
-    /// is put in front, and so on. A piece with no entry at all anywhere in the
-    /// word makes the whole word one unk token.
-    fn tokenize_word(
-        &self,
-        sequence: &str,
-        candidate: &mut Vec<u8>,
-        output: &mut Vec<Token>,
-    ) -> Result<()> {
-        let checkpoint = output.len();
-
-        let char_len = sequence.chars().count();
-        if char_len > self.max_input_chars_per_word {
-            let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
-            output.push(Token::from(unk_id));
-            return Ok(());
-        }
-
-        let mut start = 0;
-
-        while start < sequence.len() {
-            candidate.clear();
-            let prefix_len = if start > 0 {
-                let prefix = self.continuing_subword_prefix.as_bytes();
-                candidate.extend(prefix.iter().copied().map(trie_byte));
-                prefix.len()
-            } else {
-                0
-            };
-            candidate.extend(sequence[start..].bytes().map(trie_byte));
-
-            // Matches must extend past the continuing-subword prefix: the
-            // prefix alone (or a fragment of it) is not a valid subword here,
-            // even if it happens to be in the vocab.
-            let Some((token_id, match_len)) = self
-                .vocab_trie
-                .common_prefix_search(&candidate)
-                .filter(|&(_, len)| len > prefix_len)
-                .last()
-            else {
-                let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
-                output.truncate(checkpoint);
-                output.push(Token::from(unk_id));
-                return Ok(());
-            };
-            output.push(Token::from(token_id));
-            start += match_len - prefix_len;
-        }
-        Ok(())
-    }
-
     pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         self.vocab_r.get(id as usize)?.as_deref().map(str::to_owned)
     }
@@ -239,43 +179,61 @@ impl WordPiece {
 }
 
 impl pipeline::Tokenize for WordPiece {
-    type Scratch = WordPieceScratch;
+    type Scratch = Vec<u8>;
 
-    fn init_scratch(&self) -> Self::Scratch {
-        Self::Scratch {
-            candidate: Vec::with_capacity(self.max_input_chars_per_word),
-            word_cache: WordCache::new(DEFAULT_CACHE_CAPACITY),
-        }
+    fn new_scratch(&self) -> Vec<u8> {
+        Vec::with_capacity(self.max_input_chars_per_word)
     }
 
-    /// A hit skips `tokenize_word`: one trie search per piece of the word,
-    /// each over a fresh copy of what is left to match.
-    fn tokenize(
+    /// Splits the word greedily into the longest vocabulary entries it starts with. Every piece
+    /// after the first is looked up with the continuing-subword prefix in front. When a piece has
+    /// no entry, the whole word becomes one unk token.
+    fn tokenize_word(
         &self,
-        sequence: &str,
-        scratch: &mut Self::Scratch,
-        output: &mut Vec<pipeline::Token>,
+        word: Word<'_>,
+        candidate: &mut Vec<u8>,
+        output: &mut Vec<Token>,
     ) -> Result<()> {
-        if sequence.is_empty() {
+        let text = word.text;
+        let checkpoint = output.len();
+
+        let char_len = text.chars().count();
+        if char_len > self.max_input_chars_per_word {
+            let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
+            output.push(Token::from(unk_id));
             return Ok(());
         }
-        let WordPieceScratch {
-            candidate,
-            word_cache,
-        } = scratch;
 
-        let placement = match word_cache.lookup(sequence.as_bytes()) {
-            Lookup::Hit(ids) => {
-                output.extend(ids.iter().copied().map(Token::from));
+        let mut start = 0;
+
+        while start < text.len() {
+            candidate.clear();
+            let prefix_len = if start > 0 {
+                let prefix = self.continuing_subword_prefix.as_bytes();
+                candidate.extend(prefix.iter().copied().map(trie_byte));
+                prefix.len()
+            } else {
+                0
+            };
+            candidate.extend(text[start..].bytes().map(trie_byte));
+
+            // Matches must extend past the continuing-subword prefix: the
+            // prefix alone (or a fragment of it) is not a valid subword here,
+            // even if it happens to be in the vocab.
+            let Some((token_id, match_len)) = self
+                .vocab_trie
+                .common_prefix_search(&candidate)
+                .filter(|&(_, len)| len > prefix_len)
+                .last()
+            else {
+                let unk_id = self.unk_token.ok_or(Error::MissingUnkToken)?;
+                output.truncate(checkpoint);
+                output.push(Token::from(unk_id));
                 return Ok(());
-            }
-            Lookup::Miss(at) => at,
-        };
-
-        let start = output.len();
-        self.tokenize_word(sequence, candidate, output)?;
-
-        word_cache.insert(placement, output[start..].iter().map(|token| token.id()));
+            };
+            output.push(Token::from(token_id));
+            start += match_len - prefix_len;
+        }
         Ok(())
     }
 }
@@ -283,6 +241,7 @@ impl pipeline::Tokenize for WordPiece {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pipeline::{Scratch, tokenize::tokenize_one};
 
     #[test]
     fn test_error_display() {
@@ -311,52 +270,10 @@ mod tests {
         WordPiece::from_config(model).unwrap()
     }
 
-    fn pipeline_ids(model: &WordPiece, sequence: &str, scratch: &mut WordPieceScratch) -> Vec<u32> {
+    fn pipeline_ids(model: &WordPiece, sequence: &str, scratch: &mut Scratch<Vec<u8>>) -> Vec<u32> {
         let mut output = vec![];
-        pipeline::Tokenize::tokenize(model, sequence, scratch, &mut output).unwrap();
+        tokenize_one(model, sequence, scratch, &mut output).unwrap();
         output.iter().map(|token| token.id()).collect()
-    }
-
-    #[test]
-    fn pipeline_remembers_what_a_word_encoded_to() {
-        let model = pipeline_wordpiece();
-        let mut scratch = pipeline::Tokenize::init_scratch(&model);
-
-        let ids = pipeline_ids(&model, "hello", &mut scratch);
-
-        assert_eq!(scratch.word_cache.lookup(b"hello").hit(), Some(&ids[..]));
-    }
-
-    #[test]
-    fn cache_hits_agree_with_a_cold_run() {
-        let model = pipeline_wordpiece();
-        let long = "hello".repeat(300);
-        let corpus = [
-            "hello",
-            // No id for `##w`, so the whole word is one unk token.
-            "hellow",
-            // Both again, so these two are served from the cache.
-            "hello",
-            "hellow",
-            // Past `max_input_chars_per_word`, which is another unk token.
-            "hellohello",
-            "hellohello",
-            // Out of the vocabulary, and multibyte.
-            "東京",
-            "東京",
-            // 1500 bytes, past the longest word the cache will store.
-            long.as_str(),
-            long.as_str(),
-        ];
-
-        let mut warm_scratch = pipeline::Tokenize::init_scratch(&model);
-        let warm = corpus.map(|sequence| pipeline_ids(&model, sequence, &mut warm_scratch));
-        let cold = corpus.map(|sequence| {
-            let mut scratch = pipeline::Tokenize::init_scratch(&model);
-            pipeline_ids(&model, sequence, &mut scratch)
-        });
-
-        assert_eq!(warm, cold);
     }
 
     #[test]
@@ -371,7 +288,7 @@ mod tests {
             ..Default::default()
         };
         let model = WordPiece::from_config(model).unwrap();
-        let mut scratch = pipeline::Tokenize::init_scratch(&model);
+        let mut scratch = Scratch::new(&model);
 
         assert_eq!(pipeline_ids(&model, "hello", &mut scratch), [2]);
         assert_eq!(pipeline_ids(&model, "world", &mut scratch), [1]);
@@ -394,7 +311,7 @@ mod tests {
             ..Default::default()
         };
         let model = WordPiece::from_config(model).unwrap();
-        let mut scratch = pipeline::Tokenize::init_scratch(&model);
+        let mut scratch = Scratch::new(&model);
 
         for (c, id) in chars.iter().zip(1u32..) {
             let token = c.to_string();
@@ -420,7 +337,7 @@ mod tests {
             ..Default::default()
         };
         let model = WordPiece::from_config(model).unwrap();
-        let mut scratch = pipeline::Tokenize::init_scratch(&model);
+        let mut scratch = Scratch::new(&model);
 
         assert_eq!(pipeline_ids(&model, "a\0a", &mut scratch), [1, 3, 4]);
         assert_eq!(pipeline_ids(&model, "\0", &mut scratch), [2]);
@@ -457,20 +374,5 @@ mod tests {
                 "{err}"
             );
         }
-    }
-
-    #[test]
-    fn caches_only_the_ids_this_word_produced() {
-        // Every word the pipeline hands the model appends to one output buffer,
-        // so a word has to remember its own ids, not everything the buffer holds.
-        let model = pipeline_wordpiece();
-        let mut scratch = pipeline::Tokenize::init_scratch(&model);
-        let mut output = vec![];
-        pipeline::Tokenize::tokenize(&model, "hello", &mut scratch, &mut output).unwrap();
-        pipeline::Tokenize::tokenize(&model, "world", &mut scratch, &mut output).unwrap();
-
-        let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
-        assert_eq!(ids, [3, 4]);
-        assert_eq!(scratch.word_cache.lookup(b"world").hit(), Some(&[4u32][..]));
     }
 }

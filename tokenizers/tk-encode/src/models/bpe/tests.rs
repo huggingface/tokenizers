@@ -4,10 +4,10 @@
 //! both readers come in by. The config-shaped `BPE` — its builder, its serde, its `read_file` — and
 //! the tests that pin the two engines against each other moved to `tk-convert` with the type.
 use super::*;
-use crate::pipeline;
 use crate::tokenizer::Result;
 
-use crate::{pipeline::Tokenize, utils::byte_level::BYTES_CHAR_LOOKUP};
+use crate::pipeline::{Scratch, tokenize::tokenize_one};
+use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
 
 const HELLO_VOCAB: &[(&str, u32)] = &[
     ("h", 0),
@@ -40,8 +40,7 @@ fn hello(options: BpeConfig) -> Result<BPE> {
 
 fn pipeline_ids(model: &BPE, sequence: &str) -> Vec<u32> {
     let mut out = Vec::new();
-    let mut scratch = model.init_scratch();
-    pipeline::Tokenize::tokenize(model, sequence, &mut scratch, &mut out).unwrap();
+    tokenize_one(model, sequence, &mut Scratch::new(model), &mut out).unwrap();
     out.iter().map(|t| t.id()).collect()
 }
 
@@ -93,43 +92,12 @@ fn empty_input_yields_no_tokens() {
 #[test]
 fn reused_scratch_matches_fresh() {
     let model = hello(BpeConfig::default()).unwrap();
-    let mut scratch = model.init_scratch();
+    let mut scratch = Scratch::new(&model);
     for input in ["hello", "hell", "helo", "oleh", "hello", "", "hxe"] {
         let mut out = Vec::new();
-        pipeline::Tokenize::tokenize(&model, input, &mut scratch, &mut out).unwrap();
+        tokenize_one(&model, input, &mut scratch, &mut out).unwrap();
         let got: Vec<u32> = out.iter().map(|t| t.id()).collect();
         assert_eq!(got, pipeline_ids(&model, input), "{input:?}");
-    }
-}
-
-// A cache may forget a word, but it must never change one. Run every word twice
-// through one scratch, the second time answered from the cache, against a model
-// built with no cache at all.
-#[test]
-fn cached_ids_match_uncached() {
-    let cached = hello(BpeConfig::default()).unwrap();
-    let uncached = hello(BpeConfig {
-        cache_capacity: 0,
-        ..Default::default()
-    })
-    .unwrap();
-
-    let mut scratch = cached.init_scratch();
-    assert!(scratch.word_cache.is_some(), "nothing is being cached");
-    for _ in 0..2 {
-        for word in [
-            "hello",
-            "hell",
-            "o",
-            "hellohello",
-            "hello-a-word-past-fifteen-bytes",
-            "hxe",
-        ] {
-            let mut out = Vec::new();
-            pipeline::Tokenize::tokenize(&cached, word, &mut scratch, &mut out).unwrap();
-            let got: Vec<u32> = out.iter().map(|t| t.id()).collect();
-            assert_eq!(got, pipeline_ids(&uncached, word), "{word:?}");
-        }
     }
 }
 

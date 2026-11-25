@@ -61,8 +61,22 @@ impl<'a> PreTokens<'a> {
     /// - the start and the end of the span are inside the chunk
     /// - the span is not reversed
     /// - the span starts and ends on char boundaries
-    unsafe fn new_unchecked(chunk: &'a str, spans: &'a [Span]) -> Self {
+    pub(super) unsafe fn new_unchecked(chunk: &'a str, spans: &'a [Span]) -> Self {
         Self { chunk, spans }
+    }
+
+    /// One pre-token covering all of `text`.
+    #[cfg(test)]
+    pub(crate) fn whole(text: &'a str, span: &'a Span) -> Self {
+        assert_eq!(
+            span.range(),
+            0..text.len(),
+            "the span must cover the whole text"
+        );
+        Self {
+            chunk: text,
+            spans: std::slice::from_ref(span),
+        }
     }
 
     pub fn chunk(&self) -> &'a str {

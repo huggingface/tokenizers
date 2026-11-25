@@ -1,4 +1,4 @@
-use crate::pipeline::{self, Token};
+use crate::pipeline::{self, Token, Word};
 use crate::tokenizer::Result;
 use ahash::AHashMap;
 use std::collections::HashMap;
@@ -141,14 +141,16 @@ impl WordLevel {
 
 impl pipeline::Tokenize for WordLevel {
     type Scratch = ();
-    fn init_scratch(&self) -> Self::Scratch {}
-    fn tokenize(
+
+    fn new_scratch(&self) {}
+
+    fn tokenize_word(
         &self,
-        sequence: &str,
-        _scratch: &mut Self::Scratch,
+        word: Word<'_>,
+        _scratch: &mut (),
         output: &mut Vec<pipeline::Token>,
     ) -> Result<()> {
-        if let Some(&id) = self.vocab.get(sequence) {
+        if let Some(&id) = self.vocab.get(word.text) {
             output.push(Token::from(id))
         } else if let Some(&unk_id) = self.vocab.get(&self.unk_token) {
             output.push(Token::from(unk_id));
@@ -162,10 +164,16 @@ impl pipeline::Tokenize for WordLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pipeline::{Scratch, tokenize::tokenize_one};
 
     fn tokenize(wordlevel: &WordLevel, sequence: &str) -> Result<Vec<u32>> {
         let mut output = Vec::new();
-        pipeline::Tokenize::tokenize(wordlevel, sequence, &mut (), &mut output)?;
+        tokenize_one(
+            wordlevel,
+            sequence,
+            &mut Scratch::new(wordlevel),
+            &mut output,
+        )?;
         Ok(output.iter().map(|token| token.id()).collect())
     }
 
@@ -182,7 +190,13 @@ mod tests {
         for (c, id) in chars.iter().zip(0u32..) {
             let token = c.to_string();
             let mut output = Vec::new();
-            pipeline::Tokenize::tokenize(&wordlevel, &token, &mut (), &mut output).unwrap();
+            tokenize_one(
+                &wordlevel,
+                &token,
+                &mut Scratch::new(&wordlevel),
+                &mut output,
+            )
+            .unwrap();
             let ids: Vec<u32> = output.iter().map(|token| token.id()).collect();
             assert_eq!(ids, [id], "{c:?}");
             assert_eq!(wordlevel.token_to_id(&token), Some(id), "{c:?}");

@@ -4,11 +4,11 @@ use std::sync::Arc;
 use std::vec::IntoIter;
 
 #[cfg(feature = "unigram")]
-use crate::models::unigram::{Unigram, UnigramScratch};
+use crate::models::unigram::Unigram;
 #[cfg(feature = "wordlevel")]
 use crate::models::wordlevel::WordLevel;
 #[cfg(feature = "wordpiece")]
-use crate::models::wordpiece::{WordPiece, WordPieceScratch};
+use crate::models::wordpiece::WordPiece;
 pub use crate::pipeline::encode_options::EncodeOptions;
 pub use crate::pipeline::encode_options::Override;
 use crate::utils::truncation::truncate_pair;
@@ -31,6 +31,8 @@ pub mod encode_options;
 #[cfg(feature = "parallelism")]
 mod parallel;
 mod scratch_pool;
+pub(crate) mod tokenize;
+pub use tokenize::{Scratch, Tokenize, Word};
 
 pub use bitcannon::Span;
 
@@ -1002,40 +1004,6 @@ impl DecodeStream {
     }
 }
 
-/// Turns pre-tokens into tokens. Every model (BPE, Unigram, WordPiece, WordLevel) implements it.
-pub trait Tokenize {
-    type Scratch;
-
-    fn tokenize(
-        &self,
-        sequence: &str,
-        scratch: &mut Self::Scratch,
-        output: &mut Vec<Token>,
-    ) -> Result<()>;
-
-    /// Every pre-token of a chunk in one call.
-    ///
-    /// The pipeline has the whole span list before the model runs, so handing them over one at a
-    /// time bought nothing and cost a virtual call, a slice, a `Result` and an output capacity
-    /// check per pre-token -- on English that is one round trip per ~5 bytes.
-    ///
-    /// The default is the loop it replaces, so a model only overrides this if it has per-chunk
-    /// work to hoist out of the loop.
-    fn tokenize_spans(
-        &self,
-        pre_tokens: PreTokens<'_>,
-        scratch: &mut Self::Scratch,
-        output: &mut Vec<Token>,
-    ) -> Result<()> {
-        for (_, sequence) in pre_tokens.iter() {
-            self.tokenize(sequence, scratch, output)?;
-        }
-        Ok(())
-    }
-
-    fn init_scratch(&self) -> Self::Scratch;
-}
-
 #[allow(
     clippy::large_enum_variant,
     reason = "BPE holds a 1kB byte -> id lookup table"
@@ -1102,90 +1070,62 @@ impl Model {
     }
 }
 
-/// A set of buffers and other state the model needs to encode efficiently,
-/// reused among calls to [`Tokenizer::encode`].
-///
-/// Each model gets its own variant.
-impl Tokenize for Model {
-    type Scratch = ModelScratch;
-
-    fn tokenize(
-        &self,
-        sequence: &str,
-        scratch: &mut Self::Scratch,
-        output: &mut Vec<Token>,
-    ) -> Result<()> {
-        match (self, scratch) {
-            (Self::BPE(model), ModelScratch::BPE(scratch)) => {
-                model.tokenize(sequence, scratch, output)
-            }
-            #[cfg(feature = "unigram")]
-            (Self::Unigram(model), ModelScratch::Unigram(scratch)) => {
-                model.tokenize(sequence, scratch, output)
-            }
-            #[cfg(feature = "wordlevel")]
-            (Self::WordLevel(model), ModelScratch::WordLevel(scratch)) => {
-                model.tokenize(sequence, scratch, output)
-            }
-            #[cfg(feature = "wordpiece")]
-            (Self::WordPiece(model), ModelScratch::WordPiece(scratch)) => {
-                model.tokenize(sequence, scratch, output)
-            }
-            _ => unreachable!(),
-        }
-    }
-
+impl Model {
     // inlining was measured faster (4% e2e) on x86
     #[inline(always)]
-    fn tokenize_spans(
+    pub(crate) fn tokenize_spans(
         &self,
         pre_tokens: PreTokens<'_>,
-        scratch: &mut Self::Scratch,
+        scratch: &mut ModelScratch,
         output: &mut Vec<Token>,
     ) -> Result<()> {
         match (self, scratch) {
             (Self::BPE(model), ModelScratch::BPE(scratch)) => {
-                model.tokenize_spans(pre_tokens, scratch, output)
+                tokenize::tokenize_spans(model, pre_tokens, scratch, output)
             }
             #[cfg(feature = "unigram")]
             (Self::Unigram(model), ModelScratch::Unigram(scratch)) => {
-                model.tokenize_spans(pre_tokens, scratch, output)
+                tokenize::tokenize_spans(model, pre_tokens, scratch, output)
             }
             #[cfg(feature = "wordlevel")]
             (Self::WordLevel(model), ModelScratch::WordLevel(scratch)) => {
-                model.tokenize_spans(pre_tokens, scratch, output)
+                tokenize::tokenize_spans(model, pre_tokens, scratch, output)
             }
             #[cfg(feature = "wordpiece")]
             (Self::WordPiece(model), ModelScratch::WordPiece(scratch)) => {
-                model.tokenize_spans(pre_tokens, scratch, output)
+                tokenize::tokenize_spans(model, pre_tokens, scratch, output)
             }
             _ => unreachable!(),
         }
     }
 
-    fn init_scratch(&self) -> Self::Scratch {
+    pub(crate) fn new_scratch(&self) -> ModelScratch {
         match self {
-            Self::BPE(bpe) => ModelScratch::BPE(bpe.init_scratch()),
+            Self::BPE(model) => ModelScratch::BPE(Scratch::new(model)),
             #[cfg(feature = "wordlevel")]
-            Self::WordLevel(_) => Self::Scratch::WordLevel(()),
+            Self::WordLevel(model) => ModelScratch::WordLevel(Scratch::new(model)),
             #[cfg(feature = "wordpiece")]
-            Self::WordPiece(wordpiece) => Self::Scratch::WordPiece(wordpiece.init_scratch()),
+            Self::WordPiece(model) => ModelScratch::WordPiece(Scratch::new(model)),
             #[cfg(feature = "unigram")]
-            Self::Unigram(unigram) => Self::Scratch::Unigram(unigram.init_scratch()),
+            Self::Unigram(model) => ModelScratch::Unigram(Scratch::new(model)),
         }
     }
 }
 
+/// A set of buffers and other state the model needs to encode efficiently,
+/// reused among calls to [`Tokenizer::encode`].
+///
+/// Each model gets its own variant.
 #[derive(Default)]
 #[non_exhaustive]
 pub enum ModelScratch {
-    BPE(BpeScratch),
+    BPE(Scratch<BpeScratch>),
     #[cfg(feature = "wordlevel")]
-    WordLevel(()),
+    WordLevel(Scratch<()>),
     #[cfg(feature = "wordpiece")]
-    WordPiece(WordPieceScratch),
+    WordPiece(Scratch<Vec<u8>>),
     #[cfg(feature = "unigram")]
-    Unigram(UnigramScratch),
+    Unigram(Scratch<()>),
     /// We need a default value to be able to use [`mem::take`] in [`ScratchGuard::drop`]
     #[default]
     None,
