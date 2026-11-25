@@ -61,19 +61,6 @@ bpe = []
 unigram = ["dep:dary_heap"]
 wordpiece = ["dep:yada"]
 wordlevel = []
-# Digest-layout experiments for the long-word arm, all measured equivalent by the
-# `lookup_throughput` bench (4.7-5.5 ns/lookup, i.e. within run noise); the difference is how many
-# bits of verifier each one leaves:
-#   default      1 bit of arm tag                                                          (63 bits)
-#   len-byte     length in the top byte (8..254, `0xFF` escape for >= 255-byte tokens)      (56 bits)
-#   len-digest   length reserved in bits 32..47, plus the arm tag                           (47 bits)
-#   len-check    the default, plus a separate comparison against `spans[slot].len`  (63 bits, 2nd line)
-len-byte = []
-len-digest = []
-# Experiment: keep all 63 bits of the digest and check the length separately, against `spans`.
-# Prices the "extra compare" a length check really costs when the length is not in the digest.
-len-check = []
-
 normalizers = [
   "dep:unicode-normalization",
   "dep:spm_precompiled",

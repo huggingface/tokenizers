@@ -14,13 +14,13 @@ use crate::utils::perfect_hash::{Mphf, mix};
 /// by birthday. A fresh seed makes that 2^64 again. Nothing persists a [`BucketVocabStore`], so a
 /// seed that changes per process costs nothing.
 static KEY_HASHER: LazyLock<RandomState> = LazyLock::new(|| {
-        // Test-only: `TK_HASH_SEED=k` pins the seed, so a test that depends on where a word lands
-        // in the table reproduces instead of flaking at 1 run in 60.
-        #[cfg(test)]
-        if let Ok(seed) = std::env::var("TK_HASH_SEED") {
-            let s: u64 = seed.parse().unwrap_or(0);
-            return RandomState::with_seeds(s | 1, s ^ 0x9e37, s ^ 0x7f4a, s ^ 0x1234_5678);
-        }
+    // Test-only: `TK_HASH_SEED=k` pins the seed, so a test that depends on where a word lands in the
+    // table reproduces instead of flaking at 1 run in 60.
+    #[cfg(test)]
+    if let Ok(seed) = std::env::var("TK_HASH_SEED") {
+        let s: u64 = seed.parse().unwrap_or(0);
+        return RandomState::with_seeds(s | 1, s ^ 0x9e37, s ^ 0x7f4a, s ^ 0x1234_5678);
+    }
     RandomState::new()
 });
 
@@ -703,6 +703,23 @@ mod tests {
     /// query. The packed arm's hashes are `mix(packed key)`, a bijection onto 2^56 of 2^64, so about
     /// one long token in 256 has a hash `unmix` turns into a *different*, <= 7-byte word -- no search.
     /// Comparing the key is what rejects it: the arms' key spaces are disjoint.
+    /// The long arm writes the bytes directly, without `Hash for [u8]`'s length prefix. That is only
+    /// safe if ahash still separates words that differ by trailing bytes -- a vocabulary holding both
+    /// `"foo"` and `"foo\0"` must not look like a hash collision.
+    #[test]
+    fn the_direct_write_still_separates_trailing_bytes() {
+        for w in [&b"foo"[..], b"the-filler-word", b"a-word-past-fifteen-bytes"] {
+            let mut padded = w.to_vec();
+            for _ in 1..=3 {
+                padded.push(0);
+                assert_ne!(key_and_hash(w).1, key_and_hash(&padded).1, "{w:?} vs {padded:?}");
+            }
+            let mut longer = w.to_vec();
+            longer.push(b'x');
+            assert_ne!(key_and_hash(w).1, key_and_hash(&longer).1);
+        }
+    }
+
     #[test]
     fn short_query_cannot_alias_a_long_token() {
         let mut tokens: Vec<Vec<u8>> = Vec::new();
@@ -742,150 +759,5 @@ mod tests {
         }
         // The aliases are rare but far too common to be a coincidence: 1/256 of long tokens.
         assert!(forged > 5, "only {forged} aliases derived: the fixture stopped exercising the bug");
-    }
-}
-
-#[cfg(test)]
-mod lookup_bench {
-    use super::*;
-    use crate::utils::perfect_hash::splitmix64;
-    use std::hint::black_box;
-    use std::time::Instant;
-
-    /// A synthetic vocabulary with a realistic mix of packed (<= 7 bytes) and hashed words:
-    /// whole words are 2..12 bytes of ascii, so both arms of `key_and_hash` are exercised.
-    fn fixtures(n: usize) -> (BucketVocabStore, Vec<Vec<u8>>) {
-        let mut x = 0x5d5d_5d5d_1234_9876u64;
-        let mut seen = std::collections::HashSet::new();
-        let mut words: Vec<Vec<u8>> = Vec::with_capacity(n);
-        while words.len() < n {
-            x = splitmix64(x);
-            let len = 3 + (x % 12) as usize;
-            let mut y = x;
-            let mut w = Vec::with_capacity(len);
-            for _ in 0..len {
-                y = splitmix64(y);
-                w.push(b'a' + (y % 26) as u8);
-            }
-            if seen.insert(w.clone()) {
-                words.push(w);
-            }
-        }
-        let store = BucketVocabStore::build(
-            words.iter().enumerate().map(|(i, w)| (w.clone(), i as u32)).collect(),
-        )
-        .unwrap();
-        (store, words)
-    }
-
-    /// `cargo test --release -- --ignored --nocapture lookup_throughput`
-    ///
-    /// Ignored by default: it is a timing harness, not a check. It exists because the entry layout is
-    /// a cache-traffic question that only a measurement settles -- see the results in the PR. The
-    /// `keys/` and `probe/` rows split the lookup into its arithmetic and its memory access, which is
-    /// what says whether an instruction-level shave can matter at all.
-    #[test]
-    #[ignore = "benchmark, run with --release -- --ignored --nocapture"]
-    fn lookup_throughput() {
-        let n: usize = std::env::var("BENCH_N").ok().and_then(|s| s.parse().ok()).unwrap_or(50_000);
-        let reps: usize = std::env::var("BENCH_REPS").ok().and_then(|s| s.parse().ok()).unwrap_or(200);
-        let (store, words) = fixtures(n);
-
-        // One query per vocab word (a hit), and one one-byte mutation of each (a miss). Shuffled so
-        // the probes walk the entry array randomly instead of streaming it.
-        let mut hits: Vec<Vec<u8>> = words.clone();
-        let mut misses: Vec<Vec<u8>> = words
-            .iter()
-            .map(|w| {
-                let mut m = w.clone();
-                let last = m.len() - 1;
-                // The fixtures are lowercase, so an uppercase byte is guaranteed out of vocabulary.
-                m[last] = b'A' + (m[last] - b'a');
-                m
-            })
-            .collect();
-        shuffle(&mut hits);
-        shuffle(&mut misses);
-
-        println!(
-            "entry={}B span={}B slots={} (x{:.3} of n) entries={}KB spans={}KB total={}KB",
-            size_of::<Entry>(),
-            size_of::<Span>(),
-            store.entries.len(),
-            store.entries.len() as f64 / n as f64,
-            store.entries.len() * size_of::<Entry>() / 1024,
-            store.entries.len() * size_of::<Span>() / 1024,
-            (store.entries.len() * (size_of::<Entry>() + size_of::<Span>())) / 1024,
-        );
-
-        for (name, set) in [("hit ", &hits), ("miss", &misses)] {
-            for _ in 0..5 {
-                let mut found = 0u64;
-                let start = Instant::now();
-                for _ in 0..reps {
-                    for q in set.iter() {
-                        found += store.get_bytes(black_box(q.as_slice())).is_some() as u64;
-                    }
-                }
-                let per = start.elapsed().as_secs_f64() / (reps * set.len()) as f64;
-                println!(
-                    "{name} {:6.2} ns/lookup  ({:5.1} M/s)  found={}",
-                    per * 1e9,
-                    1e-6 / per,
-                    found / reps as u64
-                );
-            }
-        }
-    }
-
-    /// The two halves of `get_bytes`, timed separately: the key/hash arithmetic, and the MPHF probe
-    /// plus the entry load. If the arithmetic is small next to the probe, no instruction shave in
-    /// `key_and_hash` can move the number.
-    #[test]
-    #[ignore = "benchmark, run with --release -- --ignored --nocapture"]
-    fn lookup_breakdown() {
-        let n: usize = std::env::var("BENCH_N").ok().and_then(|s| s.parse().ok()).unwrap_or(50_000);
-        let reps: usize = std::env::var("BENCH_REPS").ok().and_then(|s| s.parse().ok()).unwrap_or(200);
-        let (store, words) = fixtures(n);
-        let mut queries: Vec<Vec<u8>> = words.clone();
-        shuffle(&mut queries);
-        let total = reps * queries.len();
-
-        for (arm, queries) in [
-            ("<=7", queries.iter().filter(|w| w.len() <= 7).cloned().collect::<Vec<_>>()),
-            (">=8", queries.iter().filter(|w| w.len() >= 8).cloned().collect::<Vec<_>>()),
-        ] {
-            let mut acc = 0u64;
-            let start = Instant::now();
-            for _ in 0..reps {
-                for q in queries.iter() {
-                    acc ^= black_box(key_and_hash(black_box(q.as_slice()))).1;
-                }
-            }
-            let per = start.elapsed().as_secs_f64() / (reps * queries.len()) as f64;
-            println!("keys/{arm}   {:6.2} ns/word    (acc {acc})", per * 1e9);
-        }
-
-        // The probe without the arithmetic: hashes are computed once, up front.
-        let hashes: Vec<(u64, u64)> = queries.iter().map(|q| key_and_hash(q)).collect();
-        let start = Instant::now();
-        let mut acc = 0u64;
-        for _ in 0..reps {
-            for &(key, hash) in hashes.iter() {
-                let slot = store.mphf.index(black_box(&hash));
-                let e = black_box(&store.entries[black_box(slot)]);
-                acc += (e.digest == key) as u64;
-            }
-        }
-        let per = start.elapsed().as_secs_f64() / total as f64;
-        println!("probe     {:6.2} ns/lookup  (acc {acc})", per * 1e9);
-    }
-
-    fn shuffle(v: &mut [Vec<u8>]) {
-        let mut x = 0x1234_5678_9abc_def0u64;
-        for i in (1..v.len()).rev() {
-            x = splitmix64(x);
-            v.swap(i, (x % (i as u64 + 1)) as usize);
-        }
     }
 }
