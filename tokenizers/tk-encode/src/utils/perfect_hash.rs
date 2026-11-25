@@ -15,7 +15,13 @@ pub(crate) type Mphf = FastPtrHash<NoHash, u64>;
 
 /// Spreads an integer key over all 64 bits, for use as an [`Mphf`] key.
 ///
-/// `mix` is a bijection, so distinct integers stay distinct keys.
+/// The multiply is Fibonacci hashing. Its constant is 2^64 divided by the golden ratio. It sends
+/// nearby integers far apart in the high bits, and [`Mphf`] picks a key's bucket from those bits.
+/// A product's low bits depend only on the key's low bits, so the shift folds the high bits into
+/// them.
+///
+/// The constant is odd, so the multiply is a bijection, and so is the shift. Distinct integers
+/// therefore stay distinct keys.
 #[inline(always)]
 pub(crate) fn mix(z: u64) -> u64 {
     let z = z.wrapping_mul(0x9E37_79B9_7F4A_7C15);
