@@ -783,3 +783,22 @@ class Truncation:
         """
         Which sequence of a pair is truncated.
         """
+
+def get_max_threads() -> int:
+    """
+    The most threads one encode uses, the calling thread included.
+
+    Returns:
+        int
+    """
+
+def set_max_threads(max_threads: int) -> None:
+    """
+    Sets the most threads one encode uses, the calling thread included, for the whole process.
+
+    `1` encodes serially, and `0` restores the default: every available core. A forked process
+    always encodes serially, and so does every encode while `TOKENIZERS_PARALLELISM` is `false`.
+
+    Args:
+        max_threads: int
+    """

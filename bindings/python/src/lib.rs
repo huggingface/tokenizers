@@ -11,6 +11,7 @@ mod encoding;
 mod error;
 mod input;
 mod options;
+mod parallelism;
 mod regex;
 mod repr;
 mod tokenizer;
@@ -42,6 +43,11 @@ mod tokenizers {
     use crate::regex::Regex;
     #[pymodule_export]
     use crate::tokenizer::Tokenizer;
+
+    #[pymodule_export]
+    use crate::parallelism::get_max_threads;
+    #[pymodule_export]
+    use crate::parallelism::set_max_threads;
 
     #[pymodule_export]
     use crate::components::decoders::decoders;

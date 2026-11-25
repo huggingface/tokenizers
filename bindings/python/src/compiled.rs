@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::num::NonZeroUsize;
 
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
@@ -18,6 +19,7 @@ use crate::encoding::Encoding;
 use crate::error::err;
 use crate::input::PyInput;
 use crate::options::OverrideSentinel;
+use crate::parallelism::serial_by_env;
 use crate::tokenizer::TokenizerSpec;
 use crate::type_hints::AddedTokens;
 use crate::type_hints::TokenIds;
@@ -62,17 +64,21 @@ impl CompiledTokenizer {
 }
 
 fn encode_options(
+    py: Python<'_>,
     add_special_tokens: bool,
     encode_special_tokens: bool,
     padding: OverrideSentinel<PaddingParams>,
     truncation: OverrideSentinel<TruncationParams>,
-) -> EncodeOptions {
+) -> PyResult<EncodeOptions> {
     let mut options = EncodeOptions::default();
     options.add_special_tokens = add_special_tokens;
     options.encode_special_tokens = encode_special_tokens;
     options.padding = padding.into();
     options.truncation = truncation.into();
-    options
+    if serial_by_env(py)? {
+        options.max_threads = NonZeroUsize::new(1);
+    }
+    Ok(options)
 }
 
 #[pymethods]
@@ -108,11 +114,12 @@ impl CompiledTokenizer {
         truncation: OverrideSentinel<TruncationParams>,
     ) -> PyResult<Encoding> {
         let options = encode_options(
+            py,
             add_special_tokens,
             encode_special_tokens,
             padding,
             truncation,
-        );
+        )?;
         // py.detach releases the GIL while the Rust code runs.
         let encoding = py
             .detach(|| self.encode_one(input, &options))
@@ -154,11 +161,12 @@ impl CompiledTokenizer {
         truncation: OverrideSentinel<TruncationParams>,
     ) -> PyResult<Vec<String>> {
         let options = encode_options(
+            py,
             add_special_tokens,
             encode_special_tokens,
             padding,
             truncation,
-        );
+        )?;
         // py.detach releases the GIL while the Rust code runs.
         py.detach(|| -> tk::Result<Vec<String>> {
             let encoding = self.encode_one(input, &options)?;
@@ -201,11 +209,12 @@ impl CompiledTokenizer {
         truncation: OverrideSentinel<TruncationParams>,
     ) -> PyResult<Vec<Encoding>> {
         let options = encode_options(
+            py,
             add_special_tokens,
             encode_special_tokens,
             padding,
             truncation,
-        );
+        )?;
         let inputs = Inputs::Batch(inputs.into_iter().map(Input::from).collect());
         // py.detach releases the GIL while the Rust code runs.
         let encodings = py

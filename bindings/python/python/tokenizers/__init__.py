@@ -16,6 +16,8 @@ from .tokenizers import (
     Tokenizer,
     Truncation,
     __version__,
+    get_max_threads,
+    set_max_threads,
 )
 
 __all__ = [
@@ -30,8 +32,10 @@ __all__ = [
     "Truncation",
     "__version__",
     "decoders",
+    "get_max_threads",
     "models",
     "normalizers",
     "pre_tokenizers",
     "processors",
+    "set_max_threads",
 ]
