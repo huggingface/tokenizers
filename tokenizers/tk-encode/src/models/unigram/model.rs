@@ -2,9 +2,8 @@ use super::{
     lattice::Lattice,
     trie::{Trie, TrieBuilder},
 };
-use crate::utils::word_cache::{Lookup, WordCache};
 use crate::{
-    pipeline::{self, Token},
+    pipeline::{self, Token, Word},
     tokenizer::Result,
 };
 use crate::{utils::cache::DEFAULT_CACHE_CAPACITY, vocab::bucket_vocab_store::BucketVocabStore};
@@ -391,44 +390,24 @@ impl Unigram {
     }
 }
 
-pub struct UnigramScratch {
-    /// Outlives the encode call that fills it, or it would never see a word twice.
-    pub(crate) word_cache: WordCache,
-}
-
 impl pipeline::Tokenize for Unigram {
-    type Scratch = UnigramScratch;
+    type Scratch = ();
 
-    fn init_scratch(&self) -> Self::Scratch {
-        Self::Scratch {
-            word_cache: WordCache::new(DEFAULT_CACHE_CAPACITY),
-        }
+    fn new_scratch(&self) {}
+
+    /// No cache when the model samples. A sampled encoding is one random draw, and a cache would
+    /// serve that same draw again.
+    fn word_cache_capacity(&self) -> Option<usize> {
+        (!self.samples()).then_some(DEFAULT_CACHE_CAPACITY)
     }
 
-    /// The word cache holds ids, not pieces. A hit skips the lattice, the `String` every piece
-    /// is built into, and the vocabulary lookup that turns each one back into an id.
-    fn tokenize(
+    fn tokenize_word(
         &self,
-        sequence: &str,
-        scratch: &mut Self::Scratch,
+        word: Word<'_>,
+        _scratch: &mut (),
         output: &mut Vec<pipeline::Token>,
     ) -> Result<()> {
-        if sequence.is_empty() {
-            return Ok(());
-        }
-        let mut placement = None;
-        if !self.samples() {
-            match scratch.word_cache.lookup(sequence.as_bytes()) {
-                Lookup::Hit(ids) => {
-                    output.extend(ids.iter().copied().map(Token::from));
-                    return Ok(());
-                }
-                Lookup::Miss(at) => placement = Some(at),
-            }
-        }
-
-        let start = output.len();
-        for string in self.encode(sequence)? {
+        for string in self.encode(word.text)? {
             match self.token_to_ids.token_to_id(&string) {
                 Some(id) => {
                     output.push(Token::from(id));
@@ -454,13 +433,6 @@ impl pipeline::Tokenize for Unigram {
             };
         }
 
-        // Sampling skipped the lookup, so `placement` is `None` and this stores
-        // nothing, which is what `samples` says has to happen.
-        if let Some(at) = placement {
-            scratch
-                .word_cache
-                .insert(at, output[start..].iter().map(|token| token.id()));
-        }
         Ok(())
     }
 }

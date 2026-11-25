@@ -8,7 +8,7 @@ use std::{
 
 use bitcannon::Span;
 
-use crate::pipeline::{Model, ModelScratch, PreTokenizerScratch, Tokenize};
+use crate::pipeline::{Model, ModelScratch, PreTokenizerScratch};
 
 #[derive(Default)]
 pub(crate) struct EncodeScratch {
@@ -54,7 +54,7 @@ impl ScratchPool {
     /// When the [`ScratchGuard`] gets dropped, the scratch buffer is pushed back to the pool.
     pub(crate) fn get<'a>(&'a self, model: &Model) -> ScratchGuard<'a> {
         self.get_with(|| EncodeScratch {
-            model: model.init_scratch(),
+            model: model.new_scratch(),
             split: PreTokenizerScratch::default(),
             pre_tokens: Vec::new(),
         })
@@ -363,7 +363,10 @@ mod tests {
                 scratch.pre_tokens.as_ptr() as usize,
                 scratch.pre_tokens.capacity(),
             ),
-            symbols: (bpe.symbols.as_ptr() as usize, bpe.symbols.capacity()),
+            symbols: (
+                bpe.model.symbols.as_ptr() as usize,
+                bpe.model.symbols.capacity(),
+            ),
         }
     }
 

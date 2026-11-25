@@ -12,10 +12,10 @@
 
 use std::hint::black_box;
 
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use tk_encode::pipeline::{
-    EncodeOptions, Model, PreTokenize, PreTokenizerScratch, Span, SpecialSegmentIterator, Tokenize,
-    Tokenizer, normalize_all,
+    EncodeOptions, PreTokenize, PreTokenizerScratch, Span, SpecialSegmentIterator, Tokenizer,
+    normalize_all,
 };
 
 const BATCH_SIZE: usize = 1_000;
@@ -129,26 +129,30 @@ pub fn encode(c: &mut Criterion) {
             });
         }
 
-        // ---- stage 4: the model, one call per pre-token ----
-        let words: Vec<&str> = spans.iter().map(|span| &normalized[span.range()]).collect();
-
-        // `tokenize` lives on the concrete model, not on the `Model` enum, so the
-        // row exists per model kind. Both fixtures here are BPE.
-        // Irrefutable in a `bpe`-only build, where `Model` has exactly one variant.
-        #[allow(irrefutable_let_patterns)]
-        if let Model::BPE(bpe) = tokenizer.get_model() {
-            group.bench_function("stage/model", |b| {
-                let mut scratch = bpe.init_scratch();
-                let mut out = Vec::new();
-                b.iter(|| {
-                    out.clear();
-                    for word in &words {
-                        bpe.tokenize(word, &mut scratch, &mut out).unwrap();
-                    }
-                    black_box(out.len())
-                })
-            });
-        }
+        // ---- stage 4: the model ----
+        // A new scratch per iteration, made outside the timing: every word starts unknown to the
+        // word cache, as in text the tokenizer has not seen. Reusing one scratch would time cache
+        // hits only, after the first iteration.
+        let mut pre_tokenizer_scratch = PreTokenizerScratch::default();
+        let pre_tokens = tokenizer
+            .get_pre_tokenizer()
+            .pre_tokens(&normalized, &mut pre_tokenizer_scratch, &mut spans)
+            .unwrap();
+        let model = tokenizer.get_model();
+        group.bench_function("stage/model", |b| {
+            let mut output = Vec::new();
+            b.iter_batched_ref(
+                || model.new_scratch(),
+                |scratch| {
+                    output.clear();
+                    model
+                        .tokenize_spans(pre_tokens, scratch, &mut output)
+                        .unwrap();
+                    black_box(output.len())
+                },
+                BatchSize::LargeInput,
+            )
+        });
 
         // No `stage/post-process` row: `Tokenizer::post_process` is private and
         // `PostProcessor` exposes only its templates, so that stage shows up today only

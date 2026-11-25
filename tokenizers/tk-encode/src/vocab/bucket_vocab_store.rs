@@ -27,39 +27,34 @@ const VOCAB_ID_MASK: u32 = FOLD_BIT - 1;
 
 pub(crate) const INLINE_KEY_BYTES: usize = 7;
 
+/// [`key_and_hash`] of the word `span` covers in `chunk`.
 ///
+/// A word of 7 bytes or fewer is packed with one 8-byte load from the chunk, then masked to its
+/// own bytes. The load reads past the word into the bytes that follow it in the chunk. Within 8
+/// bytes of the chunk's end there is nothing to read past, and the word is packed byte by byte.
 ///
+/// # Panics
 ///
-///
-/// # Safety
-/// `inline(always)`, and the long-word arm is a separate `inline(never)` function, because plain
-/// `#[inline]` left this outlined: a profile of warm english had 8.3% of self time inside
-/// `key_and_hash`, for what should be a masked load, an `or` and a multiply. LLVM weighs the whole
-/// body when it decides, and the body used to contain the ahash call for a word too long to pack, so
-/// the cheap path paid for the expensive one's size. Splitting them lets the pack inline into the
-/// span loop while the hash stays a call -- which is also the shape it wants, since the long arm is
-/// already dominated by hashing rather than by call overhead.
+/// When `span` is not inside `chunk`.
+// Inlined by hand, with the long-word hash out of line: plain `#[inline]` left this whole function
+// out of line, a call for what is a load, a mask and a multiply.
 #[inline(always)]
-pub(crate) fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) {
-    let len = word.len();
-    if len > INLINE_KEY_BYTES || readable < 8 {
-        return key_and_hash(word);
+pub(crate) fn lookup_key_and_hash(chunk: &[u8], span: bitcannon::Span) -> (u64, u64) {
+    let rest = &chunk[span.start as usize..];
+    let len = span.range().len();
+    if len <= INLINE_KEY_BYTES
+        && let Some(head) = rest.first_chunk::<8>()
+    {
+        // Little-endian, as in `key_and_hash`: the word's own bytes are the low bytes the mask keeps.
+        let key = (u64::from_le_bytes(*head) & KEY_MASK[len]) | LEN_TAG[len];
+        debug_assert_eq!(
+            key,
+            key_and_hash(&rest[..len]).0,
+            "masked load must match the stitched pack"
+        );
+        return (key, mix(key));
     }
-    // SAFETY: `readable >= 8` bytes exist from `word.as_ptr()`, and `len <= 7 < 8`.
-    // `from_le_bytes` rather than a `cast::<u64>()` reinterpret, because the key layout is
-    // little-endian: `key_and_hash` builds it with `u32::from_le_bytes`. A native load on a
-    // big-endian host would keep `word[8-len..8]` instead of `word[0..len]` once masked, and
-    // put `LEN_TAG` over `word[0]`.
-    let raw = u64::from_le_bytes(unsafe { word.as_ptr().cast::<[u8; 8]>().read_unaligned() });
-    // SAFETY: `len <= INLINE_KEY_BYTES == 7`, and both tables have 8 entries.
-    let (mask, tag) = unsafe { (*KEY_MASK.get_unchecked(len), *LEN_TAG.get_unchecked(len)) };
-    let key = (raw & mask) | tag;
-    debug_assert_eq!(
-        key,
-        key_and_hash(word).0,
-        "masked load must match the stitched pack"
-    );
-    (key, mix(key))
+    key_and_hash(&rest[..len])
 }
 
 /// A word too long to pack into the key: hash it for real. Kept out of line so that the packing
@@ -457,26 +452,17 @@ mod tests {
     }
 
     // The fast path masks one 8-byte load instead of stitching the word together, so both have to
-    // land on the same key. On big-endian a native load gives a different one: the mask keeps the
-    // wrong end of the word and the length tag lands on `word[0]`.
+    // land on the same key, for every start, every length and every distance to the buffer's end.
+    // On big-endian a native load gives a different one: the mask keeps the wrong end of the word.
     #[test]
     fn fast_path_matches_stitched_pack() {
-        // Words are slices of a bigger buffer -- that is what makes 8 bytes readable past the end.
         let buf: &[u8] = b"\x00\xffhello \xc0\xc1world\x80\x7f\x01\xfe\x00 the quick\xff";
-        for start in 0..8 {
-            for len in 0..=INLINE_KEY_BYTES + 3 {
-                let word = &buf[start..start + len];
-                let want = key_and_hash(word);
-                let readable = buf.len() - start;
+        for start in 0..buf.len() {
+            for len in 0..=(INLINE_KEY_BYTES + 3).min(buf.len() - start) {
+                let span = bitcannon::Span::new(start as u32, (start + len) as u32);
                 assert_eq!(
-                    key_and_hash_readable(word, readable),
-                    want,
-                    "start {start} len {len}"
-                );
-                // Under 8 readable bytes the load would run off the end, so it must not happen.
-                assert_eq!(
-                    key_and_hash_readable(word, len),
-                    want,
+                    lookup_key_and_hash(buf, span),
+                    key_and_hash(&buf[start..start + len]),
                     "start {start} len {len}"
                 );
             }

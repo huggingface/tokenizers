@@ -9,11 +9,10 @@ use crate::models::bpe::convert::Affixes;
 use crate::models::bpe::merge_hot_cold_queue::{QueueScratch, merge_with_queue};
 use crate::models::bpe::merge_multipass::merge_multipass;
 use crate::models::bpe::tables::BpeTables;
-use crate::pipeline::{self, PreTokens, Token};
+use crate::pipeline::{self, Token, Word};
 use crate::tokenizer::Result;
 use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, char_to_byte};
-use crate::utils::word_cache::{Lookup, MAX_INLINE_IDS, ProbeEmit, WordCache};
-use crate::vocab::bucket_vocab_store::{BucketVocabStore, key_and_hash, key_and_hash_readable};
+use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
 const GATE_MULTI: u16 = 8;
 const GATE_ASCII: u16 = 24;
@@ -45,11 +44,6 @@ fn content_start(bytes: &[u8]) -> usize {
         _ => 0,
     }
 }
-
-// The fused cache probe stores ids straight at a `*mut u32` pointing into the `Vec<Token>`
-// the caller is filling. That is only sound while a token is layout-identical to its id.
-const _: () = assert!(size_of::<Token>() == size_of::<u32>());
-const _: () = assert!(align_of::<Token>() == align_of::<u32>());
 
 pub struct BPE {
     pub(super) atoms: Atoms,
@@ -194,224 +188,49 @@ impl BPE {
     }
 }
 
-/// Per-thread scratch for BPE. Every buffer here is cleared, never reallocated, so tokenizing a
-/// sequence does not allocate.
+/// The buffers BPE merges a word in. They are cleared, never reallocated, so merging a word does
+/// not allocate.
 pub struct BpeScratch {
     /// Symbols of the word being merged.
     pub(crate) symbols: Vec<u32>,
     /// Entry arena and the two queue tiers.
     pub(crate) queue: QueueScratch,
-    /// Words already seen, so a repeat costs a probe instead of a merge. It lives in the scratch
-    /// so it outlives the encode call that fills it -- otherwise it would never see a word twice.
-    pub(crate) word_cache: Option<WordCache>,
 }
 
 impl pipeline::Tokenize for BPE {
     type Scratch = BpeScratch;
 
-    fn tokenize(
+    fn new_scratch(&self) -> BpeScratch {
+        BpeScratch {
+            symbols: Vec::with_capacity(64),
+            queue: QueueScratch::default(),
+        }
+    }
+
+    fn word_cache_capacity(&self) -> Option<usize> {
+        self.cache_capacity
+    }
+
+    /// Appends one id when the whole word is a vocabulary entry the model may use as is (see
+    /// [`BPE::prove_fold`]). Otherwise merges the word and appends the ids of its symbols.
+    fn tokenize_word(
         &self,
-        sequence: &str,
-        scratch: &mut Self::Scratch,
+        word: Word<'_>,
+        scratch: &mut BpeScratch,
         output: &mut Vec<Token>,
     ) -> Result<()> {
-        if sequence.is_empty() {
-            return Ok(());
-        }
-
-        let bytes = sequence.as_bytes();
-        let (key, hash) = key_and_hash(bytes);
-
-        let BpeScratch {
-            symbols,
-            queue,
-            word_cache,
-        } = scratch;
-
-        // Cache before fold, for the reason given in `tokenize_spans`: the cache is one load and
-        // the fold is an MPHF probe, so the fold must not run ahead of it.
-        let insert_at = if let Some(cache) = word_cache.as_mut() {
-            match cache.lookup_keyed(key, hash) {
-                Lookup::Hit(ids) => {
-                    output.extend(ids.iter().copied().map(Token::from));
-                    return Ok(());
-                }
-                Lookup::Miss(at) => Some(at),
-            }
-        } else {
-            None
-        };
-
-        if let Some(id) = self.fold_id_keyed(key, hash) {
+        if let Some(id) = self.fold_id_keyed(word.lookup_key, word.lookup_hash) {
             output.push(Token::from(id));
-            if let Some(cache) = word_cache.as_mut()
-                && let Some(at) = insert_at
-            {
-                cache.insert(at, std::iter::once(id));
-            }
             return Ok(());
         }
-
-        let start = output.len();
-        self.merge_word(sequence, symbols, queue);
-        // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
+        self.merge_word(word.text, &mut scratch.symbols, &mut scratch.queue);
+        // The merge engines work in internal ids. `unmap` turns them back into vocabulary ids.
         output.extend(
-            symbols
+            scratch
+                .symbols
                 .iter()
                 .map(|&symbol| Token::from(self.tables.unmap.at(symbol as usize))),
         );
-        if let Some(cache) = word_cache.as_mut()
-            && let Some(at) = insert_at
-        {
-            cache.insert(at, output[start..].iter().map(|token| token.id()));
-        }
-
         Ok(())
-    }
-
-    /// Every pre-token of a chunk in one call.
-    ///
-    /// Same work per word as [`Self::tokenize`]; what changes is what is *not* repeated.
-    /// The scratch is destructured once instead of once per word, the output is grown once for the
-    /// whole batch instead of being capacity-checked on every push, and the virtual call, the
-    /// slice and the `Result` happen once per chunk rather than once per pre-token.
-    // Inlining measure faster on x86
-    #[inline(always)]
-    fn tokenize_spans(
-        &self,
-        pre_tokens: PreTokens<'_>,
-        scratch: &mut Self::Scratch,
-        output: &mut Vec<Token>,
-    ) -> Result<()> {
-        let BpeScratch {
-            symbols,
-            queue,
-            word_cache,
-        } = scratch;
-        let chunk = pre_tokens.chunk();
-        let spans = pre_tokens.spans();
-
-        output.reserve(spans.len() + MAX_INLINE_IDS);
-        let mut capacity = output.capacity();
-        let mut cursor = output.len();
-        // A raw write cursor held across the whole chunk. `output.as_mut_ptr()` inside the loop had
-        // to be *reloaded from memory every span*: the loop also calls `set_len`, `reserve` and
-        // `extend` on `output`, so the optimiser cannot assume the buffer stayed where it was. That
-        // reload, the capacity test and the cursor arithmetic were a quarter of encode time in
-        // `tokenize_spans` itself, with nothing of the model in it. Now the fast path -- a cache hit
-        // writing inline ids -- touches only these two registers, and `dst` is refreshed solely on
-        // the paths that can actually move the buffer. This is the other half of gigatoken's
-        // `probe_emit_chunk`: loop-invariant cursors, refreshed only in the slow path.
-        // SAFETY: `cursor <= output.len() <= capacity`, so this is inside the allocation.
-        let mut dst = unsafe { output.as_mut_ptr().add(cursor) };
-
-        // Unwrapped once for the whole chunk. `word_cache` is an `Option<WordCache>` living in the
-        // scratch, so every `as_mut()` re-read its discriminant out of memory -- three times per
-        // span, on a table that is either there for the entire call or not at all. Holding
-        // `Option<&mut WordCache>` in a local keeps that test in a register, which is the cheap half
-        // of what gigatoken's `ProbeView` does by carrying the table base and mask across a chunk.
-        let mut cache_slot = word_cache.as_mut();
-
-        for (span, sequence) in pre_tokens.iter() {
-            if sequence.is_empty() {
-                continue;
-            }
-
-            if cursor + MAX_INLINE_IDS > capacity {
-                // SAFETY: `cursor` counts what has been written so far.
-                unsafe { output.set_len(cursor) };
-                output.reserve(spans.len() + MAX_INLINE_IDS);
-                capacity = output.capacity();
-                // `reserve` may have moved the buffer.
-                // SAFETY: `cursor` is what was written so far, so it is within the new allocation.
-                dst = unsafe { output.as_mut_ptr().add(cursor) };
-            }
-
-            // The cache goes first. It is one direct-mapped load; the fold is an MPHF probe, which
-            // is a pilot load plus a dependent entry load into the whole vocabulary. Running the
-            // fold ahead of the cache paid that on every pre-token including the ones the cache
-            // was about to answer, and on a warm cache that is nearly all of them.
-            //
-            // The two still agree on ids: `prove_fold` only sets the bit for an entry that merging
-            // its own text reproduces, so a folded word and a merged word give the same answer.
-            // What changes is that a foldable word now gets *inserted*, so its second and later
-            // occurrences come off the cache instead of re-probing the vocabulary.
-            let (key, hash) =
-                key_and_hash_readable(sequence.as_bytes(), chunk.len() - span.start as usize);
-
-            let mut placement = None;
-            if let Some(cache) = cache_slot.as_deref_mut() {
-                // SAFETY: the capacity check above leaves `MAX_INLINE_IDS` slots past `cursor`, and
-                // `Token` is a transparent `u32`.
-                let found = unsafe { cache.probe_emit_keyed(key, hash, dst.cast::<u32>()) };
-                match found {
-                    ProbeEmit::Wrote(n) => {
-                        cursor += n;
-                        // SAFETY: the probe wrote `n <= MAX_INLINE_IDS` ids, which the capacity
-                        // check above reserved room for.
-                        dst = unsafe { dst.add(n) };
-                        continue;
-                    }
-                    ProbeEmit::Hit(ids) => {
-                        // SAFETY: `cursor` counts what has been written so far.
-                        unsafe { output.set_len(cursor) };
-                        output.extend(ids.iter().map(|&id| Token::from(id)));
-                        cursor = output.len();
-                        capacity = output.capacity();
-                        // SAFETY: `cursor == output.len()`, inside the (possibly moved) allocation.
-                        dst = unsafe { output.as_mut_ptr().add(cursor) };
-                        continue;
-                    }
-                    ProbeEmit::Miss(at) => placement = Some(at),
-                }
-            }
-
-            // Cache miss. The fold still answers a word that is its own vocabulary entry in one
-            // probe, which beats running the merge engine for it.
-            if let Some(id) = self.fold_id_keyed(key, hash) {
-                // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
-                unsafe { dst.write(Token::from(id)) };
-                cursor += 1;
-                // SAFETY: one id written, and the capacity check reserved MAX_INLINE_IDS >= 1.
-                dst = unsafe { dst.add(1) };
-                if let Some(cache) = cache_slot.as_deref_mut()
-                    && let Some(at) = placement
-                {
-                    cache.insert(at, std::iter::once(id));
-                }
-                continue;
-            }
-
-            // SAFETY: `cursor` counts what the fast paths wrote.
-            unsafe { output.set_len(cursor) };
-            let start = output.len();
-            self.merge_word(sequence, symbols, queue);
-            // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
-            output.extend(
-                symbols
-                    .iter()
-                    .map(|&symbol| Token::from(self.tables.unmap.at(symbol as usize))),
-            );
-            if let Some(cache) = cache_slot.as_deref_mut()
-                && let Some(at) = placement
-            {
-                cache.insert(at, output[start..].iter().map(|token| token.id()));
-            }
-            cursor = output.len();
-            capacity = output.capacity();
-            // SAFETY: `cursor == output.len()`; `extend` above may have moved the buffer.
-            dst = unsafe { output.as_mut_ptr().add(cursor) };
-        }
-        // SAFETY: `cursor` counts every token written, by the fast paths and the slow one alike.
-        unsafe { output.set_len(cursor) };
-        Ok(())
-    }
-
-    fn init_scratch(&self) -> Self::Scratch {
-        Self::Scratch {
-            symbols: Vec::with_capacity(64),
-            queue: QueueScratch::default(),
-            word_cache: self.cache_capacity.map(WordCache::new),
-        }
     }
 }

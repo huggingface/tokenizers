@@ -83,6 +83,20 @@ impl<'a> PreTokens<'a> {
     }
 }
 
+#[cfg(test)]
+impl<'a> PreTokens<'a> {
+    /// `spans` over `text`, after checking that each is a char-boundary range of it.
+    pub(crate) fn checked(text: &'a str, spans: &'a [Span]) -> Self {
+        for span in spans {
+            assert!(
+                text.get(span.range()).is_some(),
+                "{span:?} is not a char-boundary range of {text:?}"
+            );
+        }
+        Self { chunk: text, spans }
+    }
+}
+
 /// The working buffers a [`PreTokenize`] impl needs to split a text into pre-tokens.
 #[derive(Default)]
 pub struct PreTokenizerScratch {

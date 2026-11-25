@@ -56,8 +56,7 @@ use std::iter::Iterator;
 use wide::i8x16;
 
 #[cfg(test)]
-use crate::vocab::bucket_vocab_store::INLINE_KEY_BYTES;
-use crate::vocab::bucket_vocab_store::key_and_hash;
+use crate::vocab::bucket_vocab_store::{INLINE_KEY_BYTES, key_and_hash};
 
 pub const MAX_INLINE_IDS: usize = 3;
 
@@ -111,32 +110,22 @@ impl<'a> WordCache {
     /// Looks up a word in the cache.
     /// On [Lookup::Hit], returns the ids it encodes to.
     /// On [Lookup::Miss], returns the location in [Self::cached_words] where it should be inserted
-    #[inline]
-    // Only the models that key the cache on the word itself reach this -- `unigram` and
-    // `wordpiece`. `bpe` computes the key once and goes through `lookup_keyed`, so a build with
-    // neither of those two features on has no caller.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn lookup(&'a self, word: &[u8]) -> Lookup<'a> {
         self.lookup_placed(make_lookup_key(word, self.placement_mask))
     }
 
-    #[inline]
-    pub fn lookup_keyed(&'a self, key: u64, hash: u64) -> Lookup<'a> {
-        self.lookup_placed(placement_from(LookupKey(key), hash, self.placement_mask))
-    }
-
-    /// [`Self::lookup_keyed`] that emits straight into the caller's buffer.
+    /// Looks up a word by its key and hash.
     ///
-    /// An inline hit writes its ids through `dst` and reports how many count, so the caller neither
-    /// re-reads the slot nor branches on the payload. A spilled hit or a miss comes back as
-    /// [`ProbeEmit::Hit`] / [`ProbeEmit::Miss`] with nothing written.
+    /// An inline hit writes its ids to `dst` and returns how many there are. A spilled hit or a
+    /// miss writes nothing, and returns [`ProbeEmit::Hit`] or [`ProbeEmit::Miss`].
     ///
     /// # Safety
     ///
-    /// `dst` must be valid for writes of [`MAX_INLINE_IDS`] `u32`s. The inline path fills every
-    /// lane unconditionally -- lanes past `ids_len` are written with whatever the slot holds -- so
-    /// the room has to be there even when fewer ids end up counting.
-    #[inline]
+    /// `dst` must be valid for writes of [`MAX_INLINE_IDS`] `u32`s. An inline hit writes all of
+    /// them, even when the word has fewer ids.
+    // Forced inline: called once per model, the compiler kept it out of line, a call per word.
+    #[inline(always)]
     pub unsafe fn probe_emit_keyed(&'a self, key: u64, hash: u64, dst: *mut u32) -> ProbeEmit<'a> {
         let placement = placement_from(LookupKey(key), hash, self.placement_mask);
         // SAFETY: `index` is masked with `placement_mask` (`next_pow2 - 1`), and the table is
@@ -410,9 +399,7 @@ impl<'a> SelfContained<'a> {
 pub struct LookupKey(u64);
 
 /// The key, home slot and tag of a word.
-#[inline]
-// Reached from `lookup` and the tests, so it is dead in exactly the configurations `lookup` is.
-#[allow(dead_code)]
+#[cfg(test)]
 fn make_lookup_key(word: &[u8], placement_mask: u64) -> InsertPlacement {
     let (key, hash) = key_and_hash(word);
     placement_from(LookupKey(key), hash, placement_mask)
