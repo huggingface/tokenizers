@@ -1,7 +1,7 @@
 use std::{
     mem,
     sync::{
-        Mutex, PoisonError,
+        Mutex,
         atomic::{AtomicUsize, Ordering},
     },
 };
@@ -62,32 +62,46 @@ impl ScratchPool {
 
     pub(crate) fn get_with<'a>(&'a self, init: impl FnOnce() -> EncodeScratch) -> ScratchGuard<'a> {
         let shard = scratch_shard();
-        // The Mutex lock is held just long enough to pop the scratch out of the sub-pool
-        let mut taken = self.0[shard]
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop();
-        if taken.is_none() {
-            taken = self.take_from_another(shard);
-        }
         ScratchGuard {
-            scratch: taken.unwrap_or_else(init),
+            scratch: self.take(shard).unwrap_or_else(init),
             pool: self,
             shard,
         }
     }
 
-    /// Take a scratch from a sub-pool other than `own`, for a thread whose own is empty.
+    /// Takes a scratch from the sub-pool `own`, or else from the first other one that has one.
     ///
-    /// `try_lock` so a miss skips a busy sub-pool instead of queueing behind its owner.
-    fn take_from_another(&self, own: usize) -> Option<EncodeScratch> {
-        (1..self.0.len())
-            .map(|step| (own + step) % self.0.len())
-            .find_map(|shard| self.0[shard].try_lock().ok()?.pop())
+    /// Never waits on a lock: a busy sub-pool is skipped. In a forked child, a sub-pool locked by
+    /// a thread the fork didn't copy stays locked forever.
+    fn take(&self, own: usize) -> Option<EncodeScratch> {
+        for step in 0..SCRATCH_SHARDS {
+            let shard = (own + step) % SCRATCH_SHARDS;
+            let Ok(mut scratches) = self.0[shard].try_lock() else {
+                continue;
+            };
+            if let Some(scratch) = scratches.pop() {
+                return Some(scratch);
+            }
+        }
+        None
+    }
+
+    /// Returns a scratch to the sub-pool `own`, or else to the first other one that is free.
+    ///
+    /// Never waits on a lock, like [`Self::take`]. Drops the scratch if every sub-pool is busy.
+    fn put(&self, own: usize, scratch: EncodeScratch) {
+        for step in 0..SCRATCH_SHARDS {
+            let shard = (own + step) % SCRATCH_SHARDS;
+            if let Ok(mut scratches) = self.0[shard].try_lock() {
+                scratches.push(scratch);
+                return;
+            }
+        }
     }
 
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
+        use std::sync::PoisonError;
         self.0
             .iter()
             .map(|shard| shard.lock().unwrap_or_else(PoisonError::into_inner).len())
@@ -112,11 +126,7 @@ impl Drop for ScratchGuard<'_> {
     fn drop(&mut self) {
         // Steals the scratch buffer from self, replaces it with ModelScratch::default()
         let scratch = mem::take(&mut self.scratch);
-        // Push the scratch back in the pool
-        self.pool.0[self.shard]
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(scratch);
+        self.pool.put(self.shard, scratch);
     }
 }
 
@@ -278,7 +288,7 @@ mod tests {
     // Sharding must not turn "the pool has a scratch" into "this thread has none". A thread whose
     // own sub-pool is empty has to take one that exists somewhere else rather than build, or a pool
     // serving threads that come and go would allocate alongside the scratches it is already
-    // holding. Driven through `take_from_another` rather than through a second thread on purpose:
+    // holding. Driven through `take` rather than through a second thread on purpose:
     // sub-pool indices come from a counter shared with every other test in the binary, so which
     // index a spawned thread lands on is not something a test can pin down.
     #[test]
@@ -291,7 +301,7 @@ mod tests {
 
         let elsewhere = (scratch_shard() + 1) % SCRATCH_SHARDS;
         assert!(
-            pool.take_from_another(elsewhere).is_some(),
+            pool.take(elsewhere).is_some(),
             "a sub-pool with nothing in it did not find the scratch another one held"
         );
         assert_eq!(
@@ -474,5 +484,38 @@ mod tests {
         };
         let cache = bpe.word_cache.as_mut().expect("BPE encodes with a cache");
         assert_eq!(cache.lookup(b"helo").hit(), Some(&[5u32, 3][..]));
+    }
+
+    /// A thread the fork didn't copy may hold this thread's sub-pool lock, and it never unlocks
+    /// in the child. The child must still encode, and still reuse its scratch.
+    #[cfg(unix)]
+    #[test]
+    fn child_forked_while_its_sub_pool_is_locked_reuses_its_scratch() {
+        use crate::test_utils::in_forked_child;
+        use std::sync::mpsc;
+
+        let pool = ScratchPool::new();
+        let shard = scratch_shard();
+        let (locked_tx, locked_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        std::thread::scope(|scope| {
+            let pool = &pool;
+            scope.spawn(move || {
+                let _held = pool.0[shard].lock().unwrap();
+                locked_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            });
+            locked_rx.recv().unwrap();
+
+            let child_ok = in_forked_child(|| {
+                let built = AtomicUsize::new(0);
+                drop(pool.get_with(|| counting_init(&built)));
+                drop(pool.get_with(|| counting_init(&built)));
+                i32::from(built.load(Ordering::Relaxed) != 1)
+            });
+
+            release_tx.send(()).unwrap();
+            assert!(child_ok, "the child hung, or built a second scratch");
+        });
     }
 }

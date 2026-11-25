@@ -119,6 +119,9 @@ pub mod pre_tokenizers;
 pub mod tokenizer;
 pub mod vocab;
 
+#[cfg(all(test, unix))]
+mod test_utils;
+
 // Re-export from tokenizer
 pub use tokenizer::*;
 
