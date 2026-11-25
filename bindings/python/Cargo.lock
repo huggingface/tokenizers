@@ -1161,7 +1161,6 @@ dependencies = [
  "bitcannon",
  "dary_heap",
  "fancy-regex",
- "libc",
  "log",
  "memchr",
  "ptr_hash",

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::sync::TryLockError;
-use std::sync::atomic::AtomicPtr;
+use std::sync::atomic::AtomicU32;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
@@ -29,53 +29,42 @@ struct CachedPool {
     generation: usize,
 }
 
-type PoolCache = Mutex<Option<CachedPool>>;
+static POOL_CACHE: Mutex<Option<CachedPool>> = Mutex::new(None);
 
-/// The pool cache until the first `fork()`.
-static FIRST_POOL_CACHE: PoolCache = Mutex::new(None);
-
-/// The pool cache [`pool`] reads: [`FIRST_POOL_CACHE`], or a fresh one in a forked child.
+/// The id of the process that owns the pool. Any other process is a forked child.
 ///
-/// `fork()` copies the whole memory but only the calling thread: the child's copy of the cache may
-/// be locked by a thread that doesn't exist there, and its pool has no worker threads (dropping it
-/// can deadlock). So the child points this at a fresh cache, and leaks the old one.
-static POOL_CACHE: AtomicPtr<PoolCache> = AtomicPtr::new((&raw const FIRST_POOL_CACHE).cast_mut());
+/// `fork()` copies memory but only the calling thread, so locks held by other threads stay locked
+/// in the child. A thread the child starts can wait on one of them forever, so children run
+/// serially.
+static POOL_OWNER: AtomicU32 = AtomicU32::new(0);
 
-fn pool_cache() -> &'static PoolCache {
-    // SAFETY: points to `FIRST_POOL_CACHE` or to a leaked `Box`, neither ever freed
-    unsafe { &*POOL_CACHE.load(Ordering::Acquire) }
+/// Makes this process the [`POOL_OWNER`], unless a process already is.
+///
+/// Called when a tokenizer is built, not only in [`pool`]. Workers are often forked before the
+/// first input long enough to ask for a pool.
+pub(crate) fn claim_pool() {
+    let _ = POOL_OWNER.compare_exchange(0, process_id(), Ordering::Relaxed, Ordering::Relaxed);
 }
 
-/// Registers the fork handler that gives a forked child a fresh pool cache.
-///
-/// `Once`: no caller proceeds before the handler is registered.
+/// Only unix can fork, and [`std::process::id`] panics on targets without processes (wasm).
 #[cfg(unix)]
-fn register_fork_handler() {
-    use std::sync::Once;
-    static REGISTERED: Once = Once::new();
-    // allocating is fine here: glibc and libSystem unlock malloc before running child handlers
-    extern "C" fn switch_to_fresh_cache() {
-        POOL_CACHE.store(Box::leak(Box::new(Mutex::new(None))), Ordering::Release);
-    }
-    REGISTERED.call_once(|| {
-        // SAFETY: the handler only allocates and stores an atomic
-        unsafe {
-            let _ = libc::pthread_atfork(None, None, Some(switch_to_fresh_cache));
-        }
-    });
+fn process_id() -> u32 {
+    std::process::id()
 }
 
 #[cfg(not(unix))]
-fn register_fork_handler() {}
+fn process_id() -> u32 {
+    1
+}
 
 /// How many times [`try_lock_briefly`] retries a held lock before giving up.
 const LOCK_ATTEMPTS: u32 = 64;
 
-/// Takes the [`pool_cache`] lock, or gives up after [`LOCK_ATTEMPTS`] tries: the holder may be
+/// Takes the [`POOL_CACHE`] lock, or gives up after [`LOCK_ATTEMPTS`] tries: the holder may be
 /// building a pool, and encoding serially beats waiting for it.
 fn try_lock_briefly() -> Option<MutexGuard<'static, Option<CachedPool>>> {
     for attempt in 0..LOCK_ATTEMPTS {
-        match pool_cache().try_lock() {
+        match POOL_CACHE.try_lock() {
             Ok(g) => return Some(g),
             Err(TryLockError::Poisoned(p)) => return Some(p.into_inner()),
             Err(TryLockError::WouldBlock) if attempt < LOCK_ATTEMPTS / 2 => std::hint::spin_loop(),
@@ -85,8 +74,13 @@ fn try_lock_briefly() -> Option<MutexGuard<'static, Option<CachedPool>>> {
     None
 }
 
+/// The shared worker pool, or `None` to encode serially: on one core, under contention, or in a
+/// forked child.
 pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
-    register_fork_handler();
+    claim_pool();
+    if POOL_OWNER.load(Ordering::Relaxed) != process_id() {
+        return None;
+    }
 
     let generation = POOL_GEN.load(Ordering::Acquire);
     // callers that find the lock held encode serially, so only one of them builds a pool
@@ -255,27 +249,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use crate::test_utils::in_forked_child;
     use std::sync::PoisonError;
 
     /// Tests touching the process-wide pool run one at a time: they hold its lock.
     static POOL_TESTS: Mutex<()> = Mutex::new(());
-
-    /// Forks a child that runs `child` and `_exit`s with its code, killed after 10s instead of
-    /// hanging; returns whether it exited 0.
-    #[cfg(unix)]
-    fn in_forked_child(child: impl FnOnce() -> i32) -> bool {
-        // SAFETY: the child only runs `child` and `_exit`s
-        let pid = unsafe { libc::fork() };
-        if pid == 0 {
-            unsafe {
-                libc::alarm(10);
-                libc::_exit(child());
-            }
-        }
-        let mut status = 0;
-        assert_eq!(unsafe { libc::waitpid(pid, &mut status, 0) }, pid);
-        libc::WIFEXITED(status) && libc::WEXITSTATUS(status) == 0
-    }
 
     #[test]
     fn test_maybe_parallel_iterator() {
@@ -311,47 +290,50 @@ mod tests {
         assert_eq!(seen.len(), 1, "contended callers built pools of their own");
     }
 
-    /// A child forked while another thread holds the cache lock (as a build does) still gets a pool.
+    /// A thread started in a forked child can wait forever on a lock held by a thread the fork
+    /// didn't copy, so the child must encode serially.
     #[cfg(unix)]
     #[test]
-    fn child_forked_mid_lock_gets_a_pool() {
+    fn forked_child_gets_no_pool() {
         let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
         if num_threads() == 1 {
             return; // no pool on a one-core machine
         }
-        register_fork_handler();
-        let (held_tx, held_rx) = std::sync::mpsc::channel();
-        let holder = std::thread::spawn(move || {
-            let _held = try_lock_briefly();
-            held_tx.send(()).unwrap();
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        });
-        held_rx.recv().unwrap();
-        let ok = in_forked_child(|| i32::from(pool().is_none()));
-        holder.join().unwrap();
-        assert!(ok, "the child got no pool");
+        assert!(pool().is_some(), "the parent gets a pool");
+        let child_ok = in_forked_child(|| i32::from(pool().is_some()));
+        assert!(child_ok, "the forked child got a pool");
     }
 
-    /// The parent's pool has no workers in a forked child: the child must build and use its own.
+    /// Workers are usually forked after loading, before any input long enough to ask for a pool.
     #[cfg(unix)]
     #[test]
-    fn child_runs_on_a_pool_of_its_own() {
+    fn child_forked_after_load_gets_no_pool() {
+        use crate::models::bpe::{BPE, BpeConfig};
+        use crate::pipeline::{Model, PostProcessor, PreTokenizer, Tokenizer};
+
         let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
         if num_threads() == 1 {
             return; // no pool on a one-core machine
         }
-        let parent = pool().expect("a pool");
-        let parent = Arc::as_ptr(&parent) as usize;
-        let ok = in_forked_child(|| {
-            let Some(pool) = pool() else { return 1 };
-            if Arc::as_ptr(&pool) as usize == parent {
-                return 2;
-            }
-            // hangs (and the alarm kills the child) if the pool has no workers
-            let sum: u32 = pool.install(|| (0..1_000u32).into_par_iter().sum());
-            i32::from(sum != 499_500)
-        });
-        assert!(ok, "the child didn't get a working pool of its own");
+        POOL_OWNER.store(0, Ordering::Relaxed);
+        let bpe = BPE::from_config(BpeConfig {
+            vocab: [("a".to_string(), 0u32)].into_iter().collect(),
+            ..BpeConfig::default()
+        })
+        .expect("a one-token vocab is valid");
+        let _loaded = Tokenizer::from_parts(
+            Default::default(),
+            Vec::new(),
+            PreTokenizer::None,
+            Model::BPE(bpe),
+            PostProcessor::default(),
+            None,
+            Default::default(),
+            None,
+            None,
+        );
+        let child_ok = in_forked_child(|| i32::from(pool().is_some()));
+        assert!(child_ok, "a child forked after load got a pool");
     }
 
     #[test]

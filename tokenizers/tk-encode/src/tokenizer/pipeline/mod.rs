@@ -277,6 +277,8 @@ impl Tokenizer {
             .filter(|token| model.token_to_id(token).is_none())
             .count();
         let total_vocab_size = model.get_vocab_size() + added_outside_model;
+        #[cfg(feature = "parallelism")]
+        crate::utils::parallelism::claim_pool();
         Self {
             inner: Arc::new(TokenizerInner {
                 added_vocabulary,
