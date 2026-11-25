@@ -50,7 +50,7 @@ Every component, at every depth, is an object tagged with `"type"`.
 
 | slot | `"type"` |
 |---|---|
-| **normalizer** | `Sequence` `BertNormalizer` `ByteLevel` `Lowercase` `MetaspaceNormalizer` `NFC` `NFD` `NFKC` `NFKD` `Nmt` `Precompiled` `Prepend` `Replace` `Strip` `StripAccents` |
+| **normalizer** | `Sequence` `BertNormalizer` `ByteLevel` `Lowercase` `NFC` `NFD` `NFKC` `NFKD` `Nmt` `Precompiled` `Prepend` `Replace` `Strip` `StripAccents` |
 | **piece_normalizer** | `Metaspace` `PrefixSpace` |
 | **pre_tokenizer** | `Sequence` `BertPreTokenizer` `CharDelimiterSplit` `Digits` `FixedLength` `Punctuation` `Split` `UnicodeScripts` `Whitespace` `WhitespaceSplit` |
 | **post_processor** | `TemplateProcessing` |

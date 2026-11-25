@@ -202,10 +202,6 @@ const IDEMPOTENT: &[(&str, &str)] = &[
     ("normalizer",     r#"{"type": "Lowercase"}"#),
     ("normalizer",     r#"{"type": "Prepend", "prepend": "_"}"#),
     ("normalizer",     r#"{"type": "Replace", "pattern": {"String": " "}, "content": "_"}"#),
-    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "always", "drop_whitespace": false}"#),
-    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "first", "drop_whitespace": false}"#),
-    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "never", "drop_whitespace": false}"#),
-    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "always", "drop_whitespace": true}"#),
     ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "drop_whitespace": false}"#),
     ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "first", "drop_whitespace": false}"#),
     ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "never", "drop_whitespace": false}"#),
@@ -304,11 +300,7 @@ fn padding_round_trips() {
 #[test]
 fn the_canonical_shape_is_tagged_versioned_and_null_where_absent() {
     let text = rewrite(&config(&[
-        (
-            "normalizer",
-            r#"{"type": "MetaspaceNormalizer", "replacement": "▁",
-            "prepend": "always", "drop_whitespace": false}"#,
-        ),
+        ("normalizer", r#"{"type": "Lowercase"}"#),
         ("pre_tokenizer", r#"{"type": "Whitespace"}"#),
         ("decoder", r#"{"type": "Fuse"}"#),
     ]));

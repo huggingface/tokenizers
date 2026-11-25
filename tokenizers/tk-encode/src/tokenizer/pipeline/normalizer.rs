@@ -11,8 +11,8 @@ use crate::normalizers::{
     unicode::{NFC, NFD, NFKC, NFKD, Nmt},
 };
 use crate::normalizers::{
-    byte_level::ByteLevel as ByteLevelNormalizer, metaspace::MetaspaceNormalizer, prepend::Prepend,
-    replace::Replace, strip::Strip, utils::Lowercase,
+    byte_level::ByteLevel as ByteLevelNormalizer, prepend::Prepend, replace::Replace, strip::Strip,
+    utils::Lowercase,
 };
 use crate::tokenizer::Result;
 
@@ -27,8 +27,6 @@ pub trait Normalize {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Normalizer {
-    /// This used to be a pretokenizer, it makes more sense as a normalizer.
-    Metaspace(MetaspaceNormalizer),
     Replace(Replace),
     Prepend(Prepend),
     Strip(Strip),
@@ -99,7 +97,6 @@ impl Normalize for NormalizerChain<'_> {
 impl Normalize for Normalizer {
     fn normalize<'a>(&self, input: &'a str, offset: usize) -> Result<Cow<'a, str>> {
         match self {
-            Self::Metaspace(normalizer) => normalizer.normalize(input, offset),
             Self::Replace(normalizer) => normalizer.normalize(input, offset),
             Self::Prepend(normalizer) => normalizer.normalize(input, offset),
             Self::Strip(normalizer) => normalizer.normalize(input, offset),

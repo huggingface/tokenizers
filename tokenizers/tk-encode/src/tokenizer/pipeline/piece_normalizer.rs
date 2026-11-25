@@ -6,15 +6,14 @@
 //!
 //! [`Tokenizer::encode`]: super::Tokenizer::encode
 
-use crate::normalizers::metaspace::MetaspaceNormalizer;
+use crate::piece_normalizers::{Metaspace, PrefixSpace};
 
 /// Rewrites each piece of text between added tokens, after they are cut.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum PieceNormalizer {
-    Metaspace(MetaspaceNormalizer),
-    /// Writes a space at the start of a piece that does not start with one.
-    PrefixSpace,
+    Metaspace(Metaspace),
+    PrefixSpace(PrefixSpace),
 }
 
 impl PieceNormalizer {
@@ -23,12 +22,7 @@ impl PieceNormalizer {
     pub fn normalize_into(&self, piece: &str, opens_sequence: bool, out: &mut String) {
         match self {
             Self::Metaspace(metaspace) => metaspace.normalize_into(piece, opens_sequence, out),
-            Self::PrefixSpace => {
-                if !piece.is_empty() && !piece.starts_with(' ') {
-                    out.push(' ');
-                }
-                out.push_str(piece);
-            }
+            Self::PrefixSpace(prefix_space) => prefix_space.normalize_into(piece, out),
         }
     }
 }
