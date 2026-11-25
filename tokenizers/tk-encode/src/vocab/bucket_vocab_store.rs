@@ -68,7 +68,10 @@ pub(crate) fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) 
 /// would cost more than the call.
 #[inline(never)]
 fn key_and_hash_long(word: &[u8], len: usize) -> (u64, u64) {
-    let hash = KEY_HASHER.hash_one(word) | len as u64;
+    // The length is bound into the digest half (bits 32..), so a stored digest cannot be matched
+    // by a word of a different length. `^` rather than `|`: `|` would overwrite those bits instead
+    // of mixing into them, costing up to 16 bits of the digest.
+    let hash = KEY_HASHER.hash_one(word) ^ (len as u64) << 32;
     (hash, hash)
 }
 
@@ -90,26 +93,31 @@ pub(crate) fn key_and_hash(word: &[u8]) -> (u64, u64) {
     } else {
         0
     };
-    let key = raw | (len as u64);
+    // The length goes in the top byte, which `KEY_MASK` leaves free for every length <= 7.
+    let key = raw | (len as u64) << 56;
     (key, mix(key))
 }
 
-/// One MPHF slot: eight bytes, so a probe is a single load.
+/// One MPHF slot: sixteen bytes, so a probe is a single load.
 ///
-/// The hash picks the slot and `digest` confirms it -- the key itself is never stored, which is why
-/// a query cannot tell a collision from a hit on its own and does not need to (see [`BucketVocabStore::get_bytes`]).
+/// The hash picks the slot and the stored hash confirms it. The stored hash is the *whole* 64-bit
+/// key, not a fold of it: a 32-bit digest gives a false hit every 2^32 lookups, which is reachable
+/// by search in seconds (see huggingface/tokenizers#2722), and comparing the other 32 bits costs
+/// nothing -- it is the same load and the same one-instruction compare.
+///
 /// A slot the build never wrote stays [`Default`], and occupancy is read off the parallel `spans`.
 ///
 /// TODO: let's detail the single load design, the key mask, the INLINE_KEY_BYTES etc
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 struct Entry {
-    digest: u32,
+    digest: u64,
     /// The token id in the low 31 bits, [`FOLD_BIT`] in the top.
     id: u32,
 }
 
-const _: () = assert!(size_of::<Entry>() == 8);
+// 16 bytes is still one cache line fetch, so the wider digest is free at probe time.
+const _: () = assert!(size_of::<Entry>() == 16);
 
 static KEY_MASK: [u64; 8] = [
     0x0000_0000_0000_0000,
@@ -121,12 +129,16 @@ static KEY_MASK: [u64; 8] = [
     0x0000_FFFF_FFFF_FFFF,
     0x00FF_FFFF_FFFF_FFFF,
 ];
-static LEN_TAG: [u64; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
-
-#[inline(always)]
-fn digest_of(hash: u64) -> u32 {
-    (hash >> 32) as u32
-}
+static LEN_TAG: [u64; 8] = [
+    0 << 56,
+    1 << 56,
+    2 << 56,
+    3 << 56,
+    4 << 56,
+    5 << 56,
+    6 << 56,
+    7 << 56,
+];
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Span {
@@ -255,10 +267,7 @@ impl BucketVocabStore {
             );
             let (_, hash) = key_and_hash(s.as_slice());
             let slot = mphf.index(&hash);
-            entries[slot] = Entry {
-                digest: digest_of(hash | s.len() as u64),
-                id: *id,
-            };
+            entries[slot] = Entry { digest: hash, id: *id };
             spans[slot] = Span {
                 start: bytes.len() as u32,
                 len: s.len() as u16,
@@ -292,8 +301,9 @@ impl BucketVocabStore {
 
     /// This function is the equivalent of `get` on a HashaMap, it return the id
     /// corresponding to the key `q`. Since `mphf` always return a slot, we check
-    /// whether the token indexed by that slot actually match the query. We don't
-    /// care about collisions on query because of this!
+    /// whether the token indexed by that slot actually match the query: the stored
+    /// digest is the query's own 64-bit hash, so a different word cannot match it
+    /// short of a 2^-64 collision, which `build` rejects.
     #[inline]
     pub(crate) fn get_bytes(&self, q: &[u8]) -> Option<u32> {
         if self.entries.is_empty() {
@@ -301,11 +311,10 @@ impl BucketVocabStore {
         }
         let (_, hash) = key_and_hash(q);
         let slot = self.mphf.index(&hash);
-        let len = self.spans[slot].len as usize;
         let e = self.entries[slot];
-
-        // TODO: we used to check en == q.len() && self.bytes[start..start + len] == *q
-        (e.digest == digest_of(hash) && q.len() == len).then_some(e.id & VOCAB_ID_MASK)
+        // The length is inside the hash on both arms (top byte of the key for <= 7 bytes, bits
+        // 32.. for the hashed ones), so equal hashes mean equal words: no span load, no memcmp.
+        (e.digest == hash).then_some(e.id & VOCAB_ID_MASK)
     }
 
     #[inline]
@@ -316,9 +325,8 @@ impl BucketVocabStore {
         }
         let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
-        // TODO: we used to check en == q.len() && self.bytes[start..start + len] == *q
-        // At this point the key already contains the length normally
-        (e.digest == digest_of(hash)).then_some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
+        // Same check as `get_bytes`: the full hash, length included.
+        (e.digest == hash).then_some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
     }
 
     /// Records that this token folds to itself. Called once per entry at load, after the proof.
@@ -590,5 +598,43 @@ mod tests {
         assert_eq!(vocab.get_bytes(&raw), Some(0));
         assert_eq!(vocab.id_to_token_bytes(0), Some(raw.as_slice()));
         assert_eq!(vocab.id_to_token(0), Some("\u{fffd}\u{fffd}".to_string()));
+    }
+
+    /// huggingface/tokenizers#2722: a word whose *32-bit* digest matches an unrelated token used to be
+    /// accepted as that token, because the query path verified only `digest_of(hash)`.
+    ///
+    /// This fixture is not searched, it is derived: `mix` is a bijection and `unmix = mix^-1` is
+    /// `x ^ (x>>29) ^ (x>>58)`, then `* C^-1 mod 2^64`. So for any token `t` (<= 7 bytes, where
+    /// every byte string is a valid key) you pick the high half of `mix(key(t))`, walk the low half
+    /// until `unmix` lands on a 7-byte key that the MPHF sends to the same slot, and you have a
+    /// collision -- 555 inversions for this vocabulary, and about `256 * vocab_size` for any real
+    /// one. That is why a 32-bit digest cannot be the verifier, even if nobody searches 2^32.
+    #[test]
+    fn forged_32_bit_digest_collision_is_rejected() {
+        let toks: [&[u8]; 6] = [b"h", b"e", b"l", b"o", b"hello", b"tokeniz"];
+        let vocab = BucketVocabStore::build(
+            toks.iter()
+                .enumerate()
+                .map(|(i, t)| (t.to_vec(), i as u32))
+                .collect(),
+        )
+        .unwrap();
+
+        let query: &[u8] = &[170, 103, 222, 207, 37, 184, 110];
+        // The fixture must still be a 32-bit collision, or this test stops testing anything.
+        let (_, hash) = key_and_hash(query);
+        let slot = vocab.mphf.index(&hash);
+        assert_eq!(
+            (vocab.entries[slot].digest >> 32) as u32,
+            (hash >> 32) as u32,
+            "fixture no longer collides on the 32-bit digest: regenerating it needs unmix"
+        );
+        // Same length as the token it collides with, so the length check does not save us either.
+        assert_eq!(query.len(), vocab.spans[slot].len as usize);
+
+        assert_eq!(vocab.get_bytes(query), None);
+        assert_eq!(vocab.get_keyed_foldable(0, hash), None);
+        // ...while the token it used to be confused with still resolves.
+        assert_eq!(vocab.get_bytes(b"tokeniz"), Some(5));
     }
 }
