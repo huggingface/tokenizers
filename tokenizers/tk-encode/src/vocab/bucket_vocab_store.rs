@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use ahash::RandomState;
 use ptr_hash::PtrHashParams;
@@ -7,12 +8,15 @@ use std::fmt;
 use crate::Result;
 use crate::utils::perfect_hash::{Mphf, mix};
 
-static KEY_HASHER: RandomState = RandomState::with_seeds(
-    0x243F_6A88_85A3_08D3,
-    0x1319_8A2E_0370_7344,
-    0xA409_3822_299F_31D0,
-    0x082E_FA98_EC4E_6C89,
-);
+/// Keyed per process, from the OS: with a published seed an attacker picks *both* sides of a
+/// collision (a token in a vocabulary they ship, and an input they ship) and finds a pair in 2^32
+/// by birthday. A fresh seed makes that 2^64 again. Nothing persists a [`BucketVocabStore`], so a
+/// seed that changes per process costs nothing.
+static KEY_HASHER: OnceLock<RandomState> = OnceLock::new();
+
+fn key_hasher() -> &'static RandomState {
+    KEY_HASHER.get_or_init(RandomState::new)
+}
 
 /// Bit 31 of a stored id: the token provably encodes to itself, so a pretoken equal to it can be
 /// emitted without running the merge loop. See `BPE::prove_fold`.
@@ -26,6 +30,10 @@ const FOLD_BIT: u32 = 1 << 31;
 const VOCAB_ID_MASK: u32 = FOLD_BIT - 1;
 
 pub(crate) const INLINE_KEY_BYTES: usize = 7;
+
+/// The 16 bits `len-digest` reserves in the long arm's digest for the token length.
+#[cfg(all(feature = "len-digest", not(feature = "len-byte")))]
+const LEN_MASK: u64 = 0xFFFF << 32;
 
 ///
 ///
@@ -67,19 +75,42 @@ pub(crate) fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) 
 /// `#[cold]` on purpose -- for CJK this is the *common* arm, and telling the predictor otherwise
 /// would cost more than the call.
 #[inline(never)]
-fn key_and_hash_long(word: &[u8], len: usize) -> (u64, u64) {
-    // The length is bound into the digest half (bits 32..), so a stored digest cannot be matched
-    // by a word of a different length. `^` rather than `|`: `|` would overwrite those bits instead
-    // of mixing into them, costing up to 16 bits of the digest.
-    let hash = KEY_HASHER.hash_one(word) ^ (len as u64) << 32;
-    (hash, hash)
+fn key_and_hash_long(word: &[u8]) -> (u64, u64) {
+    let hash = key_hasher().hash_one(word);
+    // Default: bit 63 is the arm tag, applied to the *key* (what `Entry.digest` stores) and not to
+    // the hash the MPHF sees -- pinning bit 63 on every MPHF key makes `PtrHash` fail to build (1000
+    // keys, 20s, "try a better hash"). The packed arm's key is `len << 56 | bytes`, so its top byte
+    // is at most 7 and can never reach bit 63: the two arms produce disjoint keys, and `Entry.digest`
+    // cannot be shared across them however the hash is inverted (#2722). 63 bits of verifier left.
+    #[cfg(not(any(feature = "len-byte", feature = "len-digest")))]
+    {
+        (hash | (1 << 63), hash)
+    }
+
+    // The length in the top byte instead of a tag: the digest comparison is then also an exact
+    // length comparison, at 56 bits. Packed keys top out at 7, so 8..254 separates the arms too.
+    #[cfg(feature = "len-byte")]
+    {
+        let len = word.len();
+        // Branchless: the tag is the length, or 0xFF for a token too long to fit in a byte.
+        let tag = if len < 255 { len as u64 } else { 0xFF };
+        (tag << 56 | (hash & 0x00FF_FFFF_FFFF_FFFF), hash)
+    }
+
+    // The length reserved in bits 32..47, plus the arm tag (without it 1 long digest in 256 is
+    // itself a valid packed key, and a short word could spell it out directly). 47 bits.
+    #[cfg(all(feature = "len-digest", not(feature = "len-byte")))]
+    {
+        let key = (hash & !LEN_MASK) | (word.len() as u64) << 32 | (1 << 63);
+        (key, hash)
+    }
 }
 
 #[inline(always)]
 pub(crate) fn key_and_hash(word: &[u8]) -> (u64, u64) {
     let len = word.len();
     if len > INLINE_KEY_BYTES {
-        return key_and_hash_long(word, len);
+        return key_and_hash_long(word);
     }
     let raw = if len >= 4 {
         let head = u32::from_le_bytes(word[..4].try_into().unwrap()) as u64;
@@ -100,10 +131,17 @@ pub(crate) fn key_and_hash(word: &[u8]) -> (u64, u64) {
 
 /// One MPHF slot: sixteen bytes, so a probe is a single load.
 ///
-/// The hash picks the slot and the stored hash confirms it. The stored hash is the *whole* 64-bit
+/// The hash picks the slot and the stored key confirms it. The stored key is the *whole* 64-bit
 /// key, not a fold of it: a 32-bit digest gives a false hit every 2^32 lookups, which is reachable
 /// by search in seconds (see huggingface/tokenizers#2722), and comparing the other 32 bits costs
 /// nothing -- it is the same load and the same one-instruction compare.
+///
+/// The key, not the hash: `key_and_hash` returns `mix(key)` for a word of at most
+/// [`INLINE_KEY_BYTES`] bytes, and `mix` is a published bijection over 2^64 (`unmix` is in the test
+/// below), so a hash comparison can be inverted into a *different* short word - one long token in
+/// 256 has a hash that lands in the 2^56-sized image of the packed arm. The packed key itself is
+/// injective per arm, and the arms' key spaces are disjoint by construction, so comparing keys makes
+/// equal digests mean equal words.
 ///
 /// A slot the build never wrote stays [`Default`], and occupancy is read off the parallel `spans`.
 ///
@@ -265,9 +303,9 @@ impl BucketVocabStore {
                 *id <= VOCAB_ID_MASK,
                 "token id {id} needs bit 31, which holds FOLD_BIT"
             );
-            let (_, hash) = key_and_hash(s.as_slice());
+            let (key, hash) = key_and_hash(s.as_slice());
             let slot = mphf.index(&hash);
-            entries[slot] = Entry { digest: hash, id: *id };
+            entries[slot] = Entry { digest: key, id: *id };
             spans[slot] = Span {
                 start: bytes.len() as u32,
                 len: s.len() as u16,
@@ -302,31 +340,35 @@ impl BucketVocabStore {
     /// This function is the equivalent of `get` on a HashaMap, it return the id
     /// corresponding to the key `q`. Since `mphf` always return a slot, we check
     /// whether the token indexed by that slot actually match the query: the stored
-    /// digest is the query's own 64-bit hash, so a different word cannot match it
-    /// short of a 2^-64 collision, which `build` rejects.
+    /// digest is the query's own 64-bit key, and `key_and_hash` is injective over
+    /// words, so equal digests mean equal words - no span load, no memcmp.
     #[inline]
     pub(crate) fn get_bytes(&self, q: &[u8]) -> Option<u32> {
         if self.entries.is_empty() {
             return None;
         }
-        let (_, hash) = key_and_hash(q);
+        let (key, hash) = key_and_hash(q);
         let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
-        // The length is inside the hash on both arms (top byte of the key for <= 7 bytes, bits
-        // 32.. for the hashed ones), so equal hashes mean equal words: no span load, no memcmp.
-        (e.digest == hash).then_some(e.id & VOCAB_ID_MASK)
+        if e.digest != key {
+            return None;
+        }
+        #[cfg(feature = "len-check")]
+        if self.spans[slot].len as usize != q.len() {
+            return None;
+        }
+        Some(e.id & VOCAB_ID_MASK)
     }
 
     #[inline]
     pub(crate) fn get_keyed_foldable(&self, key: u64, hash: u64) -> Option<(u32, bool)> {
-        let _ = key;
         if self.entries.is_empty() {
             return None;
         }
         let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
-        // Same check as `get_bytes`: the full hash, length included.
-        (e.digest == hash).then_some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
+        // Same check as `get_bytes`, on the key the caller already has.
+        (e.digest == key).then_some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
     }
 
     /// Records that this token folds to itself. Called once per entry at load, after the proof.
@@ -420,6 +462,7 @@ impl BucketVocabStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::perfect_hash::splitmix64;
 
     // Six keys used to get exactly six slots, and this set has no placement in them on any seed.
     #[test]
@@ -621,20 +664,199 @@ mod tests {
         .unwrap();
 
         let query: &[u8] = &[170, 103, 222, 207, 37, 184, 110];
-        // The fixture must still be a 32-bit collision, or this test stops testing anything.
-        let (_, hash) = key_and_hash(query);
-        let slot = vocab.mphf.index(&hash);
+        // The fixture must still collide on what the old digest was -- `digest_of(hash)`, the high
+        // half of `mix(key)` -- or this test stops testing anything.
+        let (qkey, qhash) = key_and_hash(query);
+        let (_, thash) = key_and_hash(b"tokeniz");
+        let slot = vocab.mphf.index(&qhash);
+        assert_eq!(vocab.mphf.index(&thash), slot);
         assert_eq!(
-            (vocab.entries[slot].digest >> 32) as u32,
-            (hash >> 32) as u32,
+            (thash >> 32) as u32,
+            (qhash >> 32) as u32,
             "fixture no longer collides on the 32-bit digest: regenerating it needs unmix"
         );
-        // Same length as the token it collides with, so the length check does not save us either.
+        // Same length as the token it collides with, so a length check does not save us either.
         assert_eq!(query.len(), vocab.spans[slot].len as usize);
 
         assert_eq!(vocab.get_bytes(query), None);
-        assert_eq!(vocab.get_keyed_foldable(0, hash), None);
+        assert_eq!(vocab.get_keyed_foldable(qkey, qhash), None);
         // ...while the token it used to be confused with still resolves.
         assert_eq!(vocab.get_bytes(b"tokeniz"), Some(5));
+    }
+
+    const C: u64 = 0x9E37_79B9_7F4A_7C15;
+    /// `C^-1 mod 2^64`, so that `mix` can be undone.
+    const C_INV: u64 = 0xf1de_83e1_9937_733d;
+
+    /// `mix` is a *published* bijection: four instructions take a hash back to its key.
+    fn unmix(y: u64) -> u64 {
+        assert_eq!(C.wrapping_mul(C_INV), 1);
+        (y ^ (y >> 29) ^ (y >> 58)).wrapping_mul(C_INV)
+    }
+
+    /// The word a hash would have to come from, if that hash is in the packed arm's image.
+    fn short_word_from_hash(hash: u64) -> Option<Vec<u8>> {
+        let key = unmix(hash);
+        let len = (key >> 56) as usize;
+        if len > INLINE_KEY_BYTES || key & !(KEY_MASK[len] | LEN_TAG[len]) != 0 {
+            return None;
+        }
+        let raw = key & !LEN_TAG[len];
+        let word: Vec<u8> = (0..len).map(|i| (raw >> (8 * i)) as u8).collect();
+        (key_and_hash(&word).0 == key).then_some(word)
+    }
+
+    /// huggingface/tokenizers#2722, the other half: a 64-bit digest does not by itself reject a forged
+    /// query. The packed arm's hashes are `mix(packed key)`, a bijection onto 2^56 of 2^64, so about
+    /// one long token in 256 has a hash `unmix` turns into a *different*, <= 7-byte word -- no search.
+    /// Comparing the key is what rejects it: the arms' key spaces are disjoint.
+    #[test]
+    fn short_query_cannot_alias_a_long_token() {
+        let mut tokens: Vec<Vec<u8>> = Vec::new();
+        let mut x = 0x1234_5678_9abc_def0u64;
+        for _ in 0..5_000 {
+            x = splitmix64(x);
+            let len = 8 + (x % 9) as usize;
+            let mut y = x;
+            let mut t = Vec::new();
+            for _ in 0..len {
+                y = splitmix64(y);
+                t.push(b'a' + (y % 26) as u8);
+            }
+            tokens.push(t);
+        }
+        let vocab = BucketVocabStore::build(
+            tokens
+                .iter()
+                .enumerate()
+                .map(|(i, t)| (t.clone(), i as u32))
+                .collect(),
+        )
+        .unwrap();
+
+        let mut forged = 0;
+        for (id, t) in tokens.iter().enumerate() {
+            let (key, hash) = key_and_hash(t);
+            // Every design keeps the long arm's top byte >= 8, which packed keys cannot reach.
+            assert!(key >> 56 >= 8, "long key {key:#x} can be spelled by a <= 7-byte word");
+            let Some(short) = short_word_from_hash(hash) else {
+                continue;
+            };
+            forged += 1;
+            assert_ne!(short, *t);
+            assert_eq!(vocab.mphf.index(&key_and_hash(&short).1), vocab.mphf.index(&hash));
+            assert_eq!(vocab.get_bytes(&short), None, "{short:?} aliased {t:?} (id {id})");
+        }
+        // The aliases are rare but far too common to be a coincidence: 1/256 of long tokens.
+        assert!(forged > 5, "only {forged} aliases derived: the fixture stopped exercising the bug");
+    }
+}
+
+#[cfg(test)]
+mod lookup_bench {
+    use super::*;
+    use crate::utils::perfect_hash::splitmix64;
+    use std::hint::black_box;
+    use std::time::Instant;
+
+    /// A synthetic vocabulary with a realistic mix of packed (<= 7 bytes) and hashed words:
+    /// whole words are 2..12 bytes of ascii, so both arms of `key_and_hash` are exercised.
+    fn fixtures(n: usize) -> (BucketVocabStore, Vec<Vec<u8>>) {
+        let mut x = 0x5d5d_5d5d_1234_9876u64;
+        let mut seen = std::collections::HashSet::new();
+        let mut words: Vec<Vec<u8>> = Vec::with_capacity(n);
+        while words.len() < n {
+            x = splitmix64(x);
+            let len = 3 + (x % 12) as usize;
+            let mut y = x;
+            let mut w = Vec::with_capacity(len);
+            for _ in 0..len {
+                y = splitmix64(y);
+                w.push(b'a' + (y % 26) as u8);
+            }
+            if seen.insert(w.clone()) {
+                words.push(w);
+            }
+        }
+        let store = BucketVocabStore::build(
+            words.iter().enumerate().map(|(i, w)| (w.clone(), i as u32)).collect(),
+        )
+        .unwrap();
+        (store, words)
+    }
+
+    /// `BENCH_N=50000 BENCH_REPS=200 cargo test --release -- --ignored --nocapture lookup_throughput`
+    ///
+    /// Ignored by default: it is a timing harness, not a check. It exists because the entry layout
+    /// is a cache-traffic question that only a measurement settles -- see the results in the PR.
+    #[test]
+    #[ignore = "benchmark, run with --release -- --ignored --nocapture"]
+    fn lookup_throughput() {
+        let n: usize = std::env::var("BENCH_N").ok().and_then(|s| s.parse().ok()).unwrap_or(50_000);
+        let reps: usize = std::env::var("BENCH_REPS").ok().and_then(|s| s.parse().ok()).unwrap_or(200);
+        let (store, words) = fixtures(n);
+
+        // One query per vocab word (a hit), and one one-byte mutation of each (a miss). Shuffled so
+        // the probes walk the entry array randomly instead of streaming it.
+        let mut hits: Vec<Vec<u8>> = words.clone();
+        let mut misses: Vec<Vec<u8>> = words
+            .iter()
+            .map(|w| {
+                let mut m = w.clone();
+                let last = m.len() - 1;
+                // The fixtures are lowercase, so an uppercase byte is guaranteed out of vocabulary.
+                m[last] = b'A' + (m[last] - b'a');
+                m
+            })
+            .collect();
+        shuffle(&mut hits);
+        shuffle(&mut misses);
+
+        println!(
+            "variant={} entry={}B span={}B slots={} (x{:.3} of n) entries={}KB spans={}KB total={}KB",
+            if cfg!(feature = "len-byte") {
+                "len-byte"
+            } else if cfg!(feature = "len-digest") {
+                "len-digest"
+            } else if cfg!(feature = "len-check") {
+                "tag+len-check"
+            } else {
+                "tag (default)"
+            },
+            size_of::<Entry>(),
+            size_of::<Span>(),
+            store.entries.len(),
+            store.entries.len() as f64 / n as f64,
+            store.entries.len() * size_of::<Entry>() / 1024,
+            store.entries.len() * size_of::<Span>() / 1024,
+            (store.entries.len() * (size_of::<Entry>() + size_of::<Span>())) / 1024,
+        );
+
+        for (name, set) in [("hit ", &hits), ("miss", &misses)] {
+            for _ in 0..5 {
+                let mut found = 0u64;
+                let start = Instant::now();
+                for _ in 0..reps {
+                    for q in set.iter() {
+                        found += store.get_bytes(black_box(q.as_slice())).is_some() as u64;
+                    }
+                }
+                let per = start.elapsed().as_secs_f64() / (reps * set.len()) as f64;
+                println!(
+                    "{name} {:6.2} ns/lookup  ({:5.1} M/s)  found={}",
+                    per * 1e9,
+                    1e-6 / per,
+                    found / reps as u64
+                );
+            }
+        }
+    }
+
+    fn shuffle(v: &mut [Vec<u8>]) {
+        let mut x = 0x1234_5678_9abc_def0u64;
+        for i in (1..v.len()).rev() {
+            x = splitmix64(x);
+            v.swap(i, (x % (i as u64 + 1)) as usize);
+        }
     }
 }
