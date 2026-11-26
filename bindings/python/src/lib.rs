@@ -50,6 +50,8 @@ mod tokenizers {
     #[pymodule_export]
     use crate::components::normalizers::normalizers;
     #[pymodule_export]
+    use crate::components::piece_normalizers::piece_normalizers;
+    #[pymodule_export]
     use crate::components::pre_tokenizers::pre_tokenizers;
     #[pymodule_export]
     use crate::components::processors::processors;

@@ -15,6 +15,8 @@ pub(crate) struct EncodeScratch {
     pub(crate) model: ModelScratch,
     pub(crate) split: PreTokenizerScratch,
     pub(crate) pre_tokens: Vec<Span>,
+    /// The piece of text being encoded, after the piece normalizers.
+    pub(crate) normalized_piece: String,
 }
 
 /// How many independent sub-pools the scratch pool keeps.
@@ -57,6 +59,7 @@ impl ScratchPool {
             model: model.init_scratch(),
             split: PreTokenizerScratch::default(),
             pre_tokens: Vec::new(),
+            normalized_piece: String::new(),
         })
     }
 
@@ -184,6 +187,7 @@ mod tests {
         Tokenizer::from_parts(
             BucketAddedVocabulary::new(),
             Vec::new(),
+            None,
             pre_tokenizer,
             Model::BPE(hello_bpe()),
             PostProcessor::default(),
