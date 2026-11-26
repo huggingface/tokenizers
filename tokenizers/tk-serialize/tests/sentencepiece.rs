@@ -44,8 +44,14 @@ fn tokenizer(add_dummy_prefix: bool, remove_extra_whitespaces: bool) -> Tokenize
                 "end_of_word_suffix": null, "fuse_unk": true, "byte_fallback": false,
                 "ignore_merges": false, "byte_level": false,
                 "vocab": {VOCAB}, "merges": {MERGES}}},
-            "added_tokens": [{{"id": 23, "content": "<s>", "single_word": false,
-                "lstrip": false, "rstrip": false, "normalized": false, "special": true}}],
+            "added_tokens": [
+                {{"id": 23, "content": "<s>", "single_word": false, "lstrip": false,
+                  "rstrip": false, "normalized": false, "special": true}},
+                {{"id": 24, "content": "</s>", "single_word": false, "lstrip": true,
+                  "rstrip": true, "normalized": false, "special": true}},
+                {{"id": 25, "content": "ac", "single_word": true, "lstrip": false,
+                  "rstrip": false, "normalized": false, "special": true}}
+            ],
             "post_processor": null,
             "decoder": null
         }}"#
@@ -102,6 +108,18 @@ const CASES: &[(bool, bool, &str, &[u32])] = &[
     // The prefix lands on the piece after the added token too, even though that piece already
     // opens with the delimiter.
     (true, true,  "▁aa<s>▁bb",     &[19, 7, 23, 19, 8]),
+
+    // `lstrip`/`rstrip` swallow the spaces around the token before any piece is cut, so the ids
+    // are SentencePiece on the trimmed chunks -- with `remove_extra_whitespaces` off, where the
+    // strip is the only thing removing them.
+    (true, false, "aa </s> bb",    &[7, 24, 8]),
+    (true, true,  "aa </s> bb",    &[7, 24, 8]),
+    // `single_word` sees the delimiter as a word boundary, and a letter as a letter.
+    (true, true,  "ac </s>",       &[25, 24]),
+    (true, true,  "cac </s>",      &[6, 22, 24]),
+    // With `remove_extra_whitespaces` off, `lstrip` is the only thing taking that space: the
+    // untrimmed chunk would have kept a delimiter of its own.
+    (true, false, "cac </s>",      &[6, 22, 24]),
 ];
 
 #[test]
