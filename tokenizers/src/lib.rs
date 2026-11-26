@@ -101,7 +101,8 @@ pub use tk_serialize::{
 };
 #[cfg(feature = "serialize")]
 pub use tk_serialize::{
-    padding_to_json, post_processor_to_json, str_to_json, to_json, truncation_to_json,
+    padding_to_json, piece_normalizer_to_json, post_processor_to_json, str_to_json, to_json,
+    truncation_to_json,
 };
 
 // ---------------------------------------------------------------------------

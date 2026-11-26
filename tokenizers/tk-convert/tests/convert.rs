@@ -192,10 +192,9 @@ fn a_metaspace_pre_tokenizer_becomes_a_piece_normalizer_and_a_split() {
     );
     assert_eq!(
         v["piece_normalizer"],
-        serde_json::json!({"type": "Metaspace", "replacement": "▁",
-                           "prepend": "always", "drop_whitespace": false,
-                           "add_dummy_prefix": false, "escape_whitespaces": true,
-                           "remove_extra_whitespaces": false})
+        serde_json::json!({"type": "Metaspace", "replacement": "▁", "prepend": "always",
+                           "whitespace_match": "only_space", "collapse_contiguous": false,
+                           "skip_prefix": true, "trim_trailing_delimiters": false})
     );
     assert_eq!(
         v["pre_tokenizer"],
@@ -223,24 +222,28 @@ fn a_metaspace_pre_tokenizer_becomes_a_piece_normalizer_and_a_split() {
     );
     assert_eq!(
         v["piece_normalizer"],
-        serde_json::json!({"type": "Metaspace", "replacement": "▁",
-                           "prepend": "first", "drop_whitespace": false,
-                           "add_dummy_prefix": false, "escape_whitespaces": true,
-                           "remove_extra_whitespaces": false})
+        serde_json::json!({"type": "Metaspace", "replacement": "▁", "prepend": "first",
+                           "whitespace_match": "only_space", "collapse_contiguous": false,
+                           "skip_prefix": true, "trim_trailing_delimiters": false})
     );
     assert_eq!(v["pre_tokenizer"], serde_json::Value::Null);
 
-    // The t5/albert pair: the `WhitespaceSplit` was never a component, it was `drop_whitespace`.
+    // The t5/albert pair: the `WhitespaceSplit` becomes settings of the `Metaspace`.
     let v = done(
         BPE,
         r#", "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
              {"type": "WhitespaceSplit"}, {"type": "Metaspace", "replacement": "▁"}]}"#,
     );
-    assert_eq!(v["piece_normalizer"]["drop_whitespace"], true);
+    assert_eq!(
+        v["piece_normalizer"],
+        serde_json::json!({"type": "Metaspace", "replacement": "▁", "prepend": "always",
+                           "whitespace_match": "any_unicode", "collapse_contiguous": true,
+                           "skip_prefix": true, "trim_trailing_delimiters": false})
+    );
     assert_eq!(v["pre_tokenizer"]["type"], "Split");
 
-    // That pair only works under `always`. With the whitespace gone, the delimiter is the only
-    // cut left, so the words would run together into one span.
+    // That pair only works under `always`. Under the others, released gives the words no
+    // delimiter, but a collapsed run of whitespace always writes one.
     for scheme in ["first", "never"] {
         let e = err(
             BPE,

@@ -83,19 +83,31 @@ the pipeline keeps apart — so canonically it is spelled as the two it is:
 
 ```text
   "piece_normalizer": {"type":"Metaspace", "replacement":"▁",
-                       "prepend":bool, "drop_whitespace":bool,
-                       "add_dummy_prefix":bool, "escape_whitespaces":bool,
-                       "remove_extra_whitespaces":bool}
+                       "prepend":"always"|"first"|"never",
+                       "whitespace_match":"only_space"|"any_unicode",
+                       "collapse_contiguous":bool, "skip_prefix":bool,
+                       "trim_trailing_delimiters":bool}
   "pre_tokenizer":    {"type":"Split", "pattern":{"String":"▁"},
                        "behavior":"MergedWithNext", "invert":false}
 ```
 
-`add_dummy_prefix`, `escape_whitespaces` and `remove_extra_whitespaces` are SentencePiece's own
-normalizer flags, and a 1.0 file has no way to say any of them, so tk-convert writes `false`,
-`true`, `false` — what released `Metaspace` did. A tokenizer built from a `.model` file sets them
-from its `normalizer_spec` instead, and then needs no normalizer but the charsmap in front of this
-one: `remove_extra_whitespaces` is the pair of `Replace` normalizers a conversion used to spell it
-with, and `add_dummy_prefix` is the prefix `Metaspace` used to skip.
+- `prepend` says which pieces get the delimiter in front.
+- `whitespace_match` says which characters count as whitespace.
+- `collapse_contiguous` writes one delimiter for a run of whitespace, and drops the runs at a piece's edges.
+- `skip_prefix` leaves the prefix out when the piece already starts with whitespace or the delimiter.
+- `trim_trailing_delimiters` drops the delimiters that end a piece.
+
+tk-convert writes the two 1.0 shapes like this:
+
+| 1.0 pre-tokenizer | `whitespace_match` | `collapse_contiguous` | `skip_prefix` | `trim_trailing_delimiters` |
+|---|---|---|---|---|
+| `Metaspace` | `only_space` | `false` | `true` | `false` |
+| `Sequence[WhitespaceSplit, Metaspace]` | `any_unicode` | `true` | `true` | `false` |
+
+A tokenizer built from a `.model` file sets them from its `normalizer_spec` instead
+(`Metaspace::from_sentencepiece`), and then needs no normalizer but the charsmap in front of this one.
+SentencePiece's `remove_extra_whitespaces` is `collapse_contiguous` plus `trim_trailing_delimiters`,
+and its `add_dummy_prefix` is `prepend: "always"` with `skip_prefix: false`.
 
 There is no `ByteLevel` pre-tokenizer either. Byte-level describes how the vocabulary is encoded,
 so it is `"byte_level"` on the model; the split it used to imply is a plain `Split` on the GPT-2
@@ -104,7 +116,7 @@ regex, or nothing at all where it said `use_regex: false`. Its `add_prefix_space
 
 tk-convert rewrites a legacy `Metaspace` into that pair, and a legacy `ByteLevel` into the model
 flag plus that `Split`. Spelling it out beats folding it back: the
-legacy tag could not say `drop_whitespace` without a wrapping `WhitespaceSplit`, and could not
+legacy tag could not say `collapse_contiguous` without a wrapping `WhitespaceSplit`, and could not
 sit beside a byte-level model.
 
 ## Model
