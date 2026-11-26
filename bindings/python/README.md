@@ -72,17 +72,14 @@ to the workers matters.
 - **Never** pass a tokenizer as a task argument, as in `pool.imap(partial(encode, compiled), texts)`.
   The pool would pickle it with every chunk of tasks, and every chunk would compile it again.
 
-Wall time in seconds to encode 50,000 English texts with gemma-3 (262k tokens in its vocabulary),
-with 4 workers and `chunksize=64`, on Linux with Python 3.12 and a 16-core AMD EPYC 7R13 (32 threads):
+How many times the tokenizer gets compiled per method:
 
-| How the tokenizer reaches the workers | fork | forkserver | spawn |
-|---|---|---|---|
-| `CompiledTokenizer` compiled before the pool | 2.4s | n/a | n/a |
-| `Tokenizer` in `initargs`, compiled per worker | 2.8s | 3.3s | 3.1s |
-| `CompiledTokenizer` in `initargs` | 2.4s | 3.9s | 4.3s |
-| `CompiledTokenizer` in every task | over 150s | over 150s | over 150s |
-
-For reference, a plain loop in a single process takes 4.9 s.
+| How the tokenizer reaches the workers | fork | forkserver, spawn |
+|---|---|---|
+| `CompiledTokenizer` compiled before the pool | once, in the parent | n/a |
+| `Tokenizer` in `initargs`, compiled in the initializer | once per worker | once per worker |
+| `CompiledTokenizer` in `initargs` | once, in the parent | once in the parent, then once per worker |
+| `CompiledTokenizer` as a task argument | once per chunk of tasks | once per chunk of tasks |
 
 ```python
 def compile_tokenizer(tokenizer):
