@@ -29,7 +29,13 @@ fn read_template(cfg: &Json<'_>) -> Result<PostProcessor> {
         for piece in pieces {
             // `type_id` is the sequence a piece belongs to, and `0` for all but the second half of
             // a pair, so it is written only when it is not that.
-            let type_id = piece.field("type_id").and_then(Json::as_u32).unwrap_or(0) as u8;
+            let type_id = match piece.field("type_id") {
+                None => 0,
+                Some(value) => value
+                    .as_u32()
+                    .and_then(|id| u8::try_from(id).ok())
+                    .ok_or("a template piece's type_id must be an integer between 0 and 255")?,
+            };
             if let Some(seq) = piece.field("seq").and_then(Json::as_str) {
                 match seq {
                     "A" if !seen_a => {

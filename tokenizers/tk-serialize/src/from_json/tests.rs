@@ -221,6 +221,27 @@ fn a_legacy_or_malformed_shape_is_refused_by_name() {
 }
 
 #[test]
+fn template_type_id_must_fit_in_an_encoding() {
+    let post_processor = |type_id| {
+        format!(
+            r#"{{"type": "TemplateProcessing",
+                "single": [{{"seq": "A", "type_id": {type_id}}}],
+                "pair": [{{"seq": "A"}}, {{"seq": "B", "type_id": 1}}]}}"#
+        )
+    };
+    let valid = config(&[("post_processor", &post_processor(255))]);
+    let tokenizer = from_json(&valid).unwrap();
+    let encodings = tokenizer
+        .encode("a", &EncodeOptions::default())
+        .wait()
+        .unwrap();
+    assert_eq!(encodings[0].type_ids().unwrap(), [255]);
+
+    let invalid = config(&[("post_processor", &post_processor(256))]);
+    assert!(read_err(&invalid).contains("type_id"));
+}
+
+#[test]
 fn padding_null_reads_as_no_padding() {
     let tokenizer = from_json(&config(&[])).unwrap();
 

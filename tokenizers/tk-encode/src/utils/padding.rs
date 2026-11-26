@@ -24,6 +24,7 @@ pub struct PaddingParams {
     pub direction: PaddingDirection,
     pub pad_to_multiple_of: Option<usize>,
     pub pad_id: u32,
+    /// The type id of the padding token. Encodings support values from 0 to 255.
     pub pad_type_id: u32,
     pub pad_token: String,
 }
@@ -65,21 +66,38 @@ pub fn pad_encodings(encodings: &mut [Encoding], params: &PaddingParams) -> Resu
         pad_length += multiple - pad_length % multiple;
     }
 
+    let pad_type_id = match u8::try_from(params.pad_type_id) {
+        Ok(id) => id,
+        Err(_)
+            if encodings
+                .iter()
+                .all(|encoding| encoding.len() >= pad_length) =>
+        {
+            return Ok(());
+        }
+        Err(_) => {
+            return Err(format!(
+                "pad_type_id must be between 0 and 255, got {}",
+                params.pad_type_id
+            )
+            .into());
+        }
+    };
+
     encodings
         .iter_mut()
-        .for_each(|encoding| pad_one(encoding, pad_length, params));
+        .for_each(|encoding| pad_one(encoding, pad_length, pad_type_id, params));
 
     Ok(())
 }
 
-fn pad_one(encoding: &mut Encoding, target_length: usize, params: &PaddingParams) {
+fn pad_one(encoding: &mut Encoding, target_length: usize, pad_type_id: u8, params: &PaddingParams) {
     let original_len = encoding.ids.len();
     if original_len >= target_length {
         return;
     }
     let pad_length = target_length - original_len;
     let pad_id = Token::from(params.pad_id);
-    let pad_type_id = params.pad_type_id as u8;
 
     let mut ids = std::mem::take(&mut encoding.ids);
     let mut type_ids =
