@@ -108,6 +108,30 @@ pub trait PatternMatcher {
         normalized: bool,
         encode_special_tokens: bool,
     ) -> Option<((usize, usize), u32)>;
+
+    /// [`Self::extract_next`], where a match must lie entirely inside trusted text: `trusted` has
+    /// one byte per byte of `full_input`, 0 where a caller wrote the text. Empty means all
+    /// trusted, and is the default.
+    ///
+    /// A match that straddles the boundary is refused rather than clipped: half a token is not a
+    /// token, and guessing which half the caller meant is how a marker nobody wrote gets encoded.
+    #[inline]
+    fn extract_next_trusted(
+        &self,
+        full_input: &str,
+        search_offset: usize,
+        normalized: bool,
+        encode_special_tokens: bool,
+        trusted: &[u8],
+    ) -> Option<((usize, usize), u32)> {
+        let _ = trusted;
+        self.extract_next(
+            full_input,
+            search_offset,
+            normalized,
+            encode_special_tokens,
+        )
+    }
 }
 
 /// A piece of the input produced by [`SpecialSegmentIterator`].
@@ -140,6 +164,8 @@ pub struct SpecialSegmentIterator<'a, 'b, M: PatternMatcher> {
     normalized: bool,
     /// [`EncodeOptions::encode_special_tokens`], forwarded to `extract_next` on every match
     encode_special_tokens: bool,
+    /// One byte per byte of `input`: 0 where the text came from a caller. Empty means all trusted.
+    trusted: &'a [u8],
     offset: usize,
     pending: Option<u32>,
 }
@@ -153,11 +179,30 @@ impl<'a, 'b, M: PatternMatcher> SpecialSegmentIterator<'a, 'b, M> {
         normalized: bool,
         encode_special_tokens: bool,
     ) -> Self {
+        Self::new_trusted(
+            input,
+            pattern_matcher,
+            normalized,
+            encode_special_tokens,
+            &[],
+        )
+    }
+
+    /// [`Self::new`], with a per-byte trust mask: 0 marks text a caller supplied, where no added
+    /// token may match. An empty mask trusts everything.
+    pub fn new_trusted(
+        input: &'a str,
+        pattern_matcher: &'b M,
+        normalized: bool,
+        encode_special_tokens: bool,
+        trusted: &'a [u8],
+    ) -> Self {
         Self {
             input,
             pattern_matcher,
             normalized,
             encode_special_tokens,
+            trusted,
             pending: None,
             offset: 0,
         }
@@ -179,11 +224,12 @@ impl<'a, 'b, M: PatternMatcher> Iterator for SpecialSegmentIterator<'a, 'b, M> {
             // We've processed all the input string, return
             return None;
         }
-        if let Some(((start, end), token)) = self.pattern_matcher.extract_next(
+        if let Some(((start, end), token)) = self.pattern_matcher.extract_next_trusted(
             self.input,
             self.offset,
             self.normalized,
             self.encode_special_tokens,
+            self.trusted,
         ) {
             // `extract_next` positions are absolute in `input`, not relative to `offset`.
             let before_token = &self.input[self.offset..start];
@@ -351,6 +397,40 @@ impl<'a> IntoIterator for &'a Inputs {
     fn into_iter(self) -> Self::IntoIter {
         self.as_slice().iter()
     }
+}
+
+/// The masks line up with the inputs, or they do not. Whether a mask is *coherent* is the
+/// caller's business: it built the text and it built the mask, and re-deriving that here would
+/// mean tokenizers owning provenance it cannot see.
+fn check_masks(inputs: &Inputs, masks: &[Vec<u8>]) -> Result<()> {
+    if masks.is_empty() {
+        return Ok(());
+    }
+    if masks.len() != inputs.len() {
+        return Err(format!(
+            "trust masks: {} masks for {} inputs, they must line up",
+            masks.len(),
+            inputs.len()
+        )
+        .into());
+    }
+    for (input, mask) in inputs.into_iter().zip(masks) {
+        if mask.is_empty() {
+            continue;
+        }
+        let Input::Single(text) = input else {
+            return Err("trust masks are not supported for a pair of texts".into());
+        };
+        if mask.len() != text.len() {
+            return Err(format!(
+                "trust mask: {} bytes for a {} byte text, one byte per input byte is required",
+                mask.len(),
+                text.len()
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 impl From<String> for Inputs {
@@ -656,31 +736,73 @@ impl Tokenizer {
     /// This way, special / added tokens declared on raw or normalized text are both caught.
     /// The remaining text is pre-tokenized and run through the model span by span.
     pub fn encode(&self, inputs: impl Into<Inputs>, options: &EncodeOptions) -> EncodeHandle {
+        self.encode_with_trust(inputs.into(), &[], options)
+    }
+
+    /// [`Self::encode`], with the bytes a caller wrote marked as untrusted.
+    ///
+    /// `masks` has one entry per sequence, and that entry has one byte per byte of the sequence's
+    /// text: 0 where a caller wrote the text, and nonzero where the template that assembled it
+    /// did. An empty entry means fully trusted and costs nothing. Where the mask is 0 no added or
+    /// special token is matched, so a user who writes `<|eot_id|>` gets the bytes of the text
+    /// rather than the template's marker.
+    ///
+    /// The mask belongs to whoever rendered the text -- a chat template knows which of its output
+    /// was its own and which was handed to it, and nothing else does. Tokenizers only reads it:
+    /// `mask[range].fill(0)` for each message's range in the rendered string.
+    ///
+    /// This masks the text, it does not re-encode it: nothing is split, normalized or
+    /// pre-tokenized per piece, so a batch costs what its plain encode costs and a trust boundary
+    /// does not move a token.
+    pub fn encode_with_trust_mask(
+        &self,
+        inputs: impl Into<Inputs>,
+        masks: Vec<Vec<u8>>,
+        options: &EncodeOptions,
+    ) -> EncodeHandle {
         let inputs = inputs.into();
+        match check_masks(&inputs, &masks) {
+            Ok(()) => self.encode_with_trust(inputs, &masks, options),
+            Err(err) => EncodeHandle::blocking(vec![Err(err)], None),
+        }
+    }
+
+    fn encode_with_trust(
+        &self,
+        inputs: Inputs,
+        masks: &[Vec<u8>],
+        options: &EncodeOptions,
+    ) -> EncodeHandle {
         assert!(
             inputs.len() < usize::MAX,
             "we use usize::MAX as a sentinel value for the completion queue, we don't support batches larger than that"
         );
         #[cfg(not(feature = "parallelism"))]
         return EncodeHandle::blocking(
-            self.encode_serial(inputs, options),
+            self.encode_serial(inputs, masks, options),
             self.resolve_padding(&options.padding).cloned(),
         );
 
         #[cfg(feature = "parallelism")]
-        parallel::encode(self, inputs, options)
+        parallel::encode(self, inputs, masks, options)
     }
 
-    fn encode_serial(&self, inputs: Inputs, options: &EncodeOptions) -> Vec<Result<Encoding>> {
+    fn encode_serial(
+        &self,
+        inputs: Inputs,
+        masks: &[Vec<u8>],
+        options: &EncodeOptions,
+    ) -> Vec<Result<Encoding>> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         match inputs {
             Inputs::Single(input) => {
-                vec![self.encode_one(input, options, &mut scratch)]
+                vec![self.encode_one(input, masks.first().map_or(&[][..], Vec::as_slice), options, &mut scratch)]
             }
             Inputs::Batch(batch) => {
                 let mut output = Vec::with_capacity(batch.len());
-                for input in batch {
-                    output.push(self.encode_one(input, options, &mut scratch));
+                for (i, input) in batch.into_iter().enumerate() {
+                    let mask = masks.get(i).map_or(&[][..], Vec::as_slice);
+                    output.push(self.encode_one(input, mask, options, &mut scratch));
                 }
                 output
             }
@@ -690,18 +812,20 @@ impl Tokenizer {
     fn encode_one(
         &self,
         input: Input,
+        trusted: &[u8],
         options: &EncodeOptions,
         scratch: &mut EncodeScratch,
     ) -> Result<Encoding> {
         match input {
             Input::Single(seq) => {
-                let toks = self.encode_sequence_with(&seq, 0, options, scratch)?;
+                let toks = self.encode_sequence_with(&seq, 0, trusted, options, scratch)?;
                 Ok(self.post_process(toks, None, options)?)
             }
-            // Each side of a pair is a sequence of its own, so both start at offset 0.
+            // Each side of a pair is a sequence of its own, so both start at offset 0. A pair
+            // with untrusted spans is rejected in `trust_masks`, so both sides are fully trusted.
             Input::Pair(s1, s2) => {
-                let a = self.encode_sequence_with(&s1, 0, options, scratch)?;
-                let b = self.encode_sequence_with(&s2, 0, options, scratch)?;
+                let a = self.encode_sequence_with(&s1, 0, &[], options, scratch)?;
+                let b = self.encode_sequence_with(&s2, 0, &[], options, scratch)?;
                 Ok(self.post_process(a, Some(b), options)?)
             }
         }
@@ -754,20 +878,29 @@ impl Tokenizer {
     ///
     /// `offset` is where `input` starts in its sequence: the parallel encoder hands over slices of
     /// a longer sequence, and `PrependScheme::First` needs to know which slice opens it.
+    ///
+    /// `trusted` is one byte per byte of `input`, 0 where a caller wrote the text (see
+    /// [`Self::encode_with_untrusted_spans`]). It gates the added-token match on the raw text
+    /// only: the normalized pass below matches on offsets that normalization has moved, so it
+    /// carries no mask and trusts everything.
     fn encode_sequence_into(
         &self,
         input: &str,
         offset: usize,
+        trusted: &[u8],
         options: &EncodeOptions,
         scratch: &mut EncodeScratch,
         output: &mut Vec<Token>,
     ) -> Result<()> {
+        // Reused across chunks so a fully untrusted chunk costs no allocation per chunk.
+        let mut untrusted_normalized = Vec::new();
         // First, we extract all special tokens from the non-normalized input
-        for segment in SpecialSegmentIterator::new(
+        for segment in SpecialSegmentIterator::new_trusted(
             input,
             &self.inner.added_vocabulary,
             false,
             options.encode_special_tokens,
+            trusted,
         ) {
             match segment {
                 Segment::SpecialToken(token) => {
@@ -780,12 +913,33 @@ impl Tokenizer {
                     let normalized =
                         normalize_all(&self.inner.normalizers, chunk, offset + input_offset)?;
 
+                    // The mask is over the raw bytes and normalization moves them (Metaspace
+                    // widens a space to three), so it cannot be handed over as it stands. A chunk
+                    // the caller did not touch keeps the fast path; a chunk it did touch is
+                    // matched with everything untrusted, which refuses every added token in it
+                    // rather than one of them by accident.
+                    let chunk_trusted = trusted
+                        .get(input_offset..input_offset + chunk.len())
+                        .unwrap_or_default();
+                    let untrusted_chunk = !trusted.is_empty()
+                        && !chunk_trusted.iter().all(|&byte| byte != 0);
+                    if untrusted_chunk {
+                        untrusted_normalized.clear();
+                        untrusted_normalized.resize(normalized.len(), 0);
+                    }
+                    let normalized_trusted: &[u8] = if untrusted_chunk {
+                        &untrusted_normalized
+                    } else {
+                        &[]
+                    };
+
                     // Extract special tokens from the normalized input
-                    for segment in SpecialSegmentIterator::new(
+                    for segment in SpecialSegmentIterator::new_trusted(
                         &normalized,
                         &self.inner.added_vocabulary,
                         true,
                         options.encode_special_tokens,
+                        normalized_trusted,
                     ) {
                         match segment {
                             Segment::SpecialToken(token) => {
@@ -827,11 +981,12 @@ impl Tokenizer {
         &self,
         input: &str,
         offset: usize,
+        trusted: &[u8],
         options: &EncodeOptions,
         scratch: &mut EncodeScratch,
     ) -> Result<Vec<Token>> {
         let mut output = Vec::with_capacity(input.len() / 4);
-        self.encode_sequence_into(input, offset, options, scratch, &mut output)?;
+        self.encode_sequence_into(input, offset, trusted, options, scratch, &mut output)?;
         Ok(output)
     }
 
@@ -855,9 +1010,10 @@ impl Tokenizer {
             && !template.has_type_ids()
             && (!options.add_special_tokens || template.n_special() == 0);
         if reproduces_sequence {
-            return self.encode_sequence_into(input, 0, options, &mut scratch, out);
+            return self.encode_sequence_into(input, 0, &[], options, &mut scratch, out);
         }
-        let encoding = self.encode_one(Input::Single(input.to_owned()), options, &mut scratch)?;
+        let encoding =
+            self.encode_one(Input::Single(input.to_owned()), &[], options, &mut scratch)?;
         out.extend_from_slice(encoding.ids());
         Ok(())
     }
