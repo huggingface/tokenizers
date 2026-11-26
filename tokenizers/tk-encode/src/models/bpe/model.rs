@@ -228,8 +228,13 @@ impl pipeline::Tokenize for BPE {
             word_cache,
         } = scratch;
 
-        // Cache before fold, for the reason given in `tokenize_spans`: the cache is one load and
-        // the fold is an MPHF probe, so the fold must not run ahead of it.
+        // Fold before cache. Most words of running text are vocabulary entries, so the cache
+        // keeps its slots for the words that need a merge.
+        if let Some(id) = self.fold_id_keyed(key, hash) {
+            output.push(Token::from(id));
+            return Ok(());
+        }
+
         let insert_at = if let Some(cache) = word_cache.as_mut() {
             match cache.lookup_keyed(key, hash) {
                 Lookup::Hit(ids) => {
@@ -241,16 +246,6 @@ impl pipeline::Tokenize for BPE {
         } else {
             None
         };
-
-        if let Some(id) = self.fold_id_keyed(key, hash) {
-            output.push(Token::from(id));
-            if let Some(cache) = word_cache.as_mut()
-                && let Some(at) = insert_at
-            {
-                cache.insert(at, std::iter::once(id));
-            }
-            return Ok(());
-        }
 
         let start = output.len();
         self.merge_word(sequence, symbols, queue);
@@ -321,20 +316,21 @@ impl pipeline::Tokenize for BPE {
                 destination = unsafe { output.as_mut_ptr().add(cursor) };
             }
 
-            // cache first as it is one direct-mapped load; fold is an MPHF probe, which
-            // is a pilot load plus a dependent entry load into the whole vocabulary. Running the
-            // fold ahead of the cache paid that on every pre-token including the ones the cache
-            // was about to answer, and on a warm cache that is nearly all of them.
-            //
-            // The two still produce the same ids: `prove_fold` only sets the bit for an entry that merging
-            // its own text reproduces, so a folded word and a merged word give the same answer.
-            // What changes is that a foldable word now gets *inserted*, so its second and later
-            // occurrences come off the cache instead of re-probing the vocabulary.
-
             // 1. We compute the key and hash of the word through the BucketVocabStore
             // That key indexes both the cache and the model's vocabulary!
             let (key, hash) =
                 key_and_hash_readable(sequence.as_bytes(), chunk.len() - span.start as usize);
+
+            // Fold before cache. Most words of running text are vocabulary entries, so the cache
+            // keeps its slots for the words that need a merge.
+            if let Some(id) = self.fold_id_keyed(key, hash) {
+                // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
+                unsafe { destination.write(Token::from(id)) };
+                cursor += 1;
+                // SAFETY: one id written, and the capacity check reserved MAX_INLINE_IDS >= 1.
+                destination = unsafe { destination.add(1) };
+                continue;
+            }
 
             let mut placement = None;
             if let Some(cache) = cache_slot.as_deref_mut() {
@@ -363,23 +359,6 @@ impl pipeline::Tokenize for BPE {
                 }
             }
 
-            // Cache miss. The fold still answers a word that is its own vocabulary entry in one
-            // probe, which beats running the merge engine for it + we already have the key and hash!
-            if let Some(id) = self.fold_id_keyed(key, hash) {
-                // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
-                unsafe { destination.write(Token::from(id)) };
-                cursor += 1;
-                // SAFETY: one id written, and the capacity check reserved MAX_INLINE_IDS >= 1.
-                destination = unsafe { destination.add(1) };
-                if let Some(cache) = cache_slot.as_deref_mut()
-                    && let Some(at) = placement
-                {
-                    cache.insert(at, std::iter::once(id));
-                }
-                continue;
-            }
-
-            // Neither a cache hit nor a foldable -> BPE has to be run
             // SAFETY: `cursor` counts what the fast paths wrote.
             unsafe { output.set_len(cursor) };
             let start = output.len();
