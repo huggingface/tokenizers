@@ -80,9 +80,10 @@ pub(crate) fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) 
 
 /// A word too long to pack into the key: hash it for real.
 ///
-/// `#[inline]`, not `#[inline(never)]`: outlining this cost 0.9 ns per word (measured, lookup bench),
-/// because the caller is a per-pre-token loop with nothing to overlap a call+ret with. Not `#[cold]`
-/// either -- for CJK this is the *common* arm.
+/// `#[inline]`, not `#[inline(never)]` and not `#[inline(always)]`. Measured on the lookup bench, hit
+/// ns/lookup, 50k vocab: `#[inline]` 3.60, `#[inline(always)]` 5.77, `#[inline(never)]` 5.42. Plain
+/// `#[inline]` wins because the compiler then inlines it at the per-pre-token call site and keeps it
+/// a call everywhere else. Not `#[cold]` either -- for CJK this is the *common* arm.
 #[inline]
 fn key_and_hash_long(word: &[u8]) -> (u64, u64) {
     // `hash_one(&[u8])` runs `Hash for [u8]`: a length prefix, then the bytes -- two ahash rounds.
@@ -147,8 +148,12 @@ struct Entry {
     id: u32,
 }
 
-// 16 bytes is still one cache line fetch, so the wider digest is free at probe time.
+// 16 bytes, and pinned: the digest at 0, the id at 8, 4 bytes of padding the probe never reads.
+// `#[repr(C)]` is what makes the order and the padding the compiler's business and nobody else's --
+// without it the fields may be reordered, and the alignment is what costs the second cache line.
 const _: () = assert!(size_of::<Entry>() == 16);
+const _: () = assert!(core::mem::offset_of!(Entry, digest) == 0);
+const _: () = assert!(core::mem::offset_of!(Entry, id) == 8);
 
 /// The layout `key_and_hash` builds, spelled out for the tests to check against: the low `len` bytes
 /// of the word (`KEY_MASK[len]` of them), with `len` itself in the top byte.
