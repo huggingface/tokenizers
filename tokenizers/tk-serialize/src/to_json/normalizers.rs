@@ -57,6 +57,12 @@ pub(super) fn write_piece_normalizer(
             );
             out.field_str("prepend", prepend_scheme_name(metaspace.prepend())?);
             out.field_bool("drop_whitespace", metaspace.drop_whitespace());
+            out.field_bool("add_dummy_prefix", metaspace.add_dummy_prefix());
+            out.field_bool("escape_whitespaces", metaspace.escape_whitespaces());
+            out.field_bool(
+                "remove_extra_whitespaces",
+                metaspace.remove_extra_whitespaces(),
+            );
         }
         PieceNormalizer::PrefixSpace(_) => out.type_tag("PrefixSpace"),
         other => return Err(format!("to_json cannot write the piece normalizer {other:?}").into()),

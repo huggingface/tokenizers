@@ -462,6 +462,11 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
             ("replacement", Value::String(replacement.clone())),
             ("prepend", Value::String(prepend)),
             ("drop_whitespace", Value::Bool(drop_whitespace)),
+            // A 1.0 `Metaspace` never says `add_dummy_prefix`: it skipped the prefix when the text
+            // already opened with one, and that is what these three keep.
+            ("add_dummy_prefix", Value::Bool(false)),
+            ("escape_whitespaces", Value::Bool(true)),
+            ("remove_extra_whitespaces", Value::Bool(false)),
         ],
     );
     root.insert("piece_normalizer".to_string(), metaspace);

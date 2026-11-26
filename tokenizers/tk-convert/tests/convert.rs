@@ -193,7 +193,9 @@ fn a_metaspace_pre_tokenizer_becomes_a_piece_normalizer_and_a_split() {
     assert_eq!(
         v["piece_normalizer"],
         serde_json::json!({"type": "Metaspace", "replacement": "▁",
-                           "prepend": "always", "drop_whitespace": false})
+                           "prepend": "always", "drop_whitespace": false,
+                           "add_dummy_prefix": false, "escape_whitespaces": true,
+                           "remove_extra_whitespaces": false})
     );
     assert_eq!(
         v["pre_tokenizer"],
@@ -222,7 +224,9 @@ fn a_metaspace_pre_tokenizer_becomes_a_piece_normalizer_and_a_split() {
     assert_eq!(
         v["piece_normalizer"],
         serde_json::json!({"type": "Metaspace", "replacement": "▁",
-                           "prepend": "first", "drop_whitespace": false})
+                           "prepend": "first", "drop_whitespace": false,
+                           "add_dummy_prefix": false, "escape_whitespaces": true,
+                           "remove_extra_whitespaces": false})
     );
     assert_eq!(v["pre_tokenizer"], serde_json::Value::Null);
 

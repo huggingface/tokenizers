@@ -202,11 +202,14 @@ const IDEMPOTENT: &[(&str, &str)] = &[
     ("normalizer",     r#"{"type": "Lowercase"}"#),
     ("normalizer",     r#"{"type": "Prepend", "prepend": "_"}"#),
     ("normalizer",     r#"{"type": "Replace", "pattern": {"String": " "}, "content": "_"}"#),
-    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "drop_whitespace": false}"#),
-    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "first", "drop_whitespace": false}"#),
-    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "never", "drop_whitespace": false}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "drop_whitespace": false, "add_dummy_prefix": false, "escape_whitespaces": true, "remove_extra_whitespaces": false}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "first", "drop_whitespace": false, "add_dummy_prefix": false, "escape_whitespaces": true, "remove_extra_whitespaces": false}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "never", "drop_whitespace": false, "add_dummy_prefix": false, "escape_whitespaces": true, "remove_extra_whitespaces": false}"#),
     // `drop_whitespace` is one flag, never the legacy `Sequence[WhitespaceSplit, Metaspace]`.
-    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "drop_whitespace": true}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "drop_whitespace": true, "add_dummy_prefix": false, "escape_whitespaces": true, "remove_extra_whitespaces": false}"#),
+    // The three SentencePiece flags, as a `.model` file spells them.
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "drop_whitespace": false, "add_dummy_prefix": true, "escape_whitespaces": true, "remove_extra_whitespaces": true}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "never", "drop_whitespace": false, "add_dummy_prefix": false, "escape_whitespaces": false, "remove_extra_whitespaces": true}"#),
     ("piece_normalizer", r#"{"type": "PrefixSpace"}"#),
     // A `Metaspace` with `split: false` leaves the slot empty, so `null` has to round-trip.
     ("pre_tokenizer",  r#"null"#),

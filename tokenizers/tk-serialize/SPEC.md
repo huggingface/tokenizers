@@ -65,10 +65,19 @@ the pipeline keeps apart — so canonically it is spelled as the two it is:
 
 ```text
   "piece_normalizer": {"type":"Metaspace", "replacement":"▁",
-                       "prepend":bool, "drop_whitespace":bool}
+                       "prepend":bool, "drop_whitespace":bool,
+                       "add_dummy_prefix":bool, "escape_whitespaces":bool,
+                       "remove_extra_whitespaces":bool}
   "pre_tokenizer":    {"type":"Split", "pattern":{"String":"▁"},
                        "behavior":"MergedWithNext", "invert":false}
 ```
+
+`add_dummy_prefix`, `escape_whitespaces` and `remove_extra_whitespaces` are SentencePiece's own
+normalizer flags, and a 1.0 file has no way to say any of them, so tk-convert writes `false`,
+`true`, `false` — what released `Metaspace` did. A tokenizer built from a `.model` file sets them
+from its `normalizer_spec` instead, and then needs no normalizer but the charsmap in front of this
+one: `remove_extra_whitespaces` is the pair of `Replace` normalizers a conversion used to spell it
+with, and `add_dummy_prefix` is the prefix `Metaspace` used to skip.
 
 There is no `ByteLevel` pre-tokenizer either. Byte-level describes how the vocabulary is encoded,
 so it is `"byte_level"` on the model; the split it used to imply is a plain `Split` on the GPT-2
