@@ -42,16 +42,14 @@ pub(super) fn read_piece_normalizer(cfg: Option<&Json<'_>>) -> Result<Option<Pie
         .ok_or_else(|| unsupported("a piece normalizer with no `type`"))?;
     let owner = format!("the `{kind}` piece normalizer");
     let piece_normalizer = match kind {
-        "Metaspace" => PieceNormalizer::Metaspace(
-            Metaspace::new(
-                super::pre_tokenizers::read_char(cfg, "replacement")?,
-                read_prepend_scheme(cfg, &owner, "prepend")?,
-                read_whitespace_match(cfg, &owner)?,
-                cfg.need(&owner, "collapse_contiguous", Json::as_bool)?,
-                cfg.need(&owner, "skip_prefix", Json::as_bool)?,
-                cfg.need(&owner, "trim_trailing_delimiters", Json::as_bool)?,
-            ),
-        ),
+        "Metaspace" => PieceNormalizer::Metaspace(Metaspace::new(
+            super::pre_tokenizers::read_char(cfg, "replacement")?,
+            read_prepend_scheme(cfg, &owner, "prepend")?,
+            read_whitespace_match(cfg, &owner)?,
+            cfg.need(&owner, "collapse_contiguous", Json::as_bool)?,
+            cfg.need(&owner, "skip_prefix", Json::as_bool)?,
+            cfg.need(&owner, "trim_trailing_delimiters", Json::as_bool)?,
+        )),
         "PrefixSpace" => PieceNormalizer::PrefixSpace(PrefixSpace::default()),
         other => return Err(unsupported(&format!("the `{other}` piece normalizer"))),
     };

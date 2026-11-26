@@ -161,7 +161,9 @@ impl Metaspace {
         };
         let piece_start = out.len();
         if self.collapse_contiguous {
-            let words = self.split_at_whitespace(piece).filter(|part| !part.is_empty());
+            let words = self
+                .split_at_whitespace(piece)
+                .filter(|part| !part.is_empty());
             for (index, word) in words.enumerate() {
                 let after_whitespace = index > 0;
                 let wants_delimiter = after_whitespace || add_prefix;
@@ -258,8 +260,14 @@ mod tests {
             } else {
                 WhitespaceMatch::OnlySpace
             };
-            let normalizer =
-                Metaspace::new('▁', *prepend, whitespace_match, *drop_whitespace, true, false);
+            let normalizer = Metaspace::new(
+                '▁',
+                *prepend,
+                whitespace_match,
+                *drop_whitespace,
+                true,
+                false,
+            );
             let mut out = String::new();
             normalizer.normalize_into(input, *opens_sequence, &mut out);
             assert_eq!(
