@@ -83,6 +83,13 @@ def test_metaspace_survives_as_the_piece_normalizer():
         assert isinstance(spec.piece_normalizer, piece_normalizers.Metaspace)
 
 
+def test_metaspace_from_sentencepiece_reads_each_flag():
+    built = piece_normalizers.Metaspace.from_sentencepiece(
+        add_dummy_prefix=False, remove_extra_whitespaces=True, escape_whitespaces=False
+    )
+    assert (built.prepend, built.collapse_contiguous, built.replacement) == ("never", True, " ")
+
+
 def test_bpe_repr(gpt2_spec):
     shown = repr(gpt2_spec.model)
     assert shown.startswith("BPE(")
