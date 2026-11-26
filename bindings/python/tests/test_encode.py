@@ -1,4 +1,5 @@
 import pytest
+from examples.untrusted_spans_chat import render_chat
 
 from tokenizers import AddedToken, Encoding, Tokenizer, models, normalizers
 
@@ -95,6 +96,23 @@ def test_encode_pair(bert, pair):
 def test_encode_pair_needs_two_texts(bert, pair):
     with pytest.raises(TypeError):
         bert.encode(pair)
+
+
+@pytest.mark.parametrize("pair", [("Hello", "there"), ["Hello", "there"]])
+def test_untrusted_spans_reject_text_pairs(bert, pair):
+    with pytest.raises(ValueError, match="untrusted_spans requires a single text"):
+        bert.encode(pair, untrusted_spans=[(0, 1)])
+
+
+def test_untrusted_spans_follow_trimmed_template_content(llama3):
+    text, spans = render_chat("  café  ")
+    [(start, end)] = spans
+    assert text[start:end] == "café"
+
+    encoding = llama3.encode(text, add_special_tokens=False, untrusted_spans=spans)
+
+    assert encoding.ids.count(llama3.token_to_id("<|eot_id|>")) == 1
+    assert llama3.decode(encoding.ids, skip_special_tokens=False) == text
 
 
 @pytest.mark.parametrize(("special", "normalized"), [(True, False), (False, True)])
