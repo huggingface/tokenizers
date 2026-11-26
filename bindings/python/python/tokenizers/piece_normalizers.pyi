@@ -8,48 +8,56 @@ from . import Component
 @final
 class Metaspace(PieceNormalizer):
     """
-    SentencePiece's whitespace handling: replaces spaces with `replacement`. `prepend` says
-    when `replacement` also goes in front of the piece: `"always"`, `"first"` (only at the
-    start of the input) or `"never"`. `drop_whitespace` drops runs of whitespace instead
-    of replacing them. `add_dummy_prefix` writes the prefix even when the piece already
-    starts with `replacement`, as SentencePiece does; `escape_whitespaces: false` leaves
-    spaces alone and writes a space as the prefix; `remove_extra_whitespaces` strips the
-    spaces around a piece and writes one `replacement` for a run of them.
+    SentencePiece's whitespace handling: replaces whitespace with `replacement`.
+    `prepend` says which pieces also get `replacement` in front: `"always"`, `"first"`
+    (only the piece that starts the input) or `"never"`. `whitespace_match` says what
+    counts as whitespace: `"only_space"` or `"any_unicode"`. `collapse_contiguous` writes
+    one `replacement` for a run of whitespace and drops the runs at the piece's edges.
+    `skip_prefix` leaves the prefix out when the piece already starts with whitespace or
+    `replacement`. `trim_trailing_delimiters` drops the `replacement`s that end the piece.
     """
     def __new__(
         cls,
         /,
         replacement: str = "▁",
         prepend: str = "always",
-        drop_whitespace: bool = False,
-        add_dummy_prefix: bool = False,
-        escape_whitespaces: bool = True,
-        remove_extra_whitespaces: bool = False,
+        whitespace_match: str = "only_space",
+        collapse_contiguous: bool = False,
+        skip_prefix: bool = True,
+        trim_trailing_delimiters: bool = False,
     ) -> Metaspace: ...
     @property
-    def add_dummy_prefix(self, /) -> bool: ...
-    @add_dummy_prefix.setter
-    def add_dummy_prefix(self, /, add_dummy_prefix: bool) -> None: ...
-    @property
-    def drop_whitespace(self, /) -> bool: ...
-    @drop_whitespace.setter
-    def drop_whitespace(self, /, drop_whitespace: bool) -> None: ...
-    @property
-    def escape_whitespaces(self, /) -> bool: ...
-    @escape_whitespaces.setter
-    def escape_whitespaces(self, /, escape_whitespaces: bool) -> None: ...
+    def collapse_contiguous(self, /) -> bool: ...
+    @collapse_contiguous.setter
+    def collapse_contiguous(self, /, collapse_contiguous: bool) -> None: ...
+    @staticmethod
+    def from_sentencepiece(
+        *, add_dummy_prefix: bool = True, remove_extra_whitespaces: bool = True, escape_whitespaces: bool = True
+    ) -> Metaspace:
+        """
+        Builds the `Metaspace` that rewrites whitespace like SentencePiece, from the
+        flags in a `.model` file's `normalizer_spec`. The defaults are SentencePiece's.
+        """
     @property
     def prepend(self, /) -> str: ...
     @prepend.setter
     def prepend(self, /, prepend: str) -> None: ...
     @property
-    def remove_extra_whitespaces(self, /) -> bool: ...
-    @remove_extra_whitespaces.setter
-    def remove_extra_whitespaces(self, /, remove_extra_whitespaces: bool) -> None: ...
-    @property
     def replacement(self, /) -> str: ...
     @replacement.setter
     def replacement(self, /, replacement: str) -> None: ...
+    @property
+    def skip_prefix(self, /) -> bool: ...
+    @skip_prefix.setter
+    def skip_prefix(self, /, skip_prefix: bool) -> None: ...
+    @property
+    def trim_trailing_delimiters(self, /) -> bool: ...
+    @trim_trailing_delimiters.setter
+    def trim_trailing_delimiters(self, /, trim_trailing_delimiters: bool) -> None: ...
+    @property
+    def whitespace_match(self, /) -> str: ...
+    @whitespace_match.setter
+    def whitespace_match(self, /, whitespace_match: str) -> None: ...
 
 class PieceNormalizer(Component):
     """

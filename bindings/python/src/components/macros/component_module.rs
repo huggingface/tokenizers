@@ -90,6 +90,9 @@
 /// - `tokenizer_field` names the field of `TokenizerSpec` that stores the normalizer.
 /// - `items_key` is the JSON key that holds the items of a normalizer `Sequence`.
 ///   Leave it out if the kind has no `Sequence` class.
+/// - `class_methods` names a macro that adds methods to some of the classes. pyo3 takes one
+///   `#[pymethods]` block per class, so the macro receives each class as `Name { methods }` and
+///   writes that block itself. Leave it out if no class has extra methods.
 ///
 /// The classes are then in scope where the macro is called.
 macro_rules! component_module {
@@ -99,7 +102,8 @@ macro_rules! component_module {
         python_module: $python_module:literal,
         tokenizer_field: $tokenizer_field:ident
         $(, items_key: $items_key:literal)?
-        $(, also_exports: [$($export:path),* $(,)?])? $(,)?
+        $(, also_exports: [$($export:path),* $(,)?])?
+        $(, class_methods: $class_methods:ident)? $(,)?
     } $($definitions:tt)*) => {
         // The `Sequence` class becomes an optional identifier, which the rule below can repeat on.
         $crate::components::macros::component_module! {
@@ -110,11 +114,21 @@ macro_rules! component_module {
                 tokenizer_field: $tokenizer_field,
                 sequence: [$($items_key => Sequence)?],
                 also_exports: [$($($export),*)?],
+                class_methods: [$($class_methods)?],
             } $($definitions)*
         }
     };
     (@items_key) => { None };
     (@items_key $items_key:literal) => { Some($items_key) };
+    (@methods [] $class:ident { $($methods:tt)* }) => {
+        #[pymethods]
+        impl $class {
+            $($methods)*
+        }
+    };
+    (@methods [$class_methods:ident] $class:ident { $($methods:tt)* }) => {
+        $class_methods! { $class { $($methods)* } }
+    };
     (@module {
         kind: $kind:ident,
         module: $module:ident,
@@ -122,6 +136,8 @@ macro_rules! component_module {
         tokenizer_field: $tokenizer_field:ident,
         sequence: [$($items_key:literal => $sequence:ident)?],
         also_exports: [$($export:path),*],
+        // `[]` or `[name]`: one token, so the class repetition below can carry it.
+        class_methods: $class_methods:tt,
     } $(
         $(#[doc = $doc:literal])+
         $class:ident $({
@@ -160,8 +176,7 @@ macro_rules! component_module {
                 // `paste!` wraps the whole impl because pyo3 reads method names before inner macros
                 // expand.
                 pastey::paste! {
-                    #[pymethods]
-                    impl $class {
+                    $crate::components::macros::component_module! { @methods $class_methods $class {
                         #[new]
                         #[pyo3(signature = ($($($key $(= $default)?),*)?))]
                         fn new($($($key: arg::$field_type),*)?) -> PyResult<PyClassInitializer<Self>> {
@@ -194,7 +209,7 @@ macro_rules! component_module {
                                 Ok(())
                             }
                         )*)?
-                    }
+                    }}
                 }
             )*
         }

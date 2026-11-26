@@ -40,6 +40,7 @@ SAMPLES = {
     "behavior": "merged_with_previous",
     "prepend": "never",
     "prepend_scheme": "never",
+    "whitespace_match": "any_unicode",
 }
 
 
