@@ -1069,15 +1069,19 @@ impl DecodeStream {
     pub fn step(&mut self, tokenizer: &Tokenizer, ids: &[u32]) -> Result<Option<String>> {
         // `new` has no tokenizer, so the first step decodes the prompt.
         if self.prefix.is_empty() && !self.ids.is_empty() {
-            let new_prefix = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
-            if !new_prefix.ends_with(char::REPLACEMENT_CHARACTER) {
-                self.prefix = new_prefix;
+            tokenizer.decode_runs(&self.ids, self.skip_special_tokens, &mut self.runs)?;
+            if !self.runs.text().ends_with(char::REPLACEMENT_CHARACTER) {
+                self.commit_prefix();
                 self.prefix_index = self.ids.len();
             }
         }
 
         self.ids.extend_from_slice(ids);
-        let decoded = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+        // `decode_runs` is the decode, into the buffers this stream already owns: it is the same
+        // text `decode` returns, and taking it as runs costs nothing the text path was not
+        // already paying.
+        tokenizer.decode_runs(&self.ids, self.skip_special_tokens, &mut self.runs)?;
+        let decoded = self.runs.text();
         if decoded.len() <= self.prefix.len() || decoded.ends_with(char::REPLACEMENT_CHARACTER) {
             Ok(None)
         } else {
@@ -1092,10 +1096,17 @@ impl DecodeStream {
             };
             let new_text = new_text.to_owned();
             self.ids.drain(..self.prefix_index);
-            self.prefix = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+            tokenizer.decode_runs(&self.ids, self.skip_special_tokens, &mut self.runs)?;
+            self.commit_prefix();
             self.prefix_index = self.ids.len();
             Ok(Some(new_text))
         }
+    }
+
+    /// Sets `prefix` to the text of the current decode, without allocating.
+    fn commit_prefix(&mut self) {
+        self.prefix.clear();
+        self.prefix.push_str(self.runs.text());
     }
 }
 
@@ -1172,7 +1183,7 @@ impl DecodeStream {
         if self.prefix.is_empty() && !self.ids.is_empty() {
             tokenizer.decode_runs(&self.ids, self.skip_special_tokens, &mut self.runs)?;
             if !self.runs.text().ends_with(char::REPLACEMENT_CHARACTER) {
-                self.prefix = self.runs.text().to_owned();
+                self.commit_prefix();
                 self.prefix_index = self.ids.len();
             }
         }
@@ -1210,7 +1221,7 @@ impl DecodeStream {
         // does not re-decode from the start on every call.
         self.ids.drain(..self.prefix_index);
         tokenizer.decode_runs(&self.ids, self.skip_special_tokens, &mut self.runs)?;
-        self.prefix = self.runs.text().to_owned();
+        self.commit_prefix();
         self.prefix_index = self.ids.len();
         Ok(true)
     }
