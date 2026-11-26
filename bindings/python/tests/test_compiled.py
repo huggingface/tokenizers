@@ -5,7 +5,7 @@ import pickle
 import pytest
 
 from conftest import BERT, GPT2
-from tokenizers import Padding, Tokenizer, Truncation
+from tokenizers import AddedToken, Padding, Tokenizer, Truncation, normalizers
 
 TEXT = "Hello there, how are you today?"
 EOT = 50256
@@ -35,6 +35,18 @@ def test_pickle(gpt2_spec):
 
     assert restored.encode(TEXT) == compiled.encode(TEXT)
     assert len(restored.encode(TEXT)) == 12
+
+
+# The compiled tokenizer stores a normalized added token in its normalized form, here "x<tok>".
+# A pickle written from it would normalize the token again on load, to "xx<tok>".
+def test_pickle_keeps_normalized_added_tokens(gpt2_spec):
+    gpt2_spec.normalizer = normalizers.Prepend("x")
+    gpt2_spec.add_tokens([AddedToken("<tok>", normalized=True)])
+    compiled = gpt2_spec.compile()
+
+    restored = pickle.loads(pickle.dumps(compiled))
+
+    assert restored.encode("<tok>") == compiled.encode("<tok>")
 
 
 def test_compile_error(tmp_path):
