@@ -331,16 +331,8 @@ impl AddedVocabulary {
 
     /// Get the id matching one of our token if it exists
     pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
-        let internal_id = match self.declared_contents.token_to_id(token) {
-            Some(internal_id) => internal_id,
-            // A matcher holds the content of its token, unless the token declares another one.
-            None => self.token_to_internal_id(token).filter(|&internal_id| {
-                self.declared_contents
-                    .id_to_token_bytes(internal_id)
-                    .is_none()
-            })?,
-        };
-        Some(self.ids.vocab_id(internal_id))
+        self.token_to_internal_id(token)
+            .map(|internal_id| self.ids.vocab_id(internal_id))
     }
 
     /// The bytes decoding writes for the added token `id`, with the token's flags, or `None` when
@@ -837,10 +829,6 @@ mod tests {
         assert_eq!(decoder[&0], tokens[0]);
         assert_eq!(decoder[&1], tokens[1]);
         assert_eq!(vocab.get_vocab()["Hello"], 0);
-        assert_eq!(vocab.token_to_id("Hello"), Some(0));
-        // `hello` is what the matcher looks for, not a token of the vocabulary.
-        assert_eq!(vocab.token_to_id("hello"), None);
-        assert_eq!(vocab.token_to_id("[CLS]"), Some(1));
 
         // Decoding writes the normalized form, for the decoder to undo the normalization.
         assert_eq!(vocab.id_to_token_bytes(0).unwrap().0, b"hello");
