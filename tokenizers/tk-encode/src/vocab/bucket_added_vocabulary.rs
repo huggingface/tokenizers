@@ -129,7 +129,7 @@ impl Default for AddedToken {
             rstrip: false,
             normalized: true,
             special: false,
-            control: false
+            control: false,
         }
     }
 }
@@ -142,7 +142,7 @@ impl From<&AddedToken> for AddedTokenFlags {
             single_word: token.single_word,
             lstrip: token.lstrip,
             rstrip: token.rstrip,
-            control: token.control
+            control: token.control,
         }
     }
 }
@@ -312,8 +312,8 @@ impl AddedVocabulary {
                         rstrip: m.rstrip,
                         normalized: m.normalized,
                         special: m.special,
-                        control: m.control
-                    }
+                        control: m.control,
+                    },
                 )
             })
             .collect::<AHashMap<u32, AddedToken>>()

@@ -22,7 +22,7 @@ struct AddedTokenDef {
     rstrip: bool,
     normalized: bool,
     special: bool,
-    control: bool
+    control: bool,
 }
 
 impl From<&AddedToken> for AddedTokenDef {
