@@ -64,7 +64,25 @@ Every class can be pickled, so a tokenizer can be sent to a worker process:
 `multiprocessing`, a PyTorch `DataLoader`, `datasets.map(num_proc=...)`.
 
 A pickled `CompiledTokenizer` carries the bytes of `tokenizer.json`, and unpickling compiles it again.
-With the `"spawn"` start method, we recommend compiling the tokenizer once per worker to avoid unpickle compilation overhead.
+Compiling a large vocabulary can take up to a few seconds, so the method for sending the tokenizer
+to the workers matters.
+
+- With `"spawn"` or `"forkserver"`, pass the `Tokenizer` (uncompiled spec) to the pool's `initializer` and compile once per worker.
+- With `"fork"`, compile before starting the pool. The workers inherit the compiled tokenizer.
+- **Never** pass a tokenizer as a task argument, as in `pool.imap(partial(encode, compiled), texts)`.
+  The pool would pickle it with every chunk of tasks, and every chunk would compile it again.
+
+Wall time in seconds to encode 50,000 English texts with gemma-3 (262k tokens in its vocabulary),
+with 4 workers and `chunksize=64`, on Linux with Python 3.12 and a 16-core AMD EPYC 7R13 (32 threads):
+
+| How the tokenizer reaches the workers | fork | forkserver | spawn |
+|---|---|---|---|
+| `CompiledTokenizer` compiled before the pool | 2.4s | n/a | n/a |
+| `Tokenizer` in `initargs`, compiled per worker | 2.8s | 3.3s | 3.1s |
+| `CompiledTokenizer` in `initargs` | 2.4s | 3.9s | 4.3s |
+| `CompiledTokenizer` in every task | over 150s | over 150s | over 150s |
+
+For reference, a plain loop in a single process takes 4.9 s.
 
 ```python
 def compile_tokenizer(tokenizer):
@@ -79,8 +97,6 @@ def encode(text):
 with multiprocessing.get_context("spawn").Pool(4, initializer=compile_tokenizer, initargs=(tokenizer,)) as pool:
     encoded = list(pool.imap(encode, texts, chunksize=32))
 ```
-
-With the `"fork"` start method, compiling before starting the pool is recommended: the workers inherit the compiled tokenizer.
 
 ## Developers
 
