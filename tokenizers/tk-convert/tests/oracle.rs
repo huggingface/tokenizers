@@ -18,6 +18,9 @@
 //! `WhitespaceSplit`, and the two shapes convert differently. mistral-7b-v0.1 sets
 //! `prepend_scheme: first` with `split: false`.
 //!
+//! inclusively-reformulation-it5 follows its `Metaspace` with `Digits` and `Punctuation`.
+//! falcon-h1-0.5b-base puts a `Split` on `[0-9]` after its `ByteLevel`.
+//!
 //! smollm2-135m and bloomz-560m are byte-level BPE with no token for some bytes that valid UTF-8
 //! can contain.
 //!
@@ -108,6 +111,8 @@ const TEXTS: &[&str] = &[
     "a\u{4}b\u{b}c",
     "\u{4}\u{b}",
     "a\u{40000}b",
+    // Numeric characters outside ASCII. `Digits` cuts them, `[0-9]` does not.
+    "x² ½ ١٢٣ 4,5",
     // A digit and a symbol new in Unicode 17.
     " \u{11DE0}",
     " \u{1FAEA}",
@@ -447,4 +452,20 @@ fn robertuito_sentiment_analysis() {
 #[test]
 fn maira_2() {
     assert_matches_released("microsoft/maira-2", "fixtures/models/maira-2.json");
+}
+
+#[test]
+fn inclusively_reformulation_it5() {
+    assert_matches_released(
+        "E-MIMIC/inclusively-reformulation-it5",
+        "fixtures/models/inclusively-reformulation-it5.json",
+    );
+}
+
+#[test]
+fn falcon_h1_0_5b_base() {
+    assert_matches_released(
+        "tiiuae/Falcon-H1-0.5B-Base",
+        "fixtures/models/falcon-h1-0.5b-base.json",
+    );
 }

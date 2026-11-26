@@ -147,7 +147,7 @@ pub fn canonicalize_value(value: &mut Value) -> Result<(), ConvertError> {
         canonicalize_merges(model)?;
     }
 
-    // Both read the `pre_tokenizer` slot and write elsewhere -- the normalizer chain, the model --
+    // Both read the `pre_tokenizer` slot and write elsewhere -- `piece_normalizer`, the model --
     // so they run before the per-component fill below sees either.
     lower_metaspace_pre_tokenizer(root)?;
     lower_byte_level_pre_tokenizer(root)?;
@@ -402,6 +402,9 @@ fn kind_of(value: &Value) -> &'static str {
 ///
 /// `Sequence[WhitespaceSplit, Metaspace]` (eg, t5 or albert) is the same thing with `drop_whitespace`.
 ///
+/// Members after the `Metaspace` (it5 puts `Digits` and `Punctuation` there) stay behind the
+/// `Split`. They cut the rewritten text, and that is the text the piece normalizer hands them.
+///
 /// `split: false` leaves this slot empty. The reader reads a null `pre_tokenizer` as one span
 /// covering the whole text, which is what not cutting means.
 fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), ConvertError> {
@@ -416,16 +419,19 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
     } else {
         std::slice::from_ref(pretokenizer)
     };
-    let (metaspace, drop_whitespace) = match members {
-        [metaspace] if component_type(metaspace) == Some("Metaspace") => (metaspace, false),
-        [split, metaspace]
+    let (metaspace, drop_whitespace, after) = match members {
+        [metaspace, after @ ..] if component_type(metaspace) == Some("Metaspace") => {
+            (metaspace, false, after)
+        }
+        [split, metaspace, after @ ..]
             if component_type(split) == Some("WhitespaceSplit")
                 && component_type(metaspace) == Some("Metaspace") =>
         {
-            (metaspace, true)
+            (metaspace, true, after)
         }
         _ => return Ok(()),
     };
+    let after: Vec<Value> = after.to_vec();
 
     let mut metaspace = metaspace
         .as_object()
@@ -470,8 +476,7 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
         ],
     );
     root.insert("piece_normalizer".to_string(), metaspace);
-    // No cut means an empty pre-tokenizer slot.
-    let cut = if split {
+    let metaspace_split = split.then(|| {
         tagged(
             "Split",
             &[
@@ -480,10 +485,15 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
                 ("invert", Value::Bool(false)),
             ],
         )
+    });
+    // No `metaspace_split` means an empty pre-tokenizer slot.
+    let pre_tokenizer = if after.is_empty() {
+        metaspace_split.unwrap_or(Value::Null)
     } else {
-        Value::Null
+        let members: Vec<Value> = metaspace_split.into_iter().chain(after).collect();
+        tagged("Sequence", &[("pretokenizers", Value::Array(members))])
     };
-    root.insert("pre_tokenizer".to_string(), cut);
+    root.insert("pre_tokenizer".to_string(), pre_tokenizer);
     Ok(())
 }
 
@@ -516,9 +526,12 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
     let replacement = if is_byte_level(pretok) {
         Some(split_for(pretok))
     } else if component_type(pretok) == Some("Sequence") {
-        let members = pretok
+        let mut members = pretok
             .get_mut("pretokenizers")
             .and_then(Value::as_array_mut);
+        if let Some(members) = members.as_deref_mut() {
+            move_byte_level_past_digit_splits(members);
+        }
         match members {
             Some(members) if members.last().is_some_and(is_byte_level) => {
                 let bl = members.pop().expect("checked by `last`");
@@ -573,6 +586,43 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
 
 fn adds_prefix_space(byte_level: &Value) -> bool {
     byte_level.get("add_prefix_space").and_then(Value::as_bool) == Some(true)
+}
+
+/// Moves a `ByteLevel` to the end of `members` when every member after it is a `[0-9]` split.
+///
+/// The byte map keeps ASCII digits as they are and turns no other byte into one.
+/// A `[0-9]` split therefore cuts in the same places before and after the map.
+fn move_byte_level_past_digit_splits(members: &mut Vec<Value>) {
+    let Some(at) = members
+        .iter()
+        .position(|m| component_type(m) == Some("ByteLevel"))
+    else {
+        return;
+    };
+    let byte_level = &members[at];
+    // The GPT-2 regex looks past the end of a match (`\s+(?!\S)`), so an earlier cut moves its cuts.
+    // `add_prefix_space` adds a space to each pre-token, and the digit splits make more of them.
+    if byte_level
+        .get("use_regex")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || adds_prefix_space(byte_level)
+    {
+        return;
+    }
+    if members[at + 1..].iter().all(is_digit_split) {
+        let byte_level = members.remove(at);
+        members.push(byte_level);
+    }
+}
+
+fn is_digit_split(member: &Value) -> bool {
+    component_type(member) == Some("Split")
+        && member
+            .get("pattern")
+            .and_then(|p| p.get("Regex"))
+            .and_then(Value::as_str)
+            == Some("[0-9]")
 }
 
 /// Set a boolean on the `model` object.
