@@ -897,26 +897,35 @@ impl Tokenizer {
     /// same text, so a caller scanning text for its delimiters cannot tell them apart: a model
     /// that quotes `<|endoftext|>` in an answer looks exactly like one that ended its turn. Here
     /// the two stay apart -- an added token is one [`Decoded::Added`], ordinary ids are
-    /// [`Decoded::Text`] -- and the runs concatenate to what [`Self::decode`] returns.
+    /// [`Decoded::Text`] -- and `runs.text()` is what [`Self::decode`] returns for the same ids.
     ///
     /// A response parser should read this: the delimiter is an id, never a spelling.
-    pub fn decode_runs(&self, ids: &[u32], skip_special_tokens: bool) -> Result<Vec<Decoded>> {
+    ///
+    /// Writes into `runs` rather than returning, so a decoder in a loop reuses one text buffer and
+    /// one run table instead of allocating per call.
+    pub fn decode_runs(
+        &self,
+        ids: &[u32],
+        skip_special_tokens: bool,
+        runs: &mut DecodeRuns,
+    ) -> Result<()> {
+        runs.text.clear();
+        runs.runs.clear();
         let added = |id: u32| {
             (id >= self.inner.added_id_min)
                 .then(|| self.inner.added_vocabulary.id_to_token_bytes(id))
                 .flatten()
         };
-        let mut runs = Vec::new();
         let mut start = 0;
         while start < ids.len() {
             // Added ids decode verbatim and never merge with a neighbour, so each is a run of its
             // own: two of them are two delimiters, not one span.
             if let Some((bytes, flags)) = added(ids[start]) {
                 if !skip_special_tokens || !flags.special {
-                    runs.push(Decoded::Added {
-                        id: ids[start],
-                        text: String::from_utf8_lossy(bytes).into_owned(),
-                    });
+                    let at = runs.text.len();
+                    runs.text
+                        .push_str(&String::from_utf8_lossy(bytes));
+                    runs.runs.push((at..runs.text.len(), Some(ids[start])));
                 }
                 start += 1;
                 continue;
@@ -925,13 +934,55 @@ impl Tokenizer {
             while end < ids.len() && added(ids[end]).is_none() {
                 end += 1;
             }
-            let text = self.decode(&ids[start..end], skip_special_tokens)?;
-            if !text.is_empty() {
-                runs.push(Decoded::Text(text));
+            let at = runs.text.len();
+            self.decode_into(&ids[start..end], skip_special_tokens, runs)?;
+            if runs.text.len() > at {
+                runs.runs.push((at..runs.text.len(), None));
             }
             start = end;
         }
-        Ok(runs)
+        Ok(())
+    }
+
+    /// [`Self::decode`], appending to `runs.text` instead of building a string.
+    fn decode_into(&self, ids: &[u32], skip_special_tokens: bool, runs: &mut DecodeRuns) -> Result<()> {
+        // Irrefutable in a `bpe`-only build, where `Model` has exactly one variant.
+        #[allow(irrefutable_let_patterns)]
+        if let Model::BPE(bpe) = &self.inner.model
+            && bpe.is_byte_level()
+        {
+            runs.bytes.clear();
+            self.decode_byte_level_bytes(bpe, ids, skip_special_tokens, &mut runs.bytes);
+            runs.text
+                .push_str(&String::from_utf8_lossy(&runs.bytes));
+            return Ok(());
+        }
+        runs.text.push_str(&self.decode(ids, skip_special_tokens)?);
+        Ok(())
+    }
+
+    /// The byte-level decode, into a caller's buffer: tokens are raw bytes, so this only collects.
+    fn decode_byte_level_bytes(
+        &self,
+        bpe: &BPE,
+        ids: &[u32],
+        skip_special_tokens: bool,
+        out: &mut Vec<u8>,
+    ) {
+        for &id in ids {
+            let added = if id >= self.inner.added_id_min {
+                self.inner.added_vocabulary.id_to_token_bytes(id)
+            } else {
+                None
+            };
+            if skip_special_tokens && added.is_some_and(|(_, flags)| flags.special) {
+                continue;
+            }
+            // Prefer the model vocab's bytes over the added token bytes
+            if let Some(bytes) = bpe.id_to_token_bytes(id).or(added.map(|(bytes, _)| bytes)) {
+                out.extend_from_slice(bytes);
+            }
+        }
     }
 
     /// Decode for a byte-level BPE, whose vocab entries are already decoded raw bytes.
@@ -1046,12 +1097,50 @@ impl DecodeStream {
 }
 
 /// A piece of decoded output and where it came from. See [`Tokenizer::decode_runs`].
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Decoded {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Decoded<'a> {
     /// Text the model's own tokens produced.
-    Text(String),
+    Text(&'a str),
     /// An added token, decoded on its own: its id, and the spelling `decode` would write for it.
-    Added { id: u32, text: String },
+    Added { id: u32, text: &'a str },
+}
+
+/// The buffers [`Tokenizer::decode_runs`] writes into. Cleared and reused, never reallocated once
+/// warm, so decoding a stream costs no allocation per call.
+#[derive(Clone, Debug, Default)]
+pub struct DecodeRuns {
+    /// Every run's text, back to back.
+    text: String,
+    /// `(range in text, added token id)`; `None` for text the model produced.
+    runs: Vec<(std::ops::Range<usize>, Option<u32>)>,
+    /// Scratch for the byte-level path, which assembles bytes before they are known to be UTF-8.
+    bytes: Vec<u8>,
+}
+
+impl DecodeRuns {
+    /// The runs, in order, borrowing from the buffers this is called on.
+    pub fn iter(&self) -> impl Iterator<Item = Decoded<'_>> + '_ {
+        self.runs.iter().map(|(range, added)| match added {
+            Some(id) => Decoded::Added {
+                id: *id,
+                text: &self.text[range.clone()],
+            },
+            None => Decoded::Text(&self.text[range.clone()]),
+        })
+    }
+
+    /// Everything the runs spell, which is what [`Tokenizer::decode`] returns for the same ids.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn len(&self) -> usize {
+        self.runs.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.runs.is_empty()
+    }
 }
 
 /// Turns pre-tokens into tokens. Every model (BPE, Unigram, WordPiece, WordLevel) implements it.
