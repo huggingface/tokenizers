@@ -279,7 +279,15 @@ mod test {
         merges.insert((1, 2), (2, 3)); // Ã + © -> é
         let ids = [0, 1, 2, 3, 4, 5];
         let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
-        // In "aaé", "aa" forms before é exists, so "aé" never does.
+           // é assembles at rank 2, but `a + é -> aÃ©` has priority(rank 0): a merge that consumes the
+           // *assembled* é would "steal" it, would change the order. Folding é makes it available from the start,
+           // so for "aaé" the rank-0 merge "a + é" outranks `a + a` @ rank 1:
+           //
+           //   folded     [a, a, é]     a+é  → [a, aÃ©]  = [0, 4]   ✗
+           //   unseeded   [a, a, Ã, ©]  a+a  → [aa, é] = [5, 3]   ✓
+           //
+           // Unseeded, é only exists after `Ã + ©` @ rank 2, so `a + a` forms first and the lone
+           // `a` that `a + é` needed is already gone. That's why we added highest rank check
         assert!(matches!(f.fold("Ã©", 3), Fold::Unsafe));
     }
 
