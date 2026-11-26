@@ -918,11 +918,24 @@ impl Tokenizer {
                     // the caller did not touch keeps the fast path; a chunk it did touch is
                     // matched with everything untrusted, which refuses every added token in it
                     // rather than one of them by accident.
+                    // The mask is over the raw bytes and normalization moves them (Metaspace
+                    // widens a space to three), so it cannot be handed to the second pass as it
+                    // stands. A chunk the caller did not touch keeps the fast path; a chunk it
+                    // did touch is matched with everything untrusted, which refuses every added
+                    // token in it rather than one of them by accident.
                     let chunk_trusted = trusted
                         .get(input_offset..input_offset + chunk.len())
                         .unwrap_or_default();
                     let untrusted_chunk = !trusted.is_empty()
                         && !chunk_trusted.iter().all(|&byte| byte != 0);
+
+                    // Nothing may match in caller text, so do not go looking. Going straight to
+                    // the model is both cheaper and exactly the answer.
+                    if !trusted.is_empty() && chunk_trusted.iter().all(|&byte| byte == 0) {
+                        self.encode_normalized_into(&normalized, scratch, output)?;
+                        continue;
+                    }
+
                     if untrusted_chunk {
                         untrusted_normalized.clear();
                         untrusted_normalized.resize(normalized.len(), 0);
@@ -949,24 +962,7 @@ impl Tokenizer {
                                 text: normalized_chunk,
                                 ..
                             } => {
-                                // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),
-                                // so the length limit of `pre_tokens` applies to the normalized chunk.
-                                let EncodeScratch {
-                                    model: model_scratch,
-                                    pre_tokens,
-                                    split: pre_tokenizer_scratch,
-                                } = &mut *scratch;
-                                let pre_tokens = self.inner.pre_tokenizer.pre_tokens(
-                                    normalized_chunk,
-                                    pre_tokenizer_scratch,
-                                    pre_tokens,
-                                )?;
-                                output.reserve(pre_tokens.spans().len());
-                                self.inner.model.tokenize_spans(
-                                    pre_tokens,
-                                    model_scratch,
-                                    output,
-                                )?;
+                                self.encode_normalized_into(normalized_chunk, scratch, output)?;
                             }
                         }
                     }
@@ -974,6 +970,30 @@ impl Tokenizer {
             };
         }
         Ok(())
+    }
+
+    /// Pre-tokenize and tokenize one piece of already-normalized text, appending its ids.
+    fn encode_normalized_into(
+        &self,
+        text: &str,
+        scratch: &mut EncodeScratch,
+        output: &mut Vec<Token>,
+    ) -> Result<()> {
+        // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),
+        // so the length limit of `pre_tokens` applies to the normalized chunk.
+        let EncodeScratch {
+            model: model_scratch,
+            pre_tokens,
+            split: pre_tokenizer_scratch,
+        } = &mut *scratch;
+        let pre_tokens =
+            self.inner
+                .pre_tokenizer
+                .pre_tokens(text, pre_tokenizer_scratch, pre_tokens)?;
+        output.reserve(pre_tokens.spans().len());
+        self.inner
+            .model
+            .tokenize_spans(pre_tokens, model_scratch, output)
     }
 
     /// [`Self::encode_sequence_into`] into a fresh buffer, for the callers that want one back.
