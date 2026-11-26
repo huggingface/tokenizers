@@ -22,6 +22,7 @@ struct AddedTokenDef {
     rstrip: bool,
     normalized: bool,
     special: bool,
+    control: bool,
 }
 
 impl From<&AddedToken> for AddedTokenDef {
@@ -33,6 +34,7 @@ impl From<&AddedToken> for AddedTokenDef {
             rstrip: token.rstrip,
             normalized: token.normalized,
             special: token.special,
+            control: token.control,
         }
     }
 }
@@ -46,6 +48,7 @@ impl From<AddedTokenDef> for AddedToken {
         token.rstrip = def.rstrip;
         token.normalized = def.normalized;
         token.special = def.special;
+        token.control = def.control;
         token
     }
 }

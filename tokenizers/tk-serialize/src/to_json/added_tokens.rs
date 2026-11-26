@@ -17,6 +17,7 @@ pub(super) fn write_added_tokens(out: &mut Out, added: &BucketAddedVocabulary) {
         out.field_bool("rstrip", token.rstrip);
         out.field_bool("normalized", token.normalized);
         out.field_bool("special", token.special);
+        out.field_bool("control", token.control);
         out.obj_close();
     }
     out.arr_close();

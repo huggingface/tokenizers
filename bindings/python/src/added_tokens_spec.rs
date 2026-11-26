@@ -7,7 +7,8 @@ use crate::added_token;
 
 /// The `added_tokens` array of a `tokenizer.json`, with a lookup by content for [`Self::add`].
 ///
-/// Loading assigns the real ids again, in `id` order, so an `id` in the array is only a sort key.
+/// Loading assigns the real ids again, in the order of the array, so an `id` in the array is
+/// only a placeholder.
 /// The entries are checked at `compile()`.
 #[derive(Clone)]
 pub(crate) struct AddedTokensSpec {
@@ -15,7 +16,7 @@ pub(crate) struct AddedTokensSpec {
     entries: Value,
     /// The position of each content in `entries`. When the file repeats a content, the first one.
     position_by_content: HashMap<String, usize>,
-    /// One more than the highest `id` in `entries`, so a new token sorts after the others.
+    /// One more than the highest `id` in `entries`: the placeholder of the next new token.
     next_sort_key: u64,
 }
 

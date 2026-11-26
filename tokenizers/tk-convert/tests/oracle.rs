@@ -24,6 +24,9 @@
 //! siglip2-base-patch16-224 and parakeet-tdt-0.6b-v3 set `byte_fallback` but lack some `<0xNN>` tokens.
 //! SigLIP 2 has a `"\t"` token in place of `<0x09>`. Parakeet has no `<0xNN>` token at all.
 //!
+//! glm-5.2 has merges that take a whole multi-byte character as an operand at a lower rank than
+//! the merges that assemble the character from its bytes.
+//!
 //! Decode is fed the release's *own* ids, so it is judged on decode alone even where encode
 //! legitimately diverges.
 //!
@@ -106,6 +109,9 @@ const TEXTS: &[&str] = &[
     " \u{1FAEA}",
     // pplx-embed-v1-0.6b lists the model token for this character again as an added token.
     "\u{2f57}",
+    // glm-5.2 merges a character here with a neighbour before its own bytes are merged.
+    "小组件",
+    "的件",
 ];
 
 /// [`TEXTS`] plus inputs long enough for the parallel encoder and the hot/cold queue to take over.
@@ -403,4 +409,9 @@ fn pplx_embed_v1_0_6b() {
         "pplx-embed-v1-0.6b",
         "fixtures/models/pplx-embed-v1-0.6b.json",
     );
+}
+
+#[test]
+fn glm_5_2() {
+    assert_matches_released("zai-org/GLM-5.2", "glm-5.2.json");
 }

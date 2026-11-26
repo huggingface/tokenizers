@@ -113,7 +113,7 @@ wrapper naming a table entry — is one more thing tk-convert rewrites.
 
 ```text
 { "id":0, "content":"<s>", "single_word":false, "lstrip":false,
-  "rstrip":false, "normalized":false, "special":true }
+  "rstrip":false, "normalized":false, "special":true, "control":false }
 ```
 
 ## Refused
@@ -126,6 +126,7 @@ Each is an error naming what to convert.
   "merges" spelled "a b" not ["a","b"]      ├──▶ tk-convert ──▶ canonical 2.0 ──▶ here
   a Metaspace *pre-tokenizer* (it is two)   │
   a Metaspace with "add_prefix_space"       │
+  an added token with no "control"          │
   a ByteLevel pre-tokenizer                ─┘
 
   a vocabulary named by path ("files")     ─────▶ refused, nothing converts it
