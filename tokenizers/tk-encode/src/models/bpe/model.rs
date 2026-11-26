@@ -228,8 +228,13 @@ impl pipeline::Tokenize for BPE {
             word_cache,
         } = scratch;
 
-        // Cache before fold, for the reason given in `tokenize_spans`: the cache is one load and
-        // the fold is an MPHF probe, so the fold must not run ahead of it.
+        // Fold before cache. Most words of running text are vocabulary entries, so the cache
+        // keeps its slots for the words that need a merge.
+        if let Some(id) = self.fold_id_keyed(key, hash) {
+            output.push(Token::from(id));
+            return Ok(());
+        }
+
         let insert_at = if let Some(cache) = word_cache.as_mut() {
             match cache.lookup_keyed(key, hash) {
                 Lookup::Hit(ids) => {
@@ -241,16 +246,6 @@ impl pipeline::Tokenize for BPE {
         } else {
             None
         };
-
-        if let Some(id) = self.fold_id_keyed(key, hash) {
-            output.push(Token::from(id));
-            if let Some(cache) = word_cache.as_mut()
-                && let Some(at) = insert_at
-            {
-                cache.insert(at, std::iter::once(id));
-            }
-            return Ok(());
-        }
 
         let start = output.len();
         self.merge_word(sequence, symbols, queue);
@@ -294,22 +289,16 @@ impl pipeline::Tokenize for BPE {
         output.reserve(spans.len() + MAX_INLINE_IDS);
         let mut capacity = output.capacity();
         let mut cursor = output.len();
-        // A raw write cursor held across the whole chunk. `output.as_mut_ptr()` inside the loop had
-        // to be *reloaded from memory every span*: the loop also calls `set_len`, `reserve` and
-        // `extend` on `output`, so the optimiser cannot assume the buffer stayed where it was. That
-        // reload, the capacity test and the cursor arithmetic were a quarter of encode time in
-        // `tokenize_spans` itself, with nothing of the model in it. Now the fast path -- a cache hit
-        // writing inline ids -- touches only these two registers, and `dst` is refreshed solely on
-        // the paths that can actually move the buffer. This is the other half of gigatoken's
-        // `probe_emit_chunk`: loop-invariant cursors, refreshed only in the slow path.
+        // A raw write cursor held across the chunk: `output.as_mut_ptr()` inside the loop had to
+        // be reloaded from memory every span, since the loop also calls `set_len`, `reserve` and
+        // `extend` on `output`. `destination` and `cursor` stay in registers and are refreshed only
+        // on the paths that can actually move the buffer.
         // SAFETY: `cursor <= output.len() <= capacity`, so this is inside the allocation.
-        let mut dst = unsafe { output.as_mut_ptr().add(cursor) };
+        let mut destination = unsafe { output.as_mut_ptr().add(cursor) };
 
-        // Unwrapped once for the whole chunk. `word_cache` is an `Option<WordCache>` living in the
-        // scratch, so every `as_mut()` re-read its discriminant out of memory -- three times per
-        // span, on a table that is either there for the entire call or not at all. Holding
-        // `Option<&mut WordCache>` in a local keeps that test in a register, which is the cheap half
-        // of what gigatoken's `ProbeView` does by carrying the table base and mask across a chunk.
+        // Hoisted out of the loop: `word_cache` is an `Option` living in the scratch, so every
+        // `as_mut()` re-read its discriminant from memory; holding `Option<&mut WordCache>` in a
+        // local keeps that test in a register.
         let mut cache_slot = word_cache.as_mut();
 
         for (span, sequence) in pre_tokens.iter() {
@@ -324,32 +313,36 @@ impl pipeline::Tokenize for BPE {
                 capacity = output.capacity();
                 // `reserve` may have moved the buffer.
                 // SAFETY: `cursor` is what was written so far, so it is within the new allocation.
-                dst = unsafe { output.as_mut_ptr().add(cursor) };
+                destination = unsafe { output.as_mut_ptr().add(cursor) };
             }
 
-            // The cache goes first. It is one direct-mapped load; the fold is an MPHF probe, which
-            // is a pilot load plus a dependent entry load into the whole vocabulary. Running the
-            // fold ahead of the cache paid that on every pre-token including the ones the cache
-            // was about to answer, and on a warm cache that is nearly all of them.
-            //
-            // The two still agree on ids: `prove_fold` only sets the bit for an entry that merging
-            // its own text reproduces, so a folded word and a merged word give the same answer.
-            // What changes is that a foldable word now gets *inserted*, so its second and later
-            // occurrences come off the cache instead of re-probing the vocabulary.
+            // 1. We compute the key and hash of the word through the BucketVocabStore
+            // That key indexes both the cache and the model's vocabulary!
             let (key, hash) =
                 key_and_hash_readable(sequence.as_bytes(), chunk.len() - span.start as usize);
+
+            // Fold before cache. Most words of running text are vocabulary entries, so the cache
+            // keeps its slots for the words that need a merge.
+            if let Some(id) = self.fold_id_keyed(key, hash) {
+                // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
+                unsafe { destination.write(Token::from(id)) };
+                cursor += 1;
+                // SAFETY: one id written, and the capacity check reserved MAX_INLINE_IDS >= 1.
+                destination = unsafe { destination.add(1) };
+                continue;
+            }
 
             let mut placement = None;
             if let Some(cache) = cache_slot.as_deref_mut() {
                 // SAFETY: the capacity check above leaves `MAX_INLINE_IDS` slots past `cursor`, and
                 // `Token` is a transparent `u32`.
-                let found = unsafe { cache.probe_emit_keyed(key, hash, dst.cast::<u32>()) };
+                let found = unsafe { cache.probe_emit_keyed(key, hash, destination.cast::<u32>()) };
                 match found {
                     ProbeEmit::Wrote(n) => {
                         cursor += n;
                         // SAFETY: the probe wrote `n <= MAX_INLINE_IDS` ids, which the capacity
                         // check above reserved room for.
-                        dst = unsafe { dst.add(n) };
+                        destination = unsafe { destination.add(n) };
                         continue;
                     }
                     ProbeEmit::Hit(ids) => {
@@ -359,27 +352,11 @@ impl pipeline::Tokenize for BPE {
                         cursor = output.len();
                         capacity = output.capacity();
                         // SAFETY: `cursor == output.len()`, inside the (possibly moved) allocation.
-                        dst = unsafe { output.as_mut_ptr().add(cursor) };
+                        destination = unsafe { output.as_mut_ptr().add(cursor) };
                         continue;
                     }
                     ProbeEmit::Miss(at) => placement = Some(at),
                 }
-            }
-
-            // Cache miss. The fold still answers a word that is its own vocabulary entry in one
-            // probe, which beats running the merge engine for it.
-            if let Some(id) = self.fold_id_keyed(key, hash) {
-                // SAFETY: the check above leaves at least `MAX_INLINE_IDS >= 1` slots past `cursor`.
-                unsafe { dst.write(Token::from(id)) };
-                cursor += 1;
-                // SAFETY: one id written, and the capacity check reserved MAX_INLINE_IDS >= 1.
-                dst = unsafe { dst.add(1) };
-                if let Some(cache) = cache_slot.as_deref_mut()
-                    && let Some(at) = placement
-                {
-                    cache.insert(at, std::iter::once(id));
-                }
-                continue;
             }
 
             // SAFETY: `cursor` counts what the fast paths wrote.
@@ -392,6 +369,8 @@ impl pipeline::Tokenize for BPE {
                     .iter()
                     .map(|&symbol| Token::from(self.tables.unmap.at(symbol as usize))),
             );
+
+            // We know the merge, we can cache it now
             if let Some(cache) = cache_slot.as_deref_mut()
                 && let Some(at) = placement
             {
@@ -400,7 +379,7 @@ impl pipeline::Tokenize for BPE {
             cursor = output.len();
             capacity = output.capacity();
             // SAFETY: `cursor == output.len()`; `extend` above may have moved the buffer.
-            dst = unsafe { output.as_mut_ptr().add(cursor) };
+            destination = unsafe { output.as_mut_ptr().add(cursor) };
         }
         // SAFETY: `cursor` counts every token written, by the fast paths and the slow one alike.
         unsafe { output.set_len(cursor) };

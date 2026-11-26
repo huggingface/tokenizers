@@ -95,6 +95,12 @@ pub enum ConvertError {
 
     #[error("the template names the special token {name:?}, which its `special_tokens` does not")]
     UnknownTemplateSpecial { name: String },
+
+    #[error("`added_tokens` must be an array, found {found}")]
+    AddedTokensNotArray { found: &'static str },
+
+    #[error("an added token must be an object, found {found}")]
+    AddedTokenNotObject { found: &'static str },
 }
 
 fn in_backticks(keys: &[String]) -> String {
@@ -159,6 +165,11 @@ pub fn canonicalize_value(value: &mut Value) -> Result<(), ConvertError> {
             canonicalize_component(node)?;
         }
     }
+
+    if let Some(added_tokens) = root.get_mut("added_tokens") {
+        canonicalize_added_tokens(added_tokens)?;
+    }
+
     Ok(())
 }
 
@@ -395,6 +406,21 @@ fn canonicalize_metaspace(obj: &mut Map<String, Value>) -> Result<String, Conver
     // decoder, which the canonical writer spells as `{type, replacement, prepend_scheme}`.
     obj.remove("split");
     Ok(scheme)
+}
+
+fn canonicalize_added_tokens(node: &mut Value) -> Result<(), ConvertError> {
+    let found = kind_of(node);
+    let tokens = node
+        .as_array_mut()
+        .ok_or(ConvertError::AddedTokensNotArray { found })?;
+    for token in tokens {
+        let found = kind_of(token);
+        let token = token
+            .as_object_mut()
+            .ok_or(ConvertError::AddedTokenNotObject { found })?;
+        token.entry("control").or_insert(Value::Bool(false));
+    }
+    Ok(())
 }
 
 fn component_type(component: &Value) -> Option<&str> {

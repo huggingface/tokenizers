@@ -28,6 +28,8 @@ pub struct AddedToken {
     pub normalized: bool,
     /// Whether this token is special
     pub special: bool,
+    /// Whether this is a control token
+    pub control: bool,
 }
 
 #[inline]
@@ -111,6 +113,12 @@ impl AddedToken {
         self.special = special;
         self
     }
+    /// Specify whether this token is a control token
+    #[must_use]
+    pub fn control(mut self, control: bool) -> Self {
+        self.control = control;
+        self
+    }
 }
 impl Default for AddedToken {
     fn default() -> Self {
@@ -121,6 +129,7 @@ impl Default for AddedToken {
             rstrip: false,
             normalized: true,
             special: false,
+            control: false,
         }
     }
 }
@@ -133,6 +142,7 @@ impl From<&AddedToken> for AddedTokenFlags {
             single_word: token.single_word,
             lstrip: token.lstrip,
             rstrip: token.rstrip,
+            control: token.control,
         }
     }
 }
@@ -302,7 +312,8 @@ impl AddedVocabulary {
                         rstrip: m.rstrip,
                         normalized: m.normalized,
                         special: m.special,
-                    }, // TODO: implem from / to
+                        control: m.control,
+                    },
                 )
             })
             .collect::<AHashMap<u32, AddedToken>>()
