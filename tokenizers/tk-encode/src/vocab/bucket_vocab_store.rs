@@ -240,6 +240,27 @@ impl BucketVocabStore {
     pub(crate) fn build(tokens: Vec<(Vec<u8>, u32)>) -> Result<Self> {
         let n = tokens.len();
 
+        // A `Span` holds the length in a u16 and an `Entry` keeps FOLD_BIT in bit 31 of the id.
+        // Both come straight from a `tokenizer.json`, so refuse them before sizing any table.
+        for (s, id) in &tokens {
+            if s.len() > u16::MAX as usize {
+                return Err(format!(
+                    "failed to build the vocabulary store: token id {id} is {} bytes long, \
+                     the limit is {}",
+                    s.len(),
+                    u16::MAX
+                )
+                .into());
+            }
+            if *id > VOCAB_ID_MASK {
+                return Err(format!(
+                    "failed to build the vocabulary store: token id {id} is above the limit of \
+                     {VOCAB_ID_MASK}"
+                )
+                .into());
+            }
+        }
+
         let keys: Vec<u64> = tokens
             .iter()
             .map(|(s, _)| key_and_hash(s.as_slice()).1)
@@ -296,14 +317,6 @@ impl BucketVocabStore {
         let mut spans = vec![Span::default(); n_slots];
         let mut id_to_slot = vec![u32::MAX; id_space];
         for (s, id) in &tokens {
-            assert!(
-                s.len() <= u16::MAX as usize,
-                "token longer than 65535 bytes"
-            );
-            assert!(
-                *id <= VOCAB_ID_MASK,
-                "token id {id} needs bit 31, which holds FOLD_BIT"
-            );
             let (key, hash) = key_and_hash(s.as_slice());
             let slot = mphf.index(&hash);
             entries[slot] = Entry { key, id: *id };
@@ -589,6 +602,16 @@ mod tests {
         assert_eq!(vocab.get_bytes(b""), None);
         assert_eq!(vocab.id_to_token(0), None);
         assert!(vocab.content().is_empty());
+    }
+
+    #[test]
+    fn refuses_tokens_it_cannot_store() {
+        let long = vec![b'a'; u16::MAX as usize + 1];
+        assert!(BucketVocabStore::build(vec![(long, 0)]).is_err());
+        assert!(BucketVocabStore::build(vec![(b"a".to_vec(), VOCAB_ID_MASK + 1)]).is_err());
+        // The limits themselves are fine.
+        let longest = vec![b'a'; u16::MAX as usize];
+        assert!(BucketVocabStore::build(vec![(longest, 0)]).is_ok());
     }
 
     #[test]
