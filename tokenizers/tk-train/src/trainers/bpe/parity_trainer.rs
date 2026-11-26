@@ -593,20 +593,32 @@ impl ParityBpeTrainer {
             counts.push(*count);
 
             for (is_first, is_last, c) in word.chars().with_first_and_last() {
-                let mut s = c.to_string();
-                if w2id.contains_key(&CompactString::from(&s)) {
-                    if !is_first && let Some(prefix) = &self.continuing_subword_prefix {
-                        s.insert_str(0, prefix);
-                    }
-                    if is_last && let Some(suffix) = &self.end_of_word_suffix {
-                        s.push_str(suffix);
-                    }
+                let mut char_buf = [0; 4];
+                let char_key = CompactString::from(&*c.encode_utf8(&mut char_buf));
+                if w2id.contains_key(&char_key) {
+                    let prefix = (!is_first)
+                        .then_some(self.continuing_subword_prefix.as_deref())
+                        .flatten()
+                        .unwrap_or_default();
+                    let suffix = is_last
+                        .then_some(self.end_of_word_suffix.as_deref())
+                        .flatten()
+                        .unwrap_or_default();
+                    let mut token =
+                        CompactString::with_capacity(prefix.len() + c.len_utf8() + suffix.len());
+                    token.push_str(prefix);
+                    token.push(c);
+                    token.push_str(suffix);
 
-                    if !w2id.contains_key(&CompactString::from(&s)) {
-                        id2w.push(CompactString::from(&s));
-                        w2id.insert(CompactString::from(&s), (id2w.len() - 1) as u32);
-                    }
-                    current_word.add(w2id[&CompactString::from(&s)], 1);
+                    let token_id = if let Some(&token_id) = w2id.get(&token) {
+                        token_id
+                    } else {
+                        let token_id = id2w.len() as u32;
+                        id2w.push(token.clone());
+                        w2id.insert(token, token_id);
+                        token_id
+                    };
+                    current_word.add(token_id, 1);
                 }
             }
             words.push(current_word);
@@ -1335,15 +1347,17 @@ impl ParityBpeTrainer {
             {
                 part_b = rest;
             }
-            let new_token = format!("{part_a}{part_b}");
-            let new_token_id = word_to_id
-                .get(&CompactString::from(&new_token))
-                .copied()
-                .unwrap_or(id_to_word.len() as u32);
-            if !word_to_id.contains_key(&CompactString::from(&new_token)) {
-                id_to_word.push(CompactString::from(&new_token));
-                word_to_id.insert(CompactString::from(&new_token), new_token_id);
-            }
+            let mut new_token = CompactString::with_capacity(part_a.len() + part_b.len());
+            new_token.push_str(part_a);
+            new_token.push_str(part_b);
+            let new_token_id = if let Some(&new_token_id) = word_to_id.get(&new_token) {
+                new_token_id
+            } else {
+                let new_token_id = id_to_word.len() as u32;
+                id_to_word.push(new_token.clone());
+                word_to_id.insert(new_token, new_token_id);
+                new_token_id
+            };
             merges.push((best_pair, new_token_id));
 
             if want_global {

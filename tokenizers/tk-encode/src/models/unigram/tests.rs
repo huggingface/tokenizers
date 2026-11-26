@@ -31,12 +31,12 @@ fn test_populate_nodes_unk() {
     assert_eq!(lattice.begin_nodes[0].len(), 1);
     assert_eq!(lattice.begin_nodes[1].len(), 1);
     assert_eq!(lattice.begin_nodes[2].len(), 1);
-    assert_eq!(lattice.begin_nodes[0][0].borrow().id, 0);
-    assert_eq!(lattice.begin_nodes[1][0].borrow().id, 0);
-    assert_eq!(lattice.begin_nodes[2][0].borrow().id, 0);
-    assert_eq!(lattice.begin_nodes[0][0].borrow().node_id, 2);
-    assert_eq!(lattice.begin_nodes[1][0].borrow().node_id, 3);
-    assert_eq!(lattice.begin_nodes[2][0].borrow().node_id, 4);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[0][0]].id, 0);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[1][0]].id, 0);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[2][0]].id, 0);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[0][0]].node_id, 2);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[1][0]].node_id, 3);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[2][0]].node_id, 4);
 }
 
 #[test]
@@ -59,16 +59,16 @@ fn test_populate_nodes() {
 
     // Id is the vocabulary id from Unigram model
     // node_id is simply the rank of the given node in the lattice.
-    assert_eq!(lattice.begin_nodes[0][0].borrow().id, 1);
-    assert_eq!(lattice.begin_nodes[0][1].borrow().id, 3);
-    assert_eq!(lattice.begin_nodes[1][0].borrow().id, 2);
-    assert_eq!(lattice.begin_nodes[1][1].borrow().id, 4);
-    assert_eq!(lattice.begin_nodes[2][0].borrow().id, 0);
-    assert_eq!(lattice.begin_nodes[0][0].borrow().node_id, 2);
-    assert_eq!(lattice.begin_nodes[0][1].borrow().node_id, 3);
-    assert_eq!(lattice.begin_nodes[1][0].borrow().node_id, 4);
-    assert_eq!(lattice.begin_nodes[1][1].borrow().node_id, 5);
-    assert_eq!(lattice.begin_nodes[2][0].borrow().node_id, 6);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[0][0]].id, 1);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[0][1]].id, 3);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[1][0]].id, 2);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[1][1]].id, 4);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[2][0]].id, 0);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[0][0]].node_id, 2);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[0][1]].node_id, 3);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[1][0]].node_id, 4);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[1][1]].node_id, 5);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[2][0]].node_id, 6);
 }
 
 #[test]

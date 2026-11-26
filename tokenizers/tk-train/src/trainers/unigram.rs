@@ -271,15 +271,10 @@ impl UnigramTrainer {
         _progress: &Option<ProgressBar>,
     ) -> Vec<SentencePiece> {
         // Put all sentences in a string, separated by \0
-        let total: usize = sentences
-            .iter()
-            .map(|(s, _)| s.chars().count())
-            .sum::<usize>()
-            + sentences.len();
+        let total: usize = sentences.iter().map(|(s, _)| s.len()).sum::<usize>() + sentences.len();
         let mut flat_string = String::with_capacity(total);
         let mut all_chars: AHashMap<char, u32> = AHashMap::new();
         let c_sentence_boundary = '\0';
-        let k_sentence_boundary = '\0'.to_string();
         for (string, n) in sentences {
             if string.is_empty() {
                 continue;
@@ -288,14 +283,13 @@ impl UnigramTrainer {
             // XXX
             // Comment suggests we add sentence boundary, but it seems to be missing from actual
             // code in spm.
-            flat_string.push_str(&k_sentence_boundary);
+            flat_string.push(c_sentence_boundary);
             for c in string.chars() {
                 if c != c_sentence_boundary {
                     *all_chars.entry(c).or_insert(0) += n;
                 }
             }
         }
-        flat_string.shrink_to_fit();
         #[cfg(feature = "esaxx_fast")]
         let suffix = esaxx_rs::suffix(&flat_string).unwrap();
         #[cfg(not(feature = "esaxx_fast"))]
@@ -380,55 +374,45 @@ impl UnigramTrainer {
             } else if nbests[0].len() == 1 {
                 always_keep[id] = true;
                 for node in &nbests[1] {
-                    let alt_id = node.borrow().id;
+                    let alt_id = node.id;
                     alternatives[id].push(alt_id);
                 }
             }
         }
 
         // Second, segments all sentences to compute likelihood
-        // with a unigram language model. inverted[i] stores
-        // the set of sentence index where the sentencepieces[i] appears.
+        // with a unigram language model.
         let chunk_size = std::cmp::max(sentences.len() / current_num_threads(), 1);
-        let indexed_sentences: Vec<(usize, &Sentence)> = sentences.iter().enumerate().collect();
-        let collected: (f64, Vec<f64>, Vec<Vec<usize>>) = indexed_sentences
+        let collected: (f64, Vec<f64>) = sentences
             .maybe_par_chunks(chunk_size)
-            .map(|enumerated_sentence_count_chunk| {
+            .map(|sentence_count_chunk| {
                 let mut vsum = 0.0;
                 let mut freq: Vec<f64> = vec![0.0; pieces.len()];
-                let mut inverted: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
+                let mut lattice = Lattice::from(sentence_count_chunk[0].0.as_str(), bos_id, eos_id);
+                let mut viterbi_ids = Vec::new();
 
-                for (i, (sentence, count)) in enumerated_sentence_count_chunk {
-                    let mut lattice = Lattice::from(sentence, bos_id, eos_id);
+                for (sentence, count) in sentence_count_chunk {
+                    lattice.set_sentence(sentence);
                     model.populate_nodes(&mut lattice);
                     vsum += *count as f64;
-                    for node_ref in lattice.viterbi() {
-                        let id = node_ref.borrow().id;
+                    lattice.viterbi_token_ids(&mut viterbi_ids);
+                    for &id in &viterbi_ids {
                         freq[id] += *count as f64;
-                        inverted[id].push(*i);
                     }
                 }
-                (vsum, freq, inverted)
+                (vsum, freq)
             })
             .reduce(
-                || (0.0, vec![0.0; pieces.len()], vec![Vec::new(); pieces.len()]),
-                |(vsum, freq, inverted), (lvsum, lfreq, linverted)| {
-                    (
-                        vsum + lvsum,
-                        freq.iter()
-                            .zip(lfreq)
-                            .map(|(global_el, local_el)| global_el + local_el)
-                            .collect(),
-                        inverted
-                            .iter()
-                            .zip(linverted)
-                            .map(|(global_el, local_el)| [&global_el[..], &local_el[..]].concat())
-                            .collect(),
-                    )
+                || (0.0, vec![0.0; pieces.len()]),
+                |(vsum, mut freq), (lvsum, lfreq)| {
+                    for (global_el, local_el) in freq.iter_mut().zip(lfreq) {
+                        *global_el += local_el;
+                    }
+                    (vsum + lvsum, freq)
                 },
             );
 
-        let (vsum, freq, inverted) = collected;
+        let (vsum, freq) = collected;
 
         let sum: f64 = freq.iter().sum();
         let logsum = sum.ln();
@@ -452,12 +436,7 @@ impl UnigramTrainer {
                 // no alternatives. Keeps this entry.
                 new_pieces.push((token.to_string(), *score));
             } else {
-                let mut f = 0.0; // the frequency of pieces[i];
-
-                for n in &inverted[id] {
-                    let score = sentences[*n].1 as f64;
-                    f += score;
-                }
+                let mut f = freq[id]; // the frequency of pieces[i].
                 // TODO: Temporary hack to avoid Nans.
                 if f == 0.0 || f.is_nan() {
                     // new_pieces.push((token.to_string(), *score));
@@ -530,32 +509,33 @@ impl UnigramTrainer {
                 let mut expected: Vec<f64> = vec![0.0; model.len()];
                 let mut objs: f64 = 0.0;
                 let mut ntokens: u32 = 0;
+                let mut lattice =
+                    Lattice::from(sentences_chunk[0].0.as_str(), model.bos_id, model.eos_id);
 
                 for (string, freq) in sentences_chunk {
-                    let mut lattice = Lattice::from(string, model.bos_id, model.eos_id);
+                    lattice.set_sentence(string);
                     model.populate_nodes(&mut lattice);
 
                     let z: f64 = lattice.populate_marginal(*freq as f64, &mut expected);
                     if z.is_nan() {
                         panic!("likelihood is NAN. Input sentence may be too long.");
                     }
-                    ntokens += lattice.viterbi().len() as u32;
+                    if log::log_enabled!(log::Level::Debug) {
+                        let mut ids = Vec::new();
+                        lattice.viterbi_token_ids(&mut ids);
+                        ntokens += ids.len() as u32;
+                    }
                     objs -= z / (all_sentence_freq as f64);
                 }
                 (objs, ntokens, expected)
             })
             .reduce(
                 || (0.0, 0, vec![0.0; model.len()]),
-                |(objs, ntokens, expected), (lobjs, lntokens, lexpected)| {
-                    (
-                        objs + lobjs,
-                        ntokens + lntokens,
-                        expected
-                            .iter()
-                            .zip(lexpected)
-                            .map(|(global_el, local_el)| global_el + local_el)
-                            .collect(),
-                    )
+                |(objs, ntokens, mut expected), (lobjs, lntokens, lexpected)| {
+                    for (global_el, local_el) in expected.iter_mut().zip(lexpected) {
+                        *global_el += local_el;
+                    }
+                    (objs + lobjs, ntokens + lntokens, expected)
                 },
             );
 
