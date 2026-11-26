@@ -22,6 +22,10 @@ impl Serialize for BPE {
         model.serialize_field("fuse_unk", &self.fuse_unk)?;
         model.serialize_field("byte_fallback", &self.byte_fallback)?;
         model.serialize_field("ignore_merges", &self.ignore_merges)?;
+        // Written only when set, so every other tokenizer.json keeps its bytes.
+        if self.prefix_atoms.is_some() {
+            model.serialize_field("prefix_atoms", &true)?;
+        }
 
         // Then the large ones
         let mut merges: Vec<(&Pair, &u32)> = self
@@ -59,6 +63,7 @@ impl<'de> Deserialize<'de> for BPE {
                 "fuse_unk",
                 "byte_fallback",
                 "ignore_merges",
+                "prefix_atoms",
                 "vocab",
                 "merges",
             ],
@@ -126,6 +131,11 @@ impl<'de> Visitor<'de> for BPEVisitor {
                         builder = builder.ignore_merges(suffix);
                     }
                 }
+                "prefix_atoms" => {
+                    if let Some(prefix_atoms) = map.next_value()? {
+                        builder = builder.prefix_atoms(prefix_atoms);
+                    }
+                }
                 "vocab" => vocab = Some(map.next_value()?),
                 "merges" => merges = Some(map.next_value()?),
                 "type" => match map.next_value()? {
@@ -159,6 +169,7 @@ impl<'de> Visitor<'de> for BPEVisitor {
 mod test {
     use super::*;
     use crate::models::bpe::Vocab;
+    use crate::tokenizer::Model;
 
     #[test]
     fn test_serialization() {
@@ -213,6 +224,21 @@ mod test {
         );
         let reconstructed = serde_json::from_str(&data).unwrap();
         assert_eq!(bpe, reconstructed);
+    }
+
+    #[test]
+    fn prefix_atoms_read_and_write_back() {
+        let json = r#"{"type":"BPE","dropout":null,"unk_token":null,"continuing_subword_prefix":null,"end_of_word_suffix":null,"fuse_unk":false,"byte_fallback":false,"ignore_merges":false,"prefix_atoms":true,"vocab":{"a":0,"b":1,"c":2,"d":3,"x":4,"bc":5,"abcd":6},"merges":[["b","c"]]}"#;
+        let bpe: BPE = serde_json::from_str(json).unwrap();
+
+        let ids: Vec<u32> = bpe
+            .tokenize("abcdx")
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(ids, [6, 4]);
+        assert_eq!(serde_json::to_string(&bpe).unwrap(), json);
     }
 
     #[test]

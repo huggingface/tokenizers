@@ -3,6 +3,7 @@ use crate::tokenizer::{Model, Result, Token};
 use crate::utils::cache::{DEFAULT_CACHE_CAPACITY, MAX_LENGTH};
 use crate::utils::iter::ResultShunt;
 use ahash::AHashMap;
+use daachorse::{DoubleArrayAhoCorasick, DoubleArrayAhoCorasickBuilder, MatchKind};
 use serde_json::Value;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -102,6 +103,7 @@ struct Config {
     fuse_unk: bool,
     byte_fallback: bool,
     ignore_merges: bool,
+    prefix_atoms: bool,
 }
 
 /// A `BpeBuilder` can be used to create a `BPE` model with a custom configuration.
@@ -124,6 +126,7 @@ impl Default for BpeBuilder {
                 fuse_unk: false,
                 byte_fallback: false,
                 ignore_merges: false,
+                prefix_atoms: false,
             },
         }
     }
@@ -209,6 +212,16 @@ impl BpeBuilder {
         self
     }
 
+    /// Set the `prefix_atoms` option. A word that starts with a token the merges do not rebuild
+    /// from its own characters then emits that token first and merges the rest.
+    ///
+    /// This is not standard BPE. It is an escape hatch for malformed vocabs, such as Inkling-2's.
+    #[must_use]
+    pub fn prefix_atoms(mut self, prefix_atoms: bool) -> Self {
+        self.config.prefix_atoms = prefix_atoms;
+        self
+    }
+
     /// Returns a `BPE` model that uses the `BpeBuilder`'s configuration.
     pub fn build(mut self) -> Result<BPE> {
         // Validate dropout.
@@ -276,19 +289,26 @@ impl BpeBuilder {
 
         // merges.insert(pair, (rank as u32, *new_id));
 
-        Ok(BPE {
+        let mut bpe = BPE {
             vocab,
             vocab_r,
             merges: merge_map,
             cache,
-            dropout: self.config.dropout,
+            // Dropout is set after the prefix atoms, which are found with plain merges.
+            dropout: None,
             unk_token: self.config.unk_token,
             continuing_subword_prefix: self.config.continuing_subword_prefix,
             end_of_word_suffix: self.config.end_of_word_suffix,
             fuse_unk: self.config.fuse_unk,
             byte_fallback: self.config.byte_fallback,
             ignore_merges: self.config.ignore_merges,
-        })
+            prefix_atoms: None,
+        };
+        if self.config.prefix_atoms {
+            bpe.prefix_atoms = bpe.build_prefix_atoms()?;
+        }
+        bpe.dropout = self.config.dropout;
+        Ok(bpe)
     }
 }
 
@@ -319,6 +339,9 @@ pub struct BPE {
     pub byte_fallback: bool,
     /// Whether or not to direct output words if they are part of the vocab.
     pub ignore_merges: bool,
+    /// Finds the longest prefix atom that starts a word. [`Model::tokenize`] emits it, then
+    /// merges the rest. `None` unless the `prefix_atoms` option is set and the vocab has any.
+    pub(crate) prefix_atoms: Option<DoubleArrayAhoCorasick<u32>>,
 }
 
 impl std::fmt::Debug for BPE {
@@ -333,6 +356,7 @@ impl std::fmt::Debug for BPE {
             .field("vocab", &self.vocab.len())
             .field("merges", &self.merges.len())
             .field("ignore_merges", &self.ignore_merges)
+            .field("prefix_atoms", &self.prefix_atoms.is_some())
             .finish()
     }
 }
@@ -360,6 +384,7 @@ impl Clone for BPE {
             fuse_unk: self.fuse_unk,
             byte_fallback: self.byte_fallback,
             ignore_merges: self.ignore_merges,
+            prefix_atoms: self.prefix_atoms.clone(),
         }
     }
 }
@@ -549,6 +574,56 @@ impl BPE {
         Ok(word)
     }
 
+    // An escape hatch for malformed vocabs, such as Inkling-2's. They hold tokens that merging
+    // never builds from their own characters, so plain BPE can never emit them.
+    fn build_prefix_atoms(&self) -> Result<Option<DoubleArrayAhoCorasick<u32>>> {
+        let mut atoms: Vec<(&str, u32)> = vec![];
+        for (token, &id) in &self.vocab {
+            if token.chars().nth(1).is_none() {
+                continue;
+            }
+            let word = self.merge_word(token)?;
+            if !word.get_chars_iter().eq([id]) {
+                atoms.push((token, id));
+            }
+        }
+        if atoms.is_empty() {
+            return Ok(None);
+        }
+        let matcher = DoubleArrayAhoCorasickBuilder::new()
+            .match_kind(MatchKind::LeftmostLongest)
+            .build_with_values(atoms)
+            .map_err(|e| e.to_string())?;
+        Ok(Some(matcher))
+    }
+
+    /// Emits the longest prefix atom that starts `sequence`, then tokenizes the rest.
+    /// Returns `None` when no prefix atom applies.
+    fn tokenize_after_prefix_atom(
+        &self,
+        prefix_atoms: &DoubleArrayAhoCorasick<u32>,
+        sequence: &str,
+    ) -> Result<Option<Vec<Token>>> {
+        let leftmost = prefix_atoms.leftmost_find_iter(sequence).next();
+        let Some(atom) = leftmost.filter(|atom| atom.start() == 0) else {
+            return Ok(None);
+        };
+        if self.ignore_merges && self.vocab.contains_key(sequence) {
+            return Ok(None);
+        }
+        let len = atom.end();
+        let mut tokens = vec![Token::new(
+            atom.value(),
+            sequence[..len].to_owned(),
+            (0, len),
+        )];
+        for mut token in self.tokenize(&sequence[len..])? {
+            token.offsets = (token.offsets.0 + len, token.offsets.1 + len);
+            tokens.push(token);
+        }
+        Ok(Some(tokens))
+    }
+
     fn word_to_tokens<'a>(&'a self, word: &'a Word) -> impl Iterator<Item = Token> + 'a {
         word.get_chars_iter()
             .zip(word.get_offsets_iter())
@@ -601,6 +676,11 @@ impl Model for BPE {
     fn tokenize(&self, sequence: &str) -> Result<Vec<Token>> {
         if sequence.is_empty() {
             return Ok(vec![]);
+        }
+        if let Some(prefix_atoms) = &self.prefix_atoms {
+            if let Some(tokens) = self.tokenize_after_prefix_atom(prefix_atoms, sequence)? {
+                return Ok(tokens);
+            }
         }
 
         if self.dropout.is_none() || self.dropout == Some(0.0) {
@@ -1071,6 +1151,45 @@ mod tests {
             .unwrap();
         let tokens = bpe.tokenize("\n").unwrap();
         assert_eq!(tokens, vec![Token::new(1u32, "<0x0A>".into(), (0, 1)),]);
+    }
+
+    #[test]
+    fn prefix_atoms_emit_a_leading_token_merges_cannot_build() {
+        let vocab: Vocab = [
+            ("a".into(), 0),
+            ("b".into(), 1),
+            ("c".into(), 2),
+            ("d".into(), 3),
+            ("x".into(), 4),
+            ("bc".into(), 5),
+            ("abcd".into(), 6),
+            ("abc".into(), 7),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+        let merges: Merges = vec![("b".into(), "c".into())];
+        let merging = BPE::new(vocab.clone(), merges.clone());
+        let with_atoms = BpeBuilder::default()
+            .vocab_and_merges(vocab, merges)
+            .prefix_atoms(true)
+            .build()
+            .unwrap();
+
+        let ids: Vec<u32> = merging
+            .tokenize("abcdx")
+            .unwrap()
+            .iter()
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(ids, [0, 5, 3, 4]);
+        assert_eq!(
+            with_atoms.tokenize("abcdx").unwrap(),
+            [
+                Token::new(6, "abcd".into(), (0, 4)),
+                Token::new(4, "x".into(), (4, 5)),
+            ]
+        );
     }
 
     #[test]
