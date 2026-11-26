@@ -891,6 +891,49 @@ impl Tokenizer {
         }
     }
 
+    /// [`Self::decode`], split by where each piece of the output came from.
+    ///
+    /// A control token and the same characters spelled out with ordinary tokens decode to the
+    /// same text, so a caller scanning text for its delimiters cannot tell them apart: a model
+    /// that quotes `<|endoftext|>` in an answer looks exactly like one that ended its turn. Here
+    /// the two stay apart -- an added token is one [`Decoded::Added`], ordinary ids are
+    /// [`Decoded::Text`] -- and the runs concatenate to what [`Self::decode`] returns.
+    ///
+    /// A response parser should read this: the delimiter is an id, never a spelling.
+    pub fn decode_runs(&self, ids: &[u32], skip_special_tokens: bool) -> Result<Vec<Decoded>> {
+        let added = |id: u32| {
+            (id >= self.inner.added_id_min)
+                .then(|| self.inner.added_vocabulary.id_to_token_bytes(id))
+                .flatten()
+        };
+        let mut runs = Vec::new();
+        let mut start = 0;
+        while start < ids.len() {
+            // Added ids decode verbatim and never merge with a neighbour, so each is a run of its
+            // own: two of them are two delimiters, not one span.
+            if let Some((bytes, flags)) = added(ids[start]) {
+                if !skip_special_tokens || !flags.special {
+                    runs.push(Decoded::Added {
+                        id: ids[start],
+                        text: String::from_utf8_lossy(bytes).into_owned(),
+                    });
+                }
+                start += 1;
+                continue;
+            }
+            let mut end = start + 1;
+            while end < ids.len() && added(ids[end]).is_none() {
+                end += 1;
+            }
+            let text = self.decode(&ids[start..end], skip_special_tokens)?;
+            if !text.is_empty() {
+                runs.push(Decoded::Text(text));
+            }
+            start = end;
+        }
+        Ok(runs)
+    }
+
     /// Decode for a byte-level BPE, whose vocab entries are already decoded raw bytes.
     fn decode_byte_level(&self, bpe: &BPE, ids: &[u32], skip_special_tokens: bool) -> String {
         // Byte-level tokens average ~4 bytes
@@ -1000,6 +1043,15 @@ impl DecodeStream {
             Ok(Some(new_text))
         }
     }
+}
+
+/// A piece of decoded output and where it came from. See [`Tokenizer::decode_runs`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Decoded {
+    /// Text the model's own tokens produced.
+    Text(String),
+    /// An added token, decoded on its own: its id, and the spelling `decode` would write for it.
+    Added { id: u32, text: String },
 }
 
 /// Turns pre-tokens into tokens. Every model (BPE, Unigram, WordPiece, WordLevel) implements it.
