@@ -1039,6 +1039,8 @@ impl Tokenizer {
 pub struct DecodeStream {
     skip_special_tokens: bool,
     ids: Vec<u32>,
+    /// Reused by [`Self::step_runs`].
+    runs: DecodeRuns,
     /// The text of `ids[..prefix_index]`. Each decode of `ids` must start with it, and the
     /// text after it is new.
     prefix: String,
@@ -1054,6 +1056,7 @@ impl DecodeStream {
         Self {
             skip_special_tokens,
             ids: prompt,
+            runs: DecodeRuns::default(),
             prefix: String::new(),
             prefix_index: 0,
         }
@@ -1140,6 +1143,76 @@ impl DecodeRuns {
 
     pub fn is_empty(&self) -> bool {
         self.runs.is_empty()
+    }
+
+    /// Empties it, keeping the buffers. [`Tokenizer::decode_runs`] does this itself.
+    pub fn clear(&mut self) {
+        self.text.clear();
+        self.runs.clear();
+    }
+}
+
+impl DecodeStream {
+    /// [`Self::step`], giving the run boundaries and not only the text.
+    ///
+    /// Clears `runs` and fills it with what this step added: a run is [`Decoded::Added`] when the
+    /// ids spelled an added token and [`Decoded::Text`] otherwise, so a caller reading a generation
+    /// as it arrives gets a delimiter as an id instead of matching spellings in the text.
+    ///
+    /// Returns `false` while nothing can be emitted yet -- the text ends in an incomplete character
+    /// ([`Self::step`] holds those back) -- and `runs` is then empty.
+    pub fn step_runs(
+        &mut self,
+        tokenizer: &Tokenizer,
+        ids: &[u32],
+        runs: &mut DecodeRuns,
+    ) -> Result<bool> {
+        // `new` has no tokenizer, so the first step decodes the prompt. Its text is context: it
+        // becomes the prefix, and is never returned.
+        if self.prefix.is_empty() && !self.ids.is_empty() {
+            tokenizer.decode_runs(&self.ids, self.skip_special_tokens, &mut self.runs)?;
+            if !self.runs.text().ends_with(char::REPLACEMENT_CHARACTER) {
+                self.prefix = self.runs.text().to_owned();
+                self.prefix_index = self.ids.len();
+            }
+        }
+
+        self.ids.extend_from_slice(ids);
+        tokenizer.decode_runs(&self.ids, self.skip_special_tokens, &mut self.runs)?;
+        let decoded = self.runs.text();
+        if decoded.len() <= self.prefix.len() || decoded.ends_with(char::REPLACEMENT_CHARACTER) {
+            runs.clear();
+            return Ok(false);
+        }
+        if !decoded.starts_with(self.prefix.as_str()) {
+            return Err(format!(
+                "Invalid prefix encountered while decoding stream. Token ID: {}, Expected prefix: '{}', Actual string: '{decoded}'",
+                self.ids.last().expect("a non-empty decode has at least one id"),
+                self.prefix,
+            )
+            .into());
+        }
+
+        // Everything past what was already returned. A run that straddles the prefix is emitted
+        // from the cut, so a text run that a later id extends continues instead of repeating.
+        runs.clear();
+        let emitted = self.prefix.len();
+        for (range, added) in &self.runs.runs {
+            if range.end <= emitted {
+                continue;
+            }
+            let at = runs.text.len();
+            runs.text.push_str(&decoded[range.start.max(emitted)..range.end]);
+            runs.runs.push((at..runs.text.len(), *added));
+        }
+
+        // Same bookkeeping as `step`: keep the ids the new prefix is built from, so a long stream
+        // does not re-decode from the start on every call.
+        self.ids.drain(..self.prefix_index);
+        tokenizer.decode_runs(&self.ids, self.skip_special_tokens, &mut self.runs)?;
+        self.prefix = self.runs.text().to_owned();
+        self.prefix_index = self.ids.len();
+        Ok(true)
     }
 }
 
