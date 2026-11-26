@@ -45,6 +45,7 @@
 /// ```rust,ignore
 /// sequence_class! {
 ///     kind: Normalizer,
+///     class: Sequence,
 ///     python_module: "tokenizers.normalizers",
 /// }
 /// ```
@@ -59,7 +60,7 @@
 ///
 /// [`ComponentSequence`]: crate::components::component_sequence::ComponentSequence
 macro_rules! sequence_class {
-    (kind: $kind:ident, python_module: $python_module:literal $(,)?) => {
+    (kind: $kind:ident, class: $class:ident, python_module: $python_module:literal $(,)?) => {
         // pyo3 writes the `__setitem__` slot as an item next to the impl, calling an unsafe fn
         // through `Sequence`, whose span is this macro's. The allow has to sit on a module.
         #[allow(unsafe_op_in_unsafe_fn)]
@@ -72,12 +73,12 @@ macro_rules! sequence_class {
             #[doc = concat!("Applies each `", stringify!($kind), "` in turn.")]
             #[pyclass(frozen, extends = $kind, module = $python_module)]
             #[derive(Default)]
-            pub struct Sequence;
+            pub struct $class;
 
-            impl ComponentSequence<$kind> for Sequence {}
+            impl ComponentSequence<$kind> for $class {}
 
             #[pymethods]
-            impl Sequence {
+            impl $class {
                 #[new]
                 #[pyo3(signature = (items, /))]
                 fn new(items: Vec<Bound<'_, $kind>>) -> PyClassInitializer<Self> {
@@ -101,7 +102,7 @@ macro_rules! sequence_class {
                 }
             }
         }
-        pub use sequence::Sequence;
+        pub use sequence::$class;
     };
 }
 
