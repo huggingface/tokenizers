@@ -220,7 +220,7 @@ impl BPE {
         // the symbol stream is internal ids, mapped back through `unmap` at the very end
         let to_internal = |external: u32| -> Option<u32> {
             external_to_internal
-                .get(external as usize)
+                .get(external)
                 .copied()
                 .filter(|&internal| internal != NO_SYMBOL)
         };
@@ -315,7 +315,7 @@ impl BPE {
         let affixes = (!prefix.is_empty() || !suffix.is_empty()).then(|| Affixes {
             prefix: convert_byte_level(&prefix),
             suffix: convert_byte_level(&suffix),
-            to_internal: external_to_internal.into_boxed_slice(),
+            to_internal: external_to_internal,
         });
         let mut built = Self {
             atoms,
@@ -332,15 +332,11 @@ impl BPE {
         //
         // Two phases because the proof runs the merge engine, which borrows `built`: work out the
         // answers first, then set the bit on each entry that earned it.
-        let proven = if ignore_merges {
-            vec![true; built.vocab.id_space()]
+        if ignore_merges {
+            built.vocab.set_foldable(std::iter::repeat(true));
         } else {
-            built.prove_fold()
-        };
-        for (id, foldable) in proven.iter().enumerate() {
-            if *foldable {
-                built.vocab.set_foldable(id as u32);
-            }
+            let proven = built.prove_fold();
+            built.vocab.set_foldable(proven);
         }
         Ok(built)
     }

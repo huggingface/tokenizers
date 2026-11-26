@@ -524,12 +524,12 @@ fn byte_level_bpe(
 #[test]
 fn byte_level_merges_raw_bytes() {
     let pipeline = byte_level_bpe(
-        &[("he", 300), (" he", 301)],
+        &[("he", 1024), (" he", 1025)],
         &[("h", "e"), (" ", "he")],
         false,
     )
     .unwrap();
-    assert_eq!(pipeline_ids(&pipeline, " he"), vec![301]);
+    assert_eq!(pipeline_ids(&pipeline, " he"), vec![1025]);
     // single bytes hit the un-projected single-byte tokens (id == byte value)
     assert_eq!(pipeline_ids(&pipeline, "é"), vec![0xC3, 0xA9]);
     assert_eq!(pipeline_ids(&pipeline, "\x00\x7f"), vec![0x00, 0x7f]);
@@ -549,8 +549,8 @@ fn byte_level_merges_raw_bytes() {
 
 #[test]
 fn byte_level_ignore_merges_whole_word() {
-    let pipeline = byte_level_bpe(&[(" hello", 300)], &[], true).unwrap();
-    assert_eq!(pipeline_ids(&pipeline, " hello"), vec![300]);
+    let pipeline = byte_level_bpe(&[(" hello", 1024)], &[], true).unwrap();
+    assert_eq!(pipeline_ids(&pipeline, " hello"), vec![1024]);
     // not in vocab → falls through to single-byte atoms
     assert_eq!(
         pipeline_ids(&pipeline, "zz"),
@@ -566,10 +566,10 @@ fn byte_level_end_of_word_suffix_decorates_the_last_byte() {
         .map(|b| (BYTES_CHAR_LOOKUP[b as usize].to_string(), u32::from(b)))
         .collect();
     vocab.extend([
-        ("x</w>".to_string(), 256),
-        (format!("{a9}</w>"), 257),
-        (format!("{c3}{a9}"), 258),
-        (format!("{a9}x</w>"), 259),
+        ("x</w>".to_string(), 1024),
+        (format!("{a9}</w>"), 1025),
+        (format!("{c3}{a9}"), 1026),
+        (format!("{a9}x</w>"), 1027),
     ]);
     let pipeline = BPE::from_config(BpeConfig {
         vocab,
@@ -585,10 +585,10 @@ fn byte_level_end_of_word_suffix_decorates_the_last_byte() {
     // the suffix goes on the last byte of "é", not on the whole character
     assert_eq!(
         pipeline_ids(&pipeline, "xé"),
-        vec![u32::from(b'x'), 0xC3, 257]
+        vec![u32::from(b'x'), 0xC3, 1025]
     );
     // merging starts from bytes even though "é" is in the vocab, so (©, x</w>) wins over (Ã, ©)
-    assert_eq!(pipeline_ids(&pipeline, "éx"), vec![0xC3, 259]);
+    assert_eq!(pipeline_ids(&pipeline, "éx"), vec![0xC3, 1027]);
 }
 
 #[test]

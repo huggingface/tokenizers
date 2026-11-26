@@ -91,16 +91,19 @@ impl BPE {
 
     /// The string representation of a token, with printable markers of unprintable bytes
     pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
-        if !self.is_byte_level() {
-            return self.vocab.id_to_token(id);
-        }
-        let bytes = self.id_to_token_bytes(id)?;
-        Some(
+        self.id_to_token_bytes(id)
+            .map(|bytes| self.spell_token(bytes))
+    }
+
+    fn spell_token(&self, bytes: &[u8]) -> String {
+        if self.is_byte_level() {
             bytes
                 .iter()
                 .map(|&b| BYTES_CHAR_LOOKUP[b as usize])
-                .collect(),
-        )
+                .collect()
+        } else {
+            String::from_utf8_lossy(bytes).into_owned()
+        }
     }
 
     /// The id of a token as [`Self::id_to_token`] spells it.
@@ -114,8 +117,9 @@ impl BPE {
 
     /// `{token: id}`, with each token as [`Self::id_to_token`] spells it.
     pub(crate) fn get_vocab(&self) -> HashMap<String, u32> {
-        let ids = 0..self.vocab.id_space() as u32;
-        ids.filter_map(|id| Some((self.id_to_token(id)?, id)))
+        self.vocab
+            .tokens_by_id()
+            .filter_map(|(id, bytes)| Some((self.spell_token(bytes?), id)))
             .collect()
     }
 
@@ -123,40 +127,30 @@ impl BPE {
         self.vocab.len()
     }
 
-    /// One bit per vocabulary id: can a pretoken equal to this entry be emitted as this entry,
-    /// without running the merge loop?
-    ///
-    /// We replace the old "ignore_merges" with something that actually ignores whether or not the flag was set.
+    /// Whether each occupied reverse ID can be emitted without running the merge loop.
     pub(super) fn prove_fold(&self) -> Vec<bool> {
-        // The id space, not the entry count: ids may be sparse, and bounding the walk by
-        // `vocab.len()` would leave every entry above it unproven.
-        let len = self.vocab.id_space();
-        let mut proven = vec![false; len];
         let mut symbols = Vec::with_capacity(64);
         let mut scratch = QueueScratch::default();
         // With an `end_of_word_suffix`, a one-character word is looked up as `char + suffix`, so
         // a bare single-character entry is not its own encoding.
         let has_suffix = self.affixes.as_ref().is_some_and(|a| !a.suffix.is_empty());
-        for id in 0..len as u32 {
-            let Some(bytes) = self.vocab.id_to_token_bytes(id) else {
-                continue;
-            };
-            // An entry that is not valid UTF-8 can never equal a pretoken, which is always a
-            // `&str` slice, so it can never be folded and needs no proof.
-            let Ok(text) = std::str::from_utf8(bytes) else {
-                continue;
-            };
-            let chars = text.chars().count();
-            let foldable = if chars == 0 || (chars == 1 && !has_suffix) {
-                // A single atom has no pair to merge and is trivially its own encoding.
-                true
-            } else {
-                self.merge_word(text, &mut symbols, &mut scratch);
-                symbols.len() == 1 && self.tables.unmap.at(symbols[0] as usize) == id
-            };
-            proven[id as usize] = foldable;
-        }
-        proven
+        self.vocab
+            .tokens_by_id()
+            .map(|(id, bytes)| {
+                // A pretoken is a &str, so entries that are not UTF-8 cannot match it.
+                let Some(text) = bytes.and_then(|bytes| std::str::from_utf8(bytes).ok()) else {
+                    return false;
+                };
+                let chars = text.chars().count();
+                if chars == 0 || (chars == 1 && !has_suffix) {
+                    // A single atom has no pair to merge.
+                    true
+                } else {
+                    self.merge_word(text, &mut symbols, &mut scratch);
+                    symbols.len() == 1 && self.tables.unmap.at(symbols[0] as usize) == id
+                }
+            })
+            .collect()
     }
 
     #[inline(always)]

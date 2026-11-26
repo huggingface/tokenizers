@@ -21,6 +21,7 @@ use std::cmp;
 use crate::models::bpe::MergeMap;
 use crate::models::bpe::tables::NO_SYMBOL;
 use crate::utils::byte_level::{BYTES_CHAR_LOOKUP, char_to_byte};
+use crate::utils::id_map::IdMap;
 
 /// What one vocab token is worth to the fold table.
 pub(super) enum Fold {
@@ -42,7 +43,7 @@ pub(super) struct ByteLevelFold<'a> {
     merge_rank_left: Vec<u32>,
     merge_rank_right: Vec<u32>,
     merges: &'a MergeMap,
-    internal_id_map: &'a [u32],
+    internal_id_map: &'a IdMap<u32>,
     unmap: &'a [u32],
 }
 
@@ -56,15 +57,10 @@ impl<'a> ByteLevelFold<'a> {
     pub(super) fn new(
         vocab: &AHashMap<String, u32>,
         merges: &'a MergeMap,
-        internal_id_map: &'a [u32],
+        internal_id_map: &'a IdMap<u32>,
         unmap: &'a [u32],
     ) -> Self {
-        let iid = |external: u32| {
-            internal_id_map
-                .get(external as usize)
-                .copied()
-                .unwrap_or(NO_SYMBOL)
-        };
+        let iid = |external: u32| internal_id_map.get(external).copied().unwrap_or(NO_SYMBOL);
 
         let mut byte_internal = [NO_SYMBOL; 256];
         let mut buf = [0u8; 4];
@@ -89,7 +85,7 @@ impl<'a> ByteLevelFold<'a> {
 
     fn iid(&self, external: u32) -> u32 {
         self.internal_id_map
-            .get(external as usize)
+            .get(external)
             .copied()
             .unwrap_or(NO_SYMBOL)
     }
@@ -168,14 +164,14 @@ impl<'a> ByteLevelFold<'a> {
 fn boundary_merge_ranks(
     vocab: &AHashMap<String, u32>,
     merges: &MergeMap,
-    internal_id_map: &[u32],
+    internal_id_map: &IdMap<u32>,
     n_internal: usize,
 ) -> (Vec<u32>, Vec<u32>) {
     // First and last real byte of every token.
     let (mut first, mut last) = (vec![0xFFu8; n_internal], vec![0xFFu8; n_internal]);
     for (token, external) in vocab {
         let Some(i) = internal_id_map
-            .get(*external as usize)
+            .get(*external)
             .copied()
             .filter(|i| (*i as usize) < n_internal)
         else {
@@ -193,14 +189,9 @@ fn boundary_merge_ranks(
     let starts_at_boundary = |i: u32| first[i as usize] < 0x80 || first[i as usize] >= 0xC2;
     let ends_at_boundary = |i: u32| last[i as usize] < 0xC0;
 
-    let iid = |external: u32| {
-        internal_id_map
-            .get(external as usize)
-            .copied()
-            .unwrap_or(NO_SYMBOL)
-    };
-    let mut left = vec![u32::MAX; internal_id_map.len()];
-    let mut right = vec![u32::MAX; internal_id_map.len()];
+    let iid = |external: u32| internal_id_map.get(external).copied().unwrap_or(NO_SYMBOL);
+    let mut left = vec![u32::MAX; n_internal];
+    let mut right = vec![u32::MAX; n_internal];
     for ((a, b), (rank, _)) in merges.iter() {
         let (ia, ib) = (iid(*a), iid(*b));
         if ia == NO_SYMBOL
@@ -222,7 +213,7 @@ fn boundary_merge_ranks(
 
 #[cfg(test)]
 mod test {
-    use super::{ByteLevelFold, Fold};
+    use super::{ByteLevelFold, Fold, IdMap};
     use crate::models::bpe::MergeMap;
     use crate::utils::byte_level::BYTES_CHAR_LOOKUP;
     use ahash::AHashMap;
@@ -251,7 +242,8 @@ mod test {
     fn folds_when_nothing_can_steal_an_edge() {
         let (vocab, merges) = setup(false);
         let ids = [0, 1, 2, 3, 4];
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let id_map = IdMap::Dense(Box::from(ids.as_slice()));
+        let f = ByteLevelFold::new(&vocab, &merges, &id_map, &ids);
         assert!(matches!(f.fold("Ã©", 2), Fold::Folds('é', 2)));
     }
 
@@ -259,7 +251,8 @@ mod test {
     fn rejects_a_boundary_steal() {
         let (vocab, merges) = setup(true);
         let ids = [0, 1, 2, 3, 4];
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let id_map = IdMap::Dense(Box::from(ids.as_slice()));
+        let f = ByteLevelFold::new(&vocab, &merges, &id_map, &ids);
         assert!(matches!(f.fold("Ã©", 2), Fold::Unsafe));
     }
 
@@ -278,7 +271,8 @@ mod test {
         merges.insert((0, 0), (1, 5)); // a + a -> aa
         merges.insert((1, 2), (2, 3)); // Ã + © -> Ã©
         let ids = [0, 1, 2, 3, 4, 5];
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let id_map = IdMap::Dense(Box::from(ids.as_slice()));
+        let f = ByteLevelFold::new(&vocab, &merges, &id_map, &ids);
         // é assembles at rank 2, but `a + é -> aÃ©` has priority(rank 0): a merge that consumes the
         // *assembled* é would "steal" it, would change the order. Folding é makes it available from the start,
         // so for "aaé" the rank-0 merge "a + é" outranks `a + a` @ rank 1:
@@ -295,7 +289,8 @@ mod test {
     fn skips_what_is_not_one_character() {
         let (vocab, merges) = setup(false);
         let ids = [0, 1, 2, 3, 4];
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let id_map = IdMap::Dense(Box::from(ids.as_slice()));
+        let f = ByteLevelFold::new(&vocab, &merges, &id_map, &ids);
         assert!(matches!(f.fold("xÃ", 4), Fold::Skip)); // two characters once decoded
         assert!(matches!(f.fold("<|endoftext|>", 9), Fold::Skip)); // '<' is fine, '|' is not remapped
         assert!(matches!(f.fold("Ã", 0), Fold::Skip)); // lone 0xC3 is not valid UTF-8
@@ -352,21 +347,24 @@ mod test {
     #[test]
     fn folds_a_cjk_char_when_no_neighbour_can_steal() {
         let (vocab, merges, ids) = cjk_vocab(Thief::None);
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let id_map = IdMap::Dense(Box::from(ids.as_slice()));
+        let f = ByteLevelFold::new(&vocab, &merges, &id_map, &ids);
         assert!(matches!(f.fold("æľĿ", 4), Fold::Folds('朝', 4)));
     }
 
     #[test]
     fn refuses_the_same_char_once_a_lead_byte_can_steal() {
         let (vocab, merges, ids) = cjk_vocab(Thief::Lead);
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let id_map = IdMap::Dense(Box::from(ids.as_slice()));
+        let f = ByteLevelFold::new(&vocab, &merges, &id_map, &ids);
         assert!(matches!(f.fold("æľĿ", 4), Fold::Unsafe));
     }
 
     #[test]
     fn a_continuation_byte_cannot_steal_so_it_still_folds() {
         let (vocab, merges, ids) = cjk_vocab(Thief::Continuation);
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let id_map = IdMap::Dense(Box::from(ids.as_slice()));
+        let f = ByteLevelFold::new(&vocab, &merges, &id_map, &ids);
         assert!(matches!(f.fold("æľĿ", 4), Fold::Folds('朝', 4)));
     }
 }
