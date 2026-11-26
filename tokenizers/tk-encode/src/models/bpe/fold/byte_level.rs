@@ -274,9 +274,9 @@ mod test {
             ("aa".to_string(), 5),
         ]);
         let mut merges = MergeMap::new();
-        merges.insert((0, 3), (0, 4)); // a + é
-        merges.insert((0, 0), (1, 5)); // a + a
-        merges.insert((1, 2), (2, 3)); // Ã + © -> é
+        merges.insert((0, 3), (0, 4)); // a + Ã© -> aÃ©
+        merges.insert((0, 0), (1, 5)); // a + a -> aa
+        merges.insert((1, 2), (2, 3)); // Ã + © -> Ã©
         let ids = [0, 1, 2, 3, 4, 5];
         let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
            // é assembles at rank 2, but `a + é -> aÃ©` has priority(rank 0): a merge that consumes the
