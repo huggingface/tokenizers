@@ -690,6 +690,10 @@ fn collapse_sequence(node: &mut Value) -> Result<(), ConvertError> {
         .get_mut("processors")
         .and_then(Value::as_array_mut)
         .ok_or(ConvertError::PostProcessorSequenceEmpty)?;
+    if members.is_empty() {
+        *node = Value::Null;
+        return Ok(());
+    }
     let mut adding = members
         .iter()
         .enumerate()
@@ -697,7 +701,6 @@ fn collapse_sequence(node: &mut Value) -> Result<(), ConvertError> {
     let chosen = match (adding.next(), adding.next()) {
         (Some(_), Some(_)) => return Err(ConvertError::PostProcessorSequenceAmbiguous),
         (Some((i, _)), None) => i,
-        (None, _) if members.is_empty() => return Err(ConvertError::PostProcessorSequenceEmpty),
         (None, _) => 0,
     };
     *node = members.swap_remove(chosen);
