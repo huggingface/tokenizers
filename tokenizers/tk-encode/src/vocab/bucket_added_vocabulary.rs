@@ -372,7 +372,7 @@ impl AddedVocabulary {
             let norm_form: String = match normalizer {
                 // An added token is matched anywhere in the text, so its form is normalized as if
                 // it never opened the sequence.
-                Some(n) => n.normalize(&token.content, 1)?.into_owned(),
+                Some(n) => n.normalize(&token.content)?.into_owned(),
                 None => token.content.clone(),
             };
             let form = if flags.normalized {

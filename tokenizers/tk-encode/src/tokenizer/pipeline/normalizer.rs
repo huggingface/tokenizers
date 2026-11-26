@@ -18,9 +18,7 @@ use crate::tokenizer::Result;
 
 /// Rewrites a text before it is split into pre-tokens. Every normalizer implements it.
 pub trait Normalize {
-    /// `offset` is where `input` starts in its sequence, in bytes. It is 0 when `input` opens the
-    /// sequence, which is what `Metaspace` with `prepend: "first"` acts on.
-    fn normalize<'a>(&self, input: &'a str, offset: usize) -> Result<Cow<'a, str>>;
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>>;
 }
 
 /// One normalization step of a [`Tokenizer`].
@@ -62,18 +60,14 @@ pub struct NormalizerChain<'a>(pub &'a [Normalizer]);
 /// The next normalizer may hand back a borrow of that locally owned [`String`], and that borrow cannot outlive the `String`.
 ///
 /// Text no normalizer touches is never copied: it stays a borrow of `input` throughout.
-pub fn normalize_all<'a, N: Normalize>(
-    normalizers: &[N],
-    input: &'a str,
-    offset: usize,
-) -> Result<Cow<'a, str>> {
+pub fn normalize_all<'a, N: Normalize>(normalizers: &[N], input: &'a str) -> Result<Cow<'a, str>> {
     let mut cow: Cow<'a, str> = Cow::Borrowed(input);
     for normalizer in normalizers {
         cow = match cow {
             // Still `input` itself, which outlives us: pass it straight on.
-            Cow::Borrowed(s) => normalizer.normalize(s, offset)?,
+            Cow::Borrowed(s) => normalizer.normalize(s)?,
             Cow::Owned(s) => {
-                let out = match normalizer.normalize(&s, offset)? {
+                let out = match normalizer.normalize(&s)? {
                     // Rewritten again: keep the new `String`, drop ours.
                     Cow::Owned(o) => Some(o),
                     // Handed `s` back untouched: keep the `String` we already own.
@@ -89,35 +83,35 @@ pub fn normalize_all<'a, N: Normalize>(
 }
 
 impl Normalize for NormalizerChain<'_> {
-    fn normalize<'a>(&self, input: &'a str, offset: usize) -> Result<Cow<'a, str>> {
-        normalize_all(self.0, input, offset)
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
+        normalize_all(self.0, input)
     }
 }
 
 impl Normalize for Normalizer {
-    fn normalize<'a>(&self, input: &'a str, offset: usize) -> Result<Cow<'a, str>> {
+    fn normalize<'a>(&self, input: &'a str) -> Result<Cow<'a, str>> {
         match self {
-            Self::Replace(normalizer) => normalizer.normalize(input, offset),
-            Self::Prepend(normalizer) => normalizer.normalize(input, offset),
-            Self::Strip(normalizer) => normalizer.normalize(input, offset),
-            Self::Lowercase(normalizer) => normalizer.normalize(input, offset),
-            Self::ByteLevel(normalizer) => normalizer.normalize(input, offset),
+            Self::Replace(normalizer) => normalizer.normalize(input),
+            Self::Prepend(normalizer) => normalizer.normalize(input),
+            Self::Strip(normalizer) => normalizer.normalize(input),
+            Self::Lowercase(normalizer) => normalizer.normalize(input),
+            Self::ByteLevel(normalizer) => normalizer.normalize(input),
             #[cfg(feature = "normalizers")]
-            Self::Bert(normalizer) => normalizer.normalize(input, offset),
+            Self::Bert(normalizer) => normalizer.normalize(input),
             #[cfg(feature = "normalizers")]
-            Self::StripAccents(normalizer) => normalizer.normalize(input, offset),
+            Self::StripAccents(normalizer) => normalizer.normalize(input),
             #[cfg(feature = "normalizers")]
-            Self::NFC(normalizer) => normalizer.normalize(input, offset),
+            Self::NFC(normalizer) => normalizer.normalize(input),
             #[cfg(feature = "normalizers")]
-            Self::NFD(normalizer) => normalizer.normalize(input, offset),
+            Self::NFD(normalizer) => normalizer.normalize(input),
             #[cfg(feature = "normalizers")]
-            Self::NFKC(normalizer) => normalizer.normalize(input, offset),
+            Self::NFKC(normalizer) => normalizer.normalize(input),
             #[cfg(feature = "normalizers")]
-            Self::NFKD(normalizer) => normalizer.normalize(input, offset),
+            Self::NFKD(normalizer) => normalizer.normalize(input),
             #[cfg(feature = "normalizers")]
-            Self::Nmt(normalizer) => normalizer.normalize(input, offset),
+            Self::Nmt(normalizer) => normalizer.normalize(input),
             #[cfg(feature = "normalizers")]
-            Self::Precompiled(normalizer) => normalizer.normalize(input, offset),
+            Self::Precompiled(normalizer) => normalizer.normalize(input),
         }
     }
 }

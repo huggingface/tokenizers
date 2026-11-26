@@ -788,8 +788,7 @@ impl Tokenizer {
                     text: chunk,
                     input_offset,
                 } => {
-                    let normalized =
-                        normalize_all(&self.inner.normalizers, chunk, offset + input_offset)?;
+                    let normalized = normalize_all(&self.inner.normalizers, chunk)?;
 
                     // Extract special tokens from the normalized input
                     for segment in SpecialSegmentIterator::new(
