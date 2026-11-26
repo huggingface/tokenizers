@@ -294,17 +294,16 @@ impl pipeline::Tokenize for BPE {
         output.reserve(spans.len() + MAX_INLINE_IDS);
         let mut capacity = output.capacity();
         let mut cursor = output.len();
-        // A raw write cursor as `output.as_mut_ptr()` inside the loop had
-        // to be *reloaded from memory every span*: the loop also calls `set_len`, `reserve` and
-        // `extend` on `output`, so the optimiser cannot assume the buffer stayed where it was. That
-        // reload, the capacity test and the cursor arithmetic were a quarter of encode time in
-        // `tokenize_spans` itself. Now the fast path -- a cache hit
-        // writing inline ids -- touches only these two registers, and `dst` is refreshed solely on
-        // the paths that can actually move the buffer.
-        // `probe_emit_chunk`: loop-invariant cursors, refreshed only in the slow path.
+        // A raw write cursor held across the chunk: `output.as_mut_ptr()` inside the loop had to
+        // be reloaded from memory every span, since the loop also calls `set_len`, `reserve` and
+        // `extend` on `output`. `destination` and `cursor` stay in registers and are refreshed only
+        // on the paths that can actually move the buffer.
         // SAFETY: `cursor <= output.len() <= capacity`, so this is inside the allocation.
         let mut destination = unsafe { output.as_mut_ptr().add(cursor) };
 
+        // Hoisted out of the loop: `word_cache` is an `Option` living in the scratch, so every
+        // `as_mut()` re-read its discriminant from memory; holding `Option<&mut WordCache>` in a
+        // local keeps that test in a register.
         let mut cache_slot = word_cache.as_mut();
 
         for (span, sequence) in pre_tokens.iter() {
@@ -353,7 +352,6 @@ impl pipeline::Tokenize for BPE {
                     ProbeEmit::Hit(ids) => {
                         // SAFETY: `cursor` counts what has been written so far.
                         unsafe { output.set_len(cursor) };
-                        // TODO: here why do we not directly .write() while we do Token::form?
                         output.extend(ids.iter().map(|&id| Token::from(id)));
                         cursor = output.len();
                         capacity = output.capacity();
@@ -387,7 +385,6 @@ impl pipeline::Tokenize for BPE {
             let start = output.len();
             self.merge_word(sequence, symbols, queue);
             // the merge engines work in internal ids; `unmap` takes them back to the vocab's own ids
-            // TODO: check .write vs extend?
             output.extend(
                 symbols
                     .iter()

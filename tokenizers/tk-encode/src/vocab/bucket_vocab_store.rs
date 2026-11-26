@@ -86,12 +86,12 @@ pub(crate) fn key_and_hash_readable(word: &[u8], readable: usize) -> (u64, u64) 
 #[inline]
 fn key_and_hash_long(word: &[u8]) -> (u64, u64) {
     // `hash_one(&[u8])` runs `Hash for [u8]`: a length prefix, then the bytes -- two ahash rounds.
-    // The length is already in the digest (top byte), so the prefix is redundant here.
+    // The length is already in the key (top byte), so the prefix is redundant here.
     let mut hasher = key_hasher().build_hasher();
     hasher.write(word);
     let hash = hasher.finish();
-    // The length goes in the top byte, so comparing digests *is* comparing lengths: no span load,
-    // no extra compare. `Entry.digest` also cannot be shared across the two arms however the hash is
+    // The length goes in the top byte, so comparing keys *is* comparing lengths: no span load,
+    // no extra compare. `Entry.key` also cannot be shared across the two arms however the hash is
     // inverted (#2722), because a packed key's top byte is at most 7 and these are 8..254. `0xFF` is
     // the escape for a token too long to fit in a byte, which keeps the same 56 bits of verifier
     // without a length.
@@ -134,7 +134,7 @@ pub(crate) fn key_and_hash(word: &[u8]) -> (u64, u64) {
 /// below), so a hash comparison can be inverted into a *different* short word - one long token in
 /// 256 has a hash that lands in the 2^56-sized image of the packed arm. The packed key itself is
 /// injective per arm, and the arms' key spaces are disjoint by construction, so comparing keys makes
-/// equal digests mean equal words.
+/// equal keys mean equal words.
 ///
 /// A slot the build never wrote stays [`Default`], and occupancy is read off the parallel `spans`.
 ///
@@ -142,16 +142,16 @@ pub(crate) fn key_and_hash(word: &[u8]) -> (u64, u64) {
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 struct Entry {
-    digest: u64,
+    key: u64,
     /// The token id in the low 31 bits, [`FOLD_BIT`] in the top.
     id: u32,
 }
 
-// 16 bytes, and pinned: the digest at 0, the id at 8, 4 bytes of padding the probe never reads.
+// 16 bytes, and pinned: the key at 0, the id at 8, 4 bytes of padding the probe never reads.
 // `#[repr(C)]` is what makes the order and the padding the compiler's business and nobody else's --
 // without it the fields may be reordered, and the alignment is what costs the second cache line.
 const _: () = assert!(size_of::<Entry>() == 16);
-const _: () = assert!(core::mem::offset_of!(Entry, digest) == 0);
+const _: () = assert!(core::mem::offset_of!(Entry, key) == 0);
 const _: () = assert!(core::mem::offset_of!(Entry, id) == 8);
 
 /// The layout `key_and_hash` builds, spelled out for the tests to check against: the low `len` bytes
@@ -306,10 +306,7 @@ impl BucketVocabStore {
             );
             let (key, hash) = key_and_hash(s.as_slice());
             let slot = mphf.index(&hash);
-            entries[slot] = Entry {
-                digest: key,
-                id: *id,
-            };
+            entries[slot] = Entry { key, id: *id };
             spans[slot] = Span {
                 start: bytes.len() as u32,
                 len: s.len() as u16,
@@ -344,8 +341,8 @@ impl BucketVocabStore {
     /// This function is the equivalent of `get` on a HashaMap, it return the id
     /// corresponding to the key `q`. Since `mphf` always return a slot, we check
     /// whether the token indexed by that slot actually match the query: the stored
-    /// digest is the query's own 64-bit key, and `key_and_hash` is injective over
-    /// words, so equal digests mean equal words - no span load, no memcmp.
+    /// stored key is the query's own 64-bit key, and `key_and_hash` is injective over
+    /// words, so equal keys mean equal words - no span load, no memcmp.
     #[inline]
     pub(crate) fn get_bytes(&self, q: &[u8]) -> Option<u32> {
         if self.entries.is_empty() {
@@ -354,7 +351,7 @@ impl BucketVocabStore {
         let (key, hash) = key_and_hash(q);
         let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
-        if e.digest != key {
+        if e.key != key {
             return None;
         }
         Some(e.id & VOCAB_ID_MASK)
@@ -368,7 +365,7 @@ impl BucketVocabStore {
         let slot = self.mphf.index(&hash);
         let e = self.entries[slot];
         // Same check as `get_bytes`, on the key the caller already has.
-        (e.digest == key).then_some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
+        (e.key == key).then_some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
     }
 
     /// Records that this token folds to itself. Called once per entry at load, after the proof.
