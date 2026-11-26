@@ -1,10 +1,5 @@
-//!
-//! This module defines helpers to allow optional Rayon usage.
-//!
+//! The worker pool that large inputs and batches encode on, and its size.
 
-use rayon::iter::IterBridge;
-use rayon::prelude::*;
-use rayon_cond::CondIterator;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
@@ -13,15 +8,10 @@ use std::sync::atomic::AtomicU32;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
-// Re-export rayon current_num_threads
-pub use rayon::current_num_threads;
+/// The value set with [`set_max_threads`]; 0 defaults to the number of available cores.
+static MAX_THREADS: AtomicUsize = AtomicUsize::new(0);
 
-/// TODO: deprecate
-pub(crate) const ENV_VARIABLE: &str = "TOKENIZERS_PARALLELISM";
-
-/// 0 means deafult value
-static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
-/// Bumped by [`set_num_threads`], so the next [`pool`] call builds a pool with the new count.
+/// Bumped when [`set_max_threads`] changes value, so the next [`pool`] call builds a pool of the new size.
 static POOL_GEN: AtomicUsize = AtomicUsize::new(0);
 
 struct CachedPool {
@@ -31,13 +21,12 @@ struct CachedPool {
 
 static POOL_CACHE: Mutex<Option<CachedPool>> = Mutex::new(None);
 
-/// The id of the process that owns the pool. Any other process is a forked child.
+/// The id of the process that owns the pool. Other processes cannot use the pool and encode serially.
 ///
-/// `fork()` copies memory but only the calling thread, so locks held by other threads stay locked
-/// in the child, and a thread the child starts can wait on one of them forever. Std takes such a
-/// lock whenever a thread starts or exits. So the first process to ask for a pool owns it, and a
-/// child forked after that encodes serially. A child forked before, like a pre-fork server's
-/// worker, comes from a parent that never started a pool thread, and owns a pool of its own.
+/// `fork()` copies memory but only the calling thread, so locks held by other threads deadlock in child processes.
+/// To avoid complexity handling fork, the first process to ask for a pool owns it, and a
+/// child forked after that encodes serially.
+/// A child forked before the pool was created, like a pre-fork server's worker, can create and own a pool of its own.
 static POOL_OWNER: AtomicU32 = AtomicU32::new(0);
 
 /// Whether this process is the [`POOL_OWNER`], claiming it if no process is yet.
@@ -92,14 +81,14 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     {
         return Some(cached.pool.clone());
     }
-    let num_threads = num_threads();
-    // no pool for a single thread
-    if num_threads == 1 {
+    // the calling thread encodes too, so the pool holds one thread fewer
+    let workers = max_threads() - 1;
+    if workers == 0 {
         *cache = None;
         return None;
     }
     let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(num_threads)
+        .num_threads(workers)
         .thread_name(|i| format!("tk-encode-{i}"))
         .build()
         .ok()?;
@@ -111,140 +100,22 @@ pub(crate) fn pool() -> Option<Arc<rayon::ThreadPool>> {
     Some(pool)
 }
 
-pub(crate) fn num_threads() -> usize {
-    match NUM_THREADS.load(Ordering::Acquire) {
-        // 0 == default value
-        0 => std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1),
+/// The most threads one encode uses, the calling thread included. `1` means serial.
+///
+/// The value set with [`set_max_threads`], else every available core. A child forked after this
+/// process asked for its pool encodes serially regardless.
+pub fn max_threads() -> usize {
+    match MAX_THREADS.load(Ordering::Acquire) {
+        0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
         n => n,
     }
 }
 
-fn invalidate() {
-    POOL_GEN.fetch_add(1, Ordering::SeqCst);
-}
-
-/// Passing in 0 will reset to the default value
-pub fn set_num_threads(n: usize) {
-    NUM_THREADS.store(n, Ordering::Release);
-    invalidate();
-}
-
-/// Get the currently set value for `TOKENIZERS_PARALLELISM` env variable
-pub(crate) fn get_parallelism() -> bool {
-    match std::env::var(ENV_VARIABLE) {
-        Ok(mut v) => {
-            v.make_ascii_lowercase();
-            !matches!(v.as_ref(), "" | "off" | "false" | "f" | "no" | "n" | "0")
-        }
-        Err(_) => true, // If we couldn't get the variable, we use the default
-    }
-}
-
-/// Allows to convert into an iterator that can be executed either parallelly or serially.
-///
-/// The choice is made according to the currently set `TOKENIZERS_PARALLELISM` environment variable.
-/// This variable can have one of the following values
-///   - False => "" (empty value), "false", "f", "off", "no", "n", "0"
-///   - True => Any other value
-///
-pub trait MaybeParallelIterator<P, S>
-where
-    P: ParallelIterator,
-    S: Iterator<Item = P::Item>,
-{
-    /// Convert ourself in a CondIterator, that will be executed either in parallel or serially,
-    /// based solely on the `TOKENIZERS_PARALLELISM` environment variable
-    fn into_maybe_par_iter(self) -> CondIterator<P, S>;
-}
-
-impl<P, S, I> MaybeParallelIterator<P, S> for I
-where
-    I: IntoParallelIterator<Iter = P, Item = P::Item> + IntoIterator<IntoIter = S, Item = S::Item>,
-    P: ParallelIterator,
-    S: Iterator<Item = P::Item>,
-{
-    fn into_maybe_par_iter(self) -> CondIterator<P, S> {
-        CondIterator::new(self, get_parallelism())
-    }
-}
-
-/// Shared reference version of MaybeParallelIterator, works the same but returns an iterator
-/// over references, does not consume self
-pub trait MaybeParallelRefIterator<'data, P, S>
-where
-    P: ParallelIterator,
-    S: Iterator<Item = P::Item>,
-    P::Item: 'data,
-{
-    fn maybe_par_iter(&'data self) -> CondIterator<P, S>;
-}
-
-impl<'data, P, S, I: 'data + ?Sized> MaybeParallelRefIterator<'data, P, S> for I
-where
-    &'data I: MaybeParallelIterator<P, S>,
-    P: ParallelIterator,
-    S: Iterator<Item = P::Item>,
-    P::Item: 'data,
-{
-    fn maybe_par_iter(&'data self) -> CondIterator<P, S> {
-        self.into_maybe_par_iter()
-    }
-}
-
-/// Converts any serial iterator into a CondIterator, that can either run parallelly or serially.
-pub trait MaybeParallelBridge<T, S>
-where
-    S: Iterator<Item = T> + Send,
-    T: Send,
-{
-    fn maybe_par_bridge(self) -> CondIterator<IterBridge<S>, S>;
-}
-
-impl<T, S> MaybeParallelBridge<T, S> for S
-where
-    S: Iterator<Item = T> + Send,
-    T: Send,
-{
-    fn maybe_par_bridge(self) -> CondIterator<IterBridge<S>, S> {
-        let iter = CondIterator::from_serial(self);
-
-        if get_parallelism() {
-            CondIterator::from_parallel(iter.into_parallel().right().unwrap())
-        } else {
-            iter
-        }
-    }
-}
-
-/// Allows to convert into `chunks` that can be executed either parallelly or serially.
-pub trait MaybeParallelSlice<'data, T>
-where
-    T: Sync,
-{
-    /// Create a CondIterator, that will be executed either in parallel or serially,
-    /// based solely on the `TOKENIZERS_PARALLELISM` environment variable
-    fn maybe_par_chunks(
-        &'_ self,
-        chunk_size: usize,
-    ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>>;
-}
-
-impl<T> MaybeParallelSlice<'_, T> for [T]
-where
-    T: Sync,
-{
-    fn maybe_par_chunks(
-        &'_ self,
-        chunk_size: usize,
-    ) -> CondIterator<rayon::slice::Chunks<'_, T>, std::slice::Chunks<'_, T>> {
-        let parallelism = get_parallelism();
-        if parallelism {
-            CondIterator::from_parallel(self.par_chunks(chunk_size))
-        } else {
-            CondIterator::from_serial(self.chunks(chunk_size))
-        }
+/// Sets [`max_threads`] for the whole process. `0` restores the default.
+pub fn set_max_threads(max_threads: usize) {
+    // an unchanged value keeps the pool, instead of restarting every thread
+    if MAX_THREADS.swap(max_threads, Ordering::AcqRel) != max_threads {
+        POOL_GEN.fetch_add(1, Ordering::Release);
     }
 }
 
@@ -258,23 +129,15 @@ mod tests {
     /// Tests touching the process-wide pool run one at a time: they hold its lock.
     static POOL_TESTS: Mutex<()> = Mutex::new(());
 
-    #[test]
-    fn test_maybe_parallel_iterator() {
-        let v = vec![1u32, 2, 3, 4, 5, 6];
-
-        assert_eq!(v.maybe_par_iter().sum::<u32>(), 21);
-        assert_eq!(v.into_maybe_par_iter().sum::<u32>(), 21);
-    }
-
     /// Contended callers must reuse the cached pool, not build their own.
     #[test]
     fn concurrent_callers_share_one_pool() {
         let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
-        if num_threads() == 1 {
+        if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
         // start stale, so the callers race the rebuild too
-        invalidate();
+        POOL_GEN.fetch_add(1, Ordering::Release);
         let callers: Vec<_> = (0..32)
             .map(|_| {
                 std::thread::spawn(|| {
@@ -292,13 +155,41 @@ mod tests {
         assert_eq!(seen.len(), 1, "contended callers built pools of their own");
     }
 
+    /// The calling thread encodes too, so the pool must hold one thread fewer than the maximum.
+    #[test]
+    fn max_threads_counts_the_calling_thread() {
+        let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        set_max_threads(3);
+        let workers = pool().map(|pool| pool.current_num_threads());
+        set_max_threads(1);
+        let serial = pool().is_none();
+        set_max_threads(0);
+        assert_eq!(workers, Some(2), "the pool leaves no thread for the caller");
+        assert!(serial, "max_threads 1 still built a pool");
+    }
+
+    /// Setting the value it already has must keep the pool, not restart every thread.
+    #[test]
+    fn setting_the_same_max_threads_keeps_the_pool() {
+        let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
+        set_max_threads(3);
+        let before = pool().expect("3 threads get a pool");
+        set_max_threads(3);
+        let after = pool().expect("3 threads get a pool");
+        set_max_threads(0);
+        assert!(
+            Arc::ptr_eq(&before, &after),
+            "setting the same value rebuilt the pool"
+        );
+    }
+
     /// A thread started in a forked child can wait forever on a lock held by a thread the fork
     /// didn't copy, so the child must encode serially.
     #[cfg(unix)]
     #[test]
     fn forked_child_gets_no_pool() {
         let _serial = POOL_TESTS.lock().unwrap_or_else(PoisonError::into_inner);
-        if num_threads() == 1 {
+        if max_threads() == 1 {
             return; // no pool on a one-core machine
         }
         assert!(pool().is_some(), "the parent gets a pool");
@@ -339,13 +230,5 @@ mod tests {
             i32::from(!worker_ok)
         });
         assert!(child_ok, "a worker forked after load doesn't own a pool");
-    }
-
-    #[test]
-    fn test_maybe_parallel_slice() {
-        let v = [1, 2, 3, 4, 5];
-
-        let chunks: Vec<_> = v.maybe_par_chunks(2).collect();
-        assert_eq!(chunks, vec![&[1, 2][..], &[3, 4], &[5]]);
     }
 }

@@ -21,9 +21,9 @@ name = "tk_train"
 path = "src/lib.rs"
 
 [dependencies]
-tk-encode = { path = "../tk-encode", version = "0.1.0-rc.6.dev.0", default-features = false, features = [
-  "parallelism",
-] }
+tk-encode = { path = "../tk-encode", version = "0.1.0-rc.6.dev.0", default-features = false }
+# The parallel word counts and merges of every trainer, each feature-gated.
+rayon = { version = "1.12", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 ahash = { version = "0.8.11", features = ["serde"] }
 # The word type and merge queue of the BPE trainers, which are `bpe`-gated.
@@ -36,11 +36,11 @@ indicatif = { version = "0.18", optional = true }
 
 [features]
 default = ["progressbar", "bpe", "unigram", "wordpiece", "wordlevel"]
-bpe = ["tk-encode/bpe", "dep:compact_str", "dep:dary_heap"]
-unigram = ["tk-encode/unigram", "dep:esaxx-rs"]
+bpe = ["tk-encode/bpe", "dep:compact_str", "dep:dary_heap", "dep:rayon"]
+unigram = ["tk-encode/unigram", "dep:esaxx-rs", "dep:rayon"]
 # The WordPiece trainer runs the BPE one and keeps only its vocabulary.
 wordpiece = ["bpe", "tk-encode/wordpiece"]
-wordlevel = ["tk-encode/wordlevel"]
+wordlevel = ["tk-encode/wordlevel", "dep:rayon"]
 esaxx_fast = ["unigram", "esaxx-rs/cpp"]
 progressbar = ["dep:indicatif"]
 parity-aware-bpe = ["bpe"]
