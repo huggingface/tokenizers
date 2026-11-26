@@ -21,7 +21,7 @@ def test_state_rebuilds_the_token():
     assert AddedToken(**token.__getstate__()) == token
 
 
-FLAGS = ["single_word", "lstrip", "rstrip", "normalized", "special"]
+FLAGS = ["single_word", "lstrip", "rstrip", "normalized", "special", "control"]
 
 
 @pytest.mark.parametrize("flag", FLAGS)

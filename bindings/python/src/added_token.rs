@@ -24,6 +24,8 @@ use crate::repr;
 ///         Defaults to `not special`.
 ///     special:
 ///         Skip the token when decoding with `skip_special_tokens`.
+///     control:
+///         Whether the token is a control token
 #[pyclass(frozen, eq, hash, module = "tokenizers")]
 #[derive(PartialEq, Eq)]
 pub struct AddedToken(CoreAddedToken);
@@ -52,6 +54,8 @@ struct State {
     rstrip: bool,
     normalized: bool,
     special: bool,
+    #[pyo3(default = false)]
+    control: bool,
 }
 
 impl From<CoreAddedToken> for State {
@@ -63,6 +67,7 @@ impl From<CoreAddedToken> for State {
             rstrip: token.rstrip,
             normalized: token.normalized,
             special: token.special,
+            control: token.control,
         }
     }
 }
@@ -76,6 +81,7 @@ impl From<State> for CoreAddedToken {
         token.rstrip = state.rstrip;
         token.normalized = state.normalized;
         token.special = state.special;
+        token.control = state.control;
         token
     }
 }
@@ -114,7 +120,7 @@ impl TokenToAdd<'_> {
 #[pymethods]
 impl AddedToken {
     #[new]
-    #[pyo3(signature = (content, *, single_word=false, lstrip=false, rstrip=false, normalized=None, special=false))]
+    #[pyo3(signature = (content, *, single_word=false, lstrip=false, rstrip=false, normalized=None, special=false, control=false))]
     fn new(
         content: String,
         single_word: bool,
@@ -122,6 +128,7 @@ impl AddedToken {
         rstrip: bool,
         normalized: Option<bool>,
         special: bool,
+        control: bool,
     ) -> Self {
         let mut token = CoreAddedToken::default();
         token.content = content;
@@ -130,6 +137,7 @@ impl AddedToken {
         token.rstrip = rstrip;
         token.normalized = normalized.unwrap_or(!special);
         token.special = special;
+        token.control = control;
         token.into()
     }
 
@@ -167,6 +175,12 @@ impl AddedToken {
     #[getter]
     fn special(&self) -> bool {
         self.0.special
+    }
+
+    /// Whether the added token is a control token
+    #[getter]
+    fn control(&self) -> bool {
+        self.0.control
     }
 
     /// The token's `added_tokens` entry without its `id`, as a dict.
