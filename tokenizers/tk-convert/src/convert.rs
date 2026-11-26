@@ -491,7 +491,14 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
             // The `WhitespaceSplit` in front dropped any whitespace and gave each word a prefix.
             (
                 "whitespace_match",
-                Value::String(if drop_whitespace { "any_unicode" } else { "only_space" }.into()),
+                Value::String(
+                    if drop_whitespace {
+                        "any_unicode"
+                    } else {
+                        "only_space"
+                    }
+                    .into(),
+                ),
             ),
             ("collapse_contiguous", Value::Bool(drop_whitespace)),
             // A 1.0 `Metaspace` left out the prefix when the text already opened with whitespace
