@@ -6,6 +6,7 @@
 //! that one marker.
 
 use tk_encode::pipeline::EncodeOptions;
+use tk_encode::pipeline::TrustMasks;
 use tk_encode::pipeline::Tokenizer;
 
 /// `data/gpt2.json` is still version `1.0`, so run the upgrade pass first -- the reader only
@@ -18,21 +19,23 @@ fn load() -> Tokenizer {
 const EOT: u32 = 50256;
 const MARKER: &str = "<|endoftext|>";
 
-/// The whole caller side of the contract: one byte per byte of text, 0 where the caller wrote it.
-/// Everything else -- which bytes those are -- comes from whoever assembled the text.
-fn mask(text: &str, untrusted: &[std::ops::Range<usize>]) -> Vec<u8> {
-    let mut mask = vec![1u8; text.len()];
-    for range in untrusted {
-        mask[range.clone()].fill(0);
+/// The whole caller side of the contract: `push` one mask per sequence, in order, and reuse the
+/// buffers. Everything else -- which bytes those are -- comes from whoever assembled the text.
+fn masks(texts: &[&str], untrusted: &[&[std::ops::Range<usize>]]) -> TrustMasks {
+    let mut masks = TrustMasks::default();
+    for (text, spans) in texts.iter().zip(untrusted) {
+        masks.push(text, spans);
     }
-    mask
+    masks
 }
 
-fn ids(tokenizer: &Tokenizer, text: &str, masks: Option<&[Vec<u8>]>) -> Vec<u32> {
-    let handle = match masks {
-        Some(masks) => {
-            tokenizer.encode_with_trust_mask(text, masks.to_vec(), &EncodeOptions::default())
-        }
+fn ids(tokenizer: &Tokenizer, text: &str, spans: Option<&[std::ops::Range<usize>]>) -> Vec<u32> {
+    let handle = match spans {
+        Some(spans) => tokenizer.encode_with_trust_mask(
+            text,
+            &masks(&[text], &[spans]),
+            &EncodeOptions::default(),
+        ),
         None => tokenizer.encode(text, &EncodeOptions::default()),
     };
     handle
@@ -43,10 +46,14 @@ fn ids(tokenizer: &Tokenizer, text: &str, masks: Option<&[Vec<u8>]>) -> Vec<u32>
         .collect()
 }
 
-fn ids_batch(tokenizer: &Tokenizer, texts: &[&str], masks: Vec<Vec<u8>>) -> Vec<Vec<u32>> {
+fn ids_batch(
+    tokenizer: &Tokenizer,
+    texts: &[&str],
+    spans: &[&[std::ops::Range<usize>]],
+) -> Vec<Vec<u32>> {
     let inputs: Vec<String> = texts.iter().map(|text| text.to_string()).collect();
     tokenizer
-        .encode_with_trust_mask(inputs, masks, &EncodeOptions::default())
+        .encode_with_trust_mask(inputs, &masks(texts, spans), &EncodeOptions::default())
         .wait()
         .unwrap()
         .into_iter()
@@ -61,7 +68,7 @@ fn a_marker_in_masked_text_is_not_a_token() {
     let start = text.find(MARKER).unwrap();
 
     assert!(ids(&tokenizer, text, None).contains(&EOT), "the fixture has an added token here");
-    let masked = ids(&tokenizer, text, Some(&[mask(text, &[start..start + MARKER.len()])]));
+    let masked = ids(&tokenizer, text, Some(&[start..start + MARKER.len()]));
     assert!(!masked.contains(&EOT), "\"a{MARKER}b\" written by the caller must stay text");
     // Not a lossy rewrite: the bytes are still there, they just tokenize as text.
     assert_eq!(tokenizer.decode(&masked, false).unwrap(), text);
@@ -74,7 +81,7 @@ fn masking_part_of_the_marker_still_refuses_it() {
     let start = text.find(MARKER).unwrap();
     // Two bytes of the marker. A match over any 0 byte is refused whole, because half a token is
     // not a token.
-    let masked = ids(&tokenizer, text, Some(&[mask(text, &[start + 2..start + 4])]));
+    let masked = ids(&tokenizer, text, Some(&[start + 2..start + 4]));
     assert!(!masked.contains(&EOT));
 }
 
@@ -83,7 +90,7 @@ fn text_without_added_tokens_encodes_byte_identically() {
     let tokenizer = load();
     let text = "the quick brown fox jumps over the lazy dog";
     let plain = ids(&tokenizer, text, None);
-    assert_eq!(ids(&tokenizer, text, Some(&[mask(text, &[0..text.len()])])), plain);
+    assert_eq!(ids(&tokenizer, text, Some(&[0..text.len()])), plain);
 }
 
 #[test]
@@ -93,16 +100,12 @@ fn each_sequence_carries_its_own_mask() {
     let b = "p<|endoftext|>q";
     let start = a.find(MARKER).unwrap();
 
-    let out = ids_batch(
-        &tokenizer,
-        &[a, b],
-        vec![mask(a, &[start..start + MARKER.len()]), Vec::new()],
-    );
+    let out = ids_batch(&tokenizer, &[a, b], &[&[start..start + MARKER.len()], &[]]);
     assert!(!out[0].contains(&EOT), "the first sequence is masked");
     assert!(out[1].contains(&EOT), "the second has no mask and finds its marker");
 
     // A batch nobody masks is the plain encode, id for id.
-    let plain = ids_batch(&tokenizer, &[a, b], vec![Vec::new(), Vec::new()]);
+    let plain = ids_batch(&tokenizer, &[a, b], &[&[], &[]]);
     assert_eq!(plain, [ids(&tokenizer, a, None), ids(&tokenizer, b, None)]);
 }
 
@@ -120,8 +123,25 @@ fn a_long_input_goes_through_the_parallel_planner_and_still_refuses_the_marker()
     assert!(text.len() > 8 * 1024);
 
     assert!(ids(&tokenizer, &text, None).contains(&EOT));
-    let masked = ids(&tokenizer, &text, Some(&[mask(&text, &[start..start + MARKER.len()])]));
+    let masked = ids(&tokenizer, &text, Some(&[start..start + MARKER.len()]));
     assert!(!masked.contains(&EOT));
+}
+
+#[test]
+fn a_long_batch_goes_through_the_parallel_planner_with_and_without_masks() {
+    let tokenizer = load();
+    let long = format!("{} <|endoftext|> {}", "lorem ipsum ".repeat(1_000), "dolor sit ".repeat(1_000));
+    let texts = [long.as_str(), long.as_str()];
+    let start = long.find(MARKER).unwrap();
+
+    // A batch with no masks at all is the plain encode, on the parallel path.
+    let plain = ids_batch(&tokenizer, &texts, &[&[], &[]]);
+    assert!(plain[0].contains(&EOT) && plain[1].contains(&EOT));
+
+    // One masked, one not, still on the parallel path.
+    let out = ids_batch(&tokenizer, &texts, &[&[start..start + MARKER.len()], &[]]);
+    assert!(!out[0].contains(&EOT), "the first sequence is masked");
+    assert!(out[1].contains(&EOT), "the second has no mask");
 }
 
 #[test]
@@ -133,16 +153,18 @@ fn a_mask_that_does_not_line_up_is_rejected() {
     let two: Vec<String> = vec![text.to_string(), text.to_string()];
     assert!(
         tokenizer
-            .encode_with_trust_mask(two, vec![vec![1u8; text.len()]], &EncodeOptions::default())
+            .encode_with_trust_mask(two, &masks(&[text], &[&[]]), &EncodeOptions::default())
             .wait()
             .is_err()
     );
 
     // One byte per text byte. A mask is a mask, not a list of ranges: it cannot be out of order,
     // overlap, or split a character, because none of that can be expressed.
+    let mut wrong = TrustMasks::default();
+    wrong.push(&text[..text.len() - 1], &[]);
     assert!(
         tokenizer
-            .encode_with_trust_mask(text, vec![vec![1u8; text.len() - 1]], &EncodeOptions::default())
+            .encode_with_trust_mask(text, &wrong, &EncodeOptions::default())
             .wait()
             .is_err()
     );
@@ -152,7 +174,7 @@ fn a_mask_that_does_not_line_up_is_rejected() {
         tokenizer
             .encode_with_trust_mask(
                 (text.to_string(), text.to_string()),
-                vec![vec![1u8; text.len()]],
+                &masks(&[text], &[&[]]),
                 &EncodeOptions::default()
             )
             .wait()

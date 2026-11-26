@@ -21,6 +21,7 @@ enum Seq {
 }
 
 use super::Result;
+use super::TrustMasks;
 
 /// Threshold below which [`Inputs`] are encoded serially on the caller thread
 // `pub` (re-exported by `pipeline`): the differential "parallel == serial" tests live in
@@ -109,7 +110,7 @@ struct EncodeBatch {
     inputs: Box<Inputs>,
     /// One byte per byte of each sequence, 0 where a caller wrote the text. Empty when the batch
     /// has no untrusted spans, which is every batch that does not ask for them.
-    masks: Vec<Vec<u8>>,
+    masks: TrustMasks,
     chunks: Vec<SequenceChunk>,
     /// All the tasks to be picked up by workers: each tasks represents one or many [`SequenceChunk`]s to process
     tasks: Vec<Range<usize>>,
@@ -173,10 +174,14 @@ impl EncodeBatch {
                 };
                 // The mask is indexed by absolute byte offset in `input`, so the chunk's own
                 // range slices it into step with the text it is encoding.
-                let trusted = self
-                    .masks
-                    .get(chunk.seq)
-                    .map_or(&[][..], |mask| &mask[chunk.range.clone()]);
+                let trusted = {
+                    let mask = self.masks.get(chunk.seq);
+                    if mask.is_empty() {
+                        &[][..]
+                    } else {
+                        &mask[chunk.range.clone()]
+                    }
+                };
                 self.tokenizer.encode_sequence_with(
                     &input[chunk.range.clone()],
                     chunk.range.start,
@@ -452,12 +457,12 @@ impl Tokenizer {
 pub(crate) fn encode(
     tok: &Tokenizer,
     inputs: Inputs,
-    masks: &[Vec<u8>],
+    masks: TrustMasks,
     options: &EncodeOptions,
 ) -> EncodeHandle {
     if inputs.size_bytes() < PARALLEL_MIN_BYTES {
         return EncodeHandle::blocking(
-            tok.encode_serial(inputs, masks, options),
+            tok.encode_serial(inputs, &masks, options),
             tok.resolve_padding(&options.padding).cloned(),
         );
     }
@@ -465,14 +470,14 @@ pub(crate) fn encode(
         && seq.len() < 2 * PARALLEL_MIN_BYTES
     {
         return EncodeHandle::blocking(
-            tok.encode_serial(inputs, masks, options),
+            tok.encode_serial(inputs, &masks, options),
             tok.resolve_padding(&options.padding).cloned(),
         );
     }
     let Some(pool) = pool() else {
         // unable to get a pool handle, reverting to single threaded
         return EncodeHandle::blocking(
-            tok.encode_serial(inputs, masks, options),
+            tok.encode_serial(inputs, &masks, options),
             tok.resolve_padding(&options.padding).cloned(),
         );
     };
@@ -485,7 +490,7 @@ pub(crate) fn encode(
     } = tok.plan_work(&inputs, options);
     if tasks.len() < 2 {
         return EncodeHandle::blocking(
-            tok.encode_serial(inputs, masks, options),
+            tok.encode_serial(inputs, &masks, options),
             tok.resolve_padding(&options.padding).cloned(),
         );
     }
@@ -493,7 +498,7 @@ pub(crate) fn encode(
     let threads = tasks.len().min(pool.current_num_threads());
     let batch = Arc::new(EncodeBatch {
         inputs: Box::new(inputs),
-        masks: masks.to_vec(),
+        masks,
         cancelled: AtomicBool::new(false),
         next_task: CachePadded(AtomicUsize::new(0)),
         options: options.clone(),

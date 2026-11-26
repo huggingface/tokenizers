@@ -399,10 +399,64 @@ impl<'a> IntoIterator for &'a Inputs {
     }
 }
 
+/// One trust mask per sequence, back to back in a single buffer.
+///
+/// `push` one per sequence in input order; `bytes` holds them concatenated and `ends` says where
+/// each one stops. Built once and reused, so a caller rendering templates in a loop allocates
+/// nothing after the first call: [`Self::clear`] keeps both capacities.
+#[derive(Clone, Debug, Default)]
+pub struct TrustMasks {
+    /// One byte per byte of text, 0 where a caller wrote it. See
+    /// [`Tokenizer::encode_with_trust_mask`].
+    bytes: Vec<u8>,
+    /// End of each sequence's mask in `bytes`.
+    ends: Vec<u32>,
+}
+
+impl TrustMasks {
+    /// Drops every mask, keeping the buffers.
+    pub fn clear(&mut self) {
+        self.bytes.clear();
+        self.ends.clear();
+    }
+
+    /// Adds the mask of one sequence: `text` as the tokenizer will see it, and the byte ranges of
+    /// it that a caller wrote. Ranges may be out of order and need not cover the whole text.
+    pub fn push(&mut self, text: &str, untrusted: &[std::ops::Range<usize>]) {
+        let start = self.bytes.len();
+        self.bytes.resize(start + text.len(), 1);
+        for range in untrusted {
+            let (from, to) = (start + range.start, start + range.end);
+            if let Some(mask) = self.bytes.get_mut(from..to) {
+                mask.fill(0);
+            }
+        }
+        self.ends.push(self.bytes.len() as u32);
+    }
+
+    pub fn len(&self) -> usize {
+        self.ends.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ends.is_empty()
+    }
+
+    /// The mask of sequence `seq`, or an empty slice for "fully trusted".
+    fn get(&self, seq: usize) -> &[u8] {
+        // An empty `TrustMasks` is the no-mask case, and every sequence is fully trusted in it.
+        let Some(&end) = self.ends.get(seq) else {
+            return &[];
+        };
+        let start = if seq == 0 { 0 } else { self.ends[seq - 1] as usize };
+        &self.bytes[start..end as usize]
+    }
+}
+
 /// The masks line up with the inputs, or they do not. Whether a mask is *coherent* is the
 /// caller's business: it built the text and it built the mask, and re-deriving that here would
 /// mean tokenizers owning provenance it cannot see.
-fn check_masks(inputs: &Inputs, masks: &[Vec<u8>]) -> Result<()> {
+fn check_masks(inputs: &Inputs, masks: &TrustMasks) -> Result<()> {
     if masks.is_empty() {
         return Ok(());
     }
@@ -414,7 +468,8 @@ fn check_masks(inputs: &Inputs, masks: &[Vec<u8>]) -> Result<()> {
         )
         .into());
     }
-    for (input, mask) in inputs.into_iter().zip(masks) {
+    for (seq, input) in inputs.into_iter().enumerate() {
+        let mask = masks.get(seq);
         if mask.is_empty() {
             continue;
         }
@@ -736,7 +791,7 @@ impl Tokenizer {
     /// This way, special / added tokens declared on raw or normalized text are both caught.
     /// The remaining text is pre-tokenized and run through the model span by span.
     pub fn encode(&self, inputs: impl Into<Inputs>, options: &EncodeOptions) -> EncodeHandle {
-        self.encode_with_trust(inputs.into(), &[], options)
+        self.encode_with_trust(inputs.into(), &TrustMasks::default(), options)
     }
 
     /// [`Self::encode`], with the bytes a caller wrote marked as untrusted.
@@ -757,12 +812,12 @@ impl Tokenizer {
     pub fn encode_with_trust_mask(
         &self,
         inputs: impl Into<Inputs>,
-        masks: Vec<Vec<u8>>,
+        masks: &TrustMasks,
         options: &EncodeOptions,
     ) -> EncodeHandle {
         let inputs = inputs.into();
-        match check_masks(&inputs, &masks) {
-            Ok(()) => self.encode_with_trust(inputs, &masks, options),
+        match check_masks(&inputs, masks) {
+            Ok(()) => self.encode_with_trust(inputs, masks, options),
             Err(err) => EncodeHandle::blocking(vec![Err(err)], None),
         }
     }
@@ -770,7 +825,7 @@ impl Tokenizer {
     fn encode_with_trust(
         &self,
         inputs: Inputs,
-        masks: &[Vec<u8>],
+        masks: &TrustMasks,
         options: &EncodeOptions,
     ) -> EncodeHandle {
         assert!(
@@ -784,24 +839,25 @@ impl Tokenizer {
         );
 
         #[cfg(feature = "parallelism")]
-        parallel::encode(self, inputs, masks, options)
+        // The batch outlives this call, so it takes a copy: one buffer, not one per sequence.
+        parallel::encode(self, inputs, masks.clone(), options)
     }
 
     fn encode_serial(
         &self,
         inputs: Inputs,
-        masks: &[Vec<u8>],
+        masks: &TrustMasks,
         options: &EncodeOptions,
     ) -> Vec<Result<Encoding>> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         match inputs {
             Inputs::Single(input) => {
-                vec![self.encode_one(input, masks.first().map_or(&[][..], Vec::as_slice), options, &mut scratch)]
+                vec![self.encode_one(input, masks.get(0), options, &mut scratch)]
             }
             Inputs::Batch(batch) => {
                 let mut output = Vec::with_capacity(batch.len());
                 for (i, input) in batch.into_iter().enumerate() {
-                    let mask = masks.get(i).map_or(&[][..], Vec::as_slice);
+                    let mask = masks.get(i);
                     output.push(self.encode_one(input, mask, options, &mut scratch));
                 }
                 output
