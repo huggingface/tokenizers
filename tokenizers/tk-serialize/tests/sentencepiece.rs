@@ -45,11 +45,11 @@ fn tokenizer(add_dummy_prefix: bool, remove_extra_whitespaces: bool) -> Tokenize
                 "vocab": {VOCAB}, "merges": {MERGES}}},
             "added_tokens": [
                 {{"id": 23, "content": "<s>", "single_word": false, "lstrip": false,
-                  "rstrip": false, "normalized": false, "special": true}},
+                  "rstrip": false, "normalized": false, "special": true, "control": false}},
                 {{"id": 24, "content": "</s>", "single_word": false, "lstrip": true,
-                  "rstrip": true, "normalized": false, "special": true}},
+                  "rstrip": true, "normalized": false, "special": true, "control": false}},
                 {{"id": 25, "content": "ac", "single_word": true, "lstrip": false,
-                  "rstrip": false, "normalized": false, "special": true}}
+                  "rstrip": false, "normalized": false, "special": true, "control": false}}
             ],
             "post_processor": null,
             "decoder": null
