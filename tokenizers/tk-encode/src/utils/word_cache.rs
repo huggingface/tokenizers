@@ -933,7 +933,12 @@ mod tests {
         let InsertPlacement { key, tag, .. } =
             make_lookup_key(b"a-word-past-fifteen-bytes", cache.placement_mask);
         for i in 0..3 * (SPILLED_BUDGET / 8) {
-            let at = InsertPlacement { index: 0, home: 0, key, tag };
+            let at = InsertPlacement {
+                index: 0,
+                home: 0,
+                key,
+                tag,
+            };
             cache.insert(at, [i as u32; 8].into_iter());
         }
         assert!(
