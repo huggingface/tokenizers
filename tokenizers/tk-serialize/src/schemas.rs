@@ -212,11 +212,17 @@ macro_rules! piece_normalizer_schemas {
             /// SentencePiece's whitespace handling: replaces spaces with `replacement`. `prepend` says
             /// when `replacement` also goes in front of the piece: `"always"`, `"first"` (only at the
             /// start of the input) or `"never"`. `drop_whitespace` drops runs of whitespace instead
-            /// of replacing them.
+            /// of replacing them. `add_dummy_prefix` writes the prefix even when the piece already
+            /// starts with `replacement`, as SentencePiece does; `escape_whitespaces: false` leaves
+            /// spaces alone and writes a space as the prefix; `remove_extra_whitespaces` strips the
+            /// spaces around a piece and writes one `replacement` for a run of them.
             Metaspace {
                 replacement: Char = '▁',
                 prepend: Choice($crate::schemas::PREPEND_SCHEMES) = "always",
                 drop_whitespace: Bool = false,
+                add_dummy_prefix: Bool = false,
+                escape_whitespaces: Bool = true,
+                remove_extra_whitespaces: Bool = false,
             },
             /// Adds a space at the start of each piece that does not start with one, like the
             /// `add_prefix_space` of a GPT-2 style byte-level tokenizer.

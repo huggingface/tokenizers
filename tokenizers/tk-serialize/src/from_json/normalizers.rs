@@ -42,11 +42,20 @@ pub(super) fn read_piece_normalizer(cfg: Option<&Json<'_>>) -> Result<Option<Pie
         .ok_or_else(|| unsupported("a piece normalizer with no `type`"))?;
     let owner = format!("the `{kind}` piece normalizer");
     let piece_normalizer = match kind {
-        "Metaspace" => PieceNormalizer::Metaspace(Metaspace::new(
-            super::pre_tokenizers::read_char(cfg, "replacement")?,
-            read_prepend_scheme(cfg, &owner, "prepend")?,
-            cfg.need(&owner, "drop_whitespace", Json::as_bool)?,
-        )),
+        "Metaspace" => PieceNormalizer::Metaspace(
+            Metaspace::new(
+                super::pre_tokenizers::read_char(cfg, "replacement")?,
+                read_prepend_scheme(cfg, &owner, "prepend")?,
+                cfg.need(&owner, "drop_whitespace", Json::as_bool)?,
+            )
+            .with_add_dummy_prefix(cfg.need(&owner, "add_dummy_prefix", Json::as_bool)?)
+            .with_escape_whitespaces(cfg.need(&owner, "escape_whitespaces", Json::as_bool)?)
+            .with_remove_extra_whitespaces(cfg.need(
+                &owner,
+                "remove_extra_whitespaces",
+                Json::as_bool,
+            )?),
+        ),
         "PrefixSpace" => PieceNormalizer::PrefixSpace(PrefixSpace::default()),
         other => return Err(unsupported(&format!("the `{other}` piece normalizer"))),
     };
