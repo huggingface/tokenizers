@@ -12,7 +12,7 @@ use tk_encode::normalizers::prepend::Prepend;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
 use tk_encode::normalizers::strip::Strip;
 use tk_encode::normalizers::utils::Lowercase;
-use tk_encode::piece_normalizers::metaspace::{Metaspace, PrependScheme};
+use tk_encode::piece_normalizers::metaspace::{Metaspace, PrependScheme, WhitespaceMatch};
 use tk_encode::piece_normalizers::prefix_space::PrefixSpace;
 use tk_encode::pipeline::{Normalizer, PieceNormalizer};
 use tk_encode::tokenizer::Result;
@@ -46,15 +46,11 @@ pub(super) fn read_piece_normalizer(cfg: Option<&Json<'_>>) -> Result<Option<Pie
             Metaspace::new(
                 super::pre_tokenizers::read_char(cfg, "replacement")?,
                 read_prepend_scheme(cfg, &owner, "prepend")?,
-                cfg.need(&owner, "drop_whitespace", Json::as_bool)?,
-            )
-            .with_add_dummy_prefix(cfg.need(&owner, "add_dummy_prefix", Json::as_bool)?)
-            .with_escape_whitespaces(cfg.need(&owner, "escape_whitespaces", Json::as_bool)?)
-            .with_remove_extra_whitespaces(cfg.need(
-                &owner,
-                "remove_extra_whitespaces",
-                Json::as_bool,
-            )?),
+                read_whitespace_match(cfg, &owner)?,
+                cfg.need(&owner, "collapse_contiguous", Json::as_bool)?,
+                cfg.need(&owner, "skip_prefix", Json::as_bool)?,
+                cfg.need(&owner, "trim_trailing_delimiters", Json::as_bool)?,
+            ),
         ),
         "PrefixSpace" => PieceNormalizer::PrefixSpace(PrefixSpace::default()),
         other => return Err(unsupported(&format!("the `{other}` piece normalizer"))),
@@ -68,6 +64,14 @@ pub(super) fn read_prepend_scheme(cfg: &Json<'_>, owner: &str, key: &str) -> Res
         "first" => Ok(PrependScheme::First),
         "never" => Ok(PrependScheme::Never),
         other => Err(format!("unknown metaspace {key} {other:?}").into()),
+    }
+}
+
+fn read_whitespace_match(cfg: &Json<'_>, owner: &str) -> Result<WhitespaceMatch> {
+    match cfg.need(owner, "whitespace_match", Json::as_str)? {
+        "only_space" => Ok(WhitespaceMatch::OnlySpace),
+        "any_unicode" => Ok(WhitespaceMatch::AnyUnicode),
+        other => Err(format!("unknown metaspace whitespace_match {other:?}").into()),
     }
 }
 

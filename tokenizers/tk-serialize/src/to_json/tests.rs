@@ -202,14 +202,14 @@ const IDEMPOTENT: &[(&str, &str)] = &[
     ("normalizer",     r#"{"type": "Lowercase"}"#),
     ("normalizer",     r#"{"type": "Prepend", "prepend": "_"}"#),
     ("normalizer",     r#"{"type": "Replace", "pattern": {"String": " "}, "content": "_"}"#),
-    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "drop_whitespace": false, "add_dummy_prefix": false, "escape_whitespaces": true, "remove_extra_whitespaces": false}"#),
-    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "first", "drop_whitespace": false, "add_dummy_prefix": false, "escape_whitespaces": true, "remove_extra_whitespaces": false}"#),
-    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "never", "drop_whitespace": false, "add_dummy_prefix": false, "escape_whitespaces": true, "remove_extra_whitespaces": false}"#),
-    // `drop_whitespace` is one flag, never the legacy `Sequence[WhitespaceSplit, Metaspace]`.
-    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "drop_whitespace": true, "add_dummy_prefix": false, "escape_whitespaces": true, "remove_extra_whitespaces": false}"#),
-    // The three SentencePiece flags, as a `.model` file spells them.
-    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "drop_whitespace": false, "add_dummy_prefix": true, "escape_whitespaces": true, "remove_extra_whitespaces": true}"#),
-    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "never", "drop_whitespace": false, "add_dummy_prefix": false, "escape_whitespaces": false, "remove_extra_whitespaces": true}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "whitespace_match": "only_space", "collapse_contiguous": false, "skip_prefix": true, "trim_trailing_delimiters": false}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "first", "whitespace_match": "only_space", "collapse_contiguous": false, "skip_prefix": true, "trim_trailing_delimiters": false}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "never", "whitespace_match": "only_space", "collapse_contiguous": false, "skip_prefix": true, "trim_trailing_delimiters": false}"#),
+    // A 1.0 `Sequence[WhitespaceSplit, Metaspace]`, written as one `Metaspace`.
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "whitespace_match": "any_unicode", "collapse_contiguous": true, "skip_prefix": true, "trim_trailing_delimiters": false}"#),
+    // What `Metaspace::from_sentencepiece` builds, with `escape_whitespaces` on and off.
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "whitespace_match": "only_space", "collapse_contiguous": true, "skip_prefix": false, "trim_trailing_delimiters": true}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": " ", "prepend": "never", "whitespace_match": "only_space", "collapse_contiguous": true, "skip_prefix": false, "trim_trailing_delimiters": true}"#),
     ("piece_normalizer", r#"{"type": "PrefixSpace"}"#),
     // A `Metaspace` with `split: false` leaves the slot empty, so `null` has to round-trip.
     ("pre_tokenizer",  r#"null"#),

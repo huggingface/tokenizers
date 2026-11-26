@@ -4,7 +4,7 @@ use super::writer::Out;
 #[cfg(feature = "normalizers")]
 use base64::Engine as _;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
-use tk_encode::piece_normalizers::metaspace::PrependScheme;
+use tk_encode::piece_normalizers::metaspace::{PrependScheme, WhitespaceMatch};
 use tk_encode::pipeline::{Normalizer, PieceNormalizer};
 use tk_encode::tokenizer::Result;
 
@@ -14,6 +14,14 @@ pub(super) fn prepend_scheme_name(scheme: PrependScheme) -> Result<&'static str>
         PrependScheme::First => Ok("first"),
         PrependScheme::Never => Ok("never"),
         other => Err(format!("to_json cannot write the prepend_scheme {other:?}").into()),
+    }
+}
+
+fn whitespace_match_name(whitespace_match: WhitespaceMatch) -> Result<&'static str> {
+    match whitespace_match {
+        WhitespaceMatch::OnlySpace => Ok("only_space"),
+        WhitespaceMatch::AnyUnicode => Ok("any_unicode"),
+        other => Err(format!("to_json cannot write the whitespace_match {other:?}").into()),
     }
 }
 
@@ -56,12 +64,15 @@ pub(super) fn write_piece_normalizer(
                 metaspace.delimiter().encode_utf8(&mut [0; 4]),
             );
             out.field_str("prepend", prepend_scheme_name(metaspace.prepend())?);
-            out.field_bool("drop_whitespace", metaspace.drop_whitespace());
-            out.field_bool("add_dummy_prefix", metaspace.add_dummy_prefix());
-            out.field_bool("escape_whitespaces", metaspace.escape_whitespaces());
+            out.field_str(
+                "whitespace_match",
+                whitespace_match_name(metaspace.whitespace_match())?,
+            );
+            out.field_bool("collapse_contiguous", metaspace.collapse_contiguous());
+            out.field_bool("skip_prefix", metaspace.skip_prefix());
             out.field_bool(
-                "remove_extra_whitespaces",
-                metaspace.remove_extra_whitespaces(),
+                "trim_trailing_delimiters",
+                metaspace.trim_trailing_delimiters(),
             );
         }
         PieceNormalizer::PrefixSpace(_) => out.type_tag("PrefixSpace"),

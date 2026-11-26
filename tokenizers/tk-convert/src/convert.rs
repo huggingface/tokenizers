@@ -400,7 +400,8 @@ fn kind_of(value: &Value) -> &'static str {
 ///
 /// `Sequence[Metaspace]` is equivalent.
 ///
-/// `Sequence[WhitespaceSplit, Metaspace]` (eg, t5 or albert) is the same thing with `drop_whitespace`.
+/// `Sequence[WhitespaceSplit, Metaspace]` (eg, t5 or albert) becomes the same `Metaspace`, set to
+/// treat any Unicode whitespace as a space and to collapse each run of it into one delimiter.
 ///
 /// `split: false` leaves this slot empty. The reader reads a null `pre_tokenizer` as one span
 /// covering the whole text, which is what not cutting means.
@@ -461,12 +462,16 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
         &[
             ("replacement", Value::String(replacement.clone())),
             ("prepend", Value::String(prepend)),
-            ("drop_whitespace", Value::Bool(drop_whitespace)),
-            // A 1.0 `Metaspace` never says `add_dummy_prefix`: it skipped the prefix when the text
-            // already opened with one, and that is what these three keep.
-            ("add_dummy_prefix", Value::Bool(false)),
-            ("escape_whitespaces", Value::Bool(true)),
-            ("remove_extra_whitespaces", Value::Bool(false)),
+            // The `WhitespaceSplit` in front dropped any whitespace and gave each word a prefix.
+            (
+                "whitespace_match",
+                Value::String(if drop_whitespace { "any_unicode" } else { "only_space" }.into()),
+            ),
+            ("collapse_contiguous", Value::Bool(drop_whitespace)),
+            // A 1.0 `Metaspace` left out the prefix when the text already opened with whitespace
+            // or the delimiter, and kept a delimiter that ended the text.
+            ("skip_prefix", Value::Bool(true)),
+            ("trim_trailing_delimiters", Value::Bool(false)),
         ],
     );
     root.insert("piece_normalizer".to_string(), metaspace);

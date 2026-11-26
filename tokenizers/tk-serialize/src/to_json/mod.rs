@@ -44,6 +44,15 @@ pub fn post_processor_to_json(
     Ok(out.finish())
 }
 
+/// Write a lone `piece_normalizer`, the value of that one key. `None` comes back as `null`.
+pub fn piece_normalizer_to_json(
+    piece_normalizer: Option<&tk_encode::pipeline::PieceNormalizer>,
+) -> Result<String> {
+    let mut out = Out::new();
+    write_piece_normalizer(&mut out, piece_normalizer)?;
+    Ok(out.finish())
+}
+
 /// Write a lone `padding`, the value of that one key. `None` comes back as `null`.
 ///
 /// The counterpart of [`padding_from_json`](crate::padding_from_json).

@@ -6,10 +6,8 @@
 //! derived from the piece scores the way `convert_slow_tokenizer.build_tokenizer_from_spm_proto`
 //! derives them, and every id literal is `SentencePieceProcessor.encode(text)` on that model.
 //!
-//! What is under test is the piece normalizer. `add_dummy_prefix`, `escape_whitespaces` and
-//! `remove_extra_whitespaces` are the rest of SentencePiece's `Normalizer::Normalize`, so the ids
-//! only line up if they run in its order: strip the spaces that open a piece, write the prefix,
-//! collapse a run of spaces, then strip what closes the piece.
+//! What is under test is the piece normalizer, set the way `Metaspace::from_sentencepiece` sets it
+//! from SentencePiece's `add_dummy_prefix` and `remove_extra_whitespaces` flags.
 
 use tk_encode::pipeline::{EncodeOptions, Tokenizer};
 
@@ -30,14 +28,15 @@ const MERGES: &str = r#"[
 
 /// `<s>` is id 23, one past the vocabulary, so it only ever comes from the added-token path.
 fn tokenizer(add_dummy_prefix: bool, remove_extra_whitespaces: bool) -> Tokenizer {
+    let prepend = if add_dummy_prefix { "always" } else { "never" };
     let json = format!(
         r#"{{
             "version": "2.0",
             "normalizer": null,
-            "piece_normalizer": {{"type": "Metaspace", "replacement": "▁", "prepend": "always",
-                "drop_whitespace": false, "add_dummy_prefix": {add_dummy_prefix},
-                "escape_whitespaces": true,
-                "remove_extra_whitespaces": {remove_extra_whitespaces}}},
+            "piece_normalizer": {{"type": "Metaspace", "replacement": "▁", "prepend": "{prepend}",
+                "whitespace_match": "only_space",
+                "collapse_contiguous": {remove_extra_whitespaces}, "skip_prefix": false,
+                "trim_trailing_delimiters": {remove_extra_whitespaces}}},
             "pre_tokenizer": {{"type": "Split", "pattern": {{"String": "▁"}},
                 "behavior": "MergedWithNext", "invert": false}},
             "model": {{"type": "BPE", "unk_token": "<unk>", "continuing_subword_prefix": null,
