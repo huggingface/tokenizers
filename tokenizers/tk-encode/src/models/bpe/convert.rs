@@ -4,7 +4,6 @@ use crate::models::bpe::At;
 use crate::models::bpe::merge_hot_cold_queue::{Entry, MergeQueue, QueueScratch};
 use crate::models::bpe::model::{Atoms, BPE};
 use crate::models::bpe::tables::{BpeTables, ID_MASK, NO_SYMBOL, RANK_MASK};
-use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
 /// Set only for the few models that decorate their atoms: `end_of_word_suffix` (CLIP, openai-gpt,
 /// XLM) and `continuing_subword_prefix`. An atom's symbol then depends on its position in the
@@ -180,18 +179,25 @@ impl BPE {
 
     fn convert<M: SinkMode>(&self, sequence: &str, sink: &mut SymbolSink<M>) {
         if let Some(affixes) = &self.affixes {
-            convert_affixed(
-                &self.tables,
-                &self.vocab,
-                &self.atoms,
-                affixes,
-                sequence,
-                sink,
-            );
+            convert_affixed(self, affixes, sequence, sink);
         } else {
             match &self.atoms {
-                Atoms::Bytes => convert_bytes(&self.tables, sequence.as_bytes(), sink),
-                Atoms::Chars { .. } => convert_chars(&self.tables, &self.atoms, sequence, sink),
+                Atoms::Bytes {
+                    missing_bytes: true,
+                } if self.unk_token.is_some() => {
+                    let mut in_unk_run = false;
+                    for &byte in sequence.as_bytes() {
+                        let symbol = self.tables.byte_internal[byte as usize];
+                        if symbol == NO_SYMBOL {
+                            self.push_unk(&mut in_unk_run, sink);
+                        } else {
+                            in_unk_run = false;
+                            sink.push(&self.tables, symbol);
+                        }
+                    }
+                }
+                Atoms::Bytes { .. } => convert_bytes(&self.tables, sequence.as_bytes(), sink),
+                Atoms::Chars { .. } => convert_chars(self, sequence, sink),
             }
         }
     }
@@ -230,22 +236,17 @@ fn convert_bytes<M: SinkMode>(tables: &BpeTables, bytes: &[u8], sink: &mut Symbo
 
 /// Character-level conversion, for models without a byte-level pretokenizer: every vocab token
 /// of one character has a fold entry, so there is no byte decomposition to do here.
-fn convert_chars<M: SinkMode>(
-    tables: &BpeTables,
-    atoms: &Atoms,
-    sequence: &str,
-    sink: &mut SymbolSink<M>,
-) {
+fn convert_chars<M: SinkMode>(model: &BPE, sequence: &str, sink: &mut SymbolSink<M>) {
     let mut in_unk_run = false;
     let sequence_bytes = sequence.as_bytes();
     for (start, character) in sequence.char_indices() {
-        let symbol = tables.fold.get_char(character);
+        let symbol = model.tables.fold.get_char(character);
         if symbol != NO_SYMBOL {
             in_unk_run = false;
-            sink.push(tables, symbol);
+            sink.push(&model.tables, symbol);
         } else {
             let atom_bytes = &sequence_bytes[start..start + character.len_utf8()];
-            push_unknown(tables, atoms, &mut in_unk_run, atom_bytes, sink);
+            model.push_unknown(&mut in_unk_run, atom_bytes, sink);
         }
     }
 }
@@ -256,9 +257,7 @@ fn convert_chars<M: SinkMode>(
 /// form is assembled in a stack buffer and looked up in the vocab, which costs a hash per atom --
 /// these models are rare enough that it is not worth a second fold table to avoid it.
 fn convert_affixed<M: SinkMode>(
-    tables: &BpeTables,
-    vocab: &BucketVocabStore,
-    atoms: &Atoms,
+    model: &BPE,
     affixes: &Affixes,
     sequence: &str,
     sink: &mut SymbolSink<M>,
@@ -268,8 +267,8 @@ fn convert_affixed<M: SinkMode>(
     let mut in_unk_run = false;
     let mut pos = 0;
     while pos < sequence_bytes.len() {
-        let atom_len = match atoms {
-            Atoms::Bytes => 1,
+        let atom_len = match model.atoms {
+            Atoms::Bytes { .. } => 1,
             Atoms::Chars { .. } => UTF8_LEN[sequence_bytes[pos] as usize] as usize,
         };
         let atom = &sequence_bytes[pos..pos + atom_len];
@@ -290,47 +289,49 @@ fn convert_affixed<M: SinkMode>(
             len += suffix.len();
         }
 
-        let symbol = vocab
+        let symbol = model
+            .vocab
             .get_bytes(&buffer[..len])
             .and_then(|external| affixes.to_internal.get(external as usize).copied())
             .filter(|&symbol| symbol != NO_SYMBOL);
         match symbol {
             Some(symbol) => {
                 in_unk_run = false;
-                sink.push(tables, symbol);
+                sink.push(&model.tables, symbol);
             }
-            None => push_unknown(tables, atoms, &mut in_unk_run, atom, sink),
+            None => model.push_unknown(&mut in_unk_run, atom, sink),
         }
     }
 }
 
-/// An atom missing from the vocab: its bytes if the model is byte-level or has `byte_fallback`,
-/// else `unk`. `in_unk_run` is true while the atoms just before were all turned into `unk`.
-#[inline(always)]
-fn push_unknown<M: SinkMode>(
-    tables: &BpeTables,
-    atoms: &Atoms,
-    in_unk_run: &mut bool,
-    atom: &[u8],
-    sink: &mut SymbolSink<M>,
-) {
-    match atoms {
-        Atoms::Bytes => sink.push_bytes(tables, &tables.byte_internal, atom),
-        Atoms::Chars {
-            byte_fallback,
-            unk_token,
-            fuse_unk,
-        } => {
-            if let Some(fallback) = byte_fallback {
-                sink.push_bytes(tables, fallback, atom);
+impl BPE {
+    fn push_unknown<M: SinkMode>(
+        &self,
+        in_unk_run: &mut bool,
+        atom: &[u8],
+        sink: &mut SymbolSink<M>,
+    ) {
+        match &self.atoms {
+            Atoms::Chars {
+                byte_fallback: Some(fallback),
+            } => {
+                sink.push_bytes(&self.tables, fallback, atom);
                 *in_unk_run = false;
-            } else if let Some(unk) = unk_token {
-                // with fuse_unk the run already emitted its unk, so this atom adds nothing
-                if !(*fuse_unk && *in_unk_run) {
-                    sink.push(tables, *unk);
-                }
-                *in_unk_run = true;
             }
+            Atoms::Bytes { .. } if self.unk_token.is_none() => {
+                sink.push_bytes(&self.tables, &self.tables.byte_internal, atom);
+            }
+            _ => self.push_unk(in_unk_run, sink),
+        }
+    }
+
+    #[inline(always)]
+    fn push_unk<M: SinkMode>(&self, in_unk_run: &mut bool, sink: &mut SymbolSink<M>) {
+        if let Some(unk) = self.unk_token {
+            if !(self.fuse_unk && *in_unk_run) {
+                sink.push(&self.tables, unk);
+            }
+            *in_unk_run = true;
         }
     }
 }

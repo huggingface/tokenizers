@@ -653,3 +653,54 @@ fn byte_level_drops_bytes_real_text_can_contain() {
     let want: Vec<u32> = "ab".repeat(64).bytes().map(u32::from).collect();
     assert_eq!(pipeline_ids(&pipeline, &long), want);
 }
+
+#[test]
+fn byte_level_emits_unknowns_without_merging_their_neighbors() {
+    for fuse_unk in [false, true] {
+        let model = BPE::from_config(BpeConfig {
+            vocab: v(&[("<unk>", 0), ("a", 1), ("b", 2), ("ab", 3)]),
+            merges: m(&[("a", "b")]),
+            byte_level: true,
+            unk_token: Some("<unk>".into()),
+            fuse_unk,
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(pipeline_ids(&model, "a\rb"), [1, 0, 2]);
+        let word = "aéb\rab";
+        let expected = if fuse_unk {
+            vec![1, 0, 2, 0, 3]
+        } else {
+            vec![1, 0, 0, 2, 0, 3]
+        };
+        for count in [1, 64] {
+            assert_eq!(
+                pipeline_ids(&model, &word.repeat(count)),
+                expected.repeat(count)
+            );
+        }
+        let mut config = model.to_config().unwrap();
+        assert_eq!(config.unk_token.as_deref(), Some("<unk>"));
+        assert_eq!(config.fuse_unk, fuse_unk);
+
+        // The final atom is looked up as b</w>. The bare b exists, but the suffixed one doesn't.
+        config.end_of_word_suffix = Some("</w>".into());
+        let affixed = BPE::from_config(config).unwrap();
+        let expected = if fuse_unk { vec![1, 0] } else { vec![1, 0, 0] };
+        assert_eq!(pipeline_ids(&affixed, "a\rb"), expected);
+    }
+}
+
+#[test]
+fn byte_level_word_hit_still_checks_unknown_atoms() {
+    // The vocabulary has a token for the UTF-8 spelling of é, but no atom
+    // for its second byte, so the merge engine cannot produce that token.
+    let model = BPE::from_config(BpeConfig {
+        vocab: v(&[("<unk>", 0), ("Ã", 1), ("Ã©", 2)]),
+        byte_level: true,
+        unk_token: Some("<unk>".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(pipeline_ids(&model, "é"), [1, 0]);
+}

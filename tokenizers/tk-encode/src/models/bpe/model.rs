@@ -53,6 +53,8 @@ const _: () = assert!(align_of::<Token>() == align_of::<u32>());
 
 pub struct BPE {
     pub(super) atoms: Atoms,
+    pub(super) unk_token: Option<u32>,
+    pub(super) fuse_unk: bool,
     pub(super) tables: BpeTables,
     pub(super) affixes: Option<Affixes>,
     pub(super) vocab: BucketVocabStore,
@@ -65,11 +67,11 @@ pub struct BPE {
 #[allow(clippy::large_enum_variant)]
 pub(super) enum Atoms {
     /// The atoms are the 256 bytes; the symbol for each lives in `BpeTables::byte_internal`.
-    Bytes,
+    Bytes {
+        missing_bytes: bool,
+    },
     Chars {
         byte_fallback: Option<[u32; 256]>,
-        unk_token: Option<u32>,
-        fuse_unk: bool,
     },
 }
 
@@ -79,7 +81,7 @@ impl BPE {
     /// **decoded raw bytes** at load time. Decoding is then a concatenation, and running a
     /// `ByteLevel` decoder over these entries would decode a second time.
     pub fn is_byte_level(&self) -> bool {
-        matches!(self.atoms, Atoms::Bytes)
+        matches!(self.atoms, Atoms::Bytes { .. })
     }
 
     /// A token's bytes, borrowed from the vocab store's slab. For a byte-level model these are
@@ -146,8 +148,12 @@ impl BPE {
             let Ok(text) = std::str::from_utf8(bytes) else {
                 continue;
             };
-            let chars = text.chars().count();
-            let foldable = if chars == 0 || (chars == 1 && !has_suffix) {
+            let single_atom = if self.is_byte_level() {
+                bytes.len() == 1
+            } else {
+                text.chars().count() == 1
+            };
+            let foldable = if bytes.is_empty() || (single_atom && !has_suffix) {
                 // A single atom has no pair to merge and is trivially its own encoding.
                 true
             } else {
