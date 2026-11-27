@@ -45,6 +45,9 @@ pub struct BpeConfig {
     /// Slots in the per-scratch word cache; `0` turns caching off. Defaults to
     /// [`DEFAULT_CACHE_CAPACITY`](crate::models::bpe::DEFAULT_CACHE_CAPACITY).
     pub cache_capacity: usize,
+    /// Wrap the model so tokens the merge list cannot build are emitted whole at a pretoken
+    /// start. Off by default; the model itself is unchanged.
+    pub prefix_atoms: bool,
 }
 
 impl Default for BpeConfig {
@@ -61,6 +64,7 @@ impl Default for BpeConfig {
             ignore_merges: false,
             dropout: None,
             cache_capacity: DEFAULT_CACHE_CAPACITY,
+            prefix_atoms: false,
         }
     }
 }
@@ -137,6 +141,7 @@ impl BPE {
             ignore_merges: self.vocab.all_foldable(),
             dropout: None,
             cache_capacity: self.cache_capacity.unwrap_or(0),
+            prefix_atoms: false,
         })
     }
 

@@ -14,7 +14,7 @@ pub use crate::pipeline::encode_options::Override;
 use crate::utils::truncation::truncate_pair;
 use crate::{
     Decoder, PaddingParams, TruncationParams,
-    models::bpe::{BPE, BpeScratch},
+    models::bpe::{BPE, BpeScratch, PrefixAtoms},
     pad_encodings,
     pipeline::scratch_pool::{EncodeScratch, ScratchPool},
     tokenizer::Decode as _,
@@ -879,7 +879,7 @@ impl Tokenizer {
         // nightly lints a leading irrefutable pattern in a let chain. Nesting the `if` instead
         // would trade this for `collapsible_if` on every build that has more than one model.
         #[allow(irrefutable_let_patterns)]
-        if let Model::BPE(bpe) = &self.inner.model
+        if let Some(bpe) = self.inner.model.as_bpe()
             && bpe.is_byte_level()
         {
             return Ok(self.decode_byte_level(bpe, ids, skip_special_tokens));
@@ -1043,6 +1043,8 @@ pub trait Tokenize {
 #[non_exhaustive]
 pub enum Model {
     BPE(BPE),
+    /// A BPE plus the tokens its merge list cannot build, emitted whole at a pretoken start.
+    BpeWithAtoms(PrefixAtoms),
     #[cfg(feature = "unigram")]
     Unigram(Unigram),
     #[cfg(feature = "wordlevel")]
@@ -1052,10 +1054,21 @@ pub enum Model {
 }
 
 impl Model {
+    /// The BPE this model is, if it is one (`BPE` or a `BPE` wrapped with prefix atoms).
+    pub(crate) fn as_bpe(&self) -> Option<&BPE> {
+        match self {
+            Self::BPE(bpe) => Some(bpe),
+            Self::BpeWithAtoms(atoms) => Some(atoms.inner()),
+            #[allow(unreachable_patterns)]
+            _ => None,
+        }
+    }
+
     /// `id -> token` used by [`Tokenizer::decode`]
     pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
         match self {
             Self::BPE(model) => model.id_to_token(id),
+            Self::BpeWithAtoms(atoms) => atoms.inner().id_to_token(id),
             #[cfg(feature = "unigram")]
             Self::Unigram(model) => model.id_to_token(id),
             #[cfg(feature = "wordlevel")]
@@ -1068,6 +1081,7 @@ impl Model {
     pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
         match self {
             Self::BPE(model) => model.token_to_id(token),
+            Self::BpeWithAtoms(atoms) => atoms.inner().token_to_id(token),
             #[cfg(feature = "unigram")]
             Self::Unigram(model) => model.token_to_id(token),
             #[cfg(feature = "wordlevel")]
@@ -1080,6 +1094,7 @@ impl Model {
     pub(crate) fn get_vocab(&self) -> HashMap<String, u32> {
         match self {
             Self::BPE(model) => model.get_vocab(),
+            Self::BpeWithAtoms(atoms) => atoms.inner().get_vocab(),
             #[cfg(feature = "unigram")]
             Self::Unigram(model) => model.get_vocab(),
             #[cfg(feature = "wordlevel")]
@@ -1092,6 +1107,7 @@ impl Model {
     pub(crate) fn get_vocab_size(&self) -> usize {
         match self {
             Self::BPE(model) => model.get_vocab_size(),
+            Self::BpeWithAtoms(atoms) => atoms.inner().get_vocab_size(),
             #[cfg(feature = "unigram")]
             Self::Unigram(model) => model.get_vocab_size(),
             #[cfg(feature = "wordlevel")]
@@ -1117,6 +1133,9 @@ impl Tokenize for Model {
     ) -> Result<()> {
         match (self, scratch) {
             (Self::BPE(model), ModelScratch::BPE(scratch)) => {
+                model.tokenize(sequence, scratch, output)
+            }
+            (Self::BpeWithAtoms(model), ModelScratch::BPE(scratch)) => {
                 model.tokenize(sequence, scratch, output)
             }
             #[cfg(feature = "unigram")]
@@ -1147,6 +1166,9 @@ impl Tokenize for Model {
             (Self::BPE(model), ModelScratch::BPE(scratch)) => {
                 model.tokenize_spans(pre_tokens, scratch, output)
             }
+            (Self::BpeWithAtoms(model), ModelScratch::BPE(scratch)) => {
+                model.tokenize_spans(pre_tokens, scratch, output)
+            }
             #[cfg(feature = "unigram")]
             (Self::Unigram(model), ModelScratch::Unigram(scratch)) => {
                 model.tokenize_spans(pre_tokens, scratch, output)
@@ -1166,6 +1188,7 @@ impl Tokenize for Model {
     fn init_scratch(&self) -> Self::Scratch {
         match self {
             Self::BPE(bpe) => ModelScratch::BPE(bpe.init_scratch()),
+            Self::BpeWithAtoms(atoms) => ModelScratch::BPE(atoms.init_scratch()),
             #[cfg(feature = "wordlevel")]
             Self::WordLevel(_) => Self::Scratch::WordLevel(()),
             #[cfg(feature = "wordpiece")]

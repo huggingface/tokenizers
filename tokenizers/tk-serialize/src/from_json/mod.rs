@@ -32,7 +32,7 @@ use self::pre_tokenizers::read_pre_tokenizer;
 use self::truncation::read_truncation;
 use crate::json::Json;
 use std::collections::BTreeMap;
-use tk_encode::models::bpe::BPE;
+use tk_encode::models::bpe::{BPE, PrefixAtoms};
 #[cfg(feature = "wordpiece")]
 use tk_encode::models::wordpiece::WordPiece;
 use tk_encode::pipeline::{Model, Normalizer, NormalizerChain, PreTokenizer, Tokenizer};
@@ -132,7 +132,11 @@ fn from_json_value(doc: &Json<'_>) -> Result<Tokenizer> {
                     let mut config = options;
                     config.vocab = vocab;
                     config.merges = merges;
-                    Ok(Model::BPE(BPE::from_config(config)?))
+                    if config.prefix_atoms {
+                        Ok(Model::BpeWithAtoms(PrefixAtoms::from_config(config)?))
+                    } else {
+                        Ok(Model::BPE(BPE::from_config(config)?))
+                    }
                 },
             )
         }

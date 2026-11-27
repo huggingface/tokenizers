@@ -38,7 +38,7 @@ fn hello(options: BpeConfig) -> Result<BPE> {
     })
 }
 
-fn pipeline_ids(model: &BPE, sequence: &str) -> Vec<u32> {
+fn pipeline_ids(model: &impl pipeline::Tokenize<Scratch = BpeScratch>, sequence: &str) -> Vec<u32> {
     let mut out = Vec::new();
     let mut scratch = model.init_scratch();
     pipeline::Tokenize::tokenize(model, sequence, &mut scratch, &mut out).unwrap();
@@ -652,4 +652,43 @@ fn byte_level_drops_bytes_real_text_can_contain() {
     let long = "ab\x0b".repeat(64);
     let want: Vec<u32> = "ab".repeat(64).bytes().map(u32::from).collect();
     assert_eq!(pipeline_ids(&pipeline, &long), want);
+}
+
+#[test]
+fn prefix_atoms_emit_unreachable_tokens_at_a_pretoken_start() {
+    // "abcd" is a vocabulary token with no split into two tokens whose pair is a merge.
+    let vocab = || {
+        v(&[
+            ("a", 0),
+            ("b", 1),
+            ("c", 2),
+            ("d", 3),
+            ("e", 4),
+            ("x", 5),
+            ("ab", 6),
+            ("abcd", 7),
+        ])
+    };
+    let merges = || m(&[("a", "b")]);
+    let atoms = PrefixAtoms::from_config(BpeConfig {
+        vocab: vocab(),
+        merges: merges(),
+        prefix_atoms: true,
+        ..BpeConfig::default()
+    })
+    .unwrap();
+    assert_eq!(pipeline_ids(&atoms, "abcd"), vec![7]);
+    assert_eq!(pipeline_ids(&atoms, "abcde"), vec![7, 4]);
+    // A pretoken that does not start with the atom is untouched.
+    assert_eq!(pipeline_ids(&atoms, "xabcd"), vec![5, 6, 2, 3]);
+    assert_eq!(pipeline_ids(&atoms, "abce"), vec![6, 2, 4]);
+
+    // Off by default.
+    let plain = BPE::from_config(BpeConfig {
+        vocab: vocab(),
+        merges: merges(),
+        ..BpeConfig::default()
+    })
+    .unwrap();
+    assert_eq!(pipeline_ids(&plain, "abcd"), vec![6, 2, 3]);
 }
