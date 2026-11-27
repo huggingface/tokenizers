@@ -1,11 +1,11 @@
 use crate::Trainer;
 use ahash::AHashMap;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::convert::Infallible;
 use tk_encode::Result;
 use tk_encode::models::wordlevel::WordLevel;
-use tk_encode::utils::parallelism::*;
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 
 #[non_exhaustive]
@@ -139,7 +139,7 @@ impl Trainer for WordLevelTrainer {
         F: Fn(&str) -> Result<Vec<String>> + Sync,
     {
         let words: Result<AHashMap<String, u64>> = iterator
-            .maybe_par_bridge()
+            .par_bridge()
             .map(|sequence| {
                 let words = process(sequence.as_ref())?;
                 let mut map = AHashMap::new();

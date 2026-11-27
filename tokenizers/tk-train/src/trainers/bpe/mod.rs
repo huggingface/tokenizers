@@ -21,9 +21,9 @@ use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 use word::{WithFirstLastIterator, Word};
 
 use crate::progress::{ProgressBar, ProgressFormat, ProgressStyle};
+use rayon::prelude::*;
 use tk_encode::Result;
 use tk_encode::models::bpe::{BPE, BpeConfig, Merges, Pair, Vocab};
-use tk_encode::parallelism::*;
 
 #[derive(Debug, Eq)]
 struct Merge {
@@ -433,7 +433,7 @@ impl BpeTrainer {
         p: &Option<ProgressBar>,
     ) -> (AHashMap<Pair, i32>, AHashMap<Pair, AHashSet<usize>>) {
         words
-            .maybe_par_iter()
+            .par_iter()
             .enumerate()
             .map(|(i, word)| {
                 let mut pair_counts = AHashMap::new();
@@ -604,7 +604,7 @@ impl BpeTrainer {
             let word_start = WordPtr(words.as_mut_ptr());
 
             let changes = pos
-                .maybe_par_iter()
+                .par_iter()
                 .flat_map(|&i| {
                     // We can merge each of these words in parallel here because each position
                     // can be there only once (AHashSet). So this is safe.
@@ -700,7 +700,7 @@ impl Trainer for BpeTrainer {
         F: Fn(&str) -> Result<Vec<String>> + Sync,
     {
         let words: Result<AHashMap<CompactString, u64>> = iterator
-            .maybe_par_bridge()
+            .par_bridge()
             .map(|sequence| {
                 let words = process(sequence.as_ref())?;
                 let mut map = AHashMap::new();

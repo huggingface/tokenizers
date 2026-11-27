@@ -4,12 +4,12 @@ use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
 use dary_heap::OctonaryHeap;
 use log::{info, warn};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{HashSet, VecDeque};
 use tk_encode::Result;
 use tk_encode::models::bpe::{Merges, Vocab};
-use tk_encode::parallelism::*;
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 
 #[derive(Debug, Eq)]
@@ -312,7 +312,7 @@ impl ParityBpeTrainerBuilder {
 /// [`feed_dev_language_from_iter`](Self::feed_dev_language_from_iter),
 /// which mirror [`Trainer::feed`](crate::Trainer::feed)'s
 /// `<I, S, F>` shape (including the `Send` / `Sync` bounds for parallel
-/// iteration via `maybe_par_bridge`) but take an explicit `lang_idx`
+/// iteration via `par_bridge`) but take an explicit `lang_idx`
 /// parameter. The Python binding wraps these in a single
 /// `ParityBpeTrainer.train_from_iterator(tokenizer, train_iterators,
 /// dev_iterators=, ratio=)` method, the multi-corpus analogue of
@@ -418,7 +418,7 @@ impl ParityBpeTrainer {
         F: Fn(&str) -> Result<Vec<String>> + Sync,
     {
         let words: Result<AHashMap<CompactString, u64>> = iterator
-            .maybe_par_bridge()
+            .par_bridge()
             .map(|sequence| {
                 let words = process(sequence.as_ref())?;
                 let mut map = AHashMap::new();
@@ -459,7 +459,7 @@ impl ParityBpeTrainer {
         F: Fn(&str) -> Result<Vec<String>> + Sync,
     {
         let words: Result<AHashMap<CompactString, u64>> = iterator
-            .maybe_par_bridge()
+            .par_bridge()
             .map(|sequence| {
                 let words = process(sequence.as_ref())?;
                 let mut map = AHashMap::new();
@@ -622,7 +622,7 @@ impl ParityBpeTrainer {
         counts: &[u64],
     ) -> (AHashMap<Pair, i64>, AHashMap<Pair, AHashSet<usize>>) {
         words
-            .maybe_par_iter()
+            .par_iter()
             .enumerate()
             .map(|(i, word)| {
                 let mut pair_counts: AHashMap<Pair, i64> = AHashMap::new();
@@ -1493,7 +1493,7 @@ impl ParityBpeTrainer {
 
         #[allow(clippy::type_complexity)]
         let changes: Vec<(Vec<(Pair, i32)>, usize, i64)> = positions
-            .maybe_par_iter()
+            .par_iter()
             .map(|&i| unsafe {
                 // Edition ≥2021 closures capture the `.0` field (a non-Sync raw
                 // pointer) unless we force whole-struct capture of the Sync wrapper.
