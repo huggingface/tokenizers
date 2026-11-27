@@ -82,7 +82,7 @@ pub enum ConvertError {
     MetaspaceDropWhitespaceScheme { scheme: String },
 
     #[error(
-        "a `ByteLevel` pre-tokenizer with `add_prefix_space: true` after other pre-tokenizers is not supported"
+        "tokenizers v1 cannot represent this pipeline: a `ByteLevel` pre-tokenizer with `add_prefix_space: true` after other pre-tokenizers"
     )]
     ByteLevelAddPrefixSpace,
 
@@ -560,7 +560,6 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
         match members {
             Some(members) if members.last().is_some_and(is_byte_level) => {
                 let bl = members.pop().expect("checked by `last`");
-                // v1 cannot express this pre-tokenizer sequence from 0.23: byte-level + add_prefix_space
                 if adds_prefix_space(&bl) {
                     return Err(ConvertError::ByteLevelAddPrefixSpace);
                 }

@@ -333,11 +333,14 @@ impl Tokenizer {
         self.set(normalizer)
     }
 
-    /// The step that rewrites each piece of text between added tokens, or `None`.
+    /// The piece normalizer, which rewrites the text between added tokens, or `None`.
     ///
-    /// It runs after the added tokens are cut, so a prefix it writes at the start of a piece
-    /// never lands in front of an added token.
-    ///
+    /// It runs on each piece of text between added tokens , after the normalizer.
+    /// 
+    /// For example, with `<s>` as an added token and the `Metaspace` piece-normalizer,
+    /// `"Hi<s>there"` is transformed to `"▁Hi"`, `<s>`, `"▁there"`
+    /// The piece normalizer is the part that rewrites `"Hi"` to `"▁Hi"` and `"there"` to  `"▁there"`.
+    /// 
     /// Returns an editable view of the tokenizer's piece normalizer.
     #[getter]
     fn piece_normalizer(slf: &Bound<'_, Self>) -> PyResult<Option<Py<PieceNormalizer>>> {

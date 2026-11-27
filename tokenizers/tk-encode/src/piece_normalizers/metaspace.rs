@@ -45,15 +45,29 @@ pub struct Metaspace {
     /// `▁` (U+2581) for every SentencePiece model we know of, but the config is free to use
     /// another character.
     delimiter: char,
-    /// Whether to prepend pieces with the delimiter
+    /// How to decide whether the piece gets a delimiter prefix.
+    /// - [`PrependScheme::Always`]: all pieces get prefixed, `"Hey you"` becomes `"▁Hey▁you"`.
+    /// - [`PrependScheme::Never`]: no piece gets prefixed `"Hey▁you"`.
+    /// - [`PrependScheme::First`]: Only the piece at the very beginning of the sentence gets prefixed.
     prepend: PrependScheme,
-    /// What is matched as a whitespace in the piece normalizer
+    /// Which characters are rewritten as the delimiter.
+    /// - [`WhitespaceMatch::OnlySpace`]: Only the ASCII space. `"Hey\tyou all"` becomes `"▁Hey\tyou▁all"`.
+    ///   example: `mistralai/Mistral-7B-v0.1`
+    /// - [`WhitespaceMatch::AnyUnicode`]: All unicode whitespace characters. `"Hey\tyou all"` becomes `"▁Hey▁you▁all"`.
+    ///   example: `google-t5/t5-base`
     whitespace_match: WhitespaceMatch,
-    /// Whether to collapse a consecutive run of whitespaces into a single space
+    /// Whether a run of multiple consecutive whitespaces is turned to a single delimiter.
+    /// Example:
+    ///     When false, `"Hey     you "` --> `"▁Hey▁▁▁▁▁you"`
+    ///     When true,  `"Hey     you "` --> `"▁Hey▁you"`
+    /// `google-t5/t5-base` and `albert/albert-base-v1` collapse contiguous whitespaces.
     collapse_contiguous: bool,
-    /// Whether to skip the prepend if the piece already starts with the delimiter
+    /// Whether the prefix is left out when the piece already starts with whitespace or the delimiter.
+    /// Example:
+    ///     When false, `"▁Hey"` becomes `"▁▁Hey"`
+    ///     When true, `" Hey"` and `"▁Hey"` both become `"▁Hey"`
     skip_prefix: bool,
-    /// Whether to drop the delimiters that end the piece, including ones the piece already had
+    /// Whether to drop delimiters at the end of the piece
     trim_trailing_delimiters: bool,
 }
 
