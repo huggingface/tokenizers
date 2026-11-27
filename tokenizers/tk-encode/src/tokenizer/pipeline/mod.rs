@@ -891,6 +891,100 @@ impl Tokenizer {
         }
     }
 
+    /// [`Self::decode`], split by where each piece of the output came from.
+    ///
+    /// A control token and the same characters spelled out with ordinary tokens decode to the
+    /// same text, so a caller scanning text for its delimiters cannot tell them apart: a model
+    /// that quotes `<|endoftext|>` in an answer looks exactly like one that ended its turn. Here
+    /// the two stay apart -- an added token is one [`Decoded::Added`], ordinary ids are
+    /// [`Decoded::Text`] -- and `runs.text()` is what [`Self::decode`] returns for the same ids.
+    ///
+    /// A response parser should read this: the delimiter is an id, never a spelling.
+    ///
+    /// Writes into `runs` rather than returning, so a decoder in a loop reuses one text buffer and
+    /// one run table instead of allocating per call.
+    pub fn decode_runs(
+        &self,
+        ids: &[u32],
+        skip_special_tokens: bool,
+        runs: &mut DecodeRuns,
+    ) -> Result<()> {
+        runs.text.clear();
+        runs.runs.clear();
+        let added = |id: u32| {
+            (id >= self.inner.added_id_min)
+                .then(|| self.inner.added_vocabulary.id_to_token_bytes(id))
+                .flatten()
+        };
+        let mut start = 0;
+        while start < ids.len() {
+            // Added ids decode verbatim and never merge with a neighbour, so each is a run of its
+            // own: two of them are two delimiters, not one span.
+            if let Some((bytes, flags)) = added(ids[start]) {
+                if !skip_special_tokens || !flags.special {
+                    let at = runs.text.len();
+                    runs.text
+                        .push_str(&String::from_utf8_lossy(bytes));
+                    runs.runs.push((at..runs.text.len(), Some(ids[start])));
+                }
+                start += 1;
+                continue;
+            }
+            let mut end = start + 1;
+            while end < ids.len() && added(ids[end]).is_none() {
+                end += 1;
+            }
+            let at = runs.text.len();
+            self.decode_into(&ids[start..end], skip_special_tokens, runs)?;
+            if runs.text.len() > at {
+                runs.runs.push((at..runs.text.len(), None));
+            }
+            start = end;
+        }
+        Ok(())
+    }
+
+    /// [`Self::decode`], appending to `runs.text` instead of building a string.
+    fn decode_into(&self, ids: &[u32], skip_special_tokens: bool, runs: &mut DecodeRuns) -> Result<()> {
+        // Irrefutable in a `bpe`-only build, where `Model` has exactly one variant.
+        #[allow(irrefutable_let_patterns)]
+        if let Model::BPE(bpe) = &self.inner.model
+            && bpe.is_byte_level()
+        {
+            runs.bytes.clear();
+            self.decode_byte_level_bytes(bpe, ids, skip_special_tokens, &mut runs.bytes);
+            runs.text
+                .push_str(&String::from_utf8_lossy(&runs.bytes));
+            return Ok(());
+        }
+        runs.text.push_str(&self.decode(ids, skip_special_tokens)?);
+        Ok(())
+    }
+
+    /// The byte-level decode, into a caller's buffer: tokens are raw bytes, so this only collects.
+    fn decode_byte_level_bytes(
+        &self,
+        bpe: &BPE,
+        ids: &[u32],
+        skip_special_tokens: bool,
+        out: &mut Vec<u8>,
+    ) {
+        for &id in ids {
+            let added = if id >= self.inner.added_id_min {
+                self.inner.added_vocabulary.id_to_token_bytes(id)
+            } else {
+                None
+            };
+            if skip_special_tokens && added.is_some_and(|(_, flags)| flags.special) {
+                continue;
+            }
+            // Prefer the model vocab's bytes over the added token bytes
+            if let Some(bytes) = bpe.id_to_token_bytes(id).or(added.map(|(bytes, _)| bytes)) {
+                out.extend_from_slice(bytes);
+            }
+        }
+    }
+
     /// Decode for a byte-level BPE, whose vocab entries are already decoded raw bytes.
     fn decode_byte_level(&self, bpe: &BPE, ids: &[u32], skip_special_tokens: bool) -> String {
         // Byte-level tokens average ~4 bytes
@@ -945,6 +1039,8 @@ impl Tokenizer {
 pub struct DecodeStream {
     skip_special_tokens: bool,
     ids: Vec<u32>,
+    /// Reused by [`Self::step_runs`].
+    runs: DecodeRuns,
     /// The text of `ids[..prefix_index]`. Each decode of `ids` must start with it, and the
     /// text after it is new.
     prefix: String,
@@ -960,6 +1056,7 @@ impl DecodeStream {
         Self {
             skip_special_tokens,
             ids: prompt,
+            runs: DecodeRuns::default(),
             prefix: String::new(),
             prefix_index: 0,
         }
@@ -972,15 +1069,19 @@ impl DecodeStream {
     pub fn step(&mut self, tokenizer: &Tokenizer, ids: &[u32]) -> Result<Option<String>> {
         // `new` has no tokenizer, so the first step decodes the prompt.
         if self.prefix.is_empty() && !self.ids.is_empty() {
-            let new_prefix = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
-            if !new_prefix.ends_with(char::REPLACEMENT_CHARACTER) {
-                self.prefix = new_prefix;
+            tokenizer.decode_runs(&self.ids, self.skip_special_tokens, &mut self.runs)?;
+            if !self.runs.text().ends_with(char::REPLACEMENT_CHARACTER) {
+                self.commit_prefix();
                 self.prefix_index = self.ids.len();
             }
         }
 
         self.ids.extend_from_slice(ids);
-        let decoded = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+        // `decode_runs` is the decode, into the buffers this stream already owns: it is the same
+        // text `decode` returns, and taking it as runs costs nothing the text path was not
+        // already paying.
+        tokenizer.decode_runs(&self.ids, self.skip_special_tokens, &mut self.runs)?;
+        let decoded = self.runs.text();
         if decoded.len() <= self.prefix.len() || decoded.ends_with(char::REPLACEMENT_CHARACTER) {
             Ok(None)
         } else {
@@ -995,10 +1096,134 @@ impl DecodeStream {
             };
             let new_text = new_text.to_owned();
             self.ids.drain(..self.prefix_index);
-            self.prefix = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+            tokenizer.decode_runs(&self.ids, self.skip_special_tokens, &mut self.runs)?;
+            self.commit_prefix();
             self.prefix_index = self.ids.len();
             Ok(Some(new_text))
         }
+    }
+
+    /// Sets `prefix` to the text of the current decode, without allocating.
+    fn commit_prefix(&mut self) {
+        self.prefix.clear();
+        self.prefix.push_str(self.runs.text());
+    }
+}
+
+/// A piece of decoded output and where it came from. See [`Tokenizer::decode_runs`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Decoded<'a> {
+    /// Text the model's own tokens produced.
+    Text(&'a str),
+    /// An added token, decoded on its own: its id, and the spelling `decode` would write for it.
+    Added { id: u32, text: &'a str },
+}
+
+/// The buffers [`Tokenizer::decode_runs`] writes into. Cleared and reused, never reallocated once
+/// warm, so decoding a stream costs no allocation per call.
+#[derive(Clone, Debug, Default)]
+pub struct DecodeRuns {
+    /// Every run's text, back to back.
+    text: String,
+    /// `(range in text, added token id)`; `None` for text the model produced.
+    runs: Vec<(std::ops::Range<usize>, Option<u32>)>,
+    /// Scratch for the byte-level path, which assembles bytes before they are known to be UTF-8.
+    bytes: Vec<u8>,
+}
+
+impl DecodeRuns {
+    /// The runs, in order, borrowing from the buffers this is called on.
+    pub fn iter(&self) -> impl Iterator<Item = Decoded<'_>> + '_ {
+        self.runs.iter().map(|(range, added)| match added {
+            Some(id) => Decoded::Added {
+                id: *id,
+                text: &self.text[range.clone()],
+            },
+            None => Decoded::Text(&self.text[range.clone()]),
+        })
+    }
+
+    /// Everything the runs spell, which is what [`Tokenizer::decode`] returns for the same ids.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn len(&self) -> usize {
+        self.runs.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.runs.is_empty()
+    }
+
+    /// Empties it, keeping the buffers. [`Tokenizer::decode_runs`] does this itself.
+    pub fn clear(&mut self) {
+        self.text.clear();
+        self.runs.clear();
+    }
+}
+
+impl DecodeStream {
+    /// [`Self::step`], giving the run boundaries and not only the text.
+    ///
+    /// Clears `runs` and fills it with what this step added: a run is [`Decoded::Added`] when the
+    /// ids spelled an added token and [`Decoded::Text`] otherwise, so a caller reading a generation
+    /// as it arrives gets a delimiter as an id instead of matching spellings in the text.
+    ///
+    /// Returns `false` while nothing can be emitted yet -- the text ends in an incomplete character
+    /// ([`Self::step`] holds those back) -- and `runs` is then empty.
+    pub fn step_runs(
+        &mut self,
+        tokenizer: &Tokenizer,
+        ids: &[u32],
+        runs: &mut DecodeRuns,
+    ) -> Result<bool> {
+        // `new` has no tokenizer, so the first step decodes the prompt. Its text is context: it
+        // becomes the prefix, and is never returned.
+        if self.prefix.is_empty() && !self.ids.is_empty() {
+            tokenizer.decode_runs(&self.ids, self.skip_special_tokens, &mut self.runs)?;
+            if !self.runs.text().ends_with(char::REPLACEMENT_CHARACTER) {
+                self.commit_prefix();
+                self.prefix_index = self.ids.len();
+            }
+        }
+
+        self.ids.extend_from_slice(ids);
+        tokenizer.decode_runs(&self.ids, self.skip_special_tokens, &mut self.runs)?;
+        let decoded = self.runs.text();
+        if decoded.len() <= self.prefix.len() || decoded.ends_with(char::REPLACEMENT_CHARACTER) {
+            runs.clear();
+            return Ok(false);
+        }
+        if !decoded.starts_with(self.prefix.as_str()) {
+            return Err(format!(
+                "Invalid prefix encountered while decoding stream. Token ID: {}, Expected prefix: '{}', Actual string: '{decoded}'",
+                self.ids.last().expect("a non-empty decode has at least one id"),
+                self.prefix,
+            )
+            .into());
+        }
+
+        // Everything past what was already returned. A run that straddles the prefix is emitted
+        // from the cut, so a text run that a later id extends continues instead of repeating.
+        runs.clear();
+        let emitted = self.prefix.len();
+        for (range, added) in &self.runs.runs {
+            if range.end <= emitted {
+                continue;
+            }
+            let at = runs.text.len();
+            runs.text.push_str(&decoded[range.start.max(emitted)..range.end]);
+            runs.runs.push((at..runs.text.len(), *added));
+        }
+
+        // Same bookkeeping as `step`: keep the ids the new prefix is built from, so a long stream
+        // does not re-decode from the start on every call.
+        self.ids.drain(..self.prefix_index);
+        tokenizer.decode_runs(&self.ids, self.skip_special_tokens, &mut self.runs)?;
+        self.commit_prefix();
+        self.prefix_index = self.ids.len();
+        Ok(true)
     }
 }
 
