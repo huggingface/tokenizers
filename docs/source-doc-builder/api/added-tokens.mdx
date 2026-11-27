@@ -8,6 +8,20 @@ other bindings. See [`REQUIRED_FOR_V1.md`](https://github.com/huggingface/tokeni
 
 </Tip>
 
+<Tip>
+
+**Interaction with the pre-tokenizer.** During `encode`, added / special tokens
+are matched as literals on the raw input, then again on each normalized segment,
+**before** the pre-tokenizer runs. Spans that match an `AddedToken` never reach
+`Split`, `Digits`, ByteLevel regex splits, and so on. That is intentional.
+
+If you need a custom split (for example RTL 3-digit groups) to apply to those
+strings, put the pieces in the **model vocabulary** instead of calling
+`add_tokens()`. See the [pipeline overview](../pipeline) and
+[#1957](https://github.com/huggingface/tokenizers/issues/1957).
+
+</Tip>
+
 <tokenizerslangcontent>
 <python>
 
