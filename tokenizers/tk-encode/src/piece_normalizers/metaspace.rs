@@ -15,6 +15,8 @@
 //!
 //! [`Split`]: crate::pre_tokenizers::split::Split
 
+use std::iter;
+
 /// Whether a `Metaspace` writes the delimiter at the start of a piece that has no leading space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -143,14 +145,6 @@ impl Metaspace {
         self.skip_prefix && text.starts_with(|ch| self.is_whitespace(ch) || ch == self.delimiter)
     }
 
-    /// The parts of `piece` between its whitespace characters, as [`str::split`] gives them.
-    fn split_at_whitespace<'a>(&'a self, piece: &'a str) -> SplitAtWhitespace<'a> {
-        SplitAtWhitespace {
-            metaspace: self,
-            remaining: Some(piece),
-        }
-    }
-
     /// Appends the rewritten `piece` to `out`. `opens_sequence` says whether `piece` starts its
     /// sequence, which is what [`PrependScheme::First`] acts on.
     pub fn normalize_into(&self, piece: &str, opens_sequence: bool, out: &mut String) {
@@ -160,10 +154,32 @@ impl Metaspace {
             PrependScheme::Never => false,
         };
         let piece_start = out.len();
+        match self.whitespace_match {
+            WhitespaceMatch::OnlySpace => {
+                self.replace_whitespace(piece, split_at_spaces(piece), add_prefix, out)
+            }
+            WhitespaceMatch::AnyUnicode => {
+                self.replace_whitespace(piece, piece.split(char::is_whitespace), add_prefix, out)
+            }
+        }
+        if self.trim_trailing_delimiters {
+            while out.len() > piece_start && out.ends_with(self.delimiter) {
+                out.pop();
+            }
+        }
+    }
+
+    /// Writes `piece` with the delimiter in place of each whitespace character.
+    /// `parts` is the text between those whitespace characters.
+    fn replace_whitespace<'a>(
+        &self,
+        piece: &str,
+        parts: impl Iterator<Item = &'a str>,
+        add_prefix: bool,
+        out: &mut String,
+    ) {
         if self.collapse_contiguous {
-            let words = self
-                .split_at_whitespace(piece)
-                .filter(|part| !part.is_empty());
+            let words = parts.filter(|part| !part.is_empty());
             for (index, word) in words.enumerate() {
                 let after_whitespace = index > 0;
                 let wants_delimiter = after_whitespace || add_prefix;
@@ -176,7 +192,7 @@ impl Metaspace {
             if add_prefix && !piece.is_empty() && !self.already_delimited(piece) {
                 out.push(self.delimiter);
             }
-            for (index, part) in self.split_at_whitespace(piece).enumerate() {
+            for (index, part) in parts.enumerate() {
                 let after_whitespace = index > 0;
                 if after_whitespace {
                     out.push(self.delimiter);
@@ -184,46 +200,19 @@ impl Metaspace {
                 out.push_str(part);
             }
         }
-        if self.trim_trailing_delimiters {
-            while out.len() > piece_start && out.ends_with(self.delimiter) {
-                out.pop();
-            }
-        }
     }
 }
 
-/// The parts of a piece between its whitespace characters. Two whitespace characters in a row
-/// give an empty part.
-struct SplitAtWhitespace<'a> {
-    metaspace: &'a Metaspace,
-    remaining: Option<&'a str>,
-}
-
-impl<'a> Iterator for SplitAtWhitespace<'a> {
-    type Item = &'a str;
-
-    fn next(&mut self) -> Option<&'a str> {
-        let remaining = self.remaining?;
-        let whitespace = match self.metaspace.whitespace_match {
-            WhitespaceMatch::OnlySpace => {
-                memchr::memchr(b' ', remaining.as_bytes()).map(|start| (start, 1))
-            }
-            WhitespaceMatch::AnyUnicode => remaining
-                .char_indices()
-                .find(|(_, ch)| ch.is_whitespace())
-                .map(|(start, ch)| (start, ch.len_utf8())),
-        };
-        match whitespace {
-            Some((start, width)) => {
-                self.remaining = Some(&remaining[start + width..]);
-                Some(&remaining[..start])
-            }
-            None => {
-                self.remaining = None;
-                Some(remaining)
-            }
-        }
-    }
+/// The parts of `piece` between its spaces, as `piece.split(' ')` gives them.
+// std's `split` finds the spaces without SIMD, which is slower on text with few of them.
+fn split_at_spaces(piece: &str) -> impl Iterator<Item = &str> {
+    let ends = memchr::memchr_iter(b' ', piece.as_bytes()).chain(iter::once(piece.len()));
+    let mut start = 0;
+    ends.map(move |end| {
+        let part = &piece[start..end];
+        start = end + 1;
+        part
+    })
 }
 
 #[cfg(test)]
