@@ -1,11 +1,12 @@
 use crate::utils::perfect_hash::{Mphf, mix};
 use ptr_hash::PtrHashParams;
+use unicode_normalization::UnicodeNormalization;
 
 const _: () = assert!(
     matches!(unicode_normalization::UNICODE_VERSION, (17, 0, 0)),
     concat!(
         "`unicode-normalization` updated its Unicode version, ",
-        "combining mark exceptions need to be updated too in tk-encode/src/utils/unicode.rs"
+        "combining mark and normalization exceptions need to be updated too in tk-encode/src/utils/unicode.rs"
     )
 );
 
@@ -123,6 +124,109 @@ pub(crate) static MARKS_ONLY_IN_UNICODE_9: [char; 2] = [
     '\u{1CF2}', '\u{1CF3}',
 ];
 
+/// Code points whose normalization data (decomposition, combining class or composition) is newer than
+/// Unicode 9, the tables 0.23 normalized with (`unicode-normalization-alignments` 0.1.12). As inclusive
+/// ranges, in code point order. All of them are unassigned in Unicode 9.
+///
+/// Derived from both crates by `normalization_newer_than_unicode_9_is_derived`.
+#[rustfmt::skip]
+pub(crate) static NORMALIZATION_NEWER_THAN_UNICODE_9: [(char, char); 75] = [
+    ('\u{07FD}', '\u{07FD}'), ('\u{0897}', '\u{089F}'), ('\u{08CA}', '\u{08D3}'), ('\u{09FE}', '\u{09FE}'),
+    ('\u{0C3C}', '\u{0C3C}'), ('\u{0D3B}', '\u{0D3C}'), ('\u{0EBA}', '\u{0EBA}'), ('\u{1715}', '\u{1715}'),
+    ('\u{1ABF}', '\u{1ADD}'), ('\u{1AE0}', '\u{1AEB}'), ('\u{1DF6}', '\u{1DFA}'), ('\u{32FF}', '\u{32FF}'),
+    ('\u{A7F1}', '\u{A7F4}'), ('\u{A82C}', '\u{A82C}'), ('\u{AB69}', '\u{AB69}'), ('\u{105C9}', '\u{105C9}'),
+    ('\u{105D2}', '\u{105D2}'), ('\u{105DA}', '\u{105DA}'), ('\u{105E4}', '\u{105E4}'), ('\u{10781}', '\u{10785}'),
+    ('\u{10787}', '\u{107B0}'), ('\u{107B2}', '\u{107BA}'), ('\u{10D24}', '\u{10D27}'), ('\u{10D69}', '\u{10D6D}'),
+    ('\u{10EAB}', '\u{10EAC}'), ('\u{10EFA}', '\u{10EFB}'), ('\u{10EFD}', '\u{10EFF}'), ('\u{10F46}', '\u{10F50}'),
+    ('\u{10F82}', '\u{10F85}'), ('\u{11070}', '\u{11070}'), ('\u{1133B}', '\u{1133B}'), ('\u{11382}', '\u{11385}'),
+    ('\u{1138B}', '\u{1138B}'), ('\u{1138E}', '\u{1138E}'), ('\u{11390}', '\u{11391}'), ('\u{113B8}', '\u{113B8}'),
+    ('\u{113BB}', '\u{113BB}'), ('\u{113C2}', '\u{113C2}'), ('\u{113C5}', '\u{113C5}'), ('\u{113C7}', '\u{113C9}'),
+    ('\u{113CE}', '\u{113D0}'), ('\u{1145E}', '\u{1145E}'), ('\u{11839}', '\u{1183A}'), ('\u{11930}', '\u{11930}'),
+    ('\u{11935}', '\u{11935}'), ('\u{11938}', '\u{11938}'), ('\u{1193D}', '\u{1193E}'), ('\u{11943}', '\u{11943}'),
+    ('\u{119E0}', '\u{119E0}'), ('\u{11A34}', '\u{11A34}'), ('\u{11A47}', '\u{11A47}'), ('\u{11A99}', '\u{11A99}'),
+    ('\u{11D42}', '\u{11D42}'), ('\u{11D44}', '\u{11D45}'), ('\u{11D97}', '\u{11D97}'), ('\u{11F41}', '\u{11F42}'),
+    ('\u{1611E}', '\u{16129}'), ('\u{1612F}', '\u{1612F}'), ('\u{16D63}', '\u{16D63}'), ('\u{16D67}', '\u{16D6A}'),
+    ('\u{16FF0}', '\u{16FF1}'), ('\u{1CCD6}', '\u{1CCF9}'), ('\u{1E030}', '\u{1E06D}'), ('\u{1E08F}', '\u{1E08F}'),
+    ('\u{1E130}', '\u{1E136}'), ('\u{1E2AE}', '\u{1E2AE}'), ('\u{1E2EC}', '\u{1E2EF}'), ('\u{1E4EC}', '\u{1E4EF}'),
+    ('\u{1E5EE}', '\u{1E5EF}'), ('\u{1E6E3}', '\u{1E6E3}'), ('\u{1E6E6}', '\u{1E6E6}'), ('\u{1E6EE}', '\u{1E6EF}'),
+    ('\u{1E6F5}', '\u{1E6F5}'), ('\u{1F16C}', '\u{1F16C}'), ('\u{1FBF0}', '\u{1FBF9}'),
+];
+
+/// Code points per bit of [`CHUNKS_WITH_NEWER_NORMALIZATION`].
+const CHUNK: u32 = 64;
+
+/// One bit per chunk of code points below U+20000, set when the chunk holds an entry of
+/// [`NORMALIZATION_NEWER_THAN_UNICODE_9`], so most text never reaches the binary search.
+static CHUNKS_WITH_NEWER_NORMALIZATION: [u64; 32] = {
+    let mut chunks = [0u64; 32];
+    let mut i = 0;
+    while i < NORMALIZATION_NEWER_THAN_UNICODE_9.len() {
+        let (first, last) = NORMALIZATION_NEWER_THAN_UNICODE_9[i];
+        let mut chunk = first as u32 / CHUNK;
+        while chunk <= last as u32 / CHUNK {
+            chunks[(chunk / 64) as usize] |= 1 << (chunk % 64);
+            chunk += 1;
+        }
+        i += 1;
+    }
+    chunks
+};
+
+pub(crate) fn normalization_newer_than_unicode_9(c: char) -> bool {
+    let chunk = c as u32 / CHUNK;
+    let Some(bits) = CHUNKS_WITH_NEWER_NORMALIZATION.get((chunk / 64) as usize) else {
+        return false;
+    };
+    if bits & (1 << (chunk % 64)) == 0 {
+        return false;
+    }
+    let i = NORMALIZATION_NEWER_THAN_UNICODE_9.partition_point(|&(first, _)| first <= c);
+    i > 0 && c <= NORMALIZATION_NEWER_THAN_UNICODE_9[i - 1].1
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Form {
+    Nfd,
+    Nfkd,
+    Nfc,
+    Nfkc,
+}
+
+/// Normalizes `input` to `form` as Unicode 9 data would, so the output matches 0.23.
+///
+/// To Unicode 9 every code point of [`NORMALIZATION_NEWER_THAN_UNICODE_9`] is unassigned: a starter
+/// with no mapping that nothing composes with, so no normalization step crosses it. Normalizing the
+/// text between them with the current tables, which agree with Unicode 9 everywhere else, and copying
+/// them through unchanged therefore gives the Unicode 9 result.
+pub(crate) fn normalize_as_unicode_9(input: &str, form: Form) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars();
+    loop {
+        let mut boundary = None;
+        let segment = chars
+            .by_ref()
+            .map_while(|c| {
+                if normalization_newer_than_unicode_9(c) {
+                    boundary = Some(c);
+                    None
+                } else {
+                    Some(c)
+                }
+            })
+            .fuse();
+        match form {
+            Form::Nfd => out.extend(segment.nfd()),
+            Form::Nfkd => out.extend(segment.nfkd()),
+            Form::Nfc => out.extend(segment.nfc()),
+            Form::Nfkc => out.extend(segment.nfkc()),
+        }
+        match boundary {
+            Some(c) => out.push(c),
+            None => return out,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,6 +239,107 @@ mod tests {
             assert_eq!(
                 set.contains(c),
                 MARKS_ONLY_IN_UNICODE_17.binary_search(&c).is_ok(),
+                "U+{:04X}",
+                c as u32
+            );
+        }
+    }
+
+    /// Rebuilds [`NORMALIZATION_NEWER_THAN_UNICODE_9`] from the tables 0.23 used and the current ones.
+    /// When it fails, paste the table it prints.
+    #[test]
+    fn normalization_newer_than_unicode_9_is_derived() {
+        use std::collections::BTreeSet;
+        use unicode_normalization::char as current;
+        use unicode_normalization_alignments::char as unicode_9;
+
+        macro_rules! data {
+            ($tables:ident, $c:expr) => {{
+                let (mut canonical, mut compatible) = (Vec::new(), Vec::new());
+                $tables::decompose_canonical($c, |d| canonical.push(d));
+                $tables::decompose_compatible($c, |d| compatible.push(d));
+                (
+                    $tables::canonical_combining_class($c),
+                    canonical,
+                    compatible,
+                )
+            }};
+        }
+
+        let mut derived = BTreeSet::new();
+        let (mut firsts, mut seconds) = (BTreeSet::new(), BTreeSet::new());
+        for c in (0..=char::MAX as u32).filter_map(char::from_u32) {
+            let (old, new) = (data!(unicode_9, c), data!(current, c));
+            // Hangul syllables compose algorithmically, the same way in both crates.
+            if !('\u{AC00}'..='\u{D7A3}').contains(&c) {
+                for (_, canonical, _) in [&old, &new] {
+                    if canonical[..] != [c] {
+                        firsts.insert(c);
+                        firsts.extend(canonical.iter().copied());
+                        seconds.insert(*canonical.last().unwrap());
+                    }
+                }
+            }
+            if old != new {
+                derived.insert(c);
+            }
+        }
+
+        let mut composes_in_unicode_9 = BTreeSet::new();
+        let mut moved_pairs = Vec::new();
+        for &a in &firsts {
+            for &b in &seconds {
+                let old = unicode_9::compose(a, b);
+                if old.is_some() {
+                    composes_in_unicode_9.extend([a, b]);
+                }
+                if old != current::compose(a, b) {
+                    moved_pairs.push((a, b));
+                }
+            }
+        }
+        let inert_in_unicode_9 = |c: char| {
+            data!(unicode_9, c) == (0, vec![c], vec![c]) && !composes_in_unicode_9.contains(&c)
+        };
+        for (a, b) in moved_pairs {
+            assert!(
+                inert_in_unicode_9(a) || inert_in_unicode_9(b),
+                "U+{:04X} U+{:04X} compose differently and neither is inert in Unicode 9",
+                a as u32,
+                b as u32
+            );
+            derived.extend([a, b].into_iter().filter(|&c| inert_in_unicode_9(c)));
+        }
+        for &c in &derived {
+            assert!(
+                inert_in_unicode_9(c),
+                "U+{:04X} is not inert in Unicode 9",
+                c as u32
+            );
+        }
+
+        let table: BTreeSet<char> = NORMALIZATION_NEWER_THAN_UNICODE_9
+            .iter()
+            .flat_map(|&(first, last)| first..=last)
+            .collect();
+        if table != derived {
+            let mut ranges: Vec<(char, char)> = Vec::new();
+            for &c in &derived {
+                match ranges.last_mut() {
+                    Some((_, last)) if *last as u32 + 1 == c as u32 => *last = c,
+                    _ => ranges.push((c, c)),
+                }
+            }
+            let rows: Vec<String> = ranges
+                .iter()
+                .map(|&(f, l)| format!("('\\u{{{:04X}}}', '\\u{{{:04X}}}')", f as u32, l as u32))
+                .collect();
+            panic!("{} ranges: [\n{}\n]", rows.len(), rows.join(",\n"));
+        }
+        for c in (0..=char::MAX as u32).filter_map(char::from_u32) {
+            assert_eq!(
+                normalization_newer_than_unicode_9(c),
+                table.contains(&c),
                 "U+{:04X}",
                 c as u32
             );

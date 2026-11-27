@@ -3243,6 +3243,7 @@ dependencies = [
  "tk-encode",
  "tk-serialize",
  "tokenizers 0.23.2",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -3267,6 +3268,7 @@ dependencies = [
  "spm_precompiled",
  "thiserror",
  "unicode-normalization",
+ "unicode-normalization-alignments",
  "unicode-segmentation",
  "unicode_categories",
  "wide",
