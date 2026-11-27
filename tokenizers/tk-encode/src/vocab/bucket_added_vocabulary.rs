@@ -480,6 +480,23 @@ impl PatternMatcher for AddedVocabulary {
         normalized: bool,
         encode_special_tokens: bool,
     ) -> Option<((usize, usize), u32)> {
+        self.extract_next_trusted(
+            input,
+            search_offset,
+            normalized,
+            encode_special_tokens,
+            &[],
+        )
+    }
+
+    fn extract_next_trusted(
+        &self,
+        input: &str,
+        search_offset: usize,
+        normalized: bool,
+        encode_special_tokens: bool,
+        trusted: &[u8],
+    ) -> Option<((usize, usize), u32)> {
         let bytes = input.as_bytes();
         let vocab = self.matcher(normalized);
         let mut search = search_offset;
@@ -507,6 +524,17 @@ impl PatternMatcher for AddedVocabulary {
             }
             if metadata.rstrip {
                 match_end = skip_whitespace_forward(input, match_end)
+            }
+            // A marker this caller wrote is text, not a marker. Checked on the final bounds, so a
+            // `lstrip`/`rstrip` that reaches into caller text is refused with the token, and a
+            // match that straddles the boundary is refused whole.
+            if !trusted.is_empty()
+                && !trusted
+                    .get(match_start..match_end)
+                    .is_some_and(|span| span.iter().all(|&byte| byte != 0))
+            {
+                search = match_start + 1;
+                continue;
             }
             return Some(((match_start, match_end), self.ids.vocab_id(internal_id)));
         }
