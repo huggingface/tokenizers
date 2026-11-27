@@ -1,4 +1,5 @@
 use super::super::Result;
+use super::bucket_vocab_store::BucketVocabStore;
 use super::buckets::{AddedTokenFlags, Buckets};
 use crate::pipeline::Normalize;
 use crate::pipeline::PatternMatcher;
@@ -179,7 +180,9 @@ pub struct AddedVocabulary {
     ///    to the inner vocab store.
     ///  - the metadata of each token.
     token_metadata: Box<[AddedTokenFlags]>, // indexed by internal id
-
+    ///The declared content of each `normalized` token when its bytes is modified by the normalizer,
+    /// mapped to its internal id. The normalized bytes for the token is held by normalized_vocab.
+    declared_contents: BucketVocabStore,
     normalized_vocab: Buckets,
     vocab: Buckets,
 }
@@ -251,17 +254,25 @@ impl AddedVocabulary {
         Self {
             ids: InternalIds::new(Box::new([])),
             token_metadata: Box::new([]),
+            declared_contents: BucketVocabStore::new(),
             normalized_vocab: Buckets::new(),
             vocab: Buckets::new(),
         }
     }
 
-    /// Every added token with its internal id, raw tokens first.
+    /// The content of each added token with its internal id, raw tokens first.
     fn tokens(&self) -> impl Iterator<Item = (String, u32)> {
         self.vocab
             .tokens()
             .into_iter()
             .chain(self.normalized_vocab.tokens())
+            .map(|(matcher_text, internal_id)| {
+                let content = self
+                    .declared_contents
+                    .id_to_token(internal_id)
+                    .unwrap_or(matcher_text);
+                (content, internal_id)
+            })
     }
 
     fn matcher(&self, normalized: bool) -> &Buckets {
@@ -289,8 +300,7 @@ impl AddedVocabulary {
         self.vocab.is_empty() && self.normalized_vocab.is_empty()
     }
 
-    /// Get the additional vocabulary (union of both matchers; normalized tokens appear by their
-    /// normalized form, since the original content isn't retained after partitioning).
+    /// Get the additional vocabulary: each token by the content it was declared with.
     pub(crate) fn get_vocab(&self) -> AHashMap<String, u32> {
         self.tokens()
             .map(|(token, internal_id)| (token, self.ids.vocab_id(internal_id)))
@@ -361,15 +371,26 @@ impl AddedVocabulary {
             .map_or(0, |id| id + 1)
             .max(model_size);
 
-        let mut entries: BTreeMap<u32, (Vec<u8>, AddedTokenFlags)> = BTreeMap::new();
+        struct Entry {
+            /// What the matcher looks for.
+            matcher_text: Vec<u8>,
+            flags: AddedTokenFlags,
+            /// The declared content, when it is not `matcher_text`.
+            declared: Option<String>,
+        }
+        let mut entries: BTreeMap<u32, Entry> = BTreeMap::new();
         let existing_tokens = self
             .vocab
             .token_bytes()
             .into_iter()
             .chain(self.normalized_vocab.token_bytes());
-        for (form, internal_id) in existing_tokens {
-            let flags = self.token_metadata[internal_id as usize].clone();
-            entries.insert(self.ids.vocab_id(internal_id), (form, flags));
+        for (matcher_text, internal_id) in existing_tokens {
+            let entry = Entry {
+                matcher_text,
+                flags: self.token_metadata[internal_id as usize].clone(),
+                declared: self.declared_contents.id_to_token(internal_id),
+            };
+            entries.insert(self.ids.vocab_id(internal_id), entry);
         }
         let mut seen: AHashMap<String, u32> = AHashMap::new();
 
@@ -403,7 +424,7 @@ impl AddedVocabulary {
                         .map(|internal_id| self.ids.vocab_id(internal_id))
                 });
             if let Some(id) = existing
-                && entries.get(&id).map(|(_, f)| f) == Some(&flags)
+                && entries.get(&id).map(|entry| &entry.flags) == Some(&flags)
             {
                 ignored += 1;
                 continue;
@@ -413,27 +434,38 @@ impl AddedVocabulary {
                 next_id += 1;
                 i
             });
-            entries.insert(id, (form, flags));
+            let declared = (form != token.content.as_bytes()).then(|| token.content.clone());
+            let entry = Entry {
+                matcher_text: form,
+                flags,
+                declared,
+            };
+            entries.insert(id, entry);
             seen.insert(token.content.clone(), id);
         }
 
         let mut vocab_ids = Vec::with_capacity(entries.len());
         let mut token_metadata = Vec::with_capacity(entries.len());
+        let mut declared_contents = Vec::new();
         let (mut raw_tokens, mut norm_tokens) = (Vec::new(), Vec::new());
-        for (internal_id, (vocab_id, (form, flags))) in entries.into_iter().enumerate() {
+        for (internal_id, (vocab_id, entry)) in entries.into_iter().enumerate() {
             let internal_id = internal_id as u32;
-            if flags.normalized {
-                norm_tokens.push((form, internal_id));
+            if let Some(declared) = entry.declared {
+                declared_contents.push((declared.into_bytes(), internal_id));
+            }
+            if entry.flags.normalized {
+                norm_tokens.push((entry.matcher_text, internal_id));
             } else {
-                raw_tokens.push((form, internal_id));
+                raw_tokens.push((entry.matcher_text, internal_id));
             }
             vocab_ids.push(vocab_id);
-            token_metadata.push(flags);
+            token_metadata.push(entry.flags);
         }
         let vocab = Buckets::from_tokens(raw_tokens)?;
         let normalized_vocab = Buckets::from_tokens(norm_tokens)?;
         self.ids = InternalIds::new(vocab_ids.into());
         self.token_metadata = token_metadata.into();
+        self.declared_contents = BucketVocabStore::build(declared_contents)?;
         self.vocab = vocab;
         self.normalized_vocab = normalized_vocab;
         Ok(total - ignored)
@@ -773,33 +805,38 @@ mod tests {
     }
 
     #[test]
-    fn normalized_tokens_are_stored_by_normalized_form() {
-        // The Buckets rewrite doesn't retain the original content of normalized tokens:
-        // they are stored (and decoded) by their normalized form.
+    fn a_normalized_token_keeps_the_content_it_declares() {
         let model = ModelMock::new(&[]);
         let mut vocab = AddedVocabulary::new();
         let normalizer = Lowercase;
-
-        vocab
-            .add_tokens(
-                [
-                    AddedToken::from("Hello", false),
-                    AddedToken::from("[CLS]", true),
-                ],
-                model.get_vocab_size(),
-                |t| model.token_to_id(t),
-                Some(&normalizer),
-            )
-            .unwrap();
+        let tokens = [
+            AddedToken::from("Hello", false),
+            AddedToken::from("[CLS]", true),
+        ];
+        let add = |vocab: &mut AddedVocabulary| {
+            vocab
+                .add_tokens(
+                    tokens.clone(),
+                    model.get_vocab_size(),
+                    |t| model.token_to_id(t),
+                    Some(&normalizer),
+                )
+                .unwrap()
+        };
+        assert_eq!(add(&mut vocab), 2);
 
         let decoder = vocab.get_added_tokens_decoder();
-        // normalized=true → stored under the normalizer output
-        assert!(decoder.values().any(|t| t.content == "hello"));
-        // normalized=false → stored under the original content
-        assert!(decoder.values().any(|t| t.content == "[CLS]"));
+        assert_eq!(decoder[&0], tokens[0]);
+        assert_eq!(decoder[&1], tokens[1]);
+        assert_eq!(vocab.get_vocab()["Hello"], 0);
 
+        // Decoding writes the normalized form, for the decoder to undo the normalization.
         assert_eq!(vocab.id_to_token_bytes(0).unwrap().0, b"hello");
         assert_eq!(vocab.id_to_token_bytes(1).unwrap().0, b"[CLS]");
+
+        // Adding the same tokens again changes nothing, and the contents are still there.
+        assert_eq!(add(&mut vocab), 0);
+        assert_eq!(vocab.get_added_tokens_decoder()[&0], tokens[0]);
     }
 
     #[test]

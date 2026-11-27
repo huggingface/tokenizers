@@ -11,7 +11,6 @@ use tk::pipeline::Input;
 use tk::pipeline::Inputs;
 use tk::pipeline::Token;
 use tk::pipeline::Tokenizer;
-use tk::{from_json, to_json};
 
 use crate::added_token::AddedToken;
 use crate::encoding::Encoding;
@@ -26,11 +25,14 @@ use crate::type_hints::TokenIds;
 /// ids back into text.
 ///
 /// A compiled tokenizer is immutable and can be shared across threads.
-/// Pickling serializes to the JSON config, and unpickling compiles the CompiledTokenizer
-/// again from that JSON config.
+///
+/// Unpickling a CompiledTokenizer runs the compilation logic again.
+/// It is recommended to unpickle once per process.
 #[pyclass(frozen, dict, module = "tokenizers")]
 pub struct CompiledTokenizer {
     pipeline: Tokenizer,
+    /// The config `pipeline` was compiled from. Used for pickling.
+    spec: TokenizerSpec,
     /// The `added_tokens` dict, built on first read.
     added_tokens: PyOnceLock<Py<PyDict>>,
 }
@@ -40,11 +42,12 @@ impl CompiledTokenizer {
         &self.pipeline
     }
 
-    pub(crate) fn new(py: Python<'_>, spec: &TokenizerSpec) -> PyResult<Self> {
+    pub(crate) fn new(py: Python<'_>, spec: TokenizerSpec) -> PyResult<Self> {
         // py.detach releases the GIL while the Rust code runs.
         let pipeline = py.detach(|| spec.compile()).map_err(err)?;
         Ok(Self {
             pipeline,
+            spec,
             added_tokens: PyOnceLock::new(),
         })
     }
@@ -352,16 +355,11 @@ impl CompiledTokenizer {
         slf
     }
 
-    /// Pickle rebuilds a `CompiledTokenizer` by calling `_unpickle` with these arguments.
-    ///
-    /// The pickle holds the whole `tokenizer.json`, written from the built tokenizer, and unpickling
-    /// compiles it again.
     fn __reduce__<'py>(
         &self,
         py: Python<'py>,
     ) -> PyResult<(Bound<'py, PyAny>, (Bound<'py, PyBytes>,))> {
-        // py.detach releases the GIL while the Rust code runs.
-        let json = py.detach(|| to_json(&self.pipeline)).map_err(err)?;
+        let json = self.spec.to_json().map_err(err)?;
         // Bytes, not str, for the same reason as `Tokenizer.__reduce__`.
         let json = PyBytes::new(py, json.as_bytes());
         Ok((py.get_type::<Self>().getattr("_unpickle")?, (json,)))
@@ -370,18 +368,10 @@ impl CompiledTokenizer {
     #[staticmethod]
     fn _unpickle(py: Python<'_>, json: &[u8]) -> PyResult<Self> {
         let json = std::str::from_utf8(json).map_err(err)?;
-        // py.detach releases the GIL while the Rust code runs.
-        let pipeline = py.detach(|| from_json(json)).map_err(err)?;
-        Ok(Self {
-            pipeline,
-            added_tokens: PyOnceLock::new(),
-        })
+        Self::new(py, TokenizerSpec::from_json(json).map_err(err)?)
     }
 
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        // py.detach releases the GIL while the Rust code runs.
-        let json = py.detach(|| to_json(&self.pipeline)).map_err(err)?;
-        let spec = TokenizerSpec::from_json(&json).map_err(err)?;
-        spec.repr("CompiledTokenizer")
+    fn __repr__(&self) -> PyResult<String> {
+        self.spec.repr("CompiledTokenizer")
     }
 }

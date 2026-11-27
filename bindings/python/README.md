@@ -60,11 +60,26 @@ padded.encode("Hello", padding=None)
 
 ## multiprocessing and Worker processes
 
-Every class here can be pickled, so a tokenizer can be sent to a worker process and its encodings
-sent back: `multiprocessing`, a PyTorch `DataLoader`, `datasets.map(num_proc=...)`.
+Every class can be pickled, so a tokenizer can be sent to a worker process:
+`multiprocessing`, a PyTorch `DataLoader`, `datasets.map(num_proc=...)`.
 
-A pickled `CompiledTokenizer` carries its whole `tokenizer.json`, and unpickling compiles it again.
-With the `"spawn"` start method, we recommend compiling the tokenizer once per worker to avoid unpickle compilation overhead.
+A pickled `CompiledTokenizer` carries the bytes of `tokenizer.json`, and unpickling compiles it again.
+Compiling a large vocabulary can take up to a few seconds, so the method for sending the tokenizer
+to the workers matters.
+
+- With `"spawn"` or `"forkserver"`, pass the `Tokenizer` (uncompiled spec) to the pool's `initializer` and compile once per worker.
+- With `"fork"`, compile before starting the pool. The workers inherit the compiled tokenizer.
+- **Never** pass a tokenizer as a task argument, as in `pool.imap(partial(encode, compiled), texts)`.
+  The pool would pickle it with every chunk of tasks, and every chunk would compile it again.
+
+How many times the tokenizer gets compiled per method:
+
+| How the tokenizer reaches the workers | fork | forkserver, spawn |
+|---|---|---|
+| `CompiledTokenizer` compiled before the pool | once, in the parent | n/a |
+| `Tokenizer` in `initargs`, compiled in the initializer | once per worker | once per worker |
+| `CompiledTokenizer` in `initargs` | once, in the parent | once in the parent, then once per worker |
+| `CompiledTokenizer` as a task argument | once per chunk of tasks | once per chunk of tasks |
 
 ```python
 def compile_tokenizer(tokenizer):
@@ -79,9 +94,6 @@ def encode(text):
 with multiprocessing.get_context("spawn").Pool(4, initializer=compile_tokenizer, initargs=(tokenizer,)) as pool:
     encoded = list(pool.imap(encode, texts, chunksize=32))
 ```
-
-With the `"fork"` start method, compiling before starting the pool is recommended: the workers inherit the compiled tokenizer
-and nothing is pickled.
 
 ## Developers
 

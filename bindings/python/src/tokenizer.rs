@@ -431,8 +431,8 @@ impl Tokenizer {
     /// Raises:
     ///     ValueError: A component has an unknown type or an invalid setting.
     fn compile(&self, py: Python<'_>) -> PyResult<CompiledTokenizer> {
-        let spec = self.spec().deep_clone();
-        CompiledTokenizer::new(py, &spec)
+        let snapshot = self.spec().deep_clone();
+        CompiledTokenizer::new(py, snapshot)
     }
 
     /// Returns an independent copy. Editing one tokenizer leaves the other unchanged.
@@ -596,7 +596,7 @@ impl TokenizerSpec {
     }
 
     /// Writes the spec as a `tokenizer.json` in the 2.0 format.
-    fn to_json(&self) -> Result<String> {
+    pub(crate) fn to_json(&self) -> Result<String> {
         let mut out = String::from("{");
         for (key, field) in self.fields() {
             out.push('"');
