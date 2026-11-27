@@ -33,7 +33,7 @@ unsafe impl pipeline::PreTokenize for Digits {
         out: &mut Vec<pipeline::Span>,
     ) -> Result<()> {
         // isolate each numeric char (`individual_digits`) or keep numeric runs — bitcannon classify +
-        // class-runs FSM. atom `NUMERIC` == `char::is_numeric`, so byte-exact with the scalar path.
+        // class-runs FSM. atom `NUMERIC` == `char::is_numeric` on Unicode 17, as in the 0.23 wheels.
         let individual = self.individual_digits;
         scratch.split_on_bits(
             text.as_bytes(),

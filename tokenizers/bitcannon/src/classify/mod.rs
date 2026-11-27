@@ -38,7 +38,7 @@ pub enum Atom {
     Punct = 8,           // (\p{P} ∖ Pc) ∪ ASCII-symbols, minus 0x27
     Apostrophe = 9,      // 0x27 only
     SymOther = 10,       // non-ASCII \p{S}
-    NumericOther = 11,   // is_numeric ∖ \p{N}
+    NumericOther = 11,   // is_numeric (Unicode 17) ∖ \p{N}
     Control = 12,        // control ∪ unassigned (split out of SymOther so \p{P}∪\p{S} excludes it)
     Sentinel = 13,       // this lead / block needs to go 1 level deeper
     MultiByte = 14,      // simd could not resolve this multibyte, use the lookup table
@@ -104,7 +104,7 @@ pub mod mask {
     pub const WORD: u16 = Letter.bit() | NumWord.bit() | Mark.bit() | Connector.bit();
     /// `\s`: newline + 0x20 + other whitespace.
     pub const WS: u16 = Newline.bit() | Space.bit() | WsOther.bit();
-    /// `is_numeric` (Digits pretokenizer).
+    /// `char::is_numeric` on Unicode 17, as in the 0.23 wheels (Digits pretokenizer).
     pub const NUMERIC: u16 = NumWord.bit() | NumOther.bit() | NumericOther.bit();
     /// `is_ascii_punctuation | is_punctuation` (Punctuation / Bert).
     pub const PUNCT: u16 = Connector.bit() | Punct.bit() | Apostrophe.bit();

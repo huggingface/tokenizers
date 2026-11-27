@@ -4,6 +4,11 @@
 //! fast3 / bmp_rle / astral)
 use std::collections::HashMap;
 use std::fmt::Write as _;
+use std::ops::RangeInclusive;
+
+/// `char::is_numeric` of the std that built the 0.23 wheels (Unicode 17) beyond onig's `\p{N}` (Unicode 16).
+/// Spelled out because std follows the toolchain that runs this generator.
+const NUMERIC_AFTER_UNICODE_16: [RangeInclusive<u32>; 2] = [0x11DE0..=0x11DE9, 0x16FF4..=0x16FF6];
 
 /// Onig, the regex engine of tokenizers 0.23, with one compiled [`onig::Regex`] per Unicode property.
 ///
@@ -85,9 +90,8 @@ fn atom(c: char, onig: &mut Onig) -> u8 {
     if cp < 0x80 && c.is_ascii_punctuation() {
         return 8; // ASCII symbols ($ + < = > ^ ` | ~) that `[^\s\p{L}\p{N}]` / is_punc treats as punct
     }
-    if c.is_numeric() {
-        // NumericOther: digits newer than onig's Unicode (U+11DE0)
-        return 11;
+    if NUMERIC_AFTER_UNICODE_16.iter().any(|r| r.contains(&cp)) {
+        return 11; // NumericOther
     }
     if char_matches(r"\p{S}") {
         return if han { 0x3A } else { 10 }; // non-ASCII \p{S}

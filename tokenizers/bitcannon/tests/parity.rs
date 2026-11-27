@@ -476,11 +476,20 @@ fn classifier_matches_onig_categories() {
     );
 }
 
-/// The Digits pre-tokenizer splits on `mask::NUMERIC`, which stands for `char::is_numeric`.
-/// `char::is_numeric` follows the Unicode version of the toolchain, so a new rustc can leave the tables stale.
+/// The Digits pre-tokenizer splits on `mask::NUMERIC`, which stands for `char::is_numeric` on Unicode 17,
+/// the data of the 0.23 wheels. std only gives that data on Unicode 17:
+///
+///   cargo +1.98.0 test -p bitcannon --test parity numeric_mask_matches_std_is_numeric -- --ignored
 #[test]
+#[ignore = "needs a toolchain on Unicode 17 (rustc 1.92 to 1.99)"]
 fn numeric_mask_matches_std_is_numeric() {
     use bitcannon::classify::{in_mask, mask};
+
+    assert_eq!(
+        char::UNICODE_VERSION,
+        (17, 0, 0),
+        "run it with rustc 1.92 to 1.99"
+    );
 
     let chars: Vec<char> = (0..=0x10FFFFu32).filter_map(char::from_u32).collect();
     let text: String = chars.iter().collect();
@@ -495,9 +504,8 @@ fn numeric_mask_matches_std_is_numeric() {
     }
     assert!(
         bad.is_empty(),
-        "{} code points disagree with std (Unicode {:?}). Regenerate the tables with `cargo run -p bitmap_gen`. First: {:#?}",
+        "{} code points disagree with std. Fix `NUMERIC_AFTER_UNICODE_16` in bitmap_gen, then `cargo run -p bitmap_gen`. First: {:#?}",
         bad.len(),
-        char::UNICODE_VERSION,
         &bad[..bad.len().min(20)]
     );
 }
