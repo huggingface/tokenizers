@@ -92,6 +92,8 @@ pub struct WordPiece {
     unk_token: Option<u32>,
     continuing_subword_prefix: String,
     max_input_chars_per_word: usize,
+    /// Longest vocabulary key in bytes: no match can extend past it.
+    max_key_len: usize,
 }
 
 impl WordPiece {
@@ -108,7 +110,7 @@ impl WordPiece {
         let unk_token = vocab.get(&unk_token).copied();
 
         let keyset: Vec<(String, u32)> = vocab.into_iter().collect();
-        let vocab_trie = {
+        let (vocab_trie, max_key_len) = {
             // yada cannot hold the empty token, and no pre-token can be "".
             // Some vocabs store it anyway.
             let mut trie_keys: Vec<(Cow<[u8]>, u32)> = keyset
@@ -119,8 +121,10 @@ impl WordPiece {
             if trie_keys.is_empty() {
                 return Err(Error::EmptyVocab.into());
             }
+            let max_key_len = trie_keys.iter().map(|(key, _)| key.len()).max().unwrap();
             trie_keys.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-            DoubleArray::new(DoubleArrayBuilder::build(&trie_keys)?)?
+            let trie = DoubleArray::new(DoubleArrayBuilder::build(&trie_keys)?)?;
+            (trie, max_key_len)
         };
         let vocab_size = keyset.len();
         let max_id = keyset.iter().map(|&(_, id)| id).max().unwrap_or(0) as usize;
@@ -132,6 +136,7 @@ impl WordPiece {
         Ok(Self {
             continuing_subword_prefix,
             max_input_chars_per_word,
+            max_key_len,
             unk_token,
             vocab_trie,
             vocab_r: vocab_r.into_boxed_slice(),
@@ -169,7 +174,12 @@ impl WordPiece {
             } else {
                 0
             };
-            candidate.extend(sequence[start..].bytes().map(trie_byte));
+            candidate.extend(
+                sequence[start..]
+                    .bytes()
+                    .take(self.max_key_len.saturating_sub(prefix_len))
+                    .map(trie_byte),
+            );
 
             // Matches must extend past the continuing-subword prefix: the
             // prefix alone (or a fragment of it) is not a valid subword here,
@@ -243,13 +253,13 @@ impl pipeline::Tokenize for WordPiece {
 
     fn init_scratch(&self) -> Self::Scratch {
         Self::Scratch {
-            candidate: Vec::with_capacity(self.max_input_chars_per_word),
+            candidate: Vec::with_capacity(self.max_key_len),
             word_cache: WordCache::new(DEFAULT_CACHE_CAPACITY),
         }
     }
 
     /// A hit skips `tokenize_word`: one trie search per piece of the word,
-    /// each over a fresh copy of what is left to match.
+    /// each over at most the longest vocabulary key's length in bytes.
     fn tokenize(
         &self,
         sequence: &str,
@@ -357,6 +367,26 @@ mod tests {
         });
 
         assert_eq!(warm, cold);
+    }
+
+    #[test]
+    fn candidate_stays_within_longest_key() {
+        let vocab = [("é", 1), ("##éé", 2)]
+            .into_iter()
+            .map(|(token, id)| (token.to_string(), id))
+            .collect();
+        let model = WordPiece::from_config(WordPieceConfig {
+            vocab,
+            max_input_chars_per_word: 257,
+            ..Default::default()
+        })
+        .unwrap();
+        let mut scratch = pipeline::Tokenize::init_scratch(&model);
+        let capacity = scratch.candidate.capacity();
+        let ids = pipeline_ids(&model, &"é".repeat(257), &mut scratch);
+
+        assert_eq!(ids, [&[1][..], &[2; 128]].concat());
+        assert_eq!(scratch.candidate.capacity(), capacity);
     }
 
     #[test]
