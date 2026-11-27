@@ -4,6 +4,7 @@ use crate::models::bpe::At;
 use crate::models::bpe::merge_hot_cold_queue::{Entry, MergeQueue, QueueScratch};
 use crate::models::bpe::model::{Atoms, BPE};
 use crate::models::bpe::tables::{BpeTables, ID_MASK, NO_SYMBOL, RANK_MASK};
+use crate::utils::id_map::IdMap;
 use crate::vocab::bucket_vocab_store::BucketVocabStore;
 
 /// Set only for the few models that decorate their atoms: `end_of_word_suffix` (CLIP, openai-gpt,
@@ -14,10 +15,8 @@ pub(super) struct Affixes {
     pub(super) prefix: Box<[u8]>,
     /// `end_of_word_suffix` mapped to raw bytes
     pub(super) suffix: Box<[u8]>,
-    /// Dense `external vocab id -> internal symbol id`, [`NO_SYMBOL`] where there is none. Dense
-    /// beats a hash here because external ids are `0..vocab_size`: 4 bytes a slot and one load,
-    /// against 8-16 for any map. It is the array `BpeTables::build` makes anyway.
-    pub(super) to_internal: Box<[u32]>,
+    /// External vocabulary ID to internal symbol ID, built by `BpeTables::build`.
+    pub(super) to_internal: IdMap<u32>,
 }
 
 /// Longest `prefix + one character + suffix` the stack buffer holds.
@@ -292,7 +291,7 @@ fn convert_affixed<M: SinkMode>(
 
         let symbol = vocab
             .get_bytes(&buffer[..len])
-            .and_then(|external| affixes.to_internal.get(external as usize).copied())
+            .and_then(|external| affixes.to_internal.get(external).copied())
             .filter(|&symbol| symbol != NO_SYMBOL);
         match symbol {
             Some(symbol) => {

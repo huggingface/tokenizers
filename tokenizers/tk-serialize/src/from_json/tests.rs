@@ -155,6 +155,47 @@ fn every_component_encodes_what_it_should() {
     }
 }
 
+#[test]
+fn sparse_bpe_vocabulary_round_trips() {
+    let spec = config(&[(
+        "model",
+        r#"{"type":"BPE","byte_level":false,
+        "vocab":{"a":0,"b":16,"ab":128},"merges":[["a","b"]]}"#,
+    )]);
+    let tokenizer = from_json(&spec).unwrap();
+    let serialized = crate::to_json::to_json(&tokenizer).unwrap();
+    let restored = from_json(&serialized).unwrap();
+
+    assert_eq!(ids(&spec, "ab"), [128]);
+    assert_eq!(ids(&serialized, "ab"), [128]);
+    assert_eq!(restored.decode(&[128], false).unwrap(), "ab");
+    assert_eq!(restored.get_vocab(false), tokenizer.get_vocab(false));
+    assert_eq!(restored.get_vocab_size(false), 3);
+    assert_eq!(restored.id_to_token(127), None);
+}
+
+#[cfg(feature = "wordpiece")]
+#[test]
+fn sparse_wordpiece_vocabulary_round_trips() {
+    let spec = config(&[(
+        "model",
+        r###"{"type":"WordPiece","unk_token":"[UNK]",
+        "continuing_subword_prefix":"##","max_input_chars_per_word":100,
+        "vocab":{"":16,"[UNK]":32,"hello":128}}"###,
+    )]);
+    let tokenizer = from_json(&spec).unwrap();
+    let serialized = crate::to_json::to_json(&tokenizer).unwrap();
+    let restored = from_json(&serialized).unwrap();
+
+    assert_eq!(ids(&serialized, "hello"), [128]);
+    assert_eq!(ids(&serialized, "unknown"), [32]);
+    assert_eq!(restored.decode(&[128], false).unwrap(), "hello");
+    assert_eq!(restored.get_vocab(false), tokenizer.get_vocab(false));
+    assert_eq!(restored.get_vocab_size(false), 3);
+    assert_eq!(restored.id_to_token(16).as_deref(), Some(""));
+    assert_eq!(restored.id_to_token(127), None);
+}
+
 /// `(slot, json, in the message)`: a legacy or malformed shape, and what the refusal has to name so
 /// the caller knows what to convert. Inferring a model kind from its keys, rewriting `"a b"` merges,
 /// and folding a `Metaspace` or `ByteLevel` pre-tokenizer are all tk-convert's job now.

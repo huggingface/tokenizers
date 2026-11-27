@@ -7,6 +7,7 @@ use std::fmt;
 use std::hash::{BuildHasher, Hasher};
 
 use crate::Result;
+use crate::utils::id_map::IdMap;
 use crate::utils::perfect_hash::{Mphf, mix};
 
 /// Keyed per process, from the OS: with a published seed an attacker picks *both* sides of a
@@ -199,7 +200,7 @@ pub(crate) struct BucketVocabStore {
     entries: Box<[Entry]>,
     spans: Box<[Span]>,
     /// `id_to_slot[token_id] -> entry_idx` -> index into entries as the entries are not really sorted.
-    id_to_slot: Box<[u32]>,
+    id_to_slot: IdMap<u32>,
     /// Number of real tokens. Cached at build so `len()` is O(1): `entries` is sized to the
     /// MPHF's non-minimal slot range (with phantom padding slots), so its length is not the
     /// token count.
@@ -239,6 +240,10 @@ impl Default for BucketVocabStore {
 impl BucketVocabStore {
     pub(crate) fn build(tokens: Vec<(Vec<u8>, u32)>) -> Result<Self> {
         let n = tokens.len();
+        let max_id = tokens.iter().map(|&(_, id)| id).max();
+        if let Some(id) = max_id.filter(|&id| id > VOCAB_ID_MASK) {
+            return Err(format!("token id {id} needs bit 31, which holds FOLD_BIT").into());
+        }
 
         let keys: Vec<u64> = tokens
             .iter()
@@ -286,23 +291,14 @@ impl BucketVocabStore {
 
         // 4. Place each token at its MPHF slot; build the slab and the id->slot reverse table.
         let total: usize = tokens.iter().map(|(s, _)| s.len()).sum();
-        let id_space = tokens
-            .iter()
-            .map(|(_, id)| *id as usize + 1)
-            .max()
-            .unwrap_or(0);
         let mut bytes = Vec::with_capacity(total);
         let mut entries = vec![Entry::default(); n_slots];
         let mut spans = vec![Span::default(); n_slots];
-        let mut id_to_slot = vec![u32::MAX; id_space];
+        let mut id_to_slot = IdMap::new(max_id, n, u32::MAX);
         for (s, id) in &tokens {
             assert!(
                 s.len() <= u16::MAX as usize,
                 "token longer than 65535 bytes"
-            );
-            assert!(
-                *id <= VOCAB_ID_MASK,
-                "token id {id} needs bit 31, which holds FOLD_BIT"
             );
             let (key, hash) = key_and_hash(s.as_slice());
             let slot = mphf.index(&hash);
@@ -311,7 +307,7 @@ impl BucketVocabStore {
                 start: bytes.len() as u32,
                 len: s.len() as u16,
             };
-            id_to_slot[*id as usize] = slot as u32;
+            id_to_slot.insert(*id, slot as u32);
             bytes.extend_from_slice(s);
         }
 
@@ -320,7 +316,7 @@ impl BucketVocabStore {
             bytes: bytes.into_boxed_slice(),
             entries: entries.into_boxed_slice(),
             spans: spans.into_boxed_slice(),
-            id_to_slot: id_to_slot.into_boxed_slice(),
+            id_to_slot,
             n,
         })
     }
@@ -333,7 +329,7 @@ impl BucketVocabStore {
             bytes: Box::new([]),
             entries: Box::new([]),
             spans: Box::new([]),
-            id_to_slot: Box::new([]),
+            id_to_slot: IdMap::Dense(Box::new([])),
             n: 0,
         }
     }
@@ -368,12 +364,12 @@ impl BucketVocabStore {
         (e.key == key).then_some((e.id & VOCAB_ID_MASK, e.id & FOLD_BIT != 0))
     }
 
-    /// Records that this token folds to itself. Called once per entry at load, after the proof.
-    pub(crate) fn set_foldable(&mut self, id: u32) {
-        if let Some(&slot) = self.id_to_slot.get(id as usize)
-            && slot != u32::MAX
-        {
-            self.entries[slot as usize].id |= FOLD_BIT;
+    /// Records the fold proof in ascending reverse-ID order.
+    pub(crate) fn set_foldable(&mut self, proven: impl IntoIterator<Item = bool>) {
+        for ((_, slot), foldable) in Self::occupied_slots(&self.id_to_slot).zip(proven) {
+            if foldable {
+                self.entries[slot].id |= FOLD_BIT;
+            }
         }
     }
 
@@ -385,11 +381,15 @@ impl BucketVocabStore {
     /// `id -> token bytes`, borrowing from the slab (no allocation).
     #[inline]
     pub(crate) fn id_to_token_bytes(&self, id: u32) -> Option<&[u8]> {
-        let slot = *self.id_to_slot.get(id as usize)?;
+        let slot = *self.id_to_slot.get(id)?;
         if slot == u32::MAX {
             return None; // id is within range but absent from the vocab
         }
-        let sp = self.spans[slot as usize];
+        self.token_bytes_at_slot(slot as usize)
+    }
+
+    fn token_bytes_at_slot(&self, slot: usize) -> Option<&[u8]> {
+        let sp = self.spans[slot];
         let start = sp.start as usize;
         self.bytes.get(start..start + sp.len as usize)
     }
@@ -405,13 +405,16 @@ impl BucketVocabStore {
         self.n
     }
 
-    /// One past the highest id this vocabulary can hold.
-    ///
-    /// Ids are not dense: a config may leave gaps, so [`Self::len`] counts entries and is *not* an
-    /// id bound. Anything that walks ids has to bound itself by this and skip the holes, which
-    /// [`Self::id_to_token_bytes`] reports as `None`.
-    pub(crate) fn id_space(&self) -> usize {
-        self.id_to_slot.len()
+    fn occupied_slots(id_to_slot: &IdMap<u32>) -> impl Iterator<Item = (u32, usize)> {
+        id_to_slot
+            .iter()
+            .filter_map(|(id, &slot)| (slot != u32::MAX).then_some((id, slot as usize)))
+    }
+
+    /// External IDs with a reverse entry, in ascending order.
+    pub(crate) fn tokens_by_id(&self) -> impl Iterator<Item = (u32, Option<&[u8]>)> {
+        Self::occupied_slots(&self.id_to_slot)
+            .map(|(id, slot)| (id, self.token_bytes_at_slot(slot)))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -566,18 +569,23 @@ mod tests {
     fn sparse_ids_with_gaps() {
         let vocab = BucketVocabStore::build(vec![
             (b"a".to_vec(), 0),
-            (b"bb".to_vec(), 5),
+            (Vec::new(), 5),
             (b"ccc".to_vec(), 100),
         ])
         .unwrap();
         assert_eq!(vocab.token_to_id("a"), Some(0));
-        assert_eq!(vocab.token_to_id("bb"), Some(5));
+        assert_eq!(vocab.token_to_id(""), Some(5));
         assert_eq!(vocab.token_to_id("ccc"), Some(100));
         assert_eq!(vocab.id_to_token(0), Some("a".to_string()));
-        assert_eq!(vocab.id_to_token(5), Some("bb".to_string()));
+        assert_eq!(vocab.id_to_token(5).as_deref(), Some(""));
         assert_eq!(vocab.id_to_token(100), Some("ccc".to_string()));
         assert_eq!(vocab.id_to_token(1), None);
         assert_eq!(vocab.id_to_token(50), None);
+        assert_eq!(
+            vocab.tokens_by_id().map(|(id, _)| id).collect::<Vec<_>>(),
+            [0, 5, 100]
+        );
+        assert!(vocab.id_to_slot.len() <= 2 * vocab.len());
     }
 
     #[test]

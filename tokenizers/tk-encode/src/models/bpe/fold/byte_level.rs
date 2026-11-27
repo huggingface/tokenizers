@@ -33,7 +33,7 @@ pub(super) enum Fold {
     Skip,
 }
 
-pub(super) struct ByteLevelFold<'a> {
+pub(super) struct ByteLevelFold<'a, F> {
     /// byte -> internal id of that byte's own one-character token. A byte's VALUE is not its
     /// external id (gpt2: 0x41 -> 32, 0x20 -> 220), which is why this indirection exists.
     byte_internal: [u32; 256],
@@ -42,11 +42,11 @@ pub(super) struct ByteLevelFold<'a> {
     merge_rank_left: Vec<u32>,
     merge_rank_right: Vec<u32>,
     merges: &'a MergeMap,
-    internal_id_map: &'a [u32],
+    internal_id: F,
     unmap: &'a [u32],
 }
 
-impl<'a> ByteLevelFold<'a> {
+impl<'a, F: Fn(u32) -> u32> ByteLevelFold<'a, F> {
     /// byte -> internal id of that byte's own token. Needed by the encoder for the fallback path:
     /// a character that does not fold is emitted as its bytes.
     pub(super) fn byte_internal(&self) -> [u32; 256] {
@@ -56,42 +56,28 @@ impl<'a> ByteLevelFold<'a> {
     pub(super) fn new(
         vocab: &AHashMap<String, u32>,
         merges: &'a MergeMap,
-        internal_id_map: &'a [u32],
+        internal_id: F,
         unmap: &'a [u32],
     ) -> Self {
-        let iid = |external: u32| {
-            internal_id_map
-                .get(external as usize)
-                .copied()
-                .unwrap_or(NO_SYMBOL)
-        };
-
         let mut byte_internal = [NO_SYMBOL; 256];
         let mut buf = [0u8; 4];
         for b in 0..256usize {
             if let Some(&external) = vocab.get(&*BYTES_CHAR_LOOKUP[b].encode_utf8(&mut buf)) {
-                byte_internal[b] = iid(external);
+                byte_internal[b] = internal_id(external);
             }
         }
 
         let (merge_rank_left, merge_rank_right) =
-            boundary_merge_ranks(vocab, merges, internal_id_map, unmap.len());
+            boundary_merge_ranks(vocab, merges, &internal_id, unmap.len());
 
         Self {
             byte_internal,
             merge_rank_left,
             merge_rank_right,
             merges,
-            internal_id_map,
+            internal_id,
             unmap,
         }
-    }
-
-    fn iid(&self, external: u32) -> u32 {
-        self.internal_id_map
-            .get(external as usize)
-            .copied()
-            .unwrap_or(NO_SYMBOL)
     }
 
     /// Verdict for `token`, whose external id is `external`.
@@ -131,7 +117,7 @@ impl<'a> ByteLevelFold<'a> {
                 if let Some((rank, product)) = self.merges.get(&pair)
                     && best.is_none_or(|(_, best_rank, _)| *rank < best_rank)
                 {
-                    best = Some((i, *rank, self.iid(*product)));
+                    best = Some((i, *rank, (self.internal_id)(*product)));
                 }
             }
             let Some((i, rank, product)) = best else {
@@ -155,7 +141,7 @@ impl<'a> ByteLevelFold<'a> {
             return Fold::Unsafe;
         }
 
-        debug_assert_eq!(running[0], self.iid(external));
+        debug_assert_eq!(running[0], (self.internal_id)(external));
         Fold::Folds(ch, running[0])
     }
 }
@@ -168,41 +154,32 @@ impl<'a> ByteLevelFold<'a> {
 fn boundary_merge_ranks(
     vocab: &AHashMap<String, u32>,
     merges: &MergeMap,
-    internal_id_map: &[u32],
+    internal_id: &impl Fn(u32) -> u32,
     n_internal: usize,
 ) -> (Vec<u32>, Vec<u32>) {
     // First and last real byte of every token.
     let (mut first, mut last) = (vec![0xFFu8; n_internal], vec![0xFFu8; n_internal]);
     for (token, external) in vocab {
-        let Some(i) = internal_id_map
-            .get(*external as usize)
-            .copied()
-            .filter(|i| (*i as usize) < n_internal)
-        else {
+        let i = internal_id(*external) as usize;
+        if i >= n_internal {
             continue;
-        };
+        }
         let Some(bytes) = token.chars().map(char_to_byte).collect::<Option<Vec<u8>>>() else {
             continue;
         };
         if let (Some(f), Some(l)) = (bytes.first(), bytes.last()) {
-            first[i as usize] = *f;
-            last[i as usize] = *l;
+            first[i] = *f;
+            last[i] = *l;
         }
     }
     // 0xC0/0xC1 are overlong lead bytes and cannot occur on either side.
     let starts_at_boundary = |i: u32| first[i as usize] < 0x80 || first[i as usize] >= 0xC2;
     let ends_at_boundary = |i: u32| last[i as usize] < 0xC0;
 
-    let iid = |external: u32| {
-        internal_id_map
-            .get(external as usize)
-            .copied()
-            .unwrap_or(NO_SYMBOL)
-    };
-    let mut left = vec![u32::MAX; internal_id_map.len()];
-    let mut right = vec![u32::MAX; internal_id_map.len()];
+    let mut left = vec![u32::MAX; n_internal];
+    let mut right = vec![u32::MAX; n_internal];
     for ((a, b), (rank, _)) in merges.iter() {
-        let (ia, ib) = (iid(*a), iid(*b));
+        let (ia, ib) = (internal_id(*a), internal_id(*b));
         if ia == NO_SYMBOL
             || ib == NO_SYMBOL
             || ia as usize >= n_internal
@@ -251,7 +228,7 @@ mod test {
     fn folds_when_nothing_can_steal_an_edge() {
         let (vocab, merges) = setup(false);
         let ids = [0, 1, 2, 3, 4];
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let f = ByteLevelFold::new(&vocab, &merges, |id| id, &ids);
         assert!(matches!(f.fold("Ã©", 2), Fold::Folds('é', 2)));
     }
 
@@ -259,7 +236,7 @@ mod test {
     fn rejects_a_boundary_steal() {
         let (vocab, merges) = setup(true);
         let ids = [0, 1, 2, 3, 4];
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let f = ByteLevelFold::new(&vocab, &merges, |id| id, &ids);
         assert!(matches!(f.fold("Ã©", 2), Fold::Unsafe));
     }
 
@@ -278,16 +255,8 @@ mod test {
         merges.insert((0, 0), (1, 5)); // a + a -> aa
         merges.insert((1, 2), (2, 3)); // Ã + © -> Ã©
         let ids = [0, 1, 2, 3, 4, 5];
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
-        // é assembles at rank 2, but `a + é -> aÃ©` has priority(rank 0): a merge that consumes the
-        // *assembled* é would "steal" it, would change the order. Folding é makes it available from the start,
-        // so for "aaé" the rank-0 merge "a + é" outranks `a + a` @ rank 1:
-        //
-        //   folded     [a, a, é]     a+é  → [a, aÃ©]  = [0, 4]   ✗
-        //   unseeded   [a, a, Ã, ©]  a+a  → [aa, é] = [5, 3]   ✓
-        //
-        // Unseeded, é only exists after `Ã + ©` @ rank 2, so `a + a` forms first and the lone
-        // `a` that `a + é` needed is already gone. That's why we added highest rank check
+        let f = ByteLevelFold::new(&vocab, &merges, |id| id, &ids);
+        // Folding é prematurely lets rank-0 a + é beat rank-1 a + a in "aaé".
         assert!(matches!(f.fold("Ã©", 3), Fold::Unsafe));
     }
 
@@ -295,22 +264,14 @@ mod test {
     fn skips_what_is_not_one_character() {
         let (vocab, merges) = setup(false);
         let ids = [0, 1, 2, 3, 4];
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let f = ByteLevelFold::new(&vocab, &merges, |id| id, &ids);
         assert!(matches!(f.fold("xÃ", 4), Fold::Skip)); // two characters once decoded
         assert!(matches!(f.fold("<|endoftext|>", 9), Fold::Skip)); // '<' is fine, '|' is not remapped
         assert!(matches!(f.fold("Ã", 0), Fold::Skip)); // lone 0xC3 is not valid UTF-8
         assert!(matches!(f.fold("x", 3), Fold::Folds('x', 3))); // ASCII needs no assembly
     }
 
-    // Byte-level merges in a gpt2-like encoding. Byte level rewrites the vocab so every byte is a
-    // printable char; bytes 0x80..=0xA0 become U+0122.. and 0xAE..=0xFF stay themselves.
-    // U+671D 朝 → E6 9C 9D -> 'æ','ľ','Ŀ'
-    // U+65E5 日 → E6 97 A5 -> 'æ','Ĺ','¥'
-    //
-    // 朝 assembles with ('æ','ľ') and ('æľ','Ŀ'), so it may only merge if no merge pair can take
-    // an edge symbol first. We add such a pair:('Ŀ','æ') 9D E6, which appear in 朝朝 and 朝日
-    // at the boundary `.. 9D | E6 ..`. It has to be a LEAD byte (E6) doing the stealing: the symbol
-    // after a complete character is always the next character's first byte.
+    // 朝 encodes as E6 9C 9D. A merge spanning 9D and the next lead byte can steal its last byte.
     enum Thief {
         None,
         Lead,
@@ -352,21 +313,21 @@ mod test {
     #[test]
     fn folds_a_cjk_char_when_no_neighbour_can_steal() {
         let (vocab, merges, ids) = cjk_vocab(Thief::None);
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let f = ByteLevelFold::new(&vocab, &merges, |id| id, &ids);
         assert!(matches!(f.fold("æľĿ", 4), Fold::Folds('朝', 4)));
     }
 
     #[test]
     fn refuses_the_same_char_once_a_lead_byte_can_steal() {
         let (vocab, merges, ids) = cjk_vocab(Thief::Lead);
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let f = ByteLevelFold::new(&vocab, &merges, |id| id, &ids);
         assert!(matches!(f.fold("æľĿ", 4), Fold::Unsafe));
     }
 
     #[test]
     fn a_continuation_byte_cannot_steal_so_it_still_folds() {
         let (vocab, merges, ids) = cjk_vocab(Thief::Continuation);
-        let f = ByteLevelFold::new(&vocab, &merges, &ids, &ids);
+        let f = ByteLevelFold::new(&vocab, &merges, |id| id, &ids);
         assert!(matches!(f.fold("æľĿ", 4), Fold::Folds('朝', 4)));
     }
 }

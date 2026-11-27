@@ -11,6 +11,7 @@ use byte_level::{ByteLevelFold, Fold};
 
 use crate::models::bpe::tables::NO_SYMBOL;
 use crate::models::bpe::{At, MergeMap};
+use crate::utils::id_map::IdMap;
 
 /// A bitmap of which codepoints fold, plus the symbols they fold to.
 ///
@@ -164,7 +165,7 @@ impl SparseFold {
 pub(super) fn build(
     vocab: &AHashMap<String, u32>,
     merges: &MergeMap,
-    internal_id_map: &[u32],
+    internal_id_map: &IdMap<u32>,
     unmap: &[u32],
     byte_level: bool,
 ) -> (SparseFold, [u32; 256]) {
@@ -182,10 +183,11 @@ pub(super) fn build(
     let mut non_bmp: AHashMap<char, u32> = AHashMap::new();
     let (mut folded, mut unsafe_chars) = (0usize, 0usize);
     let mut byte_internal = [NO_SYMBOL; 256];
+    let internal_id = |id| internal_id_map.get(id).copied().unwrap_or(NO_SYMBOL);
     if byte_level {
         // A character reaches the merge loop as bytes, so folding it means proving the
         // merges are  predetermined. See `byte_level`.
-        let folder = ByteLevelFold::new(vocab, merges, internal_id_map, unmap);
+        let folder = ByteLevelFold::new(vocab, merges, internal_id, unmap);
         byte_internal = folder.byte_internal();
         for (s, external) in vocab.iter() {
             match folder.fold(s, *external) {
@@ -202,10 +204,7 @@ pub(super) fn build(
         for (s, external) in vocab.iter() {
             let mut it = s.chars();
             if let (Some(ch), None) = (it.next(), it.next()) {
-                let id = internal_id_map
-                    .get(*external as usize)
-                    .copied()
-                    .unwrap_or(NO_SYMBOL);
+                let id = internal_id(*external);
                 place(&mut cp_to_internal_id, &mut non_bmp, ch, id);
                 folded += 1;
             }

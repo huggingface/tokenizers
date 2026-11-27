@@ -4,6 +4,7 @@
 use crate::pipeline::{self, Token};
 use crate::tokenizer::Result;
 use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
+use crate::utils::id_map::IdMap;
 use crate::utils::word_cache::{Lookup, WordCache};
 use ahash::AHashMap;
 use std::borrow::Cow;
@@ -87,7 +88,7 @@ fn trie_key(bytes: &[u8]) -> Cow<'_, [u8]> {
 
 pub struct WordPiece {
     vocab_trie: yada::DoubleArray<Vec<u8>>,
-    vocab_r: Box<[Option<Box<str>>]>,
+    vocab_r: IdMap<Option<Box<str>>>,
     vocab_size: usize,
     unk_token: Option<u32>,
     continuing_subword_prefix: String,
@@ -123,10 +124,10 @@ impl WordPiece {
             DoubleArray::new(DoubleArrayBuilder::build(&trie_keys)?)?
         };
         let vocab_size = keyset.len();
-        let max_id = keyset.iter().map(|&(_, id)| id).max().unwrap_or(0) as usize;
-        let mut vocab_r = vec![None; max_id + 1];
+        let max_id = keyset.iter().map(|&(_, id)| id).max();
+        let mut vocab_r = IdMap::new(max_id, vocab_size, None);
         for (token, id) in keyset {
-            vocab_r[id as usize] = Some(token.into_boxed_str());
+            vocab_r.insert(id, Some(token.into_boxed_str()));
         }
 
         Ok(Self {
@@ -134,7 +135,7 @@ impl WordPiece {
             max_input_chars_per_word,
             unk_token,
             vocab_trie,
-            vocab_r: vocab_r.into_boxed_slice(),
+            vocab_r,
             vocab_size,
         })
     }
@@ -192,14 +193,16 @@ impl WordPiece {
     }
 
     pub(crate) fn id_to_token(&self, id: u32) -> Option<String> {
-        self.vocab_r.get(id as usize)?.as_deref().map(str::to_owned)
+        self.vocab_r.get(id)?.as_deref().map(str::to_owned)
     }
 
     pub(crate) fn token_to_id(&self, token: &str) -> Option<u32> {
         // The trie leaves the empty token out, because yada cannot hold it.
         if token.is_empty() {
-            let id = self.vocab_r.iter().position(|t| t.as_deref() == Some(""))?;
-            return Some(id as u32);
+            return self
+                .vocab_r
+                .iter()
+                .find_map(|(id, token)| (token.as_deref() == Some("")).then_some(id));
         }
         self.vocab_trie
             .exact_match_search(trie_key(token.as_bytes()))
@@ -213,20 +216,18 @@ impl WordPiece {
         self.vocab_size
     }
 
-    /// `{"token": id}`, in id order. For a writer; the reverse table is dense over the ids, so the
-    /// holes a config left are the `None`s that get skipped.
+    /// `{"token": id}`, in id order, for serialization.
     pub fn vocab(&self) -> Vec<(String, u32)> {
         self.vocab_r
             .iter()
-            .enumerate()
-            .filter_map(|(id, token)| Some((token.as_deref()?.to_string(), id as u32)))
+            .filter_map(|(id, token)| Some((token.as_deref()?.to_string(), id)))
             .collect()
     }
 
     /// The unknown token, or `None` when the config named one that is not in the vocabulary -- the
     /// lowering keeps the id, so a name it could not resolve is not recoverable.
     pub fn unk_token(&self) -> Option<&str> {
-        self.vocab_r.get(self.unk_token? as usize)?.as_deref()
+        self.vocab_r.get(self.unk_token?)?.as_deref()
     }
 
     pub fn continuing_subword_prefix(&self) -> &str {
@@ -357,6 +358,25 @@ mod tests {
         });
 
         assert_eq!(warm, cold);
+    }
+
+    #[test]
+    fn sparse_reverse_ids_use_storage_proportional_to_vocabulary_size() {
+        let model = WordPiece::from_config(WordPieceConfig {
+            vocab: AHashMap::from_iter([
+                ("".to_owned(), 8),
+                ("[UNK]".to_owned(), 16),
+                ("hi".to_owned(), 128),
+            ]),
+            ..Default::default()
+        })
+        .unwrap();
+
+        assert_eq!(model.token_to_id(""), Some(8));
+        assert_eq!(model.unk_token(), Some("[UNK]"));
+        assert_eq!(model.id_to_token(128).as_deref(), Some("hi"));
+        assert_eq!(model.id_to_token(127), None);
+        assert!(model.vocab_r.len() <= 2 * model.get_vocab_size());
     }
 
     #[test]

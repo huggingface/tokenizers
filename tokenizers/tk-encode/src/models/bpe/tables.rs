@@ -38,6 +38,7 @@ use std::cmp;
 use crate::models::bpe::fold::{self, SparseFold};
 use crate::models::bpe::pair_map::MphfMap;
 use crate::models::bpe::{At, MergeMap, Vocab};
+use crate::utils::id_map::IdMap;
 
 /// The rank half of a packed merge value, for reusing a rank as the high half of a queue key.
 /// It keeps the rank alone: everything below bit 32 is dropped, flags and product id together, and
@@ -74,9 +75,8 @@ pub(crate) struct BpeTables {
 }
 
 impl BpeTables {
-    /// Returns the tables plus the dense `external id -> internal id` map built along the way.
-    /// Callers that do not need the map just drop it; it is ~4 bytes per vocab entry.
-    pub(crate) fn build(vocab: &Vocab, merges: MergeMap, byte_level: bool) -> (Self, Vec<u32>) {
+    /// Returns the tables and the external-to-internal ID map.
+    pub(crate) fn build(vocab: &Vocab, merges: MergeMap, byte_level: bool) -> (Self, IdMap<u32>) {
         // 1. We build the internal id map. This sorts the merges by their ranks so frequent pairs
         //    get a smaller rank.
         let rev_merge = merges
@@ -114,22 +114,20 @@ impl BpeTables {
             .collect();
         products.sort_unstable();
 
-        // this one is destroyed afterwards, does not matter if its big.
-        let mut internal_id_map =
-            vec![NO_SYMBOL; *vocab.values().max().unwrap_or(&0u32) as usize + 1];
+        let mut internal_id_map = IdMap::new(vocab.values().copied().max(), vocab.len(), NO_SYMBOL);
         let mut unmap = vec![u32::MAX; base + products.len()];
         // fill the first 0->base with the alphabet sorted by rank.
         for (internal, external) in alphabet.iter().enumerate() {
             let external = *external as u32;
             unmap[internal] = external;
-            internal_id_map[external as usize] = internal as u32;
+            internal_id_map.insert(external, internal as u32);
         }
         // now fill the rest of the tables with products sorted by rank.
         for (pos, packed) in products.iter().enumerate() {
             let internal = (base + pos) as u32;
             let product = *packed as u32;
             unmap[internal as usize] = product;
-            internal_id_map[product as usize] = internal;
+            internal_id_map.insert(product, internal);
         }
         let (fold, byte_internal) =
             fold::build(vocab, &merges, &internal_id_map, &unmap, byte_level);
@@ -140,12 +138,12 @@ impl BpeTables {
         let mut min_rank_left = vec![u32::MAX; unmap.len()];
         let mut min_rank_right = vec![u32::MAX; unmap.len()];
         for ((a, b), (rank, _)) in merges.iter() {
-            if let Some(&ia) = internal_id_map.get(*a as usize)
+            if let Some(&ia) = internal_id_map.get(*a)
                 && (ia as usize) < min_rank_left.len()
             {
                 min_rank_left[ia as usize] = min_rank_left[ia as usize].min(*rank);
             }
-            if let Some(&ib) = internal_id_map.get(*b as usize)
+            if let Some(&ib) = internal_id_map.get(*b)
                 && (ib as usize) < min_rank_right.len()
             {
                 min_rank_right[ib as usize] = min_rank_right[ib as usize].min(*rank);
@@ -158,19 +156,13 @@ impl BpeTables {
         let mut dropped = 0usize;
         let mut unsafe_merges = 0usize;
         for ((a, b), (rank, product)) in merges.iter() {
-            let ia = internal_id_map
-                .get(*a as usize)
-                .copied()
-                .unwrap_or(NO_SYMBOL);
-            let ib = internal_id_map
-                .get(*b as usize)
-                .copied()
-                .unwrap_or(NO_SYMBOL);
+            let ia = internal_id_map.get(*a).copied().unwrap_or(NO_SYMBOL);
+            let ib = internal_id_map.get(*b).copied().unwrap_or(NO_SYMBOL);
             if ia == NO_SYMBOL || ib == NO_SYMBOL {
                 dropped += 1; // merge over a token that is not in the vocab: malformed file
                 continue;
             }
-            let internal = internal_id_map[*product as usize] as u64;
+            let internal = u64::from(*internal_id_map.get(*product).expect("mapped merge product"));
             assert!(
                 internal <= ID_MASK,
                 "product id {internal} overflows the 30-bit id field"
@@ -282,6 +274,22 @@ mod test {
         MergeMap,
         tables::{BpeTables, SAFE_MASK},
     };
+
+    #[test]
+    fn sparse_external_ids_use_storage_proportional_to_vocabulary_size() {
+        let vocab = AHashMap::from_iter([
+            ("a".to_owned(), 0),
+            ("b".to_owned(), 8),
+            ("ab".to_owned(), 128),
+        ]);
+        let mut merges = MergeMap::new();
+        merges.insert((0, 8), (0, 128));
+        let (tables, reverse) = BpeTables::build(&vocab, merges, true);
+
+        assert_eq!(&*tables.unmap, &[0, 8, 128]);
+        assert_eq!(tables.get_value(&0, &1), SAFE_MASK | 2);
+        assert!(reverse.len() <= 2 * vocab.len());
+    }
 
     #[test]
     fn test_build() {
