@@ -56,7 +56,7 @@ const fn lut<const HAN: bool>() -> [u8; 64] {
     t[0x38] = if HAN { 12 } else { 8 }; // Script=Han \p{P}
     t[0x3A] = if HAN { 12 } else { 8 }; // Script=Han \p{S} (So)
     t[0x0F] = CODE_CONT;
-    t
+    crate::classify::regex_lut(t)
 }
 
 streams!(
