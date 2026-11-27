@@ -81,7 +81,9 @@ pub enum ConvertError {
     )]
     MetaspaceDropWhitespaceScheme { scheme: String },
 
-    #[error("a `ByteLevel` pre-tokenizer with `add_prefix_space: true` is not supported")]
+    #[error(
+        "tokenizers v1 cannot represent this pipeline: a `ByteLevel` pre-tokenizer with `add_prefix_space: true` after other pre-tokenizers"
+    )]
     ByteLevelAddPrefixSpace,
 
     #[error("a `ByteLevel` pre-tokenizer must be the last member of its `Sequence`")]
@@ -184,8 +186,11 @@ const COMPONENT_KEYS: [&str; 4] = ["normalizer", "pre_tokenizer", "post_processo
 const OTHER_TOP_LEVEL_KEYS: [&str; 5] =
     ["version", "truncation", "padding", "added_tokens", "model"];
 
+/// The top-level keys only a `"2.0"` file has. This pass writes them and never reads them.
+const KEYS_ADDED_IN_2_0: [&str; 2] = ["role_to_token", "piece_normalizer"];
+
 /// Refuses an unknown `version`, an unknown key, and a component that is neither an object nor
-/// null. A file without `"version"` is a `"1.0"` one, and only `"2.0"` has `role_to_token`.
+/// null. A file without `"version"` is a `"1.0"` one.
 fn check_top_level(root: &Map<String, Value>) -> Result<(), ConvertError> {
     let version = match root.get("version") {
         None => "1.0",
@@ -201,7 +206,7 @@ fn check_top_level(root: &Map<String, Value>) -> Result<(), ConvertError> {
         .filter(|key| {
             !COMPONENT_KEYS.contains(&key.as_str())
                 && !OTHER_TOP_LEVEL_KEYS.contains(&key.as_str())
-                && !(key.as_str() == "role_to_token" && version == "2.0")
+                && !(KEYS_ADDED_IN_2_0.contains(&key.as_str()) && version == "2.0")
         })
         .cloned()
         .collect();
@@ -230,31 +235,6 @@ fn tagged(tag: &str, fields: &[(&str, Value)]) -> Value {
         obj.insert((*k).to_string(), v.clone());
     }
     Value::Object(obj)
-}
-
-/// Append `normalizer` to the chain, after whatever the config already declared.
-///
-/// The order matters and is the one the old reader used: a `Metaspace` pre-tokenizer rewrote the
-/// text *after* the declared normalizer had run.
-fn append_normalizer(root: &mut Map<String, Value>, normalizer: Value) {
-    let existing = root.get("normalizer").cloned().unwrap_or(Value::Null);
-    let chain = match existing {
-        Value::Null => normalizer,
-        ref sequence if component_type(sequence) == Some("Sequence") => {
-            let mut members = sequence
-                .get("normalizers")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            members.push(normalizer);
-            tagged("Sequence", &[("normalizers", Value::Array(members))])
-        }
-        declared => tagged(
-            "Sequence",
-            &[("normalizers", Value::Array(vec![declared, normalizer]))],
-        ),
-    };
-    root.insert("normalizer".to_string(), chain);
 }
 
 /// Give the model a `"type"` if it has none, in the order both read paths use.
@@ -441,12 +421,13 @@ fn kind_of(value: &Value) -> &'static str {
 
 /// A `Metaspace` pre-tokenizer is two components, so it does not survive as itself.
 ///
-/// It becomes a `MetaspaceNormalizer` in the `normalizer` slot (which rewrites the text) plus a
-/// `Split` on the delimiter here (which cuts it).
+/// It becomes a `Metaspace` in `piece_normalizer` (which rewrites each piece of text between added
+/// tokens) plus a `Split` on the delimiter here (which cuts it).
 ///
 /// `Sequence[Metaspace]` is equivalent.
 ///
-/// `Sequence[WhitespaceSplit, Metaspace]` (eg, t5 or albert) is the same thing with `drop_whitespace`.
+/// `Sequence[WhitespaceSplit, Metaspace]` (eg, t5 or albert) becomes the same `Metaspace`, set to
+/// treat any Unicode whitespace as a space and to collapse each run of it into one delimiter.
 ///
 /// `split: false` leaves this slot empty. The reader reads a null `pre_tokenizer` as one span
 /// covering the whole text, which is what not cutting means.
@@ -502,17 +483,31 @@ fn lower_metaspace_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), Co
         .ok_or(ConvertError::MetaspaceNoReplacement)?
         .to_string();
 
-    append_normalizer(
-        root,
-        tagged(
-            "MetaspaceNormalizer",
-            &[
-                ("replacement", Value::String(replacement.clone())),
-                ("prepend", Value::String(prepend)),
-                ("drop_whitespace", Value::Bool(drop_whitespace)),
-            ],
-        ),
+    let metaspace = tagged(
+        "Metaspace",
+        &[
+            ("replacement", Value::String(replacement.clone())),
+            ("prepend", Value::String(prepend)),
+            // The `WhitespaceSplit` in front dropped any whitespace and gave each word a prefix.
+            (
+                "whitespace_match",
+                Value::String(
+                    if drop_whitespace {
+                        "any_unicode"
+                    } else {
+                        "only_space"
+                    }
+                    .into(),
+                ),
+            ),
+            ("collapse_contiguous", Value::Bool(drop_whitespace)),
+            // A 1.0 `Metaspace` left out the prefix when the text already opened with whitespace
+            // or the delimiter, and kept a delimiter that ended the text.
+            ("skip_prefix", Value::Bool(true)),
+            ("trim_trailing_delimiters", Value::Bool(false)),
+        ],
     );
+    root.insert("piece_normalizer".to_string(), metaspace);
     // No cut means an empty pre-tokenizer slot.
     let cut = if split {
         tagged(
@@ -542,26 +537,22 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
     let is_byte_level = |v: &Value| component_type(v) == Some("ByteLevel");
 
     // `use_regex` defaults to true, which is what gpt2 and roberta rely on.
-    let split_for = |bl: &Value| -> Result<Option<Value>, ConvertError> {
-        if bl.get("add_prefix_space").and_then(Value::as_bool) == Some(true) {
-            return Err(ConvertError::ByteLevelAddPrefixSpace);
+    let split_for = |bl: &Value| -> Option<Value> {
+        match bl.get("use_regex").and_then(Value::as_bool).unwrap_or(true) {
+            true => Some(tagged(
+                "Split",
+                &[(
+                    "pattern",
+                    serde_json::json!({ "Regex": bitcannon::regexes::GPT2 }),
+                )],
+            )),
+            false => None,
         }
-        Ok(
-            match bl.get("use_regex").and_then(Value::as_bool).unwrap_or(true) {
-                true => Some(tagged(
-                    "Split",
-                    &[(
-                        "pattern",
-                        serde_json::json!({ "Regex": bitcannon::regexes::GPT2 }),
-                    )],
-                )),
-                false => None,
-            },
-        )
     };
 
+    let prefix_space = is_byte_level(pretok) && adds_prefix_space(pretok);
     let replacement = if is_byte_level(pretok) {
-        Some(split_for(pretok)?)
+        Some(split_for(pretok))
     } else if component_type(pretok) == Some("Sequence") {
         let members = pretok
             .get_mut("pretokenizers")
@@ -569,7 +560,10 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
         match members {
             Some(members) if members.last().is_some_and(is_byte_level) => {
                 let bl = members.pop().expect("checked by `last`");
-                if let Some(split) = split_for(&bl)? {
+                if adds_prefix_space(&bl) {
+                    return Err(ConvertError::ByteLevelAddPrefixSpace);
+                }
+                if let Some(split) = split_for(&bl) {
                     members.push(split);
                 }
                 // A `Sequence` whose only member was the dropped `ByteLevel` is not an empty
@@ -608,7 +602,14 @@ fn lower_byte_level_pre_tokenizer(root: &mut Map<String, Value>) -> Result<(), C
         };
     }
     set_model_flag(root, "byte_level", true)?;
+    if prefix_space {
+        root.insert("piece_normalizer".to_string(), tagged("PrefixSpace", &[]));
+    }
     Ok(())
+}
+
+fn adds_prefix_space(byte_level: &Value) -> bool {
+    byte_level.get("add_prefix_space").and_then(Value::as_bool) == Some(true)
 }
 
 /// Set a boolean on the `model` object.

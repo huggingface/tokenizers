@@ -21,11 +21,12 @@ fn config(slots: &[(&str, &str)]) -> String {
             .to_string()
     };
     format!(
-        r#"{{"version": "2.0", "added_tokens": {}, "normalizer": {}, "pre_tokenizer": {},
+        r#"{{"version": "2.0", "added_tokens": {}, "normalizer": {}, "piece_normalizer": {}, "pre_tokenizer": {},
             "post_processor": {}, "decoder": {}, "model": {}, "padding": {},
             "truncation": {}}}"#,
         slot("added_tokens", "[]"),
         slot("normalizer", "null"),
+        slot("piece_normalizer", "null"),
         slot("pre_tokenizer", "null"),
         slot("post_processor", "null"),
         slot("decoder", "null"),
@@ -200,11 +201,15 @@ const IDEMPOTENT: &[(&str, &str)] = &[
     ("normalizer",     r#"{"type": "Lowercase"}"#),
     ("normalizer",     r#"{"type": "Prepend", "prepend": "_"}"#),
     ("normalizer",     r#"{"type": "Replace", "pattern": {"String": " "}, "content": "_"}"#),
-    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "always", "drop_whitespace": false}"#),
-    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "first", "drop_whitespace": false}"#),
-    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "never", "drop_whitespace": false}"#),
-    // `drop_whitespace` is one flag, never the legacy `Sequence[WhitespaceSplit, Metaspace]`.
-    ("normalizer",     r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "always", "drop_whitespace": true}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "whitespace_match": "only_space", "collapse_contiguous": false, "skip_prefix": true, "trim_trailing_delimiters": false}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "first", "whitespace_match": "only_space", "collapse_contiguous": false, "skip_prefix": true, "trim_trailing_delimiters": false}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "never", "whitespace_match": "only_space", "collapse_contiguous": false, "skip_prefix": true, "trim_trailing_delimiters": false}"#),
+    // A 1.0 `Sequence[WhitespaceSplit, Metaspace]`, written as one `Metaspace`.
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "whitespace_match": "any_unicode", "collapse_contiguous": true, "skip_prefix": true, "trim_trailing_delimiters": false}"#),
+    // What `Metaspace::from_sentencepiece` builds, with `escape_whitespaces` on and off.
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "always", "whitespace_match": "only_space", "collapse_contiguous": true, "skip_prefix": false, "trim_trailing_delimiters": true}"#),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": " ", "prepend": "never", "whitespace_match": "only_space", "collapse_contiguous": true, "skip_prefix": false, "trim_trailing_delimiters": true}"#),
+    ("piece_normalizer", r#"{"type": "PrefixSpace"}"#),
     // A `Metaspace` with `split: false` leaves the slot empty, so `null` has to round-trip.
     ("pre_tokenizer",  r#"null"#),
     ("pre_tokenizer",  r#"{"type": "Digits", "individual_digits": true}"#),
@@ -297,11 +302,7 @@ fn padding_round_trips() {
 #[test]
 fn the_canonical_shape_is_tagged_versioned_and_null_where_absent() {
     let text = rewrite(&config(&[
-        (
-            "normalizer",
-            r#"{"type": "MetaspaceNormalizer", "replacement": "▁",
-            "prepend": "always", "drop_whitespace": false}"#,
-        ),
+        ("normalizer", r#"{"type": "Lowercase"}"#),
         ("pre_tokenizer", r#"{"type": "Whitespace"}"#),
         ("decoder", r#"{"type": "Fuse"}"#),
     ]));

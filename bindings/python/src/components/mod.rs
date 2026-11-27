@@ -10,7 +10,7 @@
 //! |---|---|
 //! | `mod.rs` | The `Component` base class and common traits |
 //! | [`component_spec`] | How a component's JSON is stored, shared and copied |
-//! | [`normalizers`], [`pre_tokenizers`], [`decoders`] | Component concrete classes, generated from `tk::schemas` |
+//! | [`normalizers`], [`piece_normalizers`], [`pre_tokenizers`], [`decoders`] | Component concrete classes, generated from `tk::schemas` |
 //! | [`models`] | Model component classes, written by hand |
 //! | [`processors`] | The `PostProcessor` class. |
 //! | [`component_sequence`] | `ComponentSequence` trait for component sequences. |
@@ -24,8 +24,8 @@
 //! {"type": "Prepend", "prepend": "▁"}
 //! ```
 //!
-//! [`TokenizerSpec`] holds one spec per component field: `normalizer`, `pre_tokenizer`,
-//! `post_processor`, `decoder` and `model`.
+//! [`TokenizerSpec`] holds one spec per component field: `normalizer`, `piece_normalizer`,
+//! `pre_tokenizer`, `post_processor`, `decoder` and `model`.
 //!
 //! [`TokenizerSpec`]: crate::tokenizer::TokenizerSpec
 //!
@@ -85,6 +85,7 @@ pub(crate) mod decoders;
 mod macros;
 pub(crate) mod models;
 pub(crate) mod normalizers;
+pub(crate) mod piece_normalizers;
 pub(crate) mod pre_tokenizers;
 pub(crate) mod processors;
 

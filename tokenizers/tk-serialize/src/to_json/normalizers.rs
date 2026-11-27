@@ -1,10 +1,11 @@
-//! The `normalizer` object, rebuilt from the pipeline's flattened `Vec<Normalizer>`.
+//! The `normalizer` object, rebuilt from the pipeline's flattened `Vec<Normalizer>`, and the
+//! `piece_normalizer` object.
 use super::writer::Out;
 #[cfg(feature = "normalizers")]
 use base64::Engine as _;
-use tk_encode::normalizers::metaspace::PrependScheme;
 use tk_encode::normalizers::replace::{Replace, ReplacePattern};
-use tk_encode::pipeline::Normalizer;
+use tk_encode::piece_normalizers::metaspace::{PrependScheme, WhitespaceMatch};
+use tk_encode::pipeline::{Normalizer, PieceNormalizer};
 use tk_encode::tokenizer::Result;
 
 pub(super) fn prepend_scheme_name(scheme: PrependScheme) -> Result<&'static str> {
@@ -13,6 +14,14 @@ pub(super) fn prepend_scheme_name(scheme: PrependScheme) -> Result<&'static str>
         PrependScheme::First => Ok("first"),
         PrependScheme::Never => Ok("never"),
         other => Err(format!("to_json cannot write the prepend_scheme {other:?}").into()),
+    }
+}
+
+fn whitespace_match_name(whitespace_match: WhitespaceMatch) -> Result<&'static str> {
+    match whitespace_match {
+        WhitespaceMatch::OnlySpace => Ok("only_space"),
+        WhitespaceMatch::AnyUnicode => Ok("any_unicode"),
+        other => Err(format!("to_json cannot write the whitespace_match {other:?}").into()),
     }
 }
 
@@ -38,6 +47,41 @@ pub(super) fn write_normalizer(out: &mut Out, chain: &[Normalizer]) -> Result<()
     Ok(())
 }
 
+pub(super) fn write_piece_normalizer(
+    out: &mut Out,
+    piece_normalizer: Option<&PieceNormalizer>,
+) -> Result<()> {
+    let Some(piece_normalizer) = piece_normalizer else {
+        out.null();
+        return Ok(());
+    };
+    out.obj_open();
+    match piece_normalizer {
+        PieceNormalizer::Metaspace(metaspace) => {
+            out.type_tag("Metaspace");
+            out.field_str(
+                "replacement",
+                metaspace.delimiter().encode_utf8(&mut [0; 4]),
+            );
+            out.field_str("prepend", prepend_scheme_name(metaspace.prepend())?);
+            out.field_str(
+                "whitespace_match",
+                whitespace_match_name(metaspace.whitespace_match())?,
+            );
+            out.field_bool("collapse_contiguous", metaspace.collapse_contiguous());
+            out.field_bool("skip_prefix", metaspace.skip_prefix());
+            out.field_bool(
+                "trim_trailing_delimiters",
+                metaspace.trim_trailing_delimiters(),
+            );
+        }
+        PieceNormalizer::PrefixSpace(_) => out.type_tag("PrefixSpace"),
+        other => return Err(format!("to_json cannot write the piece normalizer {other:?}").into()),
+    }
+    out.obj_close();
+    Ok(())
+}
+
 fn write_one(out: &mut Out, normalizer: &Normalizer) -> Result<()> {
     /// A field-less normalizer: the tag is the whole of it.
     fn bare(out: &mut Out, tag: &str) {
@@ -47,17 +91,6 @@ fn write_one(out: &mut Out, normalizer: &Normalizer) -> Result<()> {
     }
 
     match normalizer {
-        Normalizer::Metaspace(metaspace) => {
-            out.obj_open();
-            out.type_tag("MetaspaceNormalizer");
-            out.field_str(
-                "replacement",
-                metaspace.delimiter().encode_utf8(&mut [0; 4]),
-            );
-            out.field_str("prepend", prepend_scheme_name(metaspace.prepend())?);
-            out.field_bool("drop_whitespace", metaspace.drop_whitespace());
-            out.obj_close();
-        }
         Normalizer::Replace(replace) => write_replace(out, replace)?,
         Normalizer::Prepend(prepend) => {
             out.obj_open();

@@ -1,8 +1,9 @@
-//! The `Metaspace` **decoder**.
-//! To use in conjunction with the
-//! [`MetaspaceNormalizer`]: crate::normalizers::metaspace::MetaspaceNormalizer.
+//! The `Metaspace` **decoder**: it turns back into spaces the delimiters the [`Metaspace`] piece
+//! normalizer wrote.
+//!
+//! [`Metaspace`]: crate::piece_normalizers::Metaspace
 
-use crate::normalizers::metaspace::PrependScheme;
+use crate::piece_normalizers::metaspace::PrependScheme;
 use crate::tokenizer::{Decode, Result};
 
 /// Turns the metaspace replacement character back into a space.

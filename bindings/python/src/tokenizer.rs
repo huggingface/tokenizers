@@ -27,9 +27,10 @@
 //!
 //! - `truncation` and `padding` are default settings
 //! - `added_tokens` and `role_to_token`
-//! - `normalizer`, `pre_tokenizer`, `post_processor`, `decoder` and `model`
+//! - `normalizer`, `piece_normalizer`, `pre_tokenizer`, `post_processor`, `decoder` and `model`
 //!
-//! `normalizer`, `pre_tokenizer`, `post_processor`, `decoder` and `model` are [`ComponentSpec`].
+//! `normalizer`, `piece_normalizer`, `pre_tokenizer`, `post_processor`, `decoder` and `model` are
+//! [`ComponentSpec`].
 //! See [`components`](crate::components) module docs for more details about components.
 //!
 //! Copying a [`Tokenizer`] or its components is cheap:
@@ -80,6 +81,7 @@ use crate::components::component_spec::ComponentSpec;
 use crate::components::decoders::Decoder;
 use crate::components::models::Model;
 use crate::components::normalizers::Normalizer;
+use crate::components::piece_normalizers::PieceNormalizer;
 use crate::components::pre_tokenizers::PreTokenizer;
 use crate::components::processors::PostProcessor;
 use crate::error::err;
@@ -318,6 +320,8 @@ impl Tokenizer {
 
     /// The normalizer, which cleans up the text before it is split, or `None`.
     ///
+    /// Added tokens with `normalized=True` are matched on its output.
+    ///
     /// Returns an editable view of the tokenizer's normalizer.
     #[getter]
     fn normalizer(slf: &Bound<'_, Self>) -> PyResult<Option<Py<Normalizer>>> {
@@ -327,6 +331,25 @@ impl Tokenizer {
     #[setter]
     fn set_normalizer(&self, normalizer: Option<Bound<'_, Normalizer>>) {
         self.set(normalizer)
+    }
+
+    /// The piece normalizer, which rewrites the text between added tokens, or `None`.
+    ///
+    /// It runs on each piece of text between added tokens , after the normalizer.
+    /// 
+    /// For example, with `<s>` as an added token and the `Metaspace` piece-normalizer,
+    /// `"Hi<s>there"` is transformed to `"▁Hi"`, `<s>`, `"▁there"`
+    /// The piece normalizer is the part that rewrites `"Hi"` to `"▁Hi"` and `"there"` to  `"▁there"`.
+    /// 
+    /// Returns an editable view of the tokenizer's piece normalizer.
+    #[getter]
+    fn piece_normalizer(slf: &Bound<'_, Self>) -> PyResult<Option<Py<PieceNormalizer>>> {
+        Self::get(slf)
+    }
+
+    #[setter]
+    fn set_piece_normalizer(&self, piece_normalizer: Option<Bound<'_, PieceNormalizer>>) {
+        self.set(piece_normalizer)
     }
 
     /// The pre-tokenizer, which splits the text into words, or `None`.
@@ -481,6 +504,7 @@ pub(crate) struct TokenizerSpec {
     role_to_token: Arc<Value>,
     added_tokens: Arc<AddedTokensSpec>,
     pub(crate) normalizer: Option<ComponentSpec>,
+    pub(crate) piece_normalizer: Option<ComponentSpec>,
     pub(crate) pre_tokenizer: Option<ComponentSpec>,
     pub(crate) post_processor: Option<ComponentSpec>,
     pub(crate) decoder: Option<ComponentSpec>,
@@ -511,6 +535,7 @@ impl TokenizerSpec {
             role_to_token: Arc::new(take("role_to_token")),
             added_tokens: Arc::new(added_tokens),
             normalizer: component(Normalizer::ITEMS_KEY, take("normalizer")),
+            piece_normalizer: component(PieceNormalizer::ITEMS_KEY, take("piece_normalizer")),
             pre_tokenizer: component(PreTokenizer::ITEMS_KEY, take("pre_tokenizer")),
             post_processor: component(PostProcessor::ITEMS_KEY, take("post_processor")),
             decoder: component(Decoder::ITEMS_KEY, take("decoder")),
@@ -529,6 +554,7 @@ impl TokenizerSpec {
             role_to_token: Arc::new(Value::Null),
             added_tokens: Arc::new(AddedTokensSpec::new(Vec::new())),
             normalizer: None,
+            piece_normalizer: None,
             pre_tokenizer: None,
             post_processor: None,
             decoder: None,
@@ -557,6 +583,7 @@ impl TokenizerSpec {
             role_to_token: self.role_to_token.clone(),
             added_tokens: self.added_tokens.clone(),
             normalizer: deep_clone(&self.normalizer),
+            piece_normalizer: deep_clone(&self.piece_normalizer),
             pre_tokenizer: deep_clone(&self.pre_tokenizer),
             post_processor: deep_clone(&self.post_processor),
             decoder: deep_clone(&self.decoder),
@@ -565,7 +592,7 @@ impl TokenizerSpec {
     }
 
     /// The top-level keys and their values, in the order `to_json` writes them.
-    fn fields(&self) -> [(&'static str, Field<'_>); 10] {
+    fn fields(&self) -> [(&'static str, Field<'_>); 11] {
         let component = |spec: &Option<ComponentSpec>| match spec {
             Some(spec) => Field::JsonObject(spec.json()),
             None => Field::JsonValue(Cow::Owned(Value::Null)),
@@ -583,6 +610,7 @@ impl TokenizerSpec {
                 Field::JsonValue(Cow::Borrowed(self.added_tokens.json())),
             ),
             ("normalizer", component(&self.normalizer)),
+            ("piece_normalizer", component(&self.piece_normalizer)),
             ("pre_tokenizer", component(&self.pre_tokenizer)),
             ("post_processor", component(&self.post_processor)),
             ("decoder", component(&self.decoder)),

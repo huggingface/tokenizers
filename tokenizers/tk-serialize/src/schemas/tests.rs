@@ -148,6 +148,9 @@ fn missing_fields_read_as_their_default() {
 
 fn all_entries() -> Vec<Entry> {
     let mut entries = crate::normalizer_schemas!(entries! { "normalizer" });
+    entries.extend(crate::piece_normalizer_schemas!(
+        entries! { "piece_normalizer" }
+    ));
     entries.extend(crate::pre_tokenizer_schemas!(entries! { "pre_tokenizer" }));
     entries.extend(crate::decoder_schemas!(entries! { "decoder" }));
     entries
