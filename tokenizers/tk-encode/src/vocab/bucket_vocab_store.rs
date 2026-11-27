@@ -569,18 +569,22 @@ mod tests {
     fn sparse_ids_with_gaps() {
         let vocab = BucketVocabStore::build(vec![
             (b"a".to_vec(), 0),
-            (b"bb".to_vec(), 5),
+            (Vec::new(), 5),
             (b"ccc".to_vec(), 100),
         ])
         .unwrap();
         assert_eq!(vocab.token_to_id("a"), Some(0));
-        assert_eq!(vocab.token_to_id("bb"), Some(5));
+        assert_eq!(vocab.token_to_id(""), Some(5));
         assert_eq!(vocab.token_to_id("ccc"), Some(100));
         assert_eq!(vocab.id_to_token(0), Some("a".to_string()));
-        assert_eq!(vocab.id_to_token(5), Some("bb".to_string()));
+        assert_eq!(vocab.id_to_token(5).as_deref(), Some(""));
         assert_eq!(vocab.id_to_token(100), Some("ccc".to_string()));
         assert_eq!(vocab.id_to_token(1), None);
         assert_eq!(vocab.id_to_token(50), None);
+        assert_eq!(
+            vocab.tokens_by_id().map(|(id, _)| id).collect::<Vec<_>>(),
+            [0, 5, 100]
+        );
         assert!(vocab.id_to_slot.len() <= 2 * vocab.len());
     }
 

@@ -174,19 +174,6 @@ fn sparse_bpe_vocabulary_round_trips() {
     assert_eq!(restored.id_to_token(127), None);
 }
 
-#[test]
-fn sparse_empty_bpe_token_is_present_in_the_runtime_vocabulary() {
-    let spec = config(&[(
-        "model",
-        r#"{"type":"BPE","byte_level":false,"vocab":{"a":0,"":128},"merges":[]}"#,
-    )]);
-    let tokenizer = from_json(&spec).unwrap();
-
-    assert_eq!(tokenizer.id_to_token(128).as_deref(), Some(""));
-    assert_eq!(tokenizer.get_vocab(false).get(""), Some(&128));
-    assert_eq!(tokenizer.get_vocab_size(false), 2);
-}
-
 #[cfg(feature = "wordpiece")]
 #[test]
 fn sparse_wordpiece_vocabulary_round_trips() {
