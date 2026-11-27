@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::ops::Range;
 
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
@@ -78,6 +79,37 @@ fn encode_options(
     options
 }
 
+fn char_ranges_to_byte_ranges(
+    text: &str,
+    spans: Vec<(usize, usize)>,
+) -> tk::Result<Vec<Range<usize>>> {
+    let mut boundaries = text
+        .char_indices()
+        .map(|(byte, _)| byte)
+        .chain([text.len()])
+        .enumerate()
+        .peekable();
+    let mut to_byte = |index: usize| {
+        while let Some(&(char_index, byte)) = boundaries.peek() {
+            if char_index >= index {
+                return (char_index == index).then_some(byte);
+            }
+            boundaries.next();
+        }
+        None
+    };
+    spans
+        .into_iter()
+        .map(|(start, end)| match (to_byte(start), to_byte(end)) {
+            (Some(start), Some(end)) => Ok(start..end),
+            _ => Err(format!(
+                "untrusted_spans must be sorted string indices within the text: {start}..{end}"
+            )
+            .into()),
+        })
+        .collect()
+}
+
 #[pymethods]
 impl CompiledTokenizer {
     /// Encodes the given text, or pair of texts, to token ids.
@@ -97,18 +129,25 @@ impl CompiledTokenizer {
     ///     truncation: `Truncation` or `None`
     ///         Truncation options. Pass `None` to disable truncation.
     ///         When omitted, uses the truncation the tokenizer had when compiled.
+    ///     untrusted_spans: Sequence[tuple[int, int]] or None
+    ///         Half-open `str` index ranges `(start, end)` in a single text, with
+    ///         `0 <= start < end <= len(text)`. Ranges must be sorted and non-overlapping.
+    ///         Adjacent ranges are treated as one. Added tokens are not matched inside or
+    ///         across these ranges. Encoding raises `ValueError` if the model emits an added
+    ///         token ID other than its unknown token in untrusted text. Range boundaries can
+    ///         change nearby tokenization.
     ///
     /// Returns:
     ///     Encoding
-    #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig))]
+    #[pyo3(signature = (input, *, add_special_tokens=true, encode_special_tokens=false, padding=OverrideSentinel::<PaddingParams>::InheritConfig, truncation=OverrideSentinel::<TruncationParams>::InheritConfig, untrusted_spans=None))]
     fn encode(
-        &self,
-        py: Python<'_>,
+        slf: &Bound<'_, Self>,
         input: PyInput,
         add_special_tokens: bool,
         encode_special_tokens: bool,
         padding: OverrideSentinel<PaddingParams>,
         truncation: OverrideSentinel<TruncationParams>,
+        untrusted_spans: Option<Vec<(usize, usize)>>,
     ) -> PyResult<Encoding> {
         let options = encode_options(
             add_special_tokens,
@@ -117,8 +156,21 @@ impl CompiledTokenizer {
             truncation,
         );
         // py.detach releases the GIL while the Rust code runs.
-        let encoding = py
-            .detach(|| self.encode_one(input, &options))
+        let tokenizer = slf.get();
+        let encoding = slf
+            .py()
+            .detach(|| match untrusted_spans {
+                Some(spans) if !spans.is_empty() => {
+                    let PyInput::Single(text) = input else {
+                        return Err("untrusted_spans requires a single text".into());
+                    };
+                    let spans = char_ranges_to_byte_ranges(&text, spans)?;
+                    tokenizer
+                        .pipeline
+                        .encode_with_untrusted_spans(&text, &spans, &options)
+                }
+                _ => tokenizer.encode_one(input, &options),
+            })
             .map_err(err)?;
         Ok(Encoding::from(encoding))
     }

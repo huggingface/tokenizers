@@ -1,8 +1,9 @@
 import pytest
+from examples.untrusted_spans_chat import render_chat
 
-from tokenizers import Encoding
+from tokenizers import AddedToken, Encoding, Tokenizer, models, normalizers
 
-# Every id in this file comes from released tokenizers 0.23.1 on the same fixture
+# The GPT-2 and BERT fixture IDs come from released tokenizers 0.23.1.
 
 
 @pytest.mark.parametrize(
@@ -95,3 +96,101 @@ def test_encode_pair(bert, pair):
 def test_encode_pair_needs_two_texts(bert, pair):
     with pytest.raises(TypeError):
         bert.encode(pair)
+
+
+@pytest.mark.parametrize("pair", [("Hello", "there"), ["Hello", "there"]])
+def test_untrusted_spans_reject_text_pairs(bert, pair):
+    with pytest.raises(ValueError, match="untrusted_spans requires a single text"):
+        bert.encode(pair, untrusted_spans=[(0, 1)])
+
+
+def test_untrusted_spans_follow_trimmed_template_content(llama3):
+    text, spans = render_chat("  café  ")
+    [(start, end)] = spans
+    assert text[start:end] == "café"
+
+    encoding = llama3.encode(text, add_special_tokens=False, untrusted_spans=spans)
+
+    assert encoding.ids.count(llama3.token_to_id("<|eot_id|>")) == 1
+    assert llama3.decode(encoding.ids, skip_special_tokens=False) == text
+
+
+@pytest.mark.parametrize(("special", "normalized"), [(True, False), (False, True)])
+def test_encode_untrusted_spans(special, normalized):
+    spec = Tokenizer(models.BPE(vocab={"a": 0, "b": 1, "é": 2}, merges=[]))
+    spec.normalizer = normalizers.Lowercase()
+    spec.add_tokens([AddedToken("AB", special=special, normalized=normalized)])
+    tokenizer = spec.compile()
+    text = "éABABAB"
+
+    assert tokenizer.encode(text).ids == [2, 3, 3, 3]
+    assert tokenizer.encode(text, untrusted_spans=[(1, 3), (5, 7)]).ids == [2, 0, 1, 3, 0, 1]
+    for spans in [[(5, 8)], [(3, 4), (1, 2)], [(2, 2)]]:
+        with pytest.raises(ValueError):
+            tokenizer.encode(text, untrusted_spans=spans)
+
+
+def test_untrusted_spans_index_python_strings(llama3):
+    prefix = "<|start_header_id|>user<|end_header_id|>"
+    user = "é" * 12 + "<|eot_id|>"
+    text = f"{prefix}{user}<|eot_id|>"
+    start = len(prefix)
+
+    encoding = llama3.encode(text, add_special_tokens=False, untrusted_spans=[(start, start + len(user))])
+
+    assert encoding.ids.count(llama3.token_to_id("<|eot_id|>")) == 1
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        models.BPE(vocab={"a": 0, "<unk>": 1}, merges=[], unk_token="<unk>"),
+        models.Unigram(vocab=[("a", -1.0), ("<unk>", 0.0)], unk_id=1),
+        models.WordLevel(vocab={"a": 0, "<unk>": 1}, unk_token="<unk>"),
+        models.WordPiece(vocab={"a": 0, "<unk>": 1}, unk_token="<unk>"),
+    ],
+)
+def test_untrusted_unknown_text_encodes_to_unk(model):
+    spec = Tokenizer(model)
+    spec.add_tokens([AddedToken("<unk>", special=True)])
+    tokenizer = spec.compile()
+    expected = tokenizer.encode("a😀").ids
+
+    assert 1 in expected
+    assert tokenizer.encode("a😀", untrusted_spans=[(0, 2)]).ids == expected
+
+
+def test_encode_untrusted_spans_rejects_control_id_from_model():
+    spec = Tokenizer(models.BPE(vocab={"a": 0, "b": 1, "ab": 2}, merges=[("a", "b")]))
+    spec.add_tokens([AddedToken("ab", special=True)])
+    tokenizer = spec.compile()
+
+    assert tokenizer.encode("ab", encode_special_tokens=True).ids == [2]
+    with pytest.raises(ValueError):
+        tokenizer.encode("ab", untrusted_spans=[(0, 2)])
+
+
+@pytest.mark.parametrize("normalized", [False, True])
+def test_untrusted_spans_preserve_single_word_boundaries(normalized):
+    spec = Tokenizer(models.BPE(vocab={"a": 0, "b": 1, "x": 2, "é": 3, " ": 4}, merges=[]))
+    spec.normalizer = normalizers.Lowercase()
+    spec.add_tokens([AddedToken("ab", special=True, single_word=True, normalized=normalized)])
+    tokenizer = spec.compile()
+
+    assert tokenizer.encode("xab", untrusted_spans=[(0, 1)]).ids == [2, 0, 1]
+    assert tokenizer.encode("abé", untrusted_spans=[(2, 3)]).ids == [0, 1, 3]
+    assert tokenizer.encode(" ab", untrusted_spans=[(0, 1)]).ids == [4, 5]
+
+
+@pytest.mark.parametrize(
+    ("text", "span", "replacement"),
+    [("!ab", (0, 1), "x"), ("x!ab", (1, 2), ""), ("ab!x", (2, 3), "")],
+)
+def test_normalized_single_word_matches_use_normalized_neighbors(text, span, replacement):
+    spec = Tokenizer(models.BPE(vocab={"a": 0, "b": 1, "x": 2}, merges=[]))
+    spec.normalizer = normalizers.Replace("!", replacement)
+    spec.add_tokens([AddedToken("ab", special=True, single_word=True, normalized=True)])
+    tokenizer = spec.compile()
+
+    expected = [0, 1, 2] if text.startswith("ab") else [2, 0, 1]
+    assert tokenizer.encode(text, untrusted_spans=[span]).ids == expected

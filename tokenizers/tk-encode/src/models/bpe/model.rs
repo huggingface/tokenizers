@@ -112,6 +112,16 @@ impl BPE {
         self.vocab.get_bytes(&bytes)
     }
 
+    pub(crate) fn unk_id(&self) -> Option<u32> {
+        match self.atoms {
+            Atoms::Chars {
+                unk_token: Some(unk),
+                ..
+            } => self.tables.external(unk),
+            _ => None,
+        }
+    }
+
     /// `{token: id}`, with each token as [`Self::id_to_token`] spells it.
     pub(crate) fn get_vocab(&self) -> HashMap<String, u32> {
         let ids = 0..self.vocab.id_space() as u32;

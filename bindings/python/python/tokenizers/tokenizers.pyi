@@ -169,6 +169,7 @@ class CompiledTokenizer:
         encode_special_tokens: bool = False,
         padding: Padding | None = ...,
         truncation: Truncation | None = ...,
+        untrusted_spans: Sequence[tuple[int, int]] | None = None,
     ) -> Encoding:
         """
         Encodes the given text, or pair of texts, to token ids.
@@ -188,6 +189,13 @@ class CompiledTokenizer:
             truncation: `Truncation` or `None`
                 Truncation options. Pass `None` to disable truncation.
                 When omitted, uses the truncation the tokenizer had when compiled.
+            untrusted_spans: Sequence[tuple[int, int]] or None
+                Half-open `str` index ranges `(start, end)` in a single text, with
+                `0 <= start < end <= len(text)`. Ranges must be sorted and non-overlapping.
+                Adjacent ranges are treated as one. Added tokens are not matched inside or
+                across these ranges. Encoding raises `ValueError` if the model emits an added
+                token ID other than its unknown token in untrusted text. Range boundaries can
+                change nearby tokenization.
 
         Returns:
             Encoding

@@ -8,6 +8,7 @@ dependencies = ["huggingface_hub>=0.16.4,<3.0"]
 
 [dependency-groups]
 dev = [
+    "jinja2",
     "maturin>=1.0,<2.0",
     # The tests read the `*_dlpack` getters with `numpy.from_dlpack`.
     "numpy",
