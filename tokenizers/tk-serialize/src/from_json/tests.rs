@@ -220,6 +220,25 @@ fn a_legacy_or_malformed_shape_is_refused_by_name() {
     }
 }
 
+/// The vocabulary store keeps a token's length in a `u16`: a config with a longer token is an
+/// error, not a panic.
+#[test]
+fn a_token_the_vocabulary_cannot_store_is_refused() {
+    let long = "a".repeat(u16::MAX as usize + 1);
+    let added = format!(
+        r#"[{{"id": 4, "content": "{long}", "single_word": false, "lstrip": false,
+            "rstrip": false, "normalized": false, "special": true, "control": false}}]"#
+    );
+    let error = read_err(&config(&[("added_tokens", &added)]));
+    assert!(error.contains("bytes long"), "{error}");
+
+    let model = format!(
+        r#"{{"type": "BPE", "byte_level": false, "vocab": {{"a": 0, "{long}": 1}}, "merges": []}}"#
+    );
+    let error = read_err(&config(&[("model", &model)]));
+    assert!(error.contains("bytes long"), "{error}");
+}
+
 #[test]
 fn padding_null_reads_as_no_padding() {
     let tokenizer = from_json(&config(&[])).unwrap();
