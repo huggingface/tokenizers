@@ -24,9 +24,7 @@ jobs:
           path: ~/.cargo/registry
           key: ubuntu-latest-cargo-registry-${{ hashFiles('**/Cargo.toml') }}
 
-# Publishing disabled on the 0.23.x branch: v0.23.3 is a Python-only patch.
-#       - name: Publish package rust
-#         working-directory: ./tokenizers
-#         if: ${{ !contains(github.ref, 'rc') }}
-#         run: cargo publish --token ${CRATES_TOKEN}
-
+      - name: Publish package rust
+        working-directory: ./tokenizers
+        if: ${{ !contains(github.ref, 'rc') }}
+        run: cargo publish --token ${CRATES_TOKEN}
