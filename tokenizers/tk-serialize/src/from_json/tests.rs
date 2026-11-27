@@ -55,6 +55,19 @@ fn ids(text: &str, input: &str) -> Vec<u32> {
 
 #[cfg(feature = "bpe")]
 #[test]
+fn added_tokens_keep_their_declared_ids_when_array_order_differs() {
+    let added_tokens = r#"[{"id": 5, "content": "<b>", "single_word": false, "lstrip": false,
+        "rstrip": false, "normalized": false, "special": true, "control": false},
+        {"id": 4, "content": "<a>", "single_word": false, "lstrip": false, "rstrip": false,
+        "normalized": false, "special": true, "control": false}]"#;
+    let json = config(&[("added_tokens", added_tokens)]);
+
+    assert_eq!(ids(&json, "<a>"), [4]);
+    assert_eq!(ids(&json, "<b>"), [5]);
+}
+
+#[cfg(feature = "bpe")]
+#[test]
 fn kimi_han_categories_preserve_encoded_ids() {
     let pre = serde_json::json!({
         "type": "Split",

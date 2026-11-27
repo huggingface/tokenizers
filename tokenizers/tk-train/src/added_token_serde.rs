@@ -12,8 +12,8 @@ use tk_encode::vocab::bucket_added_vocabulary::AddedToken;
 
 /// The serialized form of an [`AddedToken`].
 ///
-/// The six fields, in this order, are what an `added_tokens` entry in a `tokenizer.json` holds
-/// (minus its `id`, which a trainer does not assign).
+/// The fields an `added_tokens` entry in a `tokenizer.json` holds (minus its `id`, which a trainer
+/// does not assign). `control` defaults to false for older serialized trainer states.
 #[derive(Serialize, Deserialize)]
 struct AddedTokenDef {
     content: String,
@@ -22,6 +22,7 @@ struct AddedTokenDef {
     rstrip: bool,
     normalized: bool,
     special: bool,
+    #[serde(default)]
     control: bool,
 }
 
@@ -61,4 +62,27 @@ pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<AddedToken>, D
     let defs: Vec<AddedTokenDef> = Vec::deserialize(d)?;
     let tokens: Vec<AddedToken> = defs.into_iter().map(Into::into).collect();
     Ok(tokens)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Deserialize)]
+    struct TrainerTokens {
+        #[serde(with = "crate::added_token_serde")]
+        tokens: Vec<AddedToken>,
+    }
+
+    #[test]
+    fn deserialize_legacy_added_token_defaults_control_to_false() {
+        let state: TrainerTokens = serde_json::from_str(
+            r#"{"tokens":[{"content":"<legacy>","single_word":false,"lstrip":false,"rstrip":false,
+                "normalized":false,"special":true}]}"#,
+        )
+        .unwrap();
+
+        assert_eq!(state.tokens.len(), 1);
+        assert!(!state.tokens[0].control);
+    }
 }

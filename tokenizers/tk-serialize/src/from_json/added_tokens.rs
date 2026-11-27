@@ -2,17 +2,14 @@ use crate::json::Json;
 use tk_encode::tokenizer::Result;
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken as BucketAddedToken;
 
-/// The added tokens of a config, in the order of the config.
-///
-/// That order gives the ids, not the `id` each token declares: `add_tokens` numbers the tokens the
-/// model lacks as they come.
+/// The added tokens of a config, in declared ID order.
 pub(super) fn read_added_tokens(cfg: Option<&Json<'_>>) -> Result<Vec<BucketAddedToken>> {
     let Some(arr) = cfg.and_then(Json::as_array) else {
         return Ok(Vec::new());
     };
-    let mut out: Vec<BucketAddedToken> = Vec::with_capacity(arr.len());
+    let mut out: Vec<(u32, BucketAddedToken)> = Vec::with_capacity(arr.len());
     for entry in arr {
-        entry
+        let id = entry
             .get("id")
             .and_then(Json::as_u32)
             .ok_or_else(|| -> tk_encode::Error { "an added token has no usable `id`".into() })?;
@@ -30,7 +27,8 @@ pub(super) fn read_added_tokens(cfg: Option<&Json<'_>>) -> Result<Vec<BucketAdde
         token.normalized = entry.need(&owner, "normalized", Json::as_bool)?;
         token.special = entry.need(&owner, "special", Json::as_bool)?;
         token.control = entry.need(&owner, "control", Json::as_bool)?;
-        out.push(token);
+        out.push((id, token));
     }
-    Ok(out)
+    out.sort_by_key(|(id, _)| *id);
+    Ok(out.into_iter().map(|(_, token)| token).collect())
 }

@@ -40,6 +40,25 @@ fn test_populate_nodes_unk() {
 }
 
 #[test]
+fn unknown_score_tracks_mutated_min_score_in_both_encoding_paths() {
+    let pieces = vec![("<unk>".to_string(), 0.0), ("ab".to_string(), 1.0)];
+    let mut model = Unigram::from(pieces, Some(0), false).unwrap();
+    model.min_score = 100.0;
+    model.set_fuse_unk(false);
+
+    for optimized in [true, false] {
+        model.set_optimized(optimized);
+        assert_eq!(model.encode("ab").unwrap(), ["a", "b"]);
+    }
+
+    let mut lattice = Lattice::from("x", model.bos_id, model.eos_id);
+    model.populate_nodes(&mut lattice);
+    let mut expected = vec![0.0; model.len()];
+    let log_z = lattice.populate_marginal(1.0, &mut expected);
+    assert_eq!(log_z, model.min_score - 10.0);
+}
+
+#[test]
 fn test_populate_nodes() {
     let pieces = vec![
         ("<unk>".to_string(), 0.0),

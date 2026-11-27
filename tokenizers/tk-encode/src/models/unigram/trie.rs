@@ -109,6 +109,7 @@ impl<Label: Copy + Ord + RootLookup + Into<usize>> Trie<Label> {
             node_index: 0,
             length: 0,
             iterator,
+            finished: false,
         }
     }
 }
@@ -118,6 +119,7 @@ pub struct TrieValueIterator<'a, Label, T> {
     node_index: usize,
     length: usize,
     iterator: T,
+    finished: bool,
 }
 
 impl<Label, T> Iterator for TrieValueIterator<'_, Label, T>
@@ -127,12 +129,19 @@ where
 {
     type Item = (usize, u32);
     fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None;
+        }
         loop {
-            let label = self.iterator.next()?;
+            let Some(label) = self.iterator.next() else {
+                self.finished = true;
+                return None;
+            };
             self.length += 1;
             if self.node_index == 0 && !self.trie.root_table.is_empty() {
                 let child = self.trie.root_table[Label::to_index(label)];
                 if child == 0 {
+                    self.finished = true;
                     return None;
                 }
                 self.node_index = child;
@@ -144,7 +153,10 @@ where
                 } else {
                     edges.binary_search_by_key(&label, |(edge, _)| *edge).ok()
                 };
-                let edge_index = edge_index?;
+                let Some(edge_index) = edge_index else {
+                    self.finished = true;
+                    return None;
+                };
                 self.node_index = edges[edge_index].1;
             }
             if let Some(value) = self.trie.nodes[self.node_index].value {
@@ -207,6 +219,7 @@ mod tests {
             size_of::<Trie<u8>>()
                 + self.nodes.capacity() * size_of::<Node>()
                 + self.edges.capacity() * size_of::<(u8, usize)>()
+                + self.root_table.capacity() * size_of::<usize>()
         }
     }
 
@@ -403,6 +416,23 @@ mod tests {
                 .collect::<Vec<_>>(),
             Vec::<(usize, u32)>::new()
         );
+    }
+
+    #[test]
+    fn prefix_iterator_stays_finished_after_a_miss() {
+        let mut builder = TrieBuilder::default();
+        builder.push_with_value(b"a", 1);
+        builder.push_with_value(b"ab", 2);
+        let trie = builder.build();
+
+        let mut iter = trie.common_prefix_search_values(b"axb".iter().copied());
+        assert_eq!(iter.next(), Some((1, 1)));
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next(), None);
+
+        let mut root_miss = trie.common_prefix_search_values(b"xab".iter().copied());
+        assert_eq!(root_miss.next(), None);
+        assert_eq!(root_miss.next(), None);
     }
 
     #[test]

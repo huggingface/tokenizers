@@ -23,8 +23,6 @@ pub struct Unigram {
     scores: Vec<f64>,
     trie: Trie<u8>,
     pub min_score: f64,
-    // `min_score - K_UNK_PENALTY`, hoisted so `populate_nodes` does not recompute it.
-    unk_score: f64,
     pub(super) unk_id: Option<usize>,
     pub bos_id: usize,
     pub eos_id: usize,
@@ -125,7 +123,6 @@ impl Unigram {
         let token_to_ids = BucketVocabStore::build(pairs)?;
         let trie = builder.build();
         let scores: Vec<f64> = vocab.iter().map(|(_, score)| *score).collect();
-        let unk_score = min_score - K_UNK_PENALTY;
         let fuse_unk = true;
         let is_optimized = true;
 
@@ -135,7 +132,6 @@ impl Unigram {
             token_to_ids,
             trie,
             min_score,
-            unk_score,
             bos_id,
             eos_id,
             unk_id,
@@ -168,6 +164,7 @@ impl Unigram {
 
     pub fn populate_nodes(&self, lattice: &mut Lattice) {
         let sentence_len = lattice.sentence.len();
+        let unk_score = self.min_score - K_UNK_PENALTY;
         lattice.nodes.reserve(sentence_len * 2 + 4);
         let mut begin_pos = 0;
         while begin_pos < sentence_len {
@@ -187,7 +184,7 @@ impl Unigram {
             }
 
             if !has_single_node && let Some(unk_id) = self.unk_id {
-                lattice.insert(begin_pos, mblen, self.unk_score, unk_id);
+                lattice.insert(begin_pos, mblen, unk_score, unk_id);
             }
 
             begin_pos += mblen;
@@ -233,7 +230,7 @@ impl Unigram {
             }
         }
         let size = sentence.len();
-        let unk_score = self.unk_score;
+        let unk_score = self.min_score - K_UNK_PENALTY;
         let unk_id = self.unk_id;
 
         let mut best_path_ends_at = vec![BestPathNode::default(); size + 1];

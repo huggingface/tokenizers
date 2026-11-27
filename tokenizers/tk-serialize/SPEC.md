@@ -116,6 +116,9 @@ wrapper naming a table entry — is one more thing tk-convert rewrites.
   "rstrip":false, "normalized":false, "special":true, "control":false }
 ```
 
+For version 2.0 files with an added token that omits `control`, `tk-convert` inserts
+`"control": false` before the reader sees the file.
+
 ## Refused
 
 Each is an error naming what to convert.
@@ -126,7 +129,6 @@ Each is an error naming what to convert.
   "merges" spelled "a b" not ["a","b"]      ├──▶ tk-convert ──▶ canonical 2.0 ──▶ here
   a Metaspace *pre-tokenizer* (it is two)   │
   a Metaspace with "add_prefix_space"       │
-  an added token with no "control"          │
   a ByteLevel pre-tokenizer                ─┘
 
   a vocabulary named by path ("files")     ─────▶ refused, nothing converts it

@@ -20,6 +20,11 @@ Training half of the 🤗 Tokenizers library: the `Trainer` trait, every
 name = "tk_train"
 path = "src/lib.rs"
 
+[[example]]
+name = "unigram_reuse_bench"
+path = "examples/unigram_reuse_bench.rs"
+required-features = ["unigram"]
+
 [dependencies]
 tk-encode = { path = "../tk-encode", version = "0.1.0-rc.6.dev.0", default-features = false, features = [
   "parallelism",
@@ -47,3 +52,4 @@ parity-aware-bpe = ["bpe"]
 
 [dev-dependencies]
 assert_approx_eq = "1.1"
+serde_json = "1.0"

@@ -600,13 +600,21 @@ fn keeps_role_to_token() {
 
 #[test]
 fn fills_a_missing_control_and_keeps_a_declared_one() {
-    let v = done(
+    let mut v = config(
         UNIGRAM,
-        r#", "added_tokens": [{"id": 0, "content": "<a>"},
-                              {"id": 1, "content": "<b>", "control": true}]"#,
+        r#", "added_tokens": [{"id": 1, "content": "<a>", "single_word": false,
+                                "lstrip": false, "rstrip": false, "normalized": false,
+                                "special": true},
+                              {"id": 2, "content": "<b>", "single_word": false,
+                                "lstrip": false, "rstrip": false, "normalized": false,
+                                "special": true, "control": true}]"#,
     );
+    v["version"] = Value::String("2.0".to_string());
+    canonicalize_value(&mut v).expect("version 2.0 config canonicalizes");
+    assert_no_legacy_residue(&v, "version 2.0 config");
     assert_eq!(v["added_tokens"][0]["control"], false);
     assert_eq!(v["added_tokens"][1]["control"], true);
+    tk_serialize::from_json(&v.to_string()).expect("the migrated config is accepted by the reader");
 }
 
 #[test]
