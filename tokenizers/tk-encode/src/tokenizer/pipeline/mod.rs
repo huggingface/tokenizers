@@ -1443,6 +1443,47 @@ mod tests {
     }
 
     #[test]
+    fn padding_type_id_must_fit_in_an_encoding() {
+        let pipeline = hello_pipeline();
+        let options = |pad_type_id| EncodeOptions {
+            padding: Override::With(PaddingParams {
+                pad_type_id,
+                ..pad_to(2)
+            }),
+            ..EncodeOptions::default()
+        };
+
+        let encodings = pipeline.encode("hello", &options(255)).wait().unwrap();
+        assert_eq!(encodings[0].type_ids().unwrap(), [0, 255]);
+
+        let error = pipeline.encode("hello", &options(256)).wait().unwrap_err();
+        assert!(error.to_string().contains("pad_type_id"));
+    }
+
+    #[test]
+    fn padding_type_id_is_unused_when_no_tokens_are_added() {
+        let pipeline = hello_pipeline();
+        let options = |pad_to_multiple_of| EncodeOptions {
+            padding: Override::With(PaddingParams {
+                pad_type_id: 256,
+                pad_to_multiple_of,
+                ..pad_to(1)
+            }),
+            ..EncodeOptions::default()
+        };
+
+        let encodings = pipeline.encode("hello", &options(None)).wait().unwrap();
+        assert_eq!(ids(&encodings[0]), [7]);
+        assert!(encodings[0].type_ids().is_none());
+
+        let error = pipeline
+            .encode("hello", &options(Some(2)))
+            .wait()
+            .unwrap_err();
+        assert!(error.to_string().contains("pad_type_id"));
+    }
+
+    #[test]
     fn overridden_truncation_keeps_the_configured_padding() {
         let pipeline = hello_pipeline_with_padding(pad_to(8));
         let options = EncodeOptions {
