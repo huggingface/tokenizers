@@ -397,6 +397,14 @@ pub(crate) fn split_delimiter(
 /// `Pattern::find_matches` produces). This is the pipeline-side equivalent of
 /// the fold in `NormalizedString::split`; the arms mirror it exactly. Empty and
 /// removed pieces are dropped.
+/// Applies a [`SplitDelimiterBehavior`] to a match segmentation and appends the
+/// resulting pieces to `out`.
+///
+/// `matches` is the `(offsets, is_match)` sequence covering the whole input,
+/// so regex matches interleaved with the gaps between them (exactly what
+/// `Pattern::find_matches` produces). This is the pipeline-side equivalent of
+/// the fold in `NormalizedString::split`; the arms mirror it exactly. Empty and
+/// removed pieces are dropped.
 pub(crate) fn split_matches(
     out: &mut Vec<Span>,
     matches: Vec<((usize, usize), bool)>,
@@ -404,77 +412,84 @@ pub(crate) fn split_matches(
 ) {
     use SplitDelimiterBehavior::*;
 
-    // (offsets, should_remove), mirroring `NormalizedString::split`.
-    let splits: Vec<((usize, usize), bool)> = match behavior {
-        Isolated => matches.into_iter().map(|(o, _)| (o, false)).collect(),
-        Removed => matches, // should_remove == is_match
-        Contiguous => {
-            let mut previous_match = false;
-            matches
-                .into_iter()
-                .fold(vec![], |mut acc, (offsets, is_match)| {
-                    if is_match == previous_match {
-                        if let Some(((_, end), _)) = acc.last_mut() {
-                            *end = offsets.1;
-                        } else {
-                            acc.push((offsets, false));
-                        }
-                    } else {
-                        acc.push((offsets, false));
-                    }
-                    previous_match = is_match;
-                    acc
-                })
-        }
-        MergedWithPrevious => {
-            let mut previous_match = false;
-            matches
-                .into_iter()
-                .fold(vec![], |mut acc, (offsets, is_match)| {
-                    if is_match && !previous_match {
-                        if let Some(((_, end), _)) = acc.last_mut() {
-                            *end = offsets.1;
-                        } else {
-                            acc.push((offsets, false));
-                        }
-                    } else {
-                        acc.push((offsets, false));
-                    }
-                    previous_match = is_match;
-                    acc
-                })
-        }
-        MergedWithNext => {
-            let mut previous_match = false;
-            let mut splits =
-                matches
-                    .into_iter()
-                    .rev()
-                    .fold(vec![], |mut acc, (offsets, is_match)| {
-                        if is_match && !previous_match {
-                            if let Some(((start, _), _)) = acc.last_mut() {
-                                *start = offsets.0;
-                            } else {
-                                acc.push((offsets, false));
-                            }
-                        } else {
-                            acc.push((offsets, false));
-                        }
-                        previous_match = is_match;
-                        acc
-                    });
-            splits.reverse();
-            splits
-        }
-    };
-
-    for ((start, end), should_remove) in splits {
-        if !should_remove && start != end {
+    // The one piece the fold can still extend, so the merge rules never need a second list the
+    // size of the input's word count. An empty piece still has to be kept while it is the merge
+    // target: `split` drops it at the end, not on the way in.
+    let mut piece: Option<(usize, usize)> = None;
+    let mut previous_match = false;
+    let mut held: Option<(usize, usize)> = None;
+    let flush = |out: &mut Vec<Span>, piece: &mut Option<(usize, usize)>| {
+        if let Some((start, end)) = piece.take()
+            && start != end
+        {
             out.push(Span {
                 start: start as u32,
                 end: end as u32,
             });
         }
+    };
+
+    for ((start, end), is_match) in matches {
+        match behavior {
+            Isolated | Removed => {
+                if !(behavior == Removed && is_match) && start != end {
+                    out.push(Span {
+                        start: start as u32,
+                        end: end as u32,
+                    });
+                }
+            }
+            Contiguous => match piece {
+                Some((_, ref mut piece_end)) if is_match == previous_match => *piece_end = end,
+                _ => {
+                    flush(out, &mut piece);
+                    piece = Some((start, end));
+                }
+            },
+            MergedWithPrevious => match piece {
+                Some((_, ref mut piece_end)) if is_match && !previous_match => *piece_end = end,
+                _ => {
+                    flush(out, &mut piece);
+                    piece = Some((start, end));
+                }
+            },
+            MergedWithNext => {
+                // A match's start belongs to the piece after it, so a match is held back until
+                // the next piece says where it lands. Adjacent matches are held one at a time:
+                // only the last of a run reaches the piece after it, the others stand alone.
+                if is_match {
+                    if let Some((held_start, held_end)) = held.take()
+                        && held_start != held_end
+                    {
+                        out.push(Span {
+                            start: held_start as u32,
+                            end: held_end as u32,
+                        });
+                    }
+                    held = Some((start, end));
+                    continue;
+                }
+                let start = held.take().map_or(start, |(held_start, _)| held_start);
+                if start != end {
+                    out.push(Span {
+                        start: start as u32,
+                        end: end as u32,
+                    });
+                }
+                previous_match = is_match;
+                continue;
+            }
+        }
+        previous_match = is_match;
+    }
+    flush(out, &mut piece);
+    if let Some((start, end)) = held
+        && start != end
+    {
+        out.push(Span {
+            start: start as u32,
+            end: end as u32,
+        });
     }
 }
 
