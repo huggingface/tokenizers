@@ -342,8 +342,8 @@ pub(crate) fn aux_at<const AUX: u8>(text: &[u8], p: usize) -> bool {
     }
 }
 
-/// Build one block. Full blocks go through the NEON kernel; the ragged tail (and every other
-/// target) uses the portable byte-at-a-time reference. Both produce the identical `Blk`.
+/// Build one block. Full blocks use the available SIMD kernel; the ragged tail uses the
+/// portable byte-at-a-time reference. Both produce the identical `Blk`.
 /// `lut` is the grammar's tag → dense code table.
 #[inline]
 pub(crate) fn build_block<const AUX: u8, const P3: bool>(
@@ -367,6 +367,13 @@ pub(crate) fn build_block<const AUX: u8, const P3: bool>(
         // SAFETY: `len == 64` bounds both reads, and SSSE3 is checked above.
         return unsafe {
             crate::simd::x86::build64::<AUX, P3>(text, tags, base, lut, cur_code, cur_aux)
+        };
+    }
+    #[cfg(all(target_arch = "riscv64", target_os = "linux"))]
+    if len == 64 && has_rvv() {
+        // SAFETY: `len == 64` bounds both reads, and RVV is checked above.
+        return unsafe {
+            crate::simd::rvv::build64::<AUX, P3>(text, tags, base, lut, cur_code, cur_aux)
         };
     }
     build_block_scalar::<AUX, P3>(text, tags, base, len, lut, cur_code, cur_aux)
