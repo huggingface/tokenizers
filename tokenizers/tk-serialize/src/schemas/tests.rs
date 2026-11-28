@@ -89,9 +89,10 @@ macro_rules! sample_values {
     (Pattern) => {
         vec![json!({"String": "a"}), json!({"Regex": "b"})]
     };
-    // A charsmap with an empty trie and no normalized text.
+    // A charsmap whose trie is one empty 256-unit block, with no normalized text: the smallest
+    // one the walk cannot step out of.
     (Base64Bytes) => {
-        vec![json!("AAAAAA==")]
+        vec![json!(format!("AAQA{}=", "A".repeat(1367)))]
     };
 }
 
