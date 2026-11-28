@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::iter::Enumerate;
 use std::sync::Arc;
@@ -999,6 +1000,51 @@ impl DecodeStream {
             self.prefix_index = self.ids.len();
             Ok(Some(new_text))
         }
+    }
+
+    /// Returns the text that `step` holds back, without consuming it.
+    ///
+    /// `step` returns `None` while the text ends with an incomplete character, and keeps its ids
+    /// for the next step. When the stream ends there, for example because generation stopped in
+    /// the middle of a character, `flush` returns that text, trailing U+FFFD included. It takes
+    /// `&self`, so the stream does not change: a later `step` still completes the character and
+    /// returns it whole.
+    ///
+    /// Returns `None` when nothing is held back. Fails like `step` when the decode changes text
+    /// that a step already returned.
+    pub fn flush(&self, tokenizer: &Tokenizer) -> Result<Option<String>> {
+        // Read-only: work on local copies of the prefix and its length, never on the fields.
+        let mut prefix = Cow::Borrowed(self.prefix.as_str());
+        let mut prefix_index = self.prefix_index;
+        // Before the first step, the prompt is not in `prefix` yet. Work it out as `step` does, so
+        // that the prompt text is never returned.
+        if prefix.is_empty() && !self.ids.is_empty() {
+            let prompt = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+            if !prompt.ends_with(char::REPLACEMENT_CHARACTER) {
+                prefix = Cow::Owned(prompt);
+                prefix_index = self.ids.len();
+            }
+        }
+        // Every id is in the prefix, so nothing is held back and there is nothing to decode.
+        if prefix_index == self.ids.len() {
+            return Ok(None);
+        }
+
+        // Decode as `step` does, but return the text after the prefix even when it ends with
+        // U+FFFD: no later id will complete that character if the stream ends here.
+        let decoded = tokenizer.decode(&self.ids, self.skip_special_tokens)?;
+        if decoded.len() <= prefix.len() {
+            return Ok(None);
+        }
+        let Some(text) = decoded.strip_prefix(prefix.as_ref()) else {
+            // The same error as `step`: vLLM resets its stream when a message starts with these words.
+            return Err(format!(
+                "Invalid prefix encountered while decoding stream. Token ID: {}, Expected prefix: '{prefix}', Actual string: '{decoded}'",
+                self.ids.last().expect("a non-empty decode has at least one id"),
+            )
+            .into());
+        };
+        Ok(Some(text.to_owned()))
     }
 }
 

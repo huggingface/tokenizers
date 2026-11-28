@@ -29,6 +29,29 @@ fn holds_back_a_character_until_its_last_byte() {
 }
 
 #[test]
+fn flush_returns_the_held_back_text_without_consuming_it() {
+    let llama3 = load("llama-3-tokenizer.json");
+    let mut stream = DecodeStream::new(Vec::new(), false);
+    assert_eq!(stream.flush(&llama3).unwrap(), None);
+
+    // "삥" takes two byte-level tokens: the first one alone is an incomplete character
+    assert_eq!(stream.step(&llama3, &[80690]).unwrap(), None);
+    assert_eq!(stream.flush(&llama3).unwrap(), Some("\u{FFFD}".into()));
+    assert_eq!(stream.flush(&llama3).unwrap(), Some("\u{FFFD}".into()));
+    // The held-back bytes are still there, so the next step completes the character
+    assert_eq!(stream.step(&llama3, &[98]).unwrap(), Some("삥".into()));
+    assert_eq!(stream.flush(&llama3).unwrap(), None);
+}
+
+#[test]
+fn flush_does_not_return_the_prompt() {
+    let llama2 = load("llama-2.json");
+    // "<s>", "▁Hello"
+    let stream = DecodeStream::new(vec![1, 15043], true);
+    assert_eq!(stream.flush(&llama2).unwrap(), None);
+}
+
+#[test]
 fn prompt_ids_are_context_not_output() {
     let llama2 = load("llama-2.json");
     // "<s>", "▁Hello", "▁world"

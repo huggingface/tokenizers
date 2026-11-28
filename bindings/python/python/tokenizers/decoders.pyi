@@ -80,6 +80,22 @@ class DecodeStream:
     def __new__(
         cls, /, ids: Encoding | Sequence2[int] | None = None, skip_special_tokens: bool = False
     ) -> DecodeStream: ...
+    def flush(self, /, tokenizer: CompiledTokenizer) -> str | None:
+        """
+        Returns the text that `step` holds back, without consuming it.
+
+        `step` returns `None` while the text ends with an incomplete character. When the stream
+        ends there, `flush` returns that text, trailing U+FFFD included. The stream does not
+        change, so a later `step` still completes the character and returns it whole.
+
+        Args:
+            tokenizer: CompiledTokenizer
+                The tokenizer that decodes the ids.
+
+        Returns:
+            str | None
+                The held-back text, or `None` when nothing is held back.
+        """
     def step(self, /, tokenizer: CompiledTokenizer, id: int | Sequence2[int]) -> str | None:
         """
         Adds the next id, or several ids, to the stream and returns the new text.

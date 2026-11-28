@@ -28,6 +28,24 @@ def test_prompt_ids_are_not_returned(gpt2):
     assert stream(gpt2, DecodeStream(ids=prompt), generated) == " general Kenobi"
 
 
+def test_flush_returns_the_held_back_text(gpt2):
+    # "世" takes two byte-level tokens; the stream stops after the first one
+    ids = gpt2.encode("Hello 世").ids
+    decode_stream = DecodeStream()
+    text = stream(gpt2, decode_stream, ids[:-1])
+
+    assert text + decode_stream.flush(gpt2) == gpt2.decode(ids[:-1])
+    # flush does not consume the held-back bytes: the next step still completes "世"
+    assert text + decode_stream.step(gpt2, ids[-1]) == gpt2.decode(ids)
+    assert decode_stream.flush(gpt2) is None
+
+
+def test_flush_does_not_return_the_prompt(gpt2):
+    decode_stream = DecodeStream(ids=gpt2.encode("Hello there,").ids)
+
+    assert decode_stream.flush(gpt2) is None
+
+
 def test_keeps_special_tokens_by_default(llama3):
     ids = llama3.encode("Hello").ids
 
