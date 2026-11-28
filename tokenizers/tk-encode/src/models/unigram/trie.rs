@@ -61,14 +61,18 @@ impl<Label: Copy + Eq> TrieBuilder<Label> {
         Label: Ord + RootLookup + Into<usize>,
     {
         let mut nodes = Vec::with_capacity(self.nodes.len());
-        let mut edges = Vec::new();
+        let mut labels = Vec::new();
+        let mut children = Vec::new();
         for mut node in self.nodes {
             node.children.sort_unstable_by_key(|(label, _)| *label);
-            let first_edge = edges.len();
-            let edge_count = node.children.len();
-            edges.extend(node.children);
+            let first_edge = children.len() as u32;
+            let edge_count = node.children.len() as u8;
+            for (label, child) in node.children {
+                labels.push(label);
+                children.push(child as u32);
+            }
             nodes.push(Node {
-                value: node.value,
+                value: node.value.unwrap_or(NO_VALUE),
                 first_edge,
                 edge_count,
             });
@@ -76,27 +80,37 @@ impl<Label: Copy + Eq> TrieBuilder<Label> {
         // Direct root table for byte tries: avoids a binary/linear search on the root's
         // (usually large) edge list for every searched position.
         let table_size = Label::table_size();
-        let mut root_table = vec![0usize; table_size];
+        let mut root_table = vec![0u32; table_size];
         if table_size > 0 {
             let root = &nodes[0];
-            for i in 0..root.edge_count {
-                let (label, child) = edges[root.first_edge + i];
-                root_table[Label::to_index(label)] = child;
+            for i in 0..root.edge_count as usize {
+                let at = root.first_edge as usize + i;
+                root_table[Label::to_index(labels[at])] = children[at];
             }
         }
         Trie {
             nodes,
-            edges,
+            labels,
+            children,
             root_table,
         }
     }
 }
 
+/// A node's value when it holds no token. Vocabulary ids stay well below this.
+const NO_VALUE: u32 = u32::MAX;
+
+/// A trie over `Label`s, flat enough that a walk is one node load and at most one edge scan.
+///
+/// A node is 12 bytes and its children are two parallel arrays, so the labels of a small node sit
+/// in one cache line and the child index is one more load. The whole structure is a few hundred
+/// kilobytes for a 32k vocabulary, which is what a cache miss costs on this path.
 #[derive(Clone)]
 pub struct Trie<Label> {
     nodes: Vec<Node>,
-    edges: Vec<(Label, usize)>,
-    root_table: Vec<usize>,
+    labels: Vec<Label>,
+    children: Vec<u32>,
+    root_table: Vec<u32>,
 }
 
 impl<Label: Copy + Ord + RootLookup + Into<usize>> Trie<Label> {
@@ -144,22 +158,25 @@ where
                     self.finished = true;
                     return None;
                 }
-                self.node_index = child;
+                self.node_index = child as usize;
             } else {
                 let node = &self.trie.nodes[self.node_index];
-                let edges = &self.trie.edges[node.first_edge..node.first_edge + node.edge_count];
-                let edge_index = if edges.len() <= 4 {
-                    edges.iter().position(|(edge, _)| *edge == label)
+                let first = node.first_edge as usize;
+                let count = node.edge_count as usize;
+                let labels = &self.trie.labels[first..first + count];
+                let edge_index = if count <= 4 {
+                    labels.iter().position(|edge| *edge == label)
                 } else {
-                    edges.binary_search_by_key(&label, |(edge, _)| *edge).ok()
+                    labels.binary_search(&label).ok()
                 };
                 let Some(edge_index) = edge_index else {
                     self.finished = true;
                     return None;
                 };
-                self.node_index = edges[edge_index].1;
+                self.node_index = self.trie.children[first + edge_index] as usize;
             }
-            if let Some(value) = self.trie.nodes[self.node_index].value {
+            let value = self.trie.nodes[self.node_index].value;
+            if value != NO_VALUE {
                 return Some((self.length, value));
             }
         }
@@ -170,7 +187,8 @@ impl<Label> Default for Trie<Label> {
     fn default() -> Self {
         Self {
             nodes: vec![Node::default()],
-            edges: Vec::new(),
+            labels: Vec::new(),
+            children: Vec::new(),
             root_table: Vec::new(),
         }
     }
@@ -192,10 +210,12 @@ impl<Label> Default for BuildNode<Label> {
 
 #[derive(Clone, Default)]
 struct Node {
-    value: Option<u32>,
-    first_edge: usize,
-    edge_count: usize,
+    value: u32,
+    first_edge: u32,
+    edge_count: u8,
 }
+
+const _: () = assert!(size_of::<Node>() == 12);
 
 #[cfg(test)]
 mod tests {
@@ -218,8 +238,9 @@ mod tests {
         fn estimated_storage(&self) -> usize {
             size_of::<Trie<u8>>()
                 + self.nodes.capacity() * size_of::<Node>()
-                + self.edges.capacity() * size_of::<(u8, usize)>()
-                + self.root_table.capacity() * size_of::<usize>()
+                + self.labels.capacity() * size_of::<u8>()
+                + self.children.capacity() * size_of::<u32>()
+                + self.root_table.capacity() * size_of::<u32>()
         }
     }
 
