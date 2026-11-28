@@ -3298,6 +3298,7 @@ dependencies = [
  "indicatif",
  "log",
  "serde",
+ "serde_json",
  "thiserror",
  "tk-encode",
 ]

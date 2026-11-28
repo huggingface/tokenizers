@@ -195,6 +195,8 @@ impl UnigramTrainer {
         inserted.insert("<UNK>".into());
 
         let existing_pieces: AHashMap<String, f64> = model.iter().cloned().collect();
+        let mut required_chars: Vec<_> = required_chars.into_iter().collect();
+        required_chars.sort();
         for c in required_chars {
             if let Some(t) = existing_pieces.get(&c) {
                 inserted.insert(c.clone());
@@ -238,7 +240,9 @@ impl UnigramTrainer {
                 break;
             }
         }
-        pieces.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+        // This is a stable sort: canonical insertion order breaks score ties without changing
+        // the intended order of equal-scoring pieces.
+        pieces.sort_by(|(_, score_a), (_, score_b)| score_b.partial_cmp(score_a).unwrap());
 
         // Insert the necessary tokens
         let mut special_tokens = self
@@ -271,15 +275,10 @@ impl UnigramTrainer {
         _progress: &Option<ProgressBar>,
     ) -> Vec<SentencePiece> {
         // Put all sentences in a string, separated by \0
-        let total: usize = sentences
-            .iter()
-            .map(|(s, _)| s.chars().count())
-            .sum::<usize>()
-            + sentences.len();
+        let total: usize = sentences.iter().map(|(s, _)| s.len()).sum::<usize>() + sentences.len();
         let mut flat_string = String::with_capacity(total);
         let mut all_chars: AHashMap<char, u32> = AHashMap::new();
         let c_sentence_boundary = '\0';
-        let k_sentence_boundary = '\0'.to_string();
         for (string, n) in sentences {
             if string.is_empty() {
                 continue;
@@ -288,14 +287,13 @@ impl UnigramTrainer {
             // XXX
             // Comment suggests we add sentence boundary, but it seems to be missing from actual
             // code in spm.
-            flat_string.push_str(&k_sentence_boundary);
+            flat_string.push(c_sentence_boundary);
             for c in string.chars() {
                 if c != c_sentence_boundary {
                     *all_chars.entry(c).or_insert(0) += n;
                 }
             }
         }
-        flat_string.shrink_to_fit();
         #[cfg(feature = "esaxx_fast")]
         let suffix = esaxx_rs::suffix(&flat_string).unwrap();
         #[cfg(not(feature = "esaxx_fast"))]
@@ -306,7 +304,7 @@ impl UnigramTrainer {
 
         let mut sall_chars: Vec<_> = all_chars.into_iter().map(|(a, b)| (b, a)).collect();
         // Reversed order
-        sall_chars.sort_by_key(|&a| Reverse(a));
+        sall_chars.sort_by_key(|&(count, character)| (Reverse(count), character));
         let mut substr_index: Vec<_> = suffix
             .iter()
             .filter_map(|(string, freq)| {
@@ -380,55 +378,45 @@ impl UnigramTrainer {
             } else if nbests[0].len() == 1 {
                 always_keep[id] = true;
                 for node in &nbests[1] {
-                    let alt_id = node.borrow().id;
+                    let alt_id = node.id;
                     alternatives[id].push(alt_id);
                 }
             }
         }
 
         // Second, segments all sentences to compute likelihood
-        // with a unigram language model. inverted[i] stores
-        // the set of sentence index where the sentencepieces[i] appears.
+        // with a unigram language model.
         let chunk_size = std::cmp::max(sentences.len() / current_num_threads(), 1);
-        let indexed_sentences: Vec<(usize, &Sentence)> = sentences.iter().enumerate().collect();
-        let collected: (f64, Vec<f64>, Vec<Vec<usize>>) = indexed_sentences
+        let collected: (f64, Vec<f64>) = sentences
             .maybe_par_chunks(chunk_size)
-            .map(|enumerated_sentence_count_chunk| {
+            .map(|sentence_count_chunk| {
                 let mut vsum = 0.0;
                 let mut freq: Vec<f64> = vec![0.0; pieces.len()];
-                let mut inverted: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
+                let mut lattice = Lattice::from(sentence_count_chunk[0].0.as_str(), bos_id, eos_id);
+                let mut viterbi_ids = Vec::new();
 
-                for (i, (sentence, count)) in enumerated_sentence_count_chunk {
-                    let mut lattice = Lattice::from(sentence, bos_id, eos_id);
+                for (sentence, count) in sentence_count_chunk {
+                    lattice.set_sentence(sentence);
                     model.populate_nodes(&mut lattice);
                     vsum += *count as f64;
-                    for node_ref in lattice.viterbi() {
-                        let id = node_ref.borrow().id;
+                    lattice.viterbi_token_ids(&mut viterbi_ids);
+                    for &id in &viterbi_ids {
                         freq[id] += *count as f64;
-                        inverted[id].push(*i);
                     }
                 }
-                (vsum, freq, inverted)
+                (vsum, freq)
             })
             .reduce(
-                || (0.0, vec![0.0; pieces.len()], vec![Vec::new(); pieces.len()]),
-                |(vsum, freq, inverted), (lvsum, lfreq, linverted)| {
-                    (
-                        vsum + lvsum,
-                        freq.iter()
-                            .zip(lfreq)
-                            .map(|(global_el, local_el)| global_el + local_el)
-                            .collect(),
-                        inverted
-                            .iter()
-                            .zip(linverted)
-                            .map(|(global_el, local_el)| [&global_el[..], &local_el[..]].concat())
-                            .collect(),
-                    )
+                || (0.0, vec![0.0; pieces.len()]),
+                |(vsum, mut freq), (lvsum, lfreq)| {
+                    for (global_el, local_el) in freq.iter_mut().zip(lfreq) {
+                        *global_el += local_el;
+                    }
+                    (vsum + lvsum, freq)
                 },
             );
 
-        let (vsum, freq, inverted) = collected;
+        let (vsum, freq) = collected;
 
         let sum: f64 = freq.iter().sum();
         let logsum = sum.ln();
@@ -452,12 +440,7 @@ impl UnigramTrainer {
                 // no alternatives. Keeps this entry.
                 new_pieces.push((token.to_string(), *score));
             } else {
-                let mut f = 0.0; // the frequency of pieces[i];
-
-                for n in &inverted[id] {
-                    let score = sentences[*n].1 as f64;
-                    f += score;
-                }
+                let mut f = freq[id]; // the frequency of pieces[i].
                 // TODO: Temporary hack to avoid Nans.
                 if f == 0.0 || f.is_nan() {
                     // new_pieces.push((token.to_string(), *score));
@@ -492,7 +475,12 @@ impl UnigramTrainer {
         let pruned_size: usize = ((pieces.len() as f64) * self.shrinking_factor) as usize;
         let pruned_size = desired_vocab_size.max(pruned_size);
 
-        candidates.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+        candidates.sort_by(|(id_a, score_a), (id_b, score_b)| {
+            score_b
+                .partial_cmp(score_a)
+                .unwrap()
+                .then_with(|| id_a.cmp(id_b))
+        });
         for (id, _score) in candidates {
             if new_pieces.len() == pruned_size {
                 break;
@@ -530,32 +518,33 @@ impl UnigramTrainer {
                 let mut expected: Vec<f64> = vec![0.0; model.len()];
                 let mut objs: f64 = 0.0;
                 let mut ntokens: u32 = 0;
+                let mut lattice =
+                    Lattice::from(sentences_chunk[0].0.as_str(), model.bos_id, model.eos_id);
 
                 for (string, freq) in sentences_chunk {
-                    let mut lattice = Lattice::from(string, model.bos_id, model.eos_id);
+                    lattice.set_sentence(string);
                     model.populate_nodes(&mut lattice);
 
                     let z: f64 = lattice.populate_marginal(*freq as f64, &mut expected);
                     if z.is_nan() {
                         panic!("likelihood is NAN. Input sentence may be too long.");
                     }
-                    ntokens += lattice.viterbi().len() as u32;
+                    if log::log_enabled!(log::Level::Debug) {
+                        let mut ids = Vec::new();
+                        lattice.viterbi_token_ids(&mut ids);
+                        ntokens += ids.len() as u32;
+                    }
                     objs -= z / (all_sentence_freq as f64);
                 }
                 (objs, ntokens, expected)
             })
             .reduce(
                 || (0.0, 0, vec![0.0; model.len()]),
-                |(objs, ntokens, expected), (lobjs, lntokens, lexpected)| {
-                    (
-                        objs + lobjs,
-                        ntokens + lntokens,
-                        expected
-                            .iter()
-                            .zip(lexpected)
-                            .map(|(global_el, local_el)| global_el + local_el)
-                            .collect(),
-                    )
+                |(objs, ntokens, mut expected), (lobjs, lntokens, lexpected)| {
+                    for (global_el, local_el) in expected.iter_mut().zip(lexpected) {
+                        *global_el += local_el;
+                    }
+                    (objs + lobjs, ntokens + lntokens, expected)
                 },
             );
 
@@ -600,9 +589,15 @@ impl UnigramTrainer {
     }
     pub fn do_train(
         &self,
-        sentences: Vec<Sentence>,
+        mut sentences: Vec<Sentence>,
         model: &mut Unigram,
     ) -> Result<Vec<AddedToken>> {
+        sentences.sort_by(|(sentence_a, count_a), (sentence_b, count_b)| {
+            sentence_a
+                .cmp(sentence_b)
+                .then_with(|| count_a.cmp(count_b))
+        });
+
         let progress = self.setup_progress();
         //
         // 1. Compute frequent substrings
@@ -754,7 +749,7 @@ mod tests {
         let table = trainer.make_seed_sentence_pieces(&sentences, &progress);
 
         let target_strings = vec![
-            "s", "i", " ", "達", "友", "ん", "は", "に", "ち", "こ", "h", "a", "T", "is ", "s ",
+            " ", "i", "s", "T", "a", "h", "こ", "ち", "に", "は", "ん", "友", "達", "is ", "s ",
         ];
 
         let strings: Vec<_> = table.iter().map(|(string, _)| string).collect();
@@ -887,6 +882,47 @@ mod tests {
     }
 
     #[test]
+    fn training_matches_the_pre_optimization_trainer_bit_for_bit() {
+        let trainer = UnigramTrainerBuilder::default()
+            .show_progress(false)
+            .vocab_size(10)
+            .n_sub_iterations(2)
+            .shrinking_factor(0.75)
+            .max_piece_length(16)
+            .seed_size(1_000_000)
+            .build()
+            .unwrap();
+        let mut model = Unigram::default();
+        trainer
+            .do_train(
+                vec![("abababab abababab abababab".to_string(), 40)],
+                &mut model,
+            )
+            .unwrap();
+
+        let mut actual: Vec<(String, u64)> = model
+            .iter()
+            .map(|(piece, score)| (piece.clone(), score.to_bits()))
+            .collect();
+        actual.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let expected: Vec<(String, u64)> = [
+            (" ", 0xc017d0dd0c5bd1be),
+            (" abababab", 0xbff0000f02450720),
+            ("a", 0xbff46f3381142160),
+            ("ab", 0xc0194ca0e0016eea),
+            ("ababab abababab", 0xc012fed65f9aeb5c),
+            ("abababab", 0xc00929c872c85503),
+            ("b", 0xc01379d373689428),
+            ("bababab abababab", 0xbff55ea738c00414),
+        ]
+        .iter()
+        .map(|(piece, bits)| ((*piece).to_string(), *bits))
+        .collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn test_to_log_prob() {
         let mut a = vec![("".to_string(), 1.0), ("".to_string(), 2.0)];
         to_log_prob(&mut a);
@@ -895,5 +931,60 @@ mod tests {
         assert_approx_eq!(scores[0], -1.098, 0.01);
         // ln(2) - ln(3)
         assert_approx_eq!(scores[1], -0.405, 0.01);
+    }
+
+    #[test]
+    fn train_is_deterministic_for_different_word_orders() {
+        let words = [
+            ("the quick brown fox".to_string(), 8),
+            ("a tokenizer converts text".to_string(), 5),
+            ("unicode includes characters".to_string(), 3),
+            ("common patterns from data".to_string(), 4),
+        ];
+        let train = |words: AHashMap<String, u32>| {
+            let trainer = UnigramTrainer::builder()
+                .show_progress(false)
+                .vocab_size(32)
+                .seed_size(10_000)
+                .words(AHashMap::from_iter(words))
+                .build()
+                .unwrap();
+            let mut model = Unigram::default();
+            trainer.train(&mut model).unwrap();
+            model.vocab().to_vec()
+        };
+
+        assert_eq!(
+            train(AHashMap::from_iter(words.iter().cloned())),
+            train(AHashMap::from_iter(words.iter().rev().cloned()))
+        );
+    }
+
+    #[test]
+    fn finalize_preserves_order_for_equal_scores() {
+        let model = Unigram::from(
+            vec![
+                ("z".to_string(), -1.0),
+                ("a".to_string(), -1.0),
+                ("b".to_string(), -2.0),
+            ],
+            None,
+            false,
+        )
+        .unwrap();
+        let trainer = UnigramTrainer::builder()
+            .show_progress(false)
+            .build()
+            .unwrap();
+
+        let finalized = trainer.finalize(model, AHashSet::new()).unwrap();
+
+        assert_eq!(
+            finalized
+                .iter()
+                .map(|(token, _)| token.as_str())
+                .collect::<Vec<_>>(),
+            ["z", "a", "b"]
+        );
     }
 }

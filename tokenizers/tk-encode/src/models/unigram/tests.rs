@@ -31,12 +31,31 @@ fn test_populate_nodes_unk() {
     assert_eq!(lattice.begin_nodes[0].len(), 1);
     assert_eq!(lattice.begin_nodes[1].len(), 1);
     assert_eq!(lattice.begin_nodes[2].len(), 1);
-    assert_eq!(lattice.begin_nodes[0][0].borrow().id, 0);
-    assert_eq!(lattice.begin_nodes[1][0].borrow().id, 0);
-    assert_eq!(lattice.begin_nodes[2][0].borrow().id, 0);
-    assert_eq!(lattice.begin_nodes[0][0].borrow().node_id, 2);
-    assert_eq!(lattice.begin_nodes[1][0].borrow().node_id, 3);
-    assert_eq!(lattice.begin_nodes[2][0].borrow().node_id, 4);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[0][0]].id, 0);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[1][0]].id, 0);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[2][0]].id, 0);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[0][0]].node_id, 2);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[1][0]].node_id, 3);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[2][0]].node_id, 4);
+}
+
+#[test]
+fn unknown_score_tracks_mutated_min_score_in_both_encoding_paths() {
+    let pieces = vec![("<unk>".to_string(), 0.0), ("ab".to_string(), 1.0)];
+    let mut model = Unigram::from(pieces, Some(0), false).unwrap();
+    model.min_score = 100.0;
+    model.set_fuse_unk(false);
+
+    for optimized in [true, false] {
+        model.set_optimized(optimized);
+        assert_eq!(model.encode("ab").unwrap(), ["a", "b"]);
+    }
+
+    let mut lattice = Lattice::from("x", model.bos_id, model.eos_id);
+    model.populate_nodes(&mut lattice);
+    let mut expected = vec![0.0; model.len()];
+    let log_z = lattice.populate_marginal(1.0, &mut expected);
+    assert_eq!(log_z, model.min_score - 10.0);
 }
 
 #[test]
@@ -59,16 +78,16 @@ fn test_populate_nodes() {
 
     // Id is the vocabulary id from Unigram model
     // node_id is simply the rank of the given node in the lattice.
-    assert_eq!(lattice.begin_nodes[0][0].borrow().id, 1);
-    assert_eq!(lattice.begin_nodes[0][1].borrow().id, 3);
-    assert_eq!(lattice.begin_nodes[1][0].borrow().id, 2);
-    assert_eq!(lattice.begin_nodes[1][1].borrow().id, 4);
-    assert_eq!(lattice.begin_nodes[2][0].borrow().id, 0);
-    assert_eq!(lattice.begin_nodes[0][0].borrow().node_id, 2);
-    assert_eq!(lattice.begin_nodes[0][1].borrow().node_id, 3);
-    assert_eq!(lattice.begin_nodes[1][0].borrow().node_id, 4);
-    assert_eq!(lattice.begin_nodes[1][1].borrow().node_id, 5);
-    assert_eq!(lattice.begin_nodes[2][0].borrow().node_id, 6);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[0][0]].id, 1);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[0][1]].id, 3);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[1][0]].id, 2);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[1][1]].id, 4);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[2][0]].id, 0);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[0][0]].node_id, 2);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[0][1]].node_id, 3);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[1][0]].node_id, 4);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[1][1]].node_id, 5);
+    assert_eq!(lattice.nodes[lattice.begin_nodes[2][0]].node_id, 6);
 }
 
 #[test]
@@ -260,4 +279,164 @@ fn sampling_is_never_cached() {
     pipeline_ids(&model, "abcd", &mut scratch);
 
     assert_eq!(scratch.word_cache.lookup(b"abcd").hit(), None);
+}
+
+/// The pipeline takes the ids straight off the best path. The lattice path builds a `String`
+/// per piece and looks each one back up, so the two must agree on every sequence: same pieces,
+/// same fusion of unknown runs, same byte fallback.
+#[test]
+fn the_ids_path_agrees_with_the_pieces_path() {
+    let multibyte = vec![
+        ("<unk>".to_string(), 0.0),
+        ("é".to_string(), -2.0),
+        ("é東".to_string(), -1.0),
+        ("東".to_string(), -2.0),
+        ("🙂".to_string(), -1.0),
+        ("<0xE2>".to_string(), -0.5),
+        ("<0x85>".to_string(), -0.5),
+        ("<0x90>".to_string(), -0.5),
+    ];
+    let corpora = [
+        "abcdacdxx",
+        "ab",
+        "",
+        "a",
+        "abc",
+        // Unknown characters, alone and in a run.
+        "zzz",
+        // 2, 3 and 4 byte characters, mixed with unknowns.
+        "é東🙂жé",
+        "東京",
+        "⅐⅛",
+        "abc é東 🙂 xyz",
+        // Longer than any cache or path table wants to grow.
+        "abcdacdxx東京é🙂",
+    ];
+    let long = "abcd".repeat(200);
+
+    for byte_fallback in [false, true] {
+        for fuse_unk in [false, true] {
+            let mut optimized = Unigram::from(multibyte.clone(), Some(0), byte_fallback).unwrap();
+            let mut unoptimized = optimized.clone();
+            optimized.set_fuse_unk(fuse_unk);
+            unoptimized.set_fuse_unk(fuse_unk);
+            unoptimized.set_optimized(false);
+
+            let mut optimized_scratch = Tokenize::init_scratch(&optimized);
+            let mut unoptimized_scratch = Tokenize::init_scratch(&unoptimized);
+            for sequence in corpora.iter().chain(std::iter::once(&long.as_str())) {
+                let got = pipeline_ids(&optimized, sequence, &mut optimized_scratch);
+                let want = pipeline_ids(&unoptimized, sequence, &mut unoptimized_scratch);
+                assert_eq!(
+                    got, want,
+                    "{sequence:?} with byte_fallback={byte_fallback} fuse_unk={fuse_unk}"
+                );
+            }
+        }
+    }
+}
+
+/// Unknown runs are fused before the vocabulary sees them, so a fused run that *is* a token
+/// encodes to that token's id rather than to `<unk>`. Reachable when every score is above the
+/// unknown penalty, so the fused span outscores the vocabulary entry it is named after.
+#[test]
+fn a_fused_unknown_run_is_looked_up_as_one_piece() {
+    let vocab = vec![("<unk>".to_string(), 100.0), ("ab".to_string(), 100.0)];
+    let model = Unigram::from(vocab, Some(0), false).unwrap();
+    let mut unoptimized = model.clone();
+    unoptimized.set_optimized(false);
+    let mut scratch = Tokenize::init_scratch(&model);
+    let mut lattice_scratch = Tokenize::init_scratch(&unoptimized);
+
+    // Two unknown characters (2 × (100 - 10)) outscore the `ab` entry (100), so the best
+    // path is a fused unknown run, and the fused span is `ab` itself.
+    assert_eq!(pipeline_ids(&model, "ab", &mut scratch), [1]);
+    assert_eq!(pipeline_ids(&unoptimized, "ab", &mut lattice_scratch), [1]);
+    assert_eq!(model.encode("ab").unwrap(), ["ab"]);
+}
+
+/// A model without an unknown id still encodes text its vocabulary covers. The error belongs to
+/// the input the model cannot cover, not to the model.
+#[test]
+fn a_model_without_an_unknown_id_encodes_covered_text() {
+    let vocab = vec![
+        ("a".to_string(), 0.0),
+        ("b".to_string(), 0.0),
+        ("ab".to_string(), 1.0),
+    ];
+    let model = Unigram::from(vocab, None, false).unwrap();
+    let mut scratch = Tokenize::init_scratch(&model);
+
+    assert_eq!(pipeline_ids(&model, "ab", &mut scratch), [2]);
+    assert_eq!(model.encode("ab").unwrap(), ["ab"]);
+    let mut output = vec![];
+    assert!(Tokenize::tokenize(&model, "c", &mut scratch, &mut output).is_err());
+}
+
+/// The pre-rewrite contract: `encode`, then look every piece back up in the vocabulary,
+/// with byte fallback for pieces that miss. Kept here as a differential oracle for the
+/// id-direct optimized path.
+fn string_path_ids(model: &Unigram, sequence: &str) -> Vec<u32> {
+    let mut ids = Vec::new();
+    for piece in model.encode(sequence).unwrap() {
+        match model.token_to_id(&piece) {
+            Some(id) => ids.push(id),
+            None => {
+                if model.byte_fallback() {
+                    let bytes: Option<Vec<_>> = piece
+                        .bytes()
+                        .map(|byte| model.token_to_id(&format!("<0x{byte:02X}>")))
+                        .collect();
+                    if let Some(bytes) = bytes {
+                        ids.extend(bytes);
+                        continue;
+                    }
+                }
+                ids.push(model.unk_id().unwrap() as u32);
+            }
+        }
+    }
+    ids
+}
+
+#[test]
+fn id_direct_path_matches_the_string_path_on_unknown_and_duplicate_edges() {
+    let cases: Vec<(Vocab, Vec<&str>)> = vec![
+        (abcd_vocab(), vec!["", "a", "abcd", "xxab", "東京", "abcc"]),
+        (
+            // The unknown path scores higher than the known "ab", so Viterbi fuses
+            // the two unknowns and the fused text still resolves to a real token.
+            vec![("<unk>".to_string(), 100.0), ("ab".to_string(), 150.0)],
+            vec!["ab", "aab", "abab"],
+        ),
+        (
+            // A fused unknown run expands through byte fallback, not just one byte.
+            vec![
+                ("<unk>".to_string(), 0.0),
+                ("<0xC3>".to_string(), -0.01),
+                ("<0xA9>".to_string(), -0.03),
+            ],
+            vec!["é", "éé", "aé"],
+        ),
+        (
+            // Duplicate tokens resolve to the latest occurrence in both paths.
+            vec![
+                ("<unk>".to_string(), 0.0),
+                ("a".to_string(), 1.0),
+                ("a".to_string(), 2.0),
+                ("ab".to_string(), 3.0),
+            ],
+            vec!["a", "ab", "aa", "b"],
+        ),
+    ];
+
+    for (vocab, sequences) in cases {
+        let byte_fallback = vocab.iter().any(|(piece, _)| piece.starts_with("<0x"));
+        let model = Unigram::from(vocab, Some(0), byte_fallback).unwrap();
+        for sequence in sequences {
+            let mut scratch = Tokenize::init_scratch(&model);
+            let actual = pipeline_ids(&model, sequence, &mut scratch);
+            assert_eq!(actual, string_path_ids(&model, sequence), "{sequence:?}");
+        }
+    }
 }

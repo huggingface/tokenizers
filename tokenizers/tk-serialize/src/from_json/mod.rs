@@ -195,7 +195,7 @@ fn build<M>(
         _ => &normalizers[..],
     };
     let chain = NormalizerChain(declared);
-    added_vocabulary.add_tokens(
+    added_vocabulary.add_tokens_with_ids(
         added,
         vocab_size(&concrete),
         |t| token_to_id(&concrete, t),

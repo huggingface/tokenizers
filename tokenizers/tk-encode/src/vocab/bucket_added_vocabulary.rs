@@ -358,6 +358,41 @@ impl AddedVocabulary {
         model_token_to_id: impl Fn(&str) -> Option<u32>,
         normalizer: Option<&N>,
     ) -> Result<usize> {
+        self.add_tokens_with_optional_ids(
+            tokens.into_iter().map(|token| (None, token)),
+            model_vocab_size,
+            model_token_to_id,
+            normalizer,
+        )
+    }
+
+    /// Add tokens that declare the vocabulary id they must keep.
+    ///
+    /// A token already in the model keeps the model's id. A new token keeps its declared id, which
+    /// may leave a gap: nothing is renumbered. Declared ids that the model or another added token
+    /// already uses are rejected.
+    pub fn add_tokens_with_ids<N: Normalize>(
+        &mut self,
+        tokens: impl IntoIterator<Item = (u32, AddedToken)>,
+        model_vocab_size: usize,
+        model_token_to_id: impl Fn(&str) -> Option<u32>,
+        normalizer: Option<&N>,
+    ) -> Result<usize> {
+        self.add_tokens_with_optional_ids(
+            tokens.into_iter().map(|(id, token)| (Some(id), token)),
+            model_vocab_size,
+            model_token_to_id,
+            normalizer,
+        )
+    }
+
+    fn add_tokens_with_optional_ids<N: Normalize>(
+        &mut self,
+        tokens: impl IntoIterator<Item = (Option<u32>, AddedToken)>,
+        model_vocab_size: usize,
+        model_token_to_id: impl Fn(&str) -> Option<u32>,
+        normalizer: Option<&N>,
+    ) -> Result<usize> {
         let mut ignored = 0;
         let mut total = 0;
 
@@ -394,7 +429,7 @@ impl AddedVocabulary {
         }
         let mut seen: AHashMap<String, u32> = AHashMap::new();
 
-        for token in tokens {
+        for (declared_id, token) in tokens {
             total += 1;
             if token.content.is_empty() {
                 ignored += 1;
@@ -429,11 +464,42 @@ impl AddedVocabulary {
                 ignored += 1;
                 continue;
             }
-            let id = existing.unwrap_or_else(|| {
-                let i = next_id;
-                next_id += 1;
-                i
-            });
+            let id = match existing {
+                Some(id) => id,
+                None => match declared_id {
+                    Some(id) => {
+                        if id < model_size {
+                            return Err(format!(
+                                "added token {:?} declares id {id}, which the model vocabulary \
+                                 already uses (its size is {model_size})",
+                                token.content
+                            )
+                            .into());
+                        }
+                        if id == u32::MAX {
+                            return Err(format!(
+                                "added token {:?} declares id {}, which is too large",
+                                token.content, id
+                            )
+                            .into());
+                        }
+                        if entries.contains_key(&id) {
+                            return Err(format!(
+                                "two added tokens declare id {id} (the second is {:?})",
+                                token.content
+                            )
+                            .into());
+                        }
+                        next_id = next_id.max(id + 1);
+                        id
+                    }
+                    None => {
+                        let id = next_id;
+                        next_id += 1;
+                        id
+                    }
+                },
+            };
             let declared = (form != token.content.as_bytes()).then(|| token.content.clone());
             let entry = Entry {
                 matcher_text: form,
@@ -597,6 +663,54 @@ mod tests {
             vocab.extract_next(text, 0, true, false),
             Some(((4, 9), 200_001))
         );
+    }
+
+    #[test]
+    fn explicit_ids_keep_a_gap() {
+        let model = ModelMock::new(&[("a", 0)]);
+        let mut vocab = AddedVocabulary::new();
+        vocab
+            .add_tokens_with_ids(
+                [
+                    (4, AddedToken::from("<a>", true)),
+                    (6, AddedToken::from("<b>", true)),
+                ],
+                model.get_vocab_size(),
+                |t| model.token_to_id(t),
+                None::<&Lowercase>,
+            )
+            .unwrap();
+
+        assert_eq!(vocab.token_to_id("<a>"), Some(4));
+        assert_eq!(vocab.token_to_id("<b>"), Some(6));
+        assert!(vocab.id_to_token_bytes(5).is_none());
+    }
+
+    #[test]
+    fn explicit_ids_must_not_collide() {
+        let mut vocab = AddedVocabulary::new();
+        let duplicate = vocab
+            .add_tokens_with_ids(
+                [
+                    (4, AddedToken::from("<a>", true)),
+                    (4, AddedToken::from("<b>", true)),
+                ],
+                0,
+                |_| None,
+                None::<&Lowercase>,
+            )
+            .unwrap_err();
+        assert!(duplicate.to_string().contains("id 4"));
+
+        let in_model = vocab
+            .add_tokens_with_ids(
+                [(0, AddedToken::from("<a>", true))],
+                1,
+                |_| None,
+                None::<&Lowercase>,
+            )
+            .unwrap_err();
+        assert!(in_model.to_string().contains("id 0"));
     }
 
     #[test]

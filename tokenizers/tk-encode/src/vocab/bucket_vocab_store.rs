@@ -140,7 +140,7 @@ pub(crate) fn key_and_hash(word: &[u8]) -> (u64, u64) {
 ///
 /// TODO: let's detail the single load design, the key mask, the INLINE_KEY_BYTES etc
 #[derive(Clone, Copy, Debug, Default)]
-#[repr(C)]
+#[repr(C, align(8))]
 struct Entry {
     key: u64,
     /// The token id in the low 31 bits, [`FOLD_BIT`] in the top.

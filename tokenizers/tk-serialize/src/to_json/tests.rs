@@ -138,6 +138,28 @@ fn round_trip_preserves_ids_on_every_real_config() {
 const COMPETING_BPE: &str = r#"{"type": "BPE", "byte_level": false,
     "vocab": {"a": 0, "b": 1, "c": 2, "ab": 3, "bc": 4}, "merges": [["a", "b"], ["b", "c"]]}"#;
 
+#[test]
+fn normalized_added_token_collision_keeps_its_winner_after_round_trip() {
+    let model = r#"{"type": "BPE", "byte_level": false, "vocab": {"foo": 0}, "merges": []}"#;
+    let added_tokens = r#"[{"id": 1, "content": "FOO", "single_word": false, "lstrip": false,
+        "rstrip": false, "normalized": true, "special": false, "control": false},
+        {"id": 0, "content": "foo", "single_word": false, "lstrip": false,
+        "rstrip": false, "normalized": true, "special": false, "control": false}]"#;
+    let tokenizer = from_json(&config(&[
+        ("model", model),
+        ("normalizer", r#"{"type": "Lowercase"}"#),
+        ("added_tokens", added_tokens),
+    ]))
+    .expect("the config reads");
+    let before = ids(&tokenizer, "foo", &EncodeOptions::no_specials());
+    let after = from_json(&to_json(&tokenizer).expect("the config writes"))
+        .map(|round_trip| ids(&round_trip, "foo", &EncodeOptions::no_specials()))
+        .expect("the written config reads");
+
+    assert_eq!(before, [1]);
+    assert_eq!(before, after);
+}
+
 /// The gate has teeth. Perturbing the *written config* rather than the writer is what keeps this
 /// from rotting: it shows the comparison above is sensitive to a wrong merge order, whoever made it.
 #[test]
@@ -240,12 +262,11 @@ const REWRITTEN: &[(&str, &str, &str)] = &[
                 r#"{"type": "ByteLevel"}"#),
     ("decoder", r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first", "split": false}"#,
                 r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first"}"#),
-    // The reader gives ids in the order of the array, not the ids it declares: `<b>` comes first
-    // and takes 4. The writer lists the tokens by id.
+    // The reader keeps each declared id, and the writer lists the tokens by id.
     ("added_tokens", r#"[{"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true, "control": true},
         {"id": 4, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false, "control": false}]"#,
-        r#"[{"id": 4, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true, "control": true},
-        {"id": 5, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false, "control": false}]"#),
+        r#"[{"id": 4, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false, "control": false},
+        {"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true, "control": true}]"#),
 ];
 
 /// `strip_accents: null` means "decide from `lowercase`", which is why the reader requires the key.
