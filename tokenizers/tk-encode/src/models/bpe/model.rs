@@ -134,27 +134,26 @@ impl BPE {
         let mut proven = vec![false; len];
         let mut symbols = Vec::with_capacity(64);
         let mut scratch = QueueScratch::default();
-        // With an `end_of_word_suffix`, a one-character word is looked up as `char + suffix`, so
-        // a bare single-character entry is not its own encoding.
-        let has_suffix = self.affixes.as_ref().is_some_and(|a| !a.suffix.is_empty());
         for id in 0..len as u32 {
             let Some(bytes) = self.vocab.id_to_token_bytes(id) else {
                 continue;
             };
+            // `merge_word` indexes the first byte, and the tokenize paths skip empty pretokens
+            // before probing the fold table, so an empty entry needs no proof.
+            if bytes.is_empty() {
+                continue;
+            }
             // An entry that is not valid UTF-8 can never equal a pretoken, which is always a
             // `&str` slice, so it can never be folded and needs no proof.
             let Ok(text) = std::str::from_utf8(bytes) else {
                 continue;
             };
-            let chars = text.chars().count();
-            let foldable = if chars == 0 || (chars == 1 && !has_suffix) {
-                // A single atom has no pair to merge and is trivially its own encoding.
-                true
-            } else {
-                self.merge_word(text, &mut symbols, &mut scratch);
-                symbols.len() == 1 && self.tables.unmap.at(symbols[0] as usize) == id
-            };
-            proven[id as usize] = foldable;
+            // Prove every non-empty entry through `merge_word`: in byte-level models a single
+            // multi-byte UTF-8 character consists of 2-4 byte atoms, and affixed or duplicate-key
+            // models may also disagree with a shortcut.
+            self.merge_word(text, &mut symbols, &mut scratch);
+            proven[id as usize] =
+                symbols.len() == 1 && self.tables.unmap.at(symbols[0] as usize) == id;
         }
         proven
     }
