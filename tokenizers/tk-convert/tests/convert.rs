@@ -408,6 +408,29 @@ fn a_sequence_post_processor_collapses_to_the_member_that_adds_tokens() {
     );
 }
 
+#[test]
+fn an_empty_sequence_post_processor_uses_the_default_frame() {
+    for processors in ["[]", r#"[{"type": "Sequence", "processors": []}]"#] {
+        let extra =
+            format!(r#", "post_processor": {{"type": "Sequence", "processors": {processors}}}"#);
+        let legacy_json = config(BPE, &extra).to_string();
+        let legacy = tokenizers_release::Tokenizer::from_bytes(&legacy_json).unwrap();
+        let converted = done(BPE, &extra);
+        assert_eq!(converted["post_processor"], Value::Null);
+
+        let tokenizer = tk_serialize::from_json(&converted.to_string()).unwrap();
+        let pair = ("a", "b");
+        let expected = legacy.encode(pair, true).unwrap();
+        assert_eq!(expected.get_type_ids(), [0, 1]);
+        let encodings = tokenizer
+            .encode(pair, &tk_encode::pipeline::EncodeOptions::default())
+            .wait()
+            .unwrap();
+        assert_eq!(encodings[0].ids(), expected.get_ids());
+        assert_eq!(encodings[0].type_ids().unwrap(), [0, 1]);
+    }
+}
+
 /// `BertProcessing` and `RobertaProcessing` name a frame, so this pass spells it as the template
 /// it is. The reader has no arm for either name; this is the only place that knows what they meant.
 #[test]
