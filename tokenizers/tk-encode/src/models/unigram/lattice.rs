@@ -143,23 +143,8 @@ fn log_sum_exp(x: f64, y: f64, init_mode: bool) -> f64 {
         if vmax > vmin + k_minus_log_epsilon {
             vmax
         } else {
-            vmax + (vmin - vmax).exp().ln_1p()
+            vmax + ((vmin - vmax).exp() + 1.0).ln()
         }
-    }
-}
-
-#[inline]
-fn log_sum_exp_add(max: &mut f64, sum_exp: &mut f64, value: f64) {
-    if value > *max {
-        let diff = *max - value;
-        *sum_exp = if diff < -50.0 {
-            1.0
-        } else {
-            *sum_exp * diff.exp() + 1.0
-        };
-        *max = value;
-    } else if value - *max > -50.0 {
-        *sum_exp += (value - *max).exp();
     }
 }
 
@@ -398,13 +383,12 @@ impl<'a> Lattice<'a> {
             match self.end_nodes[pos].split_first() {
                 Some((&first, rest)) => {
                     let node = &self.nodes[first];
-                    let mut max = node.score + self.alpha[node.pos];
-                    let mut sum_exp = 1.0;
+                    let mut alpha = log_sum_exp(0.0, node.score + self.alpha[node.pos], true);
                     for &lnode_id in rest {
                         let node = &self.nodes[lnode_id];
-                        log_sum_exp_add(&mut max, &mut sum_exp, node.score + self.alpha[node.pos]);
+                        alpha = log_sum_exp(alpha, node.score + self.alpha[node.pos], false);
                     }
-                    self.alpha[pos] = max + sum_exp.ln();
+                    self.alpha[pos] = alpha;
                 }
                 None => {
                     // Preserve the old "unset means zero" behaviour for unreachable positions.
@@ -416,17 +400,17 @@ impl<'a> Lattice<'a> {
             match self.begin_nodes[pos].split_first() {
                 Some((&first, rest)) => {
                     let node = &self.nodes[first];
-                    let mut max = node.score + self.beta[node.pos + node.length];
-                    let mut sum_exp = 1.0;
+                    let mut beta =
+                        log_sum_exp(0.0, node.score + self.beta[node.pos + node.length], true);
                     for &rnode_id in rest {
                         let node = &self.nodes[rnode_id];
-                        log_sum_exp_add(
-                            &mut max,
-                            &mut sum_exp,
+                        beta = log_sum_exp(
+                            beta,
                             node.score + self.beta[node.pos + node.length],
+                            false,
                         );
                     }
-                    self.beta[pos] = max + sum_exp.ln();
+                    self.beta[pos] = beta;
                 }
                 None => {
                     self.beta[pos] = 0.0;
@@ -783,22 +767,6 @@ mod tests {
             x = log_sum_exp(x, *y, i == 0);
         }
         assert_approx_eq!(x, v.iter().map(|n| n.exp()).sum::<f64>().ln(), 0.001);
-    }
-
-    #[test]
-    fn test_log_sum_exp_accumulator() {
-        let values = [0.0, -10.0, -60.0, 2.0, -100.0];
-        let mut expected = 0.0;
-        for (index, value) in values.iter().enumerate() {
-            expected = log_sum_exp(expected, *value, index == 0);
-        }
-
-        let mut max = values[0];
-        let mut sum_exp = 1.0;
-        for &value in &values[1..] {
-            log_sum_exp_add(&mut max, &mut sum_exp, value);
-        }
-        assert_approx_eq!(max + sum_exp.ln(), expected, 1e-12);
     }
 
     #[test]

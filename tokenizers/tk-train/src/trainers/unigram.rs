@@ -867,6 +867,47 @@ mod tests {
     }
 
     #[test]
+    fn training_matches_the_pre_optimization_trainer_bit_for_bit() {
+        let trainer = UnigramTrainerBuilder::default()
+            .show_progress(false)
+            .vocab_size(10)
+            .n_sub_iterations(2)
+            .shrinking_factor(0.75)
+            .max_piece_length(16)
+            .seed_size(1_000_000)
+            .build()
+            .unwrap();
+        let mut model = Unigram::default();
+        trainer
+            .do_train(
+                vec![("abababab abababab abababab".to_string(), 40)],
+                &mut model,
+            )
+            .unwrap();
+
+        let mut actual: Vec<(String, u64)> = model
+            .iter()
+            .map(|(piece, score)| (piece.clone(), score.to_bits()))
+            .collect();
+        actual.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let expected: Vec<(String, u64)> = [
+            (" ", 0xc017d0dd0c5bd1be),
+            (" abababab", 0xbff0000f02450720),
+            ("a", 0xbff46f3381142160),
+            ("ab", 0xc0194ca0e0016eea),
+            ("ababab abababab", 0xc012fed65f9aeb5c),
+            ("abababab", 0xc00929c872c85503),
+            ("b", 0xc01379d373689428),
+            ("bababab abababab", 0xbff55ea738c00414),
+        ]
+        .iter()
+        .map(|(piece, bits)| ((*piece).to_string(), *bits))
+        .collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn test_to_log_prob() {
         let mut a = vec![("".to_string(), 1.0), ("".to_string(), 2.0)];
         to_log_prob(&mut a);
