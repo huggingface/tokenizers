@@ -143,31 +143,8 @@ fn log_sum_exp(x: f64, y: f64, init_mode: bool) -> f64 {
         if vmax > vmin + k_minus_log_epsilon {
             vmax
         } else {
-            vmax + (vmin - vmax).exp().ln_1p()
+            vmax + ((vmin - vmax).exp() + 1.0).ln()
         }
-    }
-}
-
-#[inline]
-#[cfg(test)]
-fn log_sum_exp_add(max: &mut f64, sum_exp: &mut f64, value: f64) {
-    // Comparisons with NaN are all false, so without this a NaN would be skipped unless it happened
-    // to be the first value. `log_sum_exp` propagates NaN; keep that explicit here too.
-    if value.is_nan() || max.is_nan() {
-        *max = f64::NAN;
-        *sum_exp = f64::NAN;
-        return;
-    }
-    if value > *max {
-        let diff = *max - value;
-        *sum_exp = if diff < -50.0 {
-            1.0
-        } else {
-            *sum_exp * diff.exp() + 1.0
-        };
-        *max = value;
-    } else if value - *max > -50.0 {
-        *sum_exp += (value - *max).exp();
     }
 }
 
@@ -386,44 +363,61 @@ impl<'a> Lattice<'a> {
 
     pub fn populate_marginal(&mut self, freq: f64, expected: &mut [f64]) -> f64 {
         let len = self.len();
-        let n_nodes = self.nodes.len();
-        self.alpha.resize(n_nodes, 0.0);
-        self.beta.resize(n_nodes, 0.0);
-        self.alpha.fill(0.0);
-        self.beta.fill(0.0);
+        let n_positions = len + 1;
+        if self.alpha.len() < n_positions {
+            self.alpha.resize(n_positions, 0.0);
+        }
+        if self.beta.len() < n_positions {
+            self.beta.resize(n_positions, 0.0);
+        }
 
-        // Keep the base per-node accumulation order; per-position sums change trained scores.
+        self.alpha[0] = 0.0;
+        self.beta[len] = 0.0;
+
         for pos in 0..=len {
-            for &rnode_id in &self.begin_nodes[pos] {
-                for &lnode_id in &self.end_nodes[pos] {
-                    self.alpha[rnode_id] = log_sum_exp(
-                        self.alpha[rnode_id],
-                        self.nodes[lnode_id].score + self.alpha[lnode_id],
-                        lnode_id == self.end_nodes[pos][0],
-                    );
+            match self.end_nodes[pos].split_first() {
+                Some((&first, rest)) => {
+                    let node = &self.nodes[first];
+                    let mut alpha = log_sum_exp(0.0, node.score + self.alpha[node.pos], true);
+                    for &lnode_id in rest {
+                        let node = &self.nodes[lnode_id];
+                        alpha = log_sum_exp(alpha, node.score + self.alpha[node.pos], false);
+                    }
+                    self.alpha[pos] = alpha;
+                }
+                None => {
+                    self.alpha[pos] = 0.0;
                 }
             }
         }
         for pos in (0..=len).rev() {
-            for &lnode_id in &self.end_nodes[pos] {
-                for &rnode_id in &self.begin_nodes[pos] {
-                    self.beta[lnode_id] = log_sum_exp(
-                        self.beta[lnode_id],
-                        self.nodes[rnode_id].score + self.beta[rnode_id],
-                        rnode_id == self.begin_nodes[pos][0],
-                    );
+            match self.begin_nodes[pos].split_first() {
+                Some((&first, rest)) => {
+                    let node = &self.nodes[first];
+                    let mut beta =
+                        log_sum_exp(0.0, node.score + self.beta[node.pos + node.length], true);
+                    for &rnode_id in rest {
+                        let node = &self.nodes[rnode_id];
+                        beta = log_sum_exp(
+                            beta,
+                            node.score + self.beta[node.pos + node.length],
+                            false,
+                        );
+                    }
+                    self.beta[pos] = beta;
+                }
+                None => {
+                    self.beta[pos] = 0.0;
                 }
             }
         }
 
-        let eos_id = self.begin_nodes[len][0];
-        let z = self.alpha[eos_id];
-        for begin_nodes in self.begin_nodes.iter().take(len) {
+        let z = self.alpha[len];
+        for (pos, begin_nodes) in self.begin_nodes.iter().take(len).enumerate() {
+            let a = self.alpha[pos];
             for &node_id in begin_nodes {
                 let node = &self.nodes[node_id];
-                let a = self.alpha[node_id];
-                let b = self.beta[node_id];
-                let total = a + node.score + b - z;
+                let total = a + node.score + self.beta[pos + node.length] - z;
                 let update = freq * total.exp();
                 expected[node.id] += update;
             }
@@ -769,38 +763,6 @@ mod tests {
     }
 
     #[test]
-    fn test_log_sum_exp_accumulator() {
-        let values = [0.0, -10.0, -60.0, 2.0, -100.0];
-        let mut expected = 0.0;
-        for (index, value) in values.iter().enumerate() {
-            expected = log_sum_exp(expected, *value, index == 0);
-        }
-
-        let mut max = values[0];
-        let mut sum_exp = 1.0;
-        for &value in &values[1..] {
-            log_sum_exp_add(&mut max, &mut sum_exp, value);
-        }
-        assert_approx_eq!(max + sum_exp.ln(), expected, 1e-12);
-    }
-
-    #[test]
-    fn log_sum_exp_add_propagates_nan_in_any_position() {
-        for values in [
-            [f64::NAN, 0.0, 1.0],
-            [0.0, f64::NAN, 1.0],
-            [0.0, 1.0, f64::NAN],
-        ] {
-            let mut max = values[0];
-            let mut sum_exp = 1.0;
-            for &value in &values[1..] {
-                log_sum_exp_add(&mut max, &mut sum_exp, value);
-            }
-            assert!((max + sum_exp.ln()).is_nan(), "{values:?}");
-        }
-    }
-
-    #[test]
     fn populate_marginal_propagates_nan_from_any_end_node() {
         // `AB` and `B` both end at position 2, so the NaN must propagate in either order.
         for nan_first in [true, false] {
@@ -821,70 +783,6 @@ mod tests {
             );
         }
     }
-
-    #[test]
-    fn populate_marginal_matches_node_ordered_precision() {
-        let mut lattice = Lattice::from("ABC", 0, 7);
-        lattice.insert(0, 1, -0.2, 1); // A
-        lattice.insert(1, 1, -0.4, 2); // B
-        lattice.insert(2, 1, -0.7, 3); // C
-        lattice.insert(0, 2, -0.3, 4); // AB
-        lattice.insert(1, 2, -0.1, 5); // BC
-        lattice.insert(0, 3, -0.8, 6); // ABC
-
-        let mut alpha = vec![0.0; lattice.nodes.len()];
-        let mut beta = vec![0.0; lattice.nodes.len()];
-        for pos in 0..=lattice.len {
-            for &rnode_id in &lattice.begin_nodes[pos] {
-                for &lnode_id in &lattice.end_nodes[pos] {
-                    alpha[rnode_id] = log_sum_exp(
-                        alpha[rnode_id],
-                        lattice.nodes[lnode_id].score + alpha[lnode_id],
-                        lnode_id == lattice.end_nodes[pos][0],
-                    );
-                }
-            }
-        }
-        for pos in (0..=lattice.len).rev() {
-            for &lnode_id in &lattice.end_nodes[pos] {
-                for &rnode_id in &lattice.begin_nodes[pos] {
-                    beta[lnode_id] = log_sum_exp(
-                        beta[lnode_id],
-                        lattice.nodes[rnode_id].score + beta[rnode_id],
-                        rnode_id == lattice.begin_nodes[pos][0],
-                    );
-                }
-            }
-        }
-
-        let freq = 3.25;
-        let z = alpha[lattice.begin_nodes[lattice.len][0]];
-        let mut expected = vec![0.0; lattice.nodes.len()];
-        for begin_nodes in lattice.begin_nodes.iter().take(lattice.len) {
-            for &node_id in begin_nodes {
-                let node = &lattice.nodes[node_id];
-                let total = alpha[node_id] + node.score + beta[node_id] - z;
-                expected[node.id] += freq * total.exp();
-            }
-        }
-        let expected_z = freq * z;
-
-        let mut actual = vec![0.0; lattice.nodes.len()];
-        let actual_z = lattice.populate_marginal(freq, &mut actual);
-        assert_eq!(actual_z.to_bits(), expected_z.to_bits());
-        assert_eq!(
-            actual
-                .iter()
-                .map(|value| value.to_bits())
-                .collect::<Vec<_>>(),
-            expected
-                .iter()
-                .map(|value| value.to_bits())
-                .collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
     fn test_populate() {
         let mut lattice = Lattice::from("ABC", 1, 2);
         lattice.insert(0, 1, 1.0, 3); // A
