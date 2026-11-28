@@ -16,15 +16,27 @@ use bitcannon::regexes::CL100K;
 pub(crate) enum Grammar {
     /// GPT-2 / ByteLevel.
     Gpt2,
-    /// cl100k family. `digit_cap` is rule 3's `\p{N}{1,cap}` bound: 3 = cl100k / Llama-3 / GLM-4.6,
-    /// 1 = Qwen (`\p{N}`), `usize::MAX` = an unbounded `\p{N}+`.
-    Cl100k { digit_cap: usize },
+    /// cl100k family, told apart by rule 3's digit rule.
+    Cl100k(DigitCap),
     /// o200k / GPT-4o — and byte-for-byte the regex Llama-4, gpt-oss and MiniMax-M2 ship.
     O200k,
     /// Mistral tekken: o200k with no contraction suffix and one token per digit.
     Tekken,
     /// kimi-k2 / k3: o200k plus a leading `[\p{Han}]+` arm and a plain `[\r\n]*` rule-4 tail.
     Kimi,
+}
+
+/// Rule 3 of the cl100k family, `\p{N}{1,cap}`: the only part of the template models change.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DigitCap {
+    /// Qwen2 / Qwen3: `\p{N}`.
+    One,
+    /// `\p{N}{1,2}`.
+    Two,
+    /// cl100k / Llama-3 / GLM-4.6: `\p{N}{1,3}`.
+    Three,
+    /// `\p{N}+`.
+    Unbounded,
 }
 
 impl Grammar {
@@ -42,10 +54,18 @@ impl Grammar {
     ) -> usize {
         match self {
             Grammar::Gpt2 => bitcannon::bitcannon_byte_level(text, tags, starts, flag, out),
-            Grammar::Cl100k { digit_cap: 1 } => {
-                bitcannon::bitcannon_qwen(text, tags, starts, flag, out)
+            Grammar::Cl100k(DigitCap::One) => {
+                bitcannon::bitcannon_cl100k::<1>(text, tags, starts, flag, out)
             }
-            Grammar::Cl100k { .. } => bitcannon::bitcannon_cl100k(text, tags, starts, flag, out),
+            Grammar::Cl100k(DigitCap::Two) => {
+                bitcannon::bitcannon_cl100k::<2>(text, tags, starts, flag, out)
+            }
+            Grammar::Cl100k(DigitCap::Three) => {
+                bitcannon::bitcannon_cl100k::<3>(text, tags, starts, flag, out)
+            }
+            Grammar::Cl100k(DigitCap::Unbounded) => {
+                bitcannon::bitcannon_cl100k::<0>(text, tags, starts, flag, out)
+            }
             Grammar::O200k => bitcannon::bitcannon_o200k(text, tags, starts, flag, later, out),
             Grammar::Tekken => bitcannon::bitcannon_tekken(text, tags, starts, flag, later, out),
             Grammar::Kimi => bitcannon::bitcannon_kimi(text, tags, starts, flag, later, out),
@@ -54,16 +74,16 @@ impl Grammar {
 }
 
 /// The cl100k-family template is fixed except rule 3's digit rule. If `pattern` is that template,
-/// return the `\p{N}{1,cap}` bound; else `None`. This is what makes Qwen (cl100k with `\p{N}`) and
+/// return its digit rule; else `None`. This is what makes Qwen (cl100k with `\p{N}`) and
 /// GLM-4.6 (cl100k verbatim) route without a per-model entry.
-fn cl100k_digit_cap(pattern: &str) -> Option<usize> {
+fn cl100k_digit_cap(pattern: &str) -> Option<DigitCap> {
     const PRE: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|";
     const SUF: &str = r"| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
     match pattern.strip_prefix(PRE)?.strip_suffix(SUF)? {
-        r"\p{N}{1,3}" => Some(3),
-        r"\p{N}{1,2}" => Some(2),
-        r"\p{N}" => Some(1),
-        r"\p{N}+" => Some(usize::MAX),
+        r"\p{N}{1,3}" => Some(DigitCap::Three),
+        r"\p{N}{1,2}" => Some(DigitCap::Two),
+        r"\p{N}" => Some(DigitCap::One),
+        r"\p{N}+" => Some(DigitCap::Unbounded),
         _ => None,
     }
 }
@@ -76,7 +96,7 @@ pub fn recognize(pattern: &str) -> Option<Grammar> {
         O200K => Some(Grammar::O200k),
         TEKKEN => Some(Grammar::Tekken),
         KIMI_K2 => Some(Grammar::Kimi),
-        _ => cl100k_digit_cap(pattern).map(|digit_cap| Grammar::Cl100k { digit_cap }),
+        _ => cl100k_digit_cap(pattern).map(Grammar::Cl100k),
     }
 }
 
@@ -137,19 +157,17 @@ mod tests {
         assert_eq!(recognize(GPT2), Some(Grammar::Gpt2));
         assert_eq!(recognize(O200K), Some(Grammar::O200k));
         assert_eq!(recognize(TEKKEN), Some(Grammar::Tekken));
-        assert_eq!(recognize(CL100K), Some(Grammar::Cl100k { digit_cap: 3 }));
+        assert_eq!(recognize(CL100K), Some(Grammar::Cl100k(DigitCap::Three)));
         // Qwen2: cl100k with rule 3 = `\p{N}` → cap 1.
         let qwen2 = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
-        assert_eq!(recognize(qwen2), Some(Grammar::Cl100k { digit_cap: 1 }));
+        assert_eq!(recognize(qwen2), Some(Grammar::Cl100k(DigitCap::One)));
         // Other in-family digit caps.
         let cap2 = CL100K.replace(r"\p{N}{1,3}", r"\p{N}{1,2}");
-        assert_eq!(recognize(&cap2), Some(Grammar::Cl100k { digit_cap: 2 }));
+        assert_eq!(recognize(&cap2), Some(Grammar::Cl100k(DigitCap::Two)));
         let unbounded = CL100K.replace(r"\p{N}{1,3}", r"\p{N}+");
         assert_eq!(
             recognize(&unbounded),
-            Some(Grammar::Cl100k {
-                digit_cap: usize::MAX
-            })
+            Some(Grammar::Cl100k(DigitCap::Unbounded))
         );
         // Out of family → None (fancy-regex fallback): a foreign digit rule, and a totally unrelated regex.
         assert_eq!(
