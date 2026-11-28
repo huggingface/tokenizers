@@ -69,6 +69,12 @@ impl MetaspaceNormalizer {
     }
 }
 
+/// Whitespace in ASCII, which is what `char::is_whitespace` reports for those bytes.
+#[inline]
+fn is_ascii_whitespace(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
+}
+
 impl pipeline::Normalize for MetaspaceNormalizer {
     fn normalize<'a>(&self, input: &'a str, offset: usize) -> Result<Cow<'a, str>> {
         // Return empty input as is
@@ -78,6 +84,37 @@ impl pipeline::Normalize for MetaspaceNormalizer {
         // The delimiter is 3 bytes where a space is 1, so the rewrite grows by 2 bytes per space, hence we allocate a bit more space
         let mut rewritten = String::with_capacity(input.len() + input.len() / 2);
         if self.drop_whitespace {
+            // ASCII words are runs of non-whitespace bytes and never start with the delimiter
+            // (three bytes of UTF-8), so the same rewrite is a scan and a copy per run.
+            if input.is_ascii() {
+                let bytes = input.as_bytes();
+                let mut opens_the_sequence =
+                    offset == 0 && !bytes.first().is_some_and(|&b| is_ascii_whitespace(b));
+                let mut at = 0;
+                while at < bytes.len() {
+                    while at < bytes.len() && is_ascii_whitespace(bytes[at]) {
+                        at += 1;
+                    }
+                    let start = at;
+                    while at < bytes.len() && !is_ascii_whitespace(bytes[at]) {
+                        at += 1;
+                    }
+                    if start == at {
+                        break;
+                    }
+                    let prepend = match self.prepend {
+                        PrependScheme::Always => true,
+                        PrependScheme::First => opens_the_sequence,
+                        PrependScheme::Never => false,
+                    };
+                    if prepend {
+                        rewritten.push(self.delimiter);
+                    }
+                    opens_the_sequence = false;
+                    rewritten.push_str(&input[start..at]);
+                }
+                return Ok(Cow::Owned(rewritten));
+            }
             let mut opens_the_sequence = offset == 0 && !input.starts_with(char::is_whitespace);
             for word in input.split_whitespace() {
                 let prepend = match self.prepend {
