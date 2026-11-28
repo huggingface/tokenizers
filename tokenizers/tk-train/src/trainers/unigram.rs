@@ -195,6 +195,8 @@ impl UnigramTrainer {
         inserted.insert("<UNK>".into());
 
         let existing_pieces: AHashMap<String, f64> = model.iter().cloned().collect();
+        let mut required_chars: Vec<_> = required_chars.into_iter().collect();
+        required_chars.sort();
         for c in required_chars {
             if let Some(t) = existing_pieces.get(&c) {
                 inserted.insert(c.clone());
@@ -238,7 +240,9 @@ impl UnigramTrainer {
                 break;
             }
         }
-        pieces.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+        // This is a stable sort: canonical insertion order breaks score ties without changing
+        // the intended order of equal-scoring pieces.
+        pieces.sort_by(|(_, score_a), (_, score_b)| score_b.partial_cmp(score_a).unwrap());
 
         // Insert the necessary tokens
         let mut special_tokens = self
@@ -300,7 +304,7 @@ impl UnigramTrainer {
 
         let mut sall_chars: Vec<_> = all_chars.into_iter().map(|(a, b)| (b, a)).collect();
         // Reversed order
-        sall_chars.sort_by_key(|&a| Reverse(a));
+        sall_chars.sort_by_key(|&(count, character)| (Reverse(count), character));
         let mut substr_index: Vec<_> = suffix
             .iter()
             .filter_map(|(string, freq)| {
@@ -471,7 +475,12 @@ impl UnigramTrainer {
         let pruned_size: usize = ((pieces.len() as f64) * self.shrinking_factor) as usize;
         let pruned_size = desired_vocab_size.max(pruned_size);
 
-        candidates.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+        candidates.sort_by(|(id_a, score_a), (id_b, score_b)| {
+            score_b
+                .partial_cmp(score_a)
+                .unwrap()
+                .then_with(|| id_a.cmp(id_b))
+        });
         for (id, _score) in candidates {
             if new_pieces.len() == pruned_size {
                 break;
@@ -580,9 +589,15 @@ impl UnigramTrainer {
     }
     pub fn do_train(
         &self,
-        sentences: Vec<Sentence>,
+        mut sentences: Vec<Sentence>,
         model: &mut Unigram,
     ) -> Result<Vec<AddedToken>> {
+        sentences.sort_by(|(sentence_a, count_a), (sentence_b, count_b)| {
+            sentence_a
+                .cmp(sentence_b)
+                .then_with(|| count_a.cmp(count_b))
+        });
+
         let progress = self.setup_progress();
         //
         // 1. Compute frequent substrings
@@ -734,7 +749,7 @@ mod tests {
         let table = trainer.make_seed_sentence_pieces(&sentences, &progress);
 
         let target_strings = vec![
-            "s", "i", " ", "達", "友", "ん", "は", "に", "ち", "こ", "h", "a", "T", "is ", "s ",
+            " ", "i", "s", "T", "a", "h", "こ", "ち", "に", "は", "ん", "友", "達", "is ", "s ",
         ];
 
         let strings: Vec<_> = table.iter().map(|(string, _)| string).collect();
@@ -875,5 +890,60 @@ mod tests {
         assert_approx_eq!(scores[0], -1.098, 0.01);
         // ln(2) - ln(3)
         assert_approx_eq!(scores[1], -0.405, 0.01);
+    }
+
+    #[test]
+    fn train_is_deterministic_for_different_word_orders() {
+        let words = [
+            ("the quick brown fox".to_string(), 8),
+            ("a tokenizer converts text".to_string(), 5),
+            ("unicode includes characters".to_string(), 3),
+            ("common patterns from data".to_string(), 4),
+        ];
+        let train = |words: AHashMap<String, u32>| {
+            let trainer = UnigramTrainer::builder()
+                .show_progress(false)
+                .vocab_size(32)
+                .seed_size(10_000)
+                .words(AHashMap::from_iter(words))
+                .build()
+                .unwrap();
+            let mut model = Unigram::default();
+            trainer.train(&mut model).unwrap();
+            model.vocab().to_vec()
+        };
+
+        assert_eq!(
+            train(AHashMap::from_iter(words.iter().cloned())),
+            train(AHashMap::from_iter(words.iter().rev().cloned()))
+        );
+    }
+
+    #[test]
+    fn finalize_preserves_order_for_equal_scores() {
+        let model = Unigram::from(
+            vec![
+                ("z".to_string(), -1.0),
+                ("a".to_string(), -1.0),
+                ("b".to_string(), -2.0),
+            ],
+            None,
+            false,
+        )
+        .unwrap();
+        let trainer = UnigramTrainer::builder()
+            .show_progress(false)
+            .build()
+            .unwrap();
+
+        let finalized = trainer.finalize(model, AHashSet::new()).unwrap();
+
+        assert_eq!(
+            finalized
+                .iter()
+                .map(|(token, _)| token.as_str())
+                .collect::<Vec<_>>(),
+            ["z", "a", "b"]
+        );
     }
 }

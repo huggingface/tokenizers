@@ -262,7 +262,7 @@ const REWRITTEN: &[(&str, &str, &str)] = &[
                 r#"{"type": "ByteLevel"}"#),
     ("decoder", r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first", "split": false}"#,
                 r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "first"}"#),
-    // The reader orders added tokens by their declared ids before assigning them.
+    // The reader keeps each declared id, and the writer lists the tokens by id.
     ("added_tokens", r#"[{"id": 5, "content": "<b>", "single_word": false, "lstrip": true, "rstrip": false, "normalized": false, "special": true, "control": true},
         {"id": 4, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false, "control": false}]"#,
         r#"[{"id": 4, "content": "<a>", "single_word": true, "lstrip": false, "rstrip": true, "normalized": true, "special": false, "control": false},

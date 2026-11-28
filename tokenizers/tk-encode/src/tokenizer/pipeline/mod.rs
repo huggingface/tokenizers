@@ -250,9 +250,8 @@ const _: fn() = || {
 impl Tokenizer {
     /// This is the new "constructor" we expose.
     ///
-    /// `added_vocabulary` must already have had its tokens replayed against the concrete model in
-    /// declared ID order, because `add_tokens` reuses a model id when the token is already in the
-    /// vocabulary; doing it later, or out of order, moves ids silently.
+    /// `added_vocabulary` must already have been built against the concrete model: a token already
+    /// in the model keeps the model's id, and a new token keeps the id it declares.
     #[allow(clippy::too_many_arguments)]
     pub fn from_parts(
         added_vocabulary: BucketAddedVocabulary,

@@ -68,6 +68,32 @@ fn added_tokens_keep_their_declared_ids_when_array_order_differs() {
 
 #[cfg(feature = "bpe")]
 #[test]
+fn added_tokens_keep_a_gap_in_their_declared_ids() {
+    // The model has ids 0..=3, so id 5 stays unused and `<b>` keeps 6 rather than moving to 5.
+    let added_tokens = r#"[{"id": 6, "content": "<b>", "single_word": false, "lstrip": false,
+        "rstrip": false, "normalized": false, "special": true, "control": false},
+        {"id": 4, "content": "<a>", "single_word": false, "lstrip": false, "rstrip": false,
+        "normalized": false, "special": true, "control": false}]"#;
+    let json = config(&[("added_tokens", added_tokens)]);
+
+    assert_eq!(ids(&json, "<a>"), [4]);
+    assert_eq!(ids(&json, "<b>"), [6]);
+}
+
+#[cfg(feature = "bpe")]
+#[test]
+fn duplicate_added_token_ids_are_refused() {
+    let added_tokens = r#"[{"id": 4, "content": "<a>", "single_word": false, "lstrip": false,
+        "rstrip": false, "normalized": false, "special": true, "control": false},
+        {"id": 4, "content": "<b>", "single_word": false, "lstrip": false, "rstrip": false,
+        "normalized": false, "special": true, "control": false}]"#;
+    let json = config(&[("added_tokens", added_tokens)]);
+
+    assert!(read_err(&json).contains("id 4"), "{}", read_err(&json));
+}
+
+#[cfg(feature = "bpe")]
+#[test]
 fn kimi_han_categories_preserve_encoded_ids() {
     let pre = serde_json::json!({
         "type": "Split",

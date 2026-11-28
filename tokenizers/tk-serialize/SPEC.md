@@ -133,6 +133,10 @@ wrapper naming a table entry — is one more thing tk-convert rewrites.
   "rstrip":false, "normalized":false, "special":true, "control":false }
 ```
 
+`id` is the token's vocabulary id. It is unique, and a token that is not already in the model keeps
+the id it declares, so the added ids may leave gaps. The reader refuses a config where two added
+tokens declare the same id, or where a new token declares an id inside the model's vocabulary.
+
 For version 2.0 files with an added token that omits `control`, `tk-convert` inserts
 `"control": false` before the reader sees the file.
 

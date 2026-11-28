@@ -2,8 +2,8 @@ use crate::json::Json;
 use tk_encode::tokenizer::Result;
 use tk_encode::vocab::bucket_added_vocabulary::AddedToken as BucketAddedToken;
 
-/// The added tokens of a config, in declared ID order.
-pub(super) fn read_added_tokens(cfg: Option<&Json<'_>>) -> Result<Vec<BucketAddedToken>> {
+/// The added tokens of a config, with the IDs they declare, in declared ID order.
+pub(super) fn read_added_tokens(cfg: Option<&Json<'_>>) -> Result<Vec<(u32, BucketAddedToken)>> {
     let Some(arr) = cfg.and_then(Json::as_array) else {
         return Ok(Vec::new());
     };
@@ -30,5 +30,8 @@ pub(super) fn read_added_tokens(cfg: Option<&Json<'_>>) -> Result<Vec<BucketAdde
         out.push((id, token));
     }
     out.sort_by_key(|(id, _)| *id);
-    Ok(out.into_iter().map(|(_, token)| token).collect())
+    if let Some(pair) = out.windows(2).find(|pair| pair[0].0 == pair[1].0) {
+        return Err(format!("two added tokens declare id {}", pair[0].0).into());
+    }
+    Ok(out)
 }
