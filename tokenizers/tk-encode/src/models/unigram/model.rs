@@ -2,12 +2,13 @@ use super::{
     lattice::Lattice,
     trie::{Trie, TrieBuilder},
 };
+use crate::utils::cache::DEFAULT_CACHE_CAPACITY;
 use crate::utils::word_cache::{Lookup, WordCache};
+use crate::vocab::bucket_vocab_store::{BucketVocabStore, key_and_hash, key_and_hash_readable};
 use crate::{
     pipeline::{self, Token},
     tokenizer::Result,
 };
-use crate::{utils::cache::DEFAULT_CACHE_CAPACITY, vocab::bucket_vocab_store::BucketVocabStore};
 use std::collections::HashMap;
 
 pub(crate) type Vocab = Vec<(String, f64)>;
@@ -54,6 +55,36 @@ impl std::fmt::Debug for Unigram {
 }
 
 static K_UNK_PENALTY: f64 = 10.0;
+
+/// One row of the optimized Viterbi table.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct BestPathNode {
+    /// The vocab id. (maybe UNK)
+    id: usize,
+    /// The total score of the best path ending at this node.
+    best_path_score: f64,
+    /// The starting position (in utf-8) of this node. The entire best
+    /// path can be constructed by backtracking along this link.
+    starts_at: Option<usize>,
+}
+
+/// One piece of the best path, and the id the path gave it.
+///
+/// A piece is always a span of the input, so neither consumer has to build or own it.
+enum Piece<'s> {
+    /// A node the vocabulary has an entry for, with that entry's id.
+    Token { text: &'s str, id: u32 },
+    /// A span with no id of its own: one unknown character, or a run of them fused.
+    Unknown(&'s str),
+}
+
+impl<'s> Piece<'s> {
+    fn text(&self) -> &'s str {
+        match self {
+            Piece::Token { text, .. } | Piece::Unknown(text) => text,
+        }
+    }
+}
 
 #[inline]
 fn utf8_char_width(lead: u8) -> usize {
@@ -208,45 +239,44 @@ impl Unigram {
         }
     }
 
+    /// The pieces `sentence` encodes to, built into a fresh `Vec`.
+    ///
+    /// This is the model-level entry point, which has to hand back owned pieces. The pipeline
+    /// calls [`Self::encode_ids_optimized`] instead, which skips the strings entirely.
     fn encode_optimized(&self, sentence: &str) -> Result<Vec<String>> {
+        let mut best_path = Vec::new();
+        let mut path = Vec::new();
+        let mut results = Vec::new();
+        self.fill_best_path(sentence, &mut best_path)?;
+        backtrack(&best_path, &mut path);
+        self.for_each_piece(sentence, &path, |piece| {
+            results.push(piece.text().to_string());
+            Ok(())
+        })?;
+        Ok(results)
+    }
+
+    /// Fill `best_path[i]` with the highest-scoring path that ends at byte `i`, and the byte it
+    /// started at, so the best path can be read back by following `starts_at` from the end.
+    fn fill_best_path(&self, sentence: &str, best_path: &mut Vec<BestPathNode>) -> Result<()> {
         // https://github.com/google/sentencepiece/blob/d48247191a6d50e469ed1a4a36e877befffd1851/src/unigram_model.cc#L600
-        #[derive(Debug, Clone)]
-        struct BestPathNode {
-            /// The vocab id. (maybe UNK)
-            id: usize,
-            /// The total score of the best path ending at this node.
-            best_path_score: f64,
-            /// The starting position (in utf-8) of this node. The entire best
-            /// path can be constructed by backtracking along this link.
-            starts_at: Option<usize>,
-        }
-        impl Default for BestPathNode {
-            fn default() -> Self {
-                Self {
-                    id: 0,
-                    best_path_score: 0.0,
-                    starts_at: None,
-                }
-            }
-        }
         let size = sentence.len();
         let unk_score = self.min_score - K_UNK_PENALTY;
-        let unk_id = self.unk_id;
 
-        let mut best_path_ends_at = vec![BestPathNode::default(); size + 1];
+        // `starts_at` is what marks a row taken, so clearing is all a reused table needs.
+        best_path.clear();
+        best_path.resize(size + 1, BestPathNode::default());
         let mut starts_at = 0;
         while starts_at < size {
-            let best_path_score_till_here = best_path_ends_at[starts_at].best_path_score;
+            let best_path_score_till_here = best_path[starts_at].best_path_score;
             let mut has_single_node = false;
             let mblen = utf8_char_width(sentence.as_bytes()[starts_at]);
-            for tok_bytes in self
+            for (length, id) in self
                 .trie
                 .common_prefix_search_values(sentence[starts_at..].bytes())
             {
-                let (length, id) = tok_bytes;
                 let key_pos = starts_at + length;
-                let target_node = &mut best_path_ends_at[key_pos];
-                let length = key_pos - starts_at;
+                let target_node = &mut best_path[key_pos];
                 let score = self.scores[id as usize];
                 let candidate_best_path_score = score + best_path_score_till_here;
                 if target_node.starts_at.is_none()
@@ -261,40 +291,128 @@ impl Unigram {
                 }
             }
             if !has_single_node {
-                let target_node = &mut best_path_ends_at[starts_at + mblen];
+                let target_node = &mut best_path[starts_at + mblen];
                 let candidate_best_path_score = unk_score + best_path_score_till_here;
                 if target_node.starts_at.is_none()
                     || candidate_best_path_score > target_node.best_path_score
                 {
                     target_node.best_path_score = candidate_best_path_score;
                     target_node.starts_at = Some(starts_at);
-                    target_node.id = unk_id.ok_or(UnigramError::MissingUnkId)?;
+                    // A model declared without an unknown id still encodes text its
+                    // vocabulary covers, so this is the one place that error belongs.
+                    target_node.id = self.unk_id.ok_or(UnigramError::MissingUnkId)?;
                 }
             }
-            starts_at += mblen
+            starts_at += mblen;
         }
-        let mut ends_at = size;
-        let mut results: Vec<String> = vec![];
-        let mut token = vec![];
-        while ends_at > 0 {
-            let node = &best_path_ends_at[ends_at];
-            let starts_at = node.starts_at.unwrap();
-            if self.fuse_unk && Some(node.id) == unk_id {
-                token.push(sentence[starts_at..ends_at].to_string());
-            } else {
-                if !token.is_empty() {
-                    results.push(token.iter().rev().cloned().collect());
-                    token.clear();
-                }
-                results.push(sentence[starts_at..ends_at].to_string());
+        Ok(())
+    }
+
+    /// Walk the best path and hand the caller each piece, one span of `sentence` at a time,
+    /// with runs of unknown tokens fused into a single piece when [`Unigram::fuse_unk`] says so.
+    ///
+    /// The path is walked forwards here, which is the reverse of the order it was backtracked
+    /// in, so a fused run ends up as one `first..last` span of the input rather than a
+    /// concatenation of its parts.
+    fn for_each_piece<'s>(
+        &self,
+        sentence: &'s str,
+        path: &[(usize, usize, usize)],
+        mut emit: impl FnMut(Piece<'s>) -> Result<()>,
+    ) -> Result<()> {
+        let mut fused: Option<(usize, usize)> = None;
+        for &(start, end, id) in path.iter().rev() {
+            if self.fuse_unk && Some(id) == self.unk_id {
+                fused = Some(match fused {
+                    Some((first, _)) => (first, end),
+                    None => (start, end),
+                });
+                continue;
             }
-            ends_at = starts_at;
+            if let Some((first, last)) = fused.take() {
+                emit(Piece::Unknown(&sentence[first..last]))?;
+            }
+            emit(match Some(id) == self.unk_id {
+                true => Piece::Unknown(&sentence[start..end]),
+                false => Piece::Token {
+                    text: &sentence[start..end],
+                    id: id as u32,
+                },
+            })?;
         }
-        if !token.is_empty() {
-            results.push(token.iter().rev().cloned().collect());
+        if let Some((first, last)) = fused {
+            emit(Piece::Unknown(&sentence[first..last]))?;
         }
-        results.reverse();
-        Ok(results)
+        Ok(())
+    }
+
+    /// Optimized Viterbi that resolves each piece to its id directly.
+    ///
+    /// `encode` builds a `String` per piece only for the pipeline to look it straight back up.
+    /// This keeps the same lattice, tie-breaking and unknown/byte-fallback rules, and fills
+    /// caller-owned buffers instead.
+    fn encode_ids_optimized(
+        &self,
+        sentence: &str,
+        best_path: &mut Vec<BestPathNode>,
+        path: &mut Vec<(usize, usize, usize)>,
+        output: &mut Vec<Token>,
+    ) -> Result<()> {
+        self.fill_best_path(sentence, best_path)?;
+        backtrack(best_path, path);
+        self.for_each_piece(sentence, path, |piece| match piece {
+            // The path already carries the id, so a known piece is never looked up again.
+            Piece::Token { id, .. } => {
+                output.push(Token::from(id));
+                Ok(())
+            }
+            Piece::Unknown(text) => self.push_unresolved(text, output),
+        })
+    }
+
+    /// A piece the best path has no id for: an unknown character, or a run of them fused into
+    /// one span. The fused span may still name a real token, so it is looked up whole first,
+    /// exactly as the piece path does with its `String`.
+    fn push_unresolved(&self, text: &str, output: &mut Vec<Token>) -> Result<()> {
+        match self.token_to_ids.token_to_id(text) {
+            Some(id) => {
+                output.push(Token::from(id));
+                Ok(())
+            }
+            None => self.push_unknown(text, output),
+        }
+    }
+
+    /// The pipeline's fallback for a piece the vocabulary has no id for: byte tokens when the
+    /// model has them and every byte is covered, otherwise the unknown id.
+    fn push_unknown(&self, text: &str, output: &mut Vec<Token>) -> Result<()> {
+        if self.byte_fallback {
+            const HEX: &[u8; 16] = b"0123456789ABCDEF";
+            let start = output.len();
+            let mut covered = true;
+            for byte in text.bytes() {
+                let mut token = *b"<0x00>";
+                token[3] = HEX[(byte >> 4) as usize];
+                token[4] = HEX[(byte & 0x0f) as usize];
+                // Built entirely from ASCII above.
+                let token = std::str::from_utf8(&token).unwrap();
+                match self.token_to_ids.token_to_id(token) {
+                    Some(id) => output.push(Token::from(id)),
+                    None => {
+                        covered = false;
+                        break;
+                    }
+                }
+            }
+            if covered {
+                return Ok(());
+            }
+            output.truncate(start);
+        }
+        output.push(Token::from(
+            self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32
+        ));
+        Ok(())
     }
 
     fn encode_unoptimized(&self, sentence: &str) -> Result<Vec<String>> {
@@ -393,22 +511,51 @@ impl Unigram {
     }
 }
 
+/// Read the best path back from `best_path` into `path`, one `(start, end, id)` per node, in
+/// the order the path was backtracked (last node first).
+fn backtrack(best_path: &[BestPathNode], path: &mut Vec<(usize, usize, usize)>) {
+    path.clear();
+    let mut ends_at = best_path.len() - 1;
+    while ends_at > 0 {
+        let node = &best_path[ends_at];
+        let starts_at = node.starts_at.unwrap();
+        path.push((starts_at, ends_at, node.id));
+        ends_at = starts_at;
+    }
+}
+
+/// How many ids an inline word-cache hit writes into the output at once.
+const MAX_INLINE_IDS: usize = crate::utils::word_cache::MAX_INLINE_IDS;
+
 pub struct UnigramScratch {
     /// Outlives the encode call that fills it, or it would never see a word twice.
     pub(crate) word_cache: WordCache,
+    /// Reused Viterbi table; sized by the longest sequence this scratch has seen.
+    pub(super) best_path: Vec<BestPathNode>,
+    /// Reused best-path spans, `(start, end, id)`, filled from the end backwards.
+    pub(super) path: Vec<(usize, usize, usize)>,
+}
+
+impl UnigramScratch {
+    fn new() -> Self {
+        Self {
+            word_cache: WordCache::new(DEFAULT_CACHE_CAPACITY),
+            best_path: Vec::new(),
+            path: Vec::new(),
+        }
+    }
 }
 
 impl pipeline::Tokenize for Unigram {
     type Scratch = UnigramScratch;
 
     fn init_scratch(&self) -> Self::Scratch {
-        Self::Scratch {
-            word_cache: WordCache::new(DEFAULT_CACHE_CAPACITY),
-        }
+        UnigramScratch::new()
     }
 
-    /// The word cache holds ids, not pieces. A hit skips the lattice, the `String` every piece
-    /// is built into, and the vocabulary lookup that turns each one back into an id.
+    /// The word cache holds ids, not pieces. A hit skips the lattice and the vocabulary lookup;
+    /// on a miss the optimized path backtracks to ids in the scratch buffers, so neither path
+    /// builds a `String` per piece.
     fn tokenize(
         &self,
         sequence: &str,
@@ -420,7 +567,9 @@ impl pipeline::Tokenize for Unigram {
         }
         let mut placement = None;
         if !self.samples() {
-            match scratch.word_cache.lookup(sequence.as_bytes()) {
+            // The same key indexes the cache and the vocabulary, so it is computed once.
+            let (key, hash) = key_and_hash(sequence.as_bytes());
+            match scratch.word_cache.lookup_keyed(key, hash) {
                 Lookup::Hit(ids) => {
                     output.extend(ids.iter().copied().map(Token::from));
                     return Ok(());
@@ -430,30 +579,19 @@ impl pipeline::Tokenize for Unigram {
         }
 
         let start = output.len();
-        for string in self.encode(sequence)? {
-            match self.token_to_ids.token_to_id(&string) {
-                Some(id) => {
-                    output.push(Token::from(id));
-                }
-                None => {
-                    if self.byte_fallback {
-                        let byte_token_ids: Option<Vec<_>> = string
-                            .bytes()
-                            .map(|byte| {
-                                let byte_string = format!("<0x{byte:02X}>");
-                                self.token_to_ids.token_to_id(&byte_string)
-                            })
-                            .collect();
-                        if let Some(token_ids) = byte_token_ids {
-                            output.extend(token_ids.iter().copied().map(Token::from));
-                            continue;
-                        }
+        if self.is_optimized && !self.samples() {
+            // Backtrack straight to ids: the piece strings `encode` builds exist only for
+            // this lookup, and this loop already knows each piece's id.
+            self.encode_ids_optimized(sequence, &mut scratch.best_path, &mut scratch.path, output)?;
+        } else {
+            for string in self.encode(sequence)? {
+                match self.token_to_ids.token_to_id(&string) {
+                    Some(id) => {
+                        output.push(Token::from(id));
                     }
-                    output.push(Token::from(
-                        self.unk_id.ok_or(UnigramError::MissingUnkId)? as u32
-                    ));
-                }
-            };
+                    None => self.push_unknown(&string, output)?,
+                };
+            }
         }
 
         // Sampling skipped the lookup, so `placement` is `None` and this stores
@@ -463,6 +601,101 @@ impl pipeline::Tokenize for Unigram {
                 .word_cache
                 .insert(at, output[start..].iter().map(|token| token.id()));
         }
+        Ok(())
+    }
+
+    /// Every pre-token of a chunk in one call, which is what the pipeline asks for.
+    ///
+    /// Same work per word as [`Self::tokenize`]; what changes is what is not repeated: the
+    /// scratch is destructured once, the output is grown once per chunk, the key and hash are
+    /// computed once for the cache and the vocabulary, and an inline cache hit writes its ids
+    /// straight into the output instead of re-reading the slot.
+    fn tokenize_spans(
+        &self,
+        pre_tokens: pipeline::PreTokens<'_>,
+        scratch: &mut Self::Scratch,
+        output: &mut Vec<Token>,
+    ) -> Result<()> {
+        // Sampling draws a new tokenization every time and the piece path owns its strings, so
+        // both keep the slow route.
+        if self.samples() || !self.is_optimized {
+            for (_, sequence) in pre_tokens.iter() {
+                self.tokenize(sequence, scratch, output)?;
+            }
+            return Ok(());
+        }
+
+        let UnigramScratch {
+            word_cache,
+            best_path,
+            path,
+        } = scratch;
+        let chunk = pre_tokens.chunk();
+        output.reserve(pre_tokens.spans().len() + MAX_INLINE_IDS);
+        let mut capacity = output.capacity();
+        let mut cursor = output.len();
+        // SAFETY: `cursor <= output.len() <= capacity`, so this is inside the allocation.
+        let mut destination = unsafe { output.as_mut_ptr().add(cursor) };
+
+        for (span, sequence) in pre_tokens.iter() {
+            if sequence.is_empty() {
+                continue;
+            }
+            if cursor + MAX_INLINE_IDS > capacity {
+                // SAFETY: `cursor` counts what has been written so far.
+                unsafe { output.set_len(cursor) };
+                output.reserve(pre_tokens.spans().len() + MAX_INLINE_IDS);
+                capacity = output.capacity();
+                // `reserve` may have moved the buffer.
+                // SAFETY: `cursor` was written before the move and is inside the new allocation.
+                destination = unsafe { output.as_mut_ptr().add(cursor) };
+            }
+
+            // One key for the cache and the vocabulary, and `readable` tells the hash how many
+            // bytes it may load past the word.
+            let (key, hash) =
+                key_and_hash_readable(sequence.as_bytes(), chunk.len() - span.start as usize);
+
+            // SAFETY: the capacity check above leaves `MAX_INLINE_IDS` slots at `cursor`, and a
+            // `Token` is a `u32`.
+            let placement = match unsafe {
+                word_cache.probe_emit_keyed(key, hash, destination.cast::<u32>())
+            } {
+                crate::utils::word_cache::ProbeEmit::Wrote(n) => {
+                    cursor += n;
+                    // SAFETY: the probe wrote `n <= MAX_INLINE_IDS` ids into the reserved room.
+                    destination = unsafe { destination.add(n) };
+                    continue;
+                }
+                crate::utils::word_cache::ProbeEmit::Miss(at) => Some(at),
+                crate::utils::word_cache::ProbeEmit::Hit(ids) => {
+                    // A spilled entry, which only holds words that encode to more than
+                    // `MAX_INLINE_IDS` ids.
+                    // SAFETY: `cursor` counts what has been written so far.
+                    unsafe { output.set_len(cursor) };
+                    output.extend(ids.iter().copied().map(Token::from));
+                    cursor = output.len();
+                    capacity = output.capacity();
+                    // SAFETY: `cursor == output.len()`, inside the (possibly moved) allocation.
+                    destination = unsafe { output.as_mut_ptr().add(cursor) };
+                    continue;
+                }
+            };
+
+            // SAFETY: `cursor` counts what the fast paths wrote.
+            unsafe { output.set_len(cursor) };
+            let start = output.len();
+            self.encode_ids_optimized(sequence, best_path, path, output)?;
+            if let Some(at) = placement {
+                word_cache.insert(at, output[start..].iter().map(|token| token.id()));
+            }
+            cursor = output.len();
+            capacity = output.capacity();
+            // SAFETY: `cursor == output.len()`, inside the allocation.
+            destination = unsafe { output.as_mut_ptr().add(cursor) };
+        }
+        // SAFETY: `cursor` counts every id written above, and the capacity checks kept room.
+        unsafe { output.set_len(cursor) };
         Ok(())
     }
 }

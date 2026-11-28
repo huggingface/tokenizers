@@ -1,25 +1,39 @@
-/// Labels that can be used as a direct 256-entry root lookup table. Only byte labels
-/// benefit; every other label type keeps an empty table and uses the generic path.
-pub(crate) trait RootLookup {
-    fn table_size() -> usize {
-        0
+//! A trie over label sequences, in the double-array layout Darts uses: one `u32` per slot.
+//!
+//! A node is a slot, and its children sit at `slot ^ offset ^ label`. A walk for a byte is
+//! therefore one load and one label compare, with no child list to scan -- which is what the
+//! Viterbi's per-position search pays for on every word the word cache misses.
+
+use std::collections::VecDeque;
+
+/// Set on the unit that holds a value, so a value cell can never pass for a label.
+const VALUE: u32 = 1 << 31;
+
+/// One slot of the array.
+#[derive(Clone, Copy, Default)]
+struct Unit(u32);
+
+impl Unit {
+    #[inline]
+    fn label(self) -> usize {
+        (self.0 & (VALUE | 0xFF)) as usize
     }
-    fn to_index(_label: Self) -> usize
-    where
-        Self: Sized,
-    {
-        0
+
+    #[inline]
+    fn has_value(self) -> bool {
+        (self.0 >> 8) & 1 == 1
     }
-}
-impl RootLookup for u8 {
-    fn table_size() -> usize {
-        256
+
+    /// The slot this node's children XOR from.
+    #[inline]
+    fn offset(self) -> usize {
+        (self.0 >> 10) as usize
     }
-    fn to_index(label: Self) -> usize
-    where
-        Self: Sized,
-    {
-        label as usize
+
+    /// The label, the value bit and the offset, in one unit.
+    #[inline]
+    fn new(label: usize, has_value: bool, offset: usize) -> Self {
+        Self(label as u32 | (has_value as u32) << 8 | ((offset as u32) << 10))
     }
 }
 
@@ -58,55 +72,119 @@ impl<Label: Copy + Eq> TrieBuilder<Label> {
 
     pub fn build(self) -> Trie<Label>
     where
-        Label: Ord + RootLookup + Into<usize>,
+        Label: Copy + Ord + Into<usize>,
     {
-        let mut nodes = Vec::with_capacity(self.nodes.len());
-        let mut edges = Vec::new();
-        for mut node in self.nodes {
-            node.children.sort_unstable_by_key(|(label, _)| *label);
-            let first_edge = edges.len();
-            let edge_count = node.children.len();
-            edges.extend(node.children);
-            nodes.push(Node {
-                value: node.value,
-                first_edge,
-                edge_count,
-            });
-        }
-        // Direct root table for byte tries: avoids a binary/linear search on the root's
-        // (usually large) edge list for every searched position.
-        let table_size = Label::table_size();
-        let mut root_table = vec![0usize; table_size];
-        if table_size > 0 {
-            let root = &nodes[0];
-            for i in 0..root.edge_count {
-                let (label, child) = edges[root.first_edge + i];
-                root_table[Label::to_index(label)] = child;
+        let nodes = self.nodes;
+        // Slot 0 is the root and is always taken, so a base search never lands on it.
+        let mut units: Vec<Unit> = vec![Unit::default()];
+        let mut used: Vec<bool> = vec![true];
+        // A base is claimed by one node only. Two nodes sharing a base would each answer for the
+        // other's labels, since a slot and the label it was reached by determine the base.
+        let mut bases: Vec<bool> = vec![false];
+        // The lowest slot still worth trying as a base: every placement below it lost.
+        let mut next = 1usize;
+
+        // Breadth first, so a node is placed before its children need slots.
+        let mut queue = VecDeque::from([(0usize, 0usize, 0usize)]);
+        while let Some((index, slot, label)) = queue.pop_front() {
+            let node = &nodes[index];
+            let mut children: Vec<(usize, usize)> = node
+                .children
+                .iter()
+                .map(|&(child_label, child)| (child_label.into(), child))
+                .collect();
+            children.sort_unstable();
+            debug_assert!(
+                children.iter().all(|&(child_label, _)| child_label < 0x100),
+                "a label above 255 does not fit a unit"
+            );
+
+            // The smallest base no other node holds and whose slots -- the value cell and every
+            // child -- are free. A base belongs to one node: a slot and the label it was reached
+            // by determine the base, so two nodes sharing one would each answer for the other's
+            // labels.
+            let mut base = next;
+            loop {
+                let free = !is_used(&bases, base)
+                    && (node.value.is_none() || !is_used(&used, base))
+                    && children
+                        .iter()
+                        .all(|&(child, _)| !is_used(&used, base ^ child));
+                if free {
+                    break;
+                }
+                base += 1;
+            }
+            next = next.max(base);
+
+            grow(&mut units, &mut used, base + 1);
+            grow_bases(&mut bases, base + 1);
+            bases[base] = true;
+            units[slot] = Unit::new(label, node.value.is_some(), slot ^ base);
+            if let Some(value) = node.value {
+                units[base] = Unit(value | VALUE);
+                used[base] = true;
+            }
+            for &(child_label, child) in &children {
+                let child_slot = base ^ child_label;
+                grow(&mut units, &mut used, child_slot + 1);
+                used[child_slot] = true;
+                queue.push_back((child, child_slot, child_label));
             }
         }
+
         Trie {
-            nodes,
-            edges,
-            root_table,
+            units,
+            marker: std::marker::PhantomData,
         }
+    }
+}
+
+#[inline]
+fn is_used(used: &[bool], slot: usize) -> bool {
+    used.get(slot).copied().unwrap_or(false)
+}
+
+/// Make sure `slot` exists in both arrays.
+#[inline]
+fn grow(units: &mut Vec<Unit>, used: &mut Vec<bool>, len: usize) {
+    if units.len() < len {
+        units.resize(len, Unit::default());
+        used.resize(len, false);
+    }
+}
+
+#[inline]
+fn grow_bases(bases: &mut Vec<bool>, len: usize) {
+    if bases.len() < len {
+        bases.resize(len, false);
     }
 }
 
 #[derive(Clone)]
 pub struct Trie<Label> {
-    nodes: Vec<Node>,
-    edges: Vec<(Label, usize)>,
-    root_table: Vec<usize>,
+    units: Vec<Unit>,
+    marker: std::marker::PhantomData<Label>,
 }
 
-impl<Label: Copy + Ord + RootLookup + Into<usize>> Trie<Label> {
+impl<Label> Default for Trie<Label> {
+    fn default() -> Self {
+        Self {
+            units: vec![Unit::default()],
+            marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<Label: Copy + Ord + Into<usize>> Trie<Label> {
     pub fn common_prefix_search_values<T>(&self, iterator: T) -> TrieValueIterator<'_, Label, T>
     where
         T: Iterator<Item = Label>,
     {
+        let root = self.units.first().copied().unwrap_or_default();
         TrieValueIterator {
             trie: self,
-            node_index: 0,
+            base: root.offset(),
             length: 0,
             iterator,
             finished: false,
@@ -116,7 +194,8 @@ impl<Label: Copy + Ord + RootLookup + Into<usize>> Trie<Label> {
 
 pub struct TrieValueIterator<'a, Label, T> {
     trie: &'a Trie<Label>,
-    node_index: usize,
+    /// The slot the next label XORs from.
+    base: usize,
     length: usize,
     iterator: T,
     finished: bool,
@@ -124,7 +203,7 @@ pub struct TrieValueIterator<'a, Label, T> {
 
 impl<Label, T> Iterator for TrieValueIterator<'_, Label, T>
 where
-    Label: Copy + Ord + RootLookup + Into<usize>,
+    Label: Copy + Ord + Into<usize>,
     T: Iterator<Item = Label>,
 {
     type Item = (usize, u32);
@@ -137,41 +216,25 @@ where
                 self.finished = true;
                 return None;
             };
+            let label = label.into();
             self.length += 1;
-            if self.node_index == 0 && !self.trie.root_table.is_empty() {
-                let child = self.trie.root_table[Label::to_index(label)];
-                if child == 0 {
-                    self.finished = true;
-                    return None;
-                }
-                self.node_index = child;
-            } else {
-                let node = &self.trie.nodes[self.node_index];
-                let edges = &self.trie.edges[node.first_edge..node.first_edge + node.edge_count];
-                let edge_index = if edges.len() <= 4 {
-                    edges.iter().position(|(edge, _)| *edge == label)
-                } else {
-                    edges.binary_search_by_key(&label, |(edge, _)| *edge).ok()
-                };
-                let Some(edge_index) = edge_index else {
+            let slot = self.base ^ label;
+            let Some(unit) = self.trie.units.get(slot).copied() else {
+                self.finished = true;
+                return None;
+            };
+            if unit.label() != label {
+                self.finished = true;
+                return None;
+            }
+            self.base = slot ^ unit.offset();
+            if unit.has_value() {
+                let Some(value) = self.trie.units.get(self.base).copied() else {
                     self.finished = true;
                     return None;
                 };
-                self.node_index = edges[edge_index].1;
+                return Some((self.length, value.0 & !VALUE));
             }
-            if let Some(value) = self.trie.nodes[self.node_index].value {
-                return Some((self.length, value));
-            }
-        }
-    }
-}
-
-impl<Label> Default for Trie<Label> {
-    fn default() -> Self {
-        Self {
-            nodes: vec![Node::default()],
-            edges: Vec::new(),
-            root_table: Vec::new(),
         }
     }
 }
@@ -188,13 +251,6 @@ impl<Label> Default for BuildNode<Label> {
             children: Vec::new(),
         }
     }
-}
-
-#[derive(Clone, Default)]
-struct Node {
-    value: Option<u32>,
-    first_edge: usize,
-    edge_count: usize,
 }
 
 #[cfg(test)]
@@ -216,10 +272,7 @@ mod tests {
         }
 
         fn estimated_storage(&self) -> usize {
-            size_of::<Trie<u8>>()
-                + self.nodes.capacity() * size_of::<Node>()
-                + self.edges.capacity() * size_of::<(u8, usize)>()
-                + self.root_table.capacity() * size_of::<usize>()
+            size_of::<Trie<u8>>() + self.units.capacity() * size_of::<Unit>()
         }
     }
 

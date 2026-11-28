@@ -574,13 +574,13 @@ mod tests {
         let node5 = &lattice.nodes[7];
         let node6 = &lattice.nodes[8];
 
-        assert_eq!(lattice.piece(&node0), "A");
-        assert_eq!(lattice.piece(&node1), "B");
-        assert_eq!(lattice.piece(&node2), "あ");
-        assert_eq!(lattice.piece(&node3), "い");
-        assert_eq!(lattice.piece(&node4), "AB");
-        assert_eq!(lattice.piece(&node5), "Bあ");
-        assert_eq!(lattice.piece(&node6), "あい");
+        assert_eq!(lattice.piece(node0), "A");
+        assert_eq!(lattice.piece(node1), "B");
+        assert_eq!(lattice.piece(node2), "あ");
+        assert_eq!(lattice.piece(node3), "い");
+        assert_eq!(lattice.piece(node4), "AB");
+        assert_eq!(lattice.piece(node5), "Bあ");
+        assert_eq!(lattice.piece(node6), "あい");
 
         assert_eq!(node0.pos, 0);
         assert_eq!(node1.pos, 1);
