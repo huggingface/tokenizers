@@ -27,12 +27,12 @@ impl Default for BPEDecoder {
 
 impl Decode for BPEDecoder {
     fn decode_chain(&self, tokens: Vec<String>) -> Result<Vec<String>> {
-        let n = tokens.len() - 1;
+        let len = tokens.len();
         Ok(tokens
             .into_iter()
             .enumerate()
             .map(|(i, token)| {
-                let replacement = if i == n { "" } else { " " };
+                let replacement = if i + 1 == len { "" } else { " " };
                 token.replace(&self.suffix, replacement)
             })
             .collect())

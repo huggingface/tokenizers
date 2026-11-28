@@ -1826,6 +1826,7 @@ mod tests {
 
     #[test]
     fn decode_tokens_skips_special_tokens_on_request() {
+        use crate::decoders::bpe::BPEDecoder;
         use crate::vocab::bucket_added_vocabulary::AddedToken;
 
         let mut added = BucketAddedVocabulary::new();
@@ -1843,7 +1844,7 @@ mod tests {
             PreTokenizer::None,
             Model::BPE(hello_bpe()),
             PostProcessor::default(),
-            None,
+            Some(Decoder::BPE(BPEDecoder::default())),
             Default::default(),
             None,
             None,
@@ -1851,6 +1852,9 @@ mod tests {
 
         assert_eq!(pipeline.decode_tokens(&[8, 7], false), ["<s>", "hello"]);
         assert_eq!(pipeline.decode_tokens(&[8, 7], true), ["hello"]);
+        assert_eq!(pipeline.decode(&[8], false).unwrap(), "<s>");
+        assert_eq!(pipeline.decode(&[8], true).unwrap(), "");
+        assert_eq!(pipeline.decode(&[], false).unwrap(), "");
     }
 
     // 0.23 looks a token up in the added vocabulary first.
