@@ -21,7 +21,7 @@ pub fn bitcannon_cl100k(
     flag: &mut [u64],
     out: &mut [Span],
 ) -> usize {
-    cl100k(text, tags, starts, flag, out, 3)
+    bitcannon_cl100k_with_digit_cap(text, tags, starts, flag, out, 3)
 }
 
 /// Qwen2 / Qwen3 — cl100k character-for-character except rule 3 is a bare `\p{N}`.
@@ -33,10 +33,13 @@ pub fn bitcannon_qwen(
     flag: &mut [u64],
     out: &mut [Span],
 ) -> usize {
-    cl100k(text, tags, starts, flag, out, 1)
+    bitcannon_cl100k_with_digit_cap(text, tags, starts, flag, out, 1)
 }
 
-fn cl100k(
+/// cl100k-family pre-tokenization with a configured numeric group size.
+/// A cap of 0 or at least 64 denotes an unbounded numeric run.
+#[must_use]
+pub fn bitcannon_cl100k_with_digit_cap(
     text: &[u8],
     tags: &[u8],
     starts: &mut [u64],

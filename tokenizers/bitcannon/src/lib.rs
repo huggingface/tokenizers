@@ -203,7 +203,7 @@ pub mod models;
 pub mod regexes;
 mod simd;
 
-pub use models::cl100k::{bitcannon_cl100k, bitcannon_qwen};
+pub use models::cl100k::{bitcannon_cl100k, bitcannon_cl100k_with_digit_cap, bitcannon_qwen};
 pub use models::deepseek::bitcannon_deepseek;
 pub use models::gpt2::bitcannon_byte_level;
 pub use models::kimi::bitcannon_kimi;
