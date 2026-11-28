@@ -35,10 +35,12 @@ mod scratch_pool;
 pub use bitcannon::Span;
 
 mod normalizer;
+mod piece_normalizer;
 mod post_processor;
 mod pre_tokenizer;
 
 pub use normalizer::{Normalize, Normalizer, NormalizerChain, normalize_all};
+pub use piece_normalizer::PieceNormalizer;
 pub use post_processor::{PostProcessor, Template};
 pub use pre_tokenizer::{PreTokenize, PreTokenizer, PreTokenizerScratch, PreTokens};
 pub(crate) use pre_tokenizer::{split_delimiter, split_matches};
@@ -213,6 +215,7 @@ impl<'a, 'b, M: PatternMatcher> Iterator for SpecialSegmentIterator<'a, 'b, M> {
 struct TokenizerInner {
     added_vocabulary: BucketAddedVocabulary,
     normalizers: Vec<Normalizer>,
+    piece_normalizer: Option<PieceNormalizer>,
     pre_tokenizer: PreTokenizer,
     model: Model,
     post_processor: PostProcessor,
@@ -257,6 +260,7 @@ impl Tokenizer {
     pub fn from_parts(
         added_vocabulary: BucketAddedVocabulary,
         normalizers: Vec<Normalizer>,
+        piece_normalizer: Option<PieceNormalizer>,
         pre_tokenizer: PreTokenizer,
         model: Model,
         post_processor: PostProcessor,
@@ -281,6 +285,7 @@ impl Tokenizer {
             inner: Arc::new(TokenizerInner {
                 added_vocabulary,
                 normalizers,
+                piece_normalizer,
                 pre_tokenizer,
                 model,
                 post_processor,
@@ -579,6 +584,11 @@ impl Tokenizer {
         &self.inner.normalizers
     }
 
+    /// The step that rewrites each piece of text between added tokens, if the config declared one.
+    pub fn get_piece_normalizer(&self) -> Option<&PieceNormalizer> {
+        self.inner.piece_normalizer.as_ref()
+    }
+
     /// The decoder, if the config declared one.
     pub fn get_decoder(&self) -> Option<&Decoder> {
         self.inner.decoder.as_ref()
@@ -654,7 +664,8 @@ impl Tokenizer {
     ///  2. then on each segment after normalization
     ///
     /// This way, special / added tokens declared on raw or normalized text are both caught.
-    /// The remaining text is pre-tokenized and run through the model span by span.
+    /// Each piece of text left between them goes through the piece normalizer, then is
+    /// pre-tokenized and run through the model span by span.
     pub fn encode(&self, inputs: impl Into<Inputs>, options: &EncodeOptions) -> EncodeHandle {
         let inputs = inputs.into();
         assert!(
@@ -792,18 +803,33 @@ impl Tokenizer {
                                 output.push(Token::from(token));
                             }
                             Segment::Text {
-                                text: normalized_chunk,
-                                ..
+                                text: piece,
+                                input_offset: piece_offset,
                             } => {
-                                // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),
-                                // so the length limit of `pre_tokens` applies to the normalized chunk.
                                 let EncodeScratch {
                                     model: model_scratch,
                                     pre_tokens,
                                     split: pre_tokenizer_scratch,
+                                    normalized_piece,
                                 } = &mut *scratch;
+                                let piece = match &self.inner.piece_normalizer {
+                                    None => piece,
+                                    Some(piece_normalizer) => {
+                                        let opens_sequence =
+                                            offset == 0 && input_offset == 0 && piece_offset == 0;
+                                        normalized_piece.clear();
+                                        piece_normalizer.normalize_into(
+                                            piece,
+                                            opens_sequence,
+                                            normalized_piece,
+                                        );
+                                        normalized_piece.as_str()
+                                    }
+                                };
+                                // Normalization can grow the text (`Metaspace` widens every space to a 3-byte delimiter),
+                                // so the length limit of `pre_tokens` applies to the normalized chunk.
                                 let pre_tokens = self.inner.pre_tokenizer.pre_tokens(
-                                    normalized_chunk,
+                                    piece,
                                     pre_tokenizer_scratch,
                                     pre_tokens,
                                 )?;
@@ -1807,6 +1833,7 @@ mod tests {
         Tokenizer::from_parts(
             BucketAddedVocabulary::new(),
             Vec::new(),
+            None,
             PreTokenizer::None,
             Model::BPE(hello_bpe()),
             post_processor,
@@ -1840,6 +1867,7 @@ mod tests {
         let pipeline = Tokenizer::from_parts(
             added,
             Vec::new(),
+            None,
             PreTokenizer::None,
             Model::BPE(hello_bpe()),
             PostProcessor::default(),
@@ -1911,6 +1939,7 @@ mod tests {
         let pipeline = Tokenizer::from_parts(
             added,
             Vec::new(),
+            None,
             PreTokenizer::None,
             Model::BPE(bpe),
             PostProcessor::default(),
@@ -1979,6 +2008,7 @@ mod tests {
         Tokenizer::from_parts(
             added_vocabulary,
             Vec::new(),
+            None,
             PreTokenizer::None,
             Model::BPE(hello_bpe()),
             PostProcessor::default(),

@@ -25,7 +25,7 @@ use self::model::read_unigram;
 use self::model::read_wordlevel;
 #[cfg(feature = "wordpiece")]
 use self::model::read_wordpiece;
-use self::normalizers::read_normalizers;
+use self::normalizers::{read_normalizers, read_piece_normalizer};
 use self::padding::read_padding;
 use self::post_processors::read_post_processor;
 use self::pre_tokenizers::read_pre_tokenizer;
@@ -189,12 +189,7 @@ fn build<M>(
     let added = read_added_tokens(doc.field("added_tokens"))?;
 
     let mut added_vocabulary = BucketAddedVocabulary::new();
-    // TODO: this has nothing to do here.
-    let declared = match normalizers.last() {
-        Some(Normalizer::Metaspace(_)) => &normalizers[..normalizers.len() - 1],
-        _ => &normalizers[..],
-    };
-    let chain = NormalizerChain(declared);
+    let chain = NormalizerChain(&normalizers);
     added_vocabulary.add_tokens(
         added,
         vocab_size(&concrete),
@@ -206,6 +201,7 @@ fn build<M>(
     Ok(Tokenizer::from_parts(
         added_vocabulary,
         normalizers,
+        read_piece_normalizer(doc.field("piece_normalizer"))?,
         pre_tokenizer,
         model,
         read_post_processor(doc.field("post_processor"))?,

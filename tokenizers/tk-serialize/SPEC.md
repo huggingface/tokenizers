@@ -8,15 +8,16 @@ A `1.0` file is a *legacy* file. tk-convert turns one into a `2.0` file; this cr
 
 ```text
 {                                        ← key order is exact, as written
-  "version"        : "2.0"
-  "truncation"     : null                  encode-time settings, never read
-  "padding"        : null
-  "added_tokens"   : [ AddedToken, … ]
-  "normalizer"     : Component | null
-  "pre_tokenizer"  : Component | null
-  "post_processor" : Component | null
-  "decoder"        : Component | null
-  "model"          : Model
+  "version"          : "2.0"
+  "truncation"       : null                  encode-time settings, never read
+  "padding"          : null
+  "added_tokens"     : [ AddedToken, … ]
+  "normalizer"       : Component | null
+  "piece_normalizer" : Component | null
+  "pre_tokenizer"    : Component | null
+  "post_processor"   : Component | null
+  "decoder"          : Component | null
+  "model"            : Model
 }
 ```
 
@@ -31,6 +32,8 @@ A `1.0` file is a *legacy* file. tk-convert turns one into a `2.0` file; this cr
     │
     ├─▶ extract added/special tokens on the *normalized* segments
     │     (`normalized: true` added tokens land here)
+    │
+    ├─▶ piece_normalizer    rewrite each piece on its own
     │
     ├─▶ pre_tokenizer       cut leftover text into words
     │
@@ -47,6 +50,9 @@ is a literal carve-out, so a `Split` / digit / RTL pre-tokenizer never sees thos
 spans. Pieces that must go through the pre-tokenizer belong in the model vocab,
 not in `added_tokens`.
 
+A piece is the text left between two added tokens. `piece_normalizer` rewrites each piece on its
+own, so what it writes at the start of a piece never lands in front of an added token.
+
 ## Component
 
 Every component, at every depth, is an object tagged with `"type"`.
@@ -54,7 +60,7 @@ Every component, at every depth, is an object tagged with `"type"`.
 ```text
 { "type": "Split", … }                    a component
 
-{ "type": "Sequence", "<children>": [ … ] }    nests, one key per family:
+{ "type": "Sequence", "<children>": [ … ] }    nests, one key per family (no piece_normalizer Sequence):
 
      normalizer ─▶ "normalizers"      post_processor ─▶ "processors"
   pre_tokenizer ─▶ "pretokenizers"           decoder ─▶ "decoders"
@@ -62,7 +68,8 @@ Every component, at every depth, is an object tagged with `"type"`.
 
 | slot | `"type"` |
 |---|---|
-| **normalizer** | `Sequence` `BertNormalizer` `ByteLevel` `Lowercase` `MetaspaceNormalizer` `NFC` `NFD` `NFKC` `NFKD` `Nmt` `Precompiled` `Prepend` `Replace` `Strip` `StripAccents` |
+| **normalizer** | `Sequence` `BertNormalizer` `ByteLevel` `Lowercase` `NFC` `NFD` `NFKC` `NFKD` `Nmt` `Precompiled` `Prepend` `Replace` `Strip` `StripAccents` |
+| **piece_normalizer** | `Metaspace` `PrefixSpace` |
 | **pre_tokenizer** | `Sequence` `BertPreTokenizer` `CharDelimiterSplit` `Digits` `FixedLength` `Punctuation` `Split` `UnicodeScripts` `Whitespace` `WhitespaceSplit` |
 | **post_processor** | `TemplateProcessing` |
 | **decoder** | `Sequence` `BPEDecoder` `ByteFallback` `ByteLevel` `CTC` `Fuse` `Metaspace` `Replace` `Strip` `WordPiece` |
@@ -75,21 +82,42 @@ There is no `Metaspace` pre-tokenizer. One is two components — it rewrites tex
 the pipeline keeps apart — so canonically it is spelled as the two it is:
 
 ```text
-  "normalizer":    {"type":"MetaspaceNormalizer", "replacement":"▁",
-                    "prepend":bool, "drop_whitespace":bool}
-  "pre_tokenizer": {"type":"Split", "pattern":{"String":"▁"},
-                    "behavior":"MergedWithNext", "invert":false}
+  "piece_normalizer": {"type":"Metaspace", "replacement":"▁",
+                       "prepend":"always"|"first"|"never",
+                       "whitespace_match":"only_space"|"any_unicode",
+                       "collapse_contiguous":bool, "skip_prefix":bool,
+                       "trim_trailing_delimiters":bool}
+  "pre_tokenizer":    {"type":"Split", "pattern":{"String":"▁"},
+                       "behavior":"MergedWithNext", "invert":false}
 ```
+
+- `prepend` says which pieces get the delimiter in front.
+- `whitespace_match` says which characters count as whitespace.
+- `collapse_contiguous` writes one delimiter for a run of whitespace, and drops the runs at a piece's edges.
+- `skip_prefix` leaves the prefix out when the piece already starts with whitespace or the delimiter.
+- `trim_trailing_delimiters` drops the delimiters that end a piece.
+
+tk-convert writes the two 1.0 shapes like this:
+
+| 1.0 pre-tokenizer | `whitespace_match` | `collapse_contiguous` | `skip_prefix` | `trim_trailing_delimiters` |
+|---|---|---|---|---|
+| `Metaspace` | `only_space` | `false` | `true` | `false` |
+| `Sequence[WhitespaceSplit, Metaspace]` | `any_unicode` | `true` | `true` | `false` |
+
+A tokenizer built from a `.model` file sets them from its `normalizer_spec` instead
+(`Metaspace::from_sentencepiece`), and then needs no normalizer but the charsmap in front of this one.
+SentencePiece's `remove_extra_whitespaces` is `collapse_contiguous` plus `trim_trailing_delimiters`,
+and its `add_dummy_prefix` is `prepend: "always"` with `skip_prefix: false`.
 
 There is no `ByteLevel` pre-tokenizer either. Byte-level describes how the vocabulary is encoded,
 so it is `"byte_level"` on the model; the split it used to imply is a plain `Split` on the GPT-2
-regex, or nothing at all where it said `use_regex: false`.
+regex, or nothing at all where it said `use_regex: false`. Its `add_prefix_space: true` is
+`{"type":"PrefixSpace"}` in `piece_normalizer`.
 
 tk-convert rewrites a legacy `Metaspace` into that pair, and a legacy `ByteLevel` into the model
 flag plus that `Split`. Spelling it out beats folding it back: the
-legacy tag could not say `drop_whitespace` without a wrapping `WhitespaceSplit`, could not sit
-beside a byte-level model, and forced the normalizer to be last in the chain so a writer could find
-it.
+legacy tag could not say `collapse_contiguous` without a wrapping `WhitespaceSplit`, and could not
+sit beside a byte-level model.
 
 ## Model
 

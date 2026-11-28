@@ -20,10 +20,11 @@ fn config<'a>(overrides: &'a [(&'a str, &'a str)]) -> String {
             .map_or(default, |(_, json)| *json)
     };
     format!(
-        r#"{{"version": "2.0", "added_tokens": {}, "normalizer": {}, "pre_tokenizer": {},
+        r#"{{"version": "2.0", "added_tokens": {}, "normalizer": {}, "piece_normalizer": {}, "pre_tokenizer": {},
             "post_processor": {}, "decoder": {}, "model": {}, "padding": {}}}"#,
         field("added_tokens", "[]"),
         field("normalizer", "null"),
+        field("piece_normalizer", "null"),
         field("pre_tokenizer", "null"),
         field("post_processor", "null"),
         field("decoder", "null"),
@@ -178,8 +179,8 @@ const REFUSED: &[(&str, &str, &str)] = &[
         "merges": ["a b"]}"#, "[left, right] pair"),
     ("normalizer", r#"{"type": "Strip", "strip_left": true}"#, "strip_right"),
     ("normalizer", r#"{"type": "Invented"}"#, "`Invented` normalizer"),
-    ("normalizer", r#"{"type": "MetaspaceNormalizer", "replacement": "▁", "prepend": "sometimes",
-        "drop_whitespace": false}"#, "unknown metaspace prepend \"sometimes\""),
+    ("piece_normalizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend": "sometimes"}"#,
+        "unknown metaspace prepend \"sometimes\""),
     ("pre_tokenizer", r#"{"type": "ByteLevel", "use_regex": true}"#, "`ByteLevel` pre-tokenizer"),
     ("pre_tokenizer", r#"{"type": "Metaspace", "replacement": "▁", "prepend_scheme": "always"}"#,
         "`Metaspace` pre-tokenizer"),

@@ -6,7 +6,7 @@ import pickle
 import pytest
 
 from conftest import ALBERT
-from tokenizers import Regex, decoders, normalizers, pre_tokenizers
+from tokenizers import Regex, decoders, normalizers, piece_normalizers, pre_tokenizers
 
 TEXT = "Hello world, how are you? 1234"
 
@@ -17,6 +17,7 @@ CHARSMAP = base64.b64decode(ALBERT_PRECOMPILED["precompiled_charsmap"])
 
 COMPONENT_FIELD = {
     normalizers.Normalizer: "normalizer",
+    piece_normalizers.PieceNormalizer: "piece_normalizer",
     pre_tokenizers.PreTokenizer: "pre_tokenizer",
     decoders.Decoder: "decoder",
 }
@@ -24,12 +25,13 @@ COMPONENT_CLASSES = [
     component_class
     for module, kind in (
         (normalizers, normalizers.Normalizer),
+        (piece_normalizers, piece_normalizers.PieceNormalizer),
         (pre_tokenizers, pre_tokenizers.PreTokenizer),
         (decoders, decoders.Decoder),
     )
     for component_class in vars(module).values()
     if isinstance(component_class, type) and issubclass(component_class, kind)
-    if component_class not in (kind, module.Sequence)
+    if component_class not in (kind, getattr(module, "Sequence", None))
 ]
 
 # The fields whose type and default don't give a sample value the core accepts.
@@ -38,6 +40,7 @@ SAMPLES = {
     "behavior": "merged_with_previous",
     "prepend": "never",
     "prepend_scheme": "never",
+    "whitespace_match": "any_unicode",
 }
 
 

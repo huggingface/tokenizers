@@ -79,6 +79,7 @@
 //! There is one list per component kind:
 //!
 //! - [`normalizer_schemas!`](crate::normalizer_schemas)
+//! - [`piece_normalizer_schemas!`](crate::piece_normalizer_schemas)
 //! - [`pre_tokenizer_schemas!`](crate::pre_tokenizer_schemas)
 //! - [`decoder_schemas!`](crate::decoder_schemas)
 //!
@@ -126,6 +127,12 @@ pub const PREPEND_SCHEMES: &[Choice] = &[
     choice("always", "always"),
     choice("first", "first"),
     choice("never", "never"),
+];
+
+/// Which characters a Metaspace treats as whitespace.
+pub const WHITESPACE_MATCHES: &[Choice] = &[
+    choice("only_space", "only_space"),
+    choice("any_unicode", "any_unicode"),
 ];
 
 /// Calls a macro with the definition of every normalizer.
@@ -184,15 +191,48 @@ macro_rules! normalizer_schemas {
             Strip { strip_left: Bool = true, strip_right: Bool = true },
             /// Adds `prepend` at the start of the text, unless the text is empty.
             Prepend { prepend: String },
-            /// SentencePiece's whitespace handling: replaces spaces with `replacement`. `prepend` says
-            /// when `replacement` also goes in front of the text: `"always"`, `"first"` (only at the
-            /// start of the input) or `"never"`. `drop_whitespace` drops runs of whitespace instead
-            /// of replacing them.
-            MetaspaceNormalizer {
+        }
+    };
+}
+
+/// Calls a macro with the definition of every piece normalizer.
+///
+/// `piece_normalizer_schemas!(my_macro! { args })` expands to:
+///
+/// ```rust,ignore
+/// my_macro! {
+///     { args }
+///     /// SentencePiece's whitespace handling: ...
+///     Metaspace { replacement: Char = '▁', ... },
+///     /// Adds a space at the start of each piece that does not start with one.
+///     PrefixSpace,
+/// }
+/// ```
+///
+/// The [module doc](crate::schemas) explains definitions and their fields.
+#[macro_export]
+macro_rules! piece_normalizer_schemas {
+    ($callback:ident! { $($args:tt)* }) => {
+        $callback! {
+            { $($args)* }
+            /// SentencePiece's whitespace handling: replaces whitespace with `replacement`.
+            /// `prepend` says which pieces also get `replacement` in front: `"always"`, `"first"`
+            /// (only the piece that starts the input) or `"never"`. `whitespace_match` says what
+            /// counts as whitespace: `"only_space"` or `"any_unicode"`. `collapse_contiguous` writes
+            /// one `replacement` for a run of whitespace and drops the runs at the piece's edges.
+            /// `skip_prefix` leaves the prefix out when the piece already starts with whitespace or
+            /// `replacement`. `trim_trailing_delimiters` drops the `replacement`s that end the piece.
+            Metaspace {
                 replacement: Char = '▁',
                 prepend: Choice($crate::schemas::PREPEND_SCHEMES) = "always",
-                drop_whitespace: Bool = false,
+                whitespace_match: Choice($crate::schemas::WHITESPACE_MATCHES) = "only_space",
+                collapse_contiguous: Bool = false,
+                skip_prefix: Bool = true,
+                trim_trailing_delimiters: Bool = false,
             },
+            /// Adds a space at the start of each piece that does not start with one, like the
+            /// `add_prefix_space` of a GPT-2 style byte-level tokenizer.
+            PrefixSpace,
         }
     };
 }
