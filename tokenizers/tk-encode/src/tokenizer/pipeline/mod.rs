@@ -842,7 +842,8 @@ impl Tokenizer {
     /// encode-only caller in a loop -- a server, a benchmark -- wants this one.
     ///
     /// Falls back to the general path when the post-processor actually has something to add
-    /// around the sequence, since that has to assemble a whole `Encoding` anyway.
+    /// around the sequence, or when truncation or padding applies, since that has to assemble a
+    /// whole `Encoding` anyway.
     pub fn encode_into(
         &self,
         input: &str,
@@ -851,13 +852,20 @@ impl Tokenizer {
     ) -> Result<()> {
         let mut scratch = self.inner.scratch_pool.get(&self.inner.model);
         let template = self.inner.post_processor.single();
+        let padding = self.resolve_padding(&options.padding);
         let reproduces_sequence = self.resolve_truncation(&options.truncation).is_none()
+            && padding.is_none()
             && !template.has_type_ids()
             && (!options.add_special_tokens || template.n_special() == 0);
         if reproduces_sequence {
             return self.encode_sequence_into(input, 0, options, &mut scratch, out);
         }
-        let encoding = self.encode_one(Input::Single(input.to_owned()), options, &mut scratch)?;
+        let mut encoding =
+            self.encode_one(Input::Single(input.to_owned()), options, &mut scratch)?;
+        // `encode` pads in `EncodeHandle::wait`, which this path never goes through.
+        if let Some(params) = padding {
+            pad_encodings(std::slice::from_mut(&mut encoding), params)?;
+        }
         out.extend_from_slice(encoding.ids());
         Ok(())
     }
@@ -1500,6 +1508,65 @@ mod tests {
         assert_eq!(
             ids(&encode_six_tokens(&pipeline, &options)),
             [0, 0, 0, 0, 0, 7, PAD, PAD]
+        );
+    }
+
+    fn encode_six_tokens_into(pipeline: &Tokenizer, options: &EncodeOptions) -> Vec<u32> {
+        let mut out = Vec::new();
+        pipeline.encode_into(SIX_TOKENS, options, &mut out).unwrap();
+        out.into_iter().map(u32::from).collect()
+    }
+
+    // `encode` pads a single input as well, so `encode_into` has to, whichever route it takes.
+    #[test]
+    fn encode_into_applies_the_configured_padding() {
+        let pipeline = hello_pipeline_with_padding(pad_to(8));
+
+        assert_eq!(
+            encode_six_tokens_into(&pipeline, &EncodeOptions::default()),
+            [0, 0, 0, 0, 0, 7, PAD, PAD]
+        );
+    }
+
+    #[test]
+    fn encode_into_applies_the_overridden_padding() {
+        let pipeline = hello_pipeline();
+        let options = EncodeOptions {
+            padding: Override::With(pad_to(8)),
+            ..EncodeOptions::default()
+        };
+
+        assert_eq!(
+            encode_six_tokens_into(&pipeline, &options),
+            [0, 0, 0, 0, 0, 7, PAD, PAD]
+        );
+    }
+
+    #[test]
+    fn encode_into_truncates_then_pads() {
+        let pipeline = hello_pipeline_with(
+            PostProcessor::default(),
+            Some(pad_to(8)),
+            Some(truncate_to(2)),
+        );
+
+        assert_eq!(
+            encode_six_tokens_into(&pipeline, &EncodeOptions::default()),
+            TRUNCATED_THEN_PADDED
+        );
+    }
+
+    #[test]
+    fn encode_into_padding_off_keeps_the_sequence() {
+        let pipeline = hello_pipeline_with_padding(pad_to(8));
+        let options = EncodeOptions {
+            padding: Override::Off,
+            ..EncodeOptions::default()
+        };
+
+        assert_eq!(
+            encode_six_tokens_into(&pipeline, &options),
+            [0, 0, 0, 0, 0, 7]
         );
     }
 
